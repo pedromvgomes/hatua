@@ -23,5 +23,16 @@
 # Everything else bulwark supports — per-language enablement, coverage
 # tolerances, patch-coverage opt-outs, toolchain overrides — belongs here too.
 # See bulwark's README.
+# bulwark's TypeScript check is ESLint, and ESLint 9+ hard-errors when there is
+# no eslint.config.js rather than falling back to defaults. brand/ carries a
+# package.json for the PNG rasterizer, so bulwark detects it as a JS package and
+# the scan fails on a repo that has deliberately not adopted ESLint: biome is
+# the intended linter here, and bulwark is being updated to support it.
+#
+# Off until that lands. Flip back to true in the same commit that adds the biome
+# config — the check should come back the moment there is a linter for it to run.
+typescript:
+  enabled: false
+
 coverage:
   source: run
