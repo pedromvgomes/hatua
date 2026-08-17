@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Hatua">
+  <rect width="512" height="512" rx="112" fill="#101526"></rect>
+  <g transform="translate(96 96) scale(10)">
+    <rect x="3" y="19" width="8" height="8" rx="2.5" fill="#E9ECF5"></rect>
+    <rect x="12" y="11" width="8" height="8" rx="2.5" fill="#E9ECF5"></rect>
+    <rect x="21" y="3" width="8" height="8" rx="2.5" fill="#37B3C2"></rect>
+  </g>
+</svg>

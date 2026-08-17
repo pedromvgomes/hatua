@@ -1,0 +1,25 @@
+{
+  "$comment": "Declared PNG outputs. `pnpm build:png` renders every entry into dist/. Paths are relative to the brand/ package root. Widths are pixels; height follows the SVG aspect ratio.",
+  "outputs": [
+    { "src": "assets/hatua-favicon.svg", "width": 16, "out": "dist/favicon-16.png" },
+    { "src": "assets/hatua-favicon.svg", "width": 32, "out": "dist/favicon-32.png" },
+    { "src": "assets/hatua-favicon.svg", "width": 48, "out": "dist/favicon-48.png" },
+
+    { "src": "assets/hatua-avatar-512.svg", "width": 180, "out": "dist/apple-touch-icon-180.png" },
+    { "src": "assets/hatua-avatar-512.svg", "width": 192, "out": "dist/icon-192.png" },
+    { "src": "assets/hatua-avatar-512.svg", "width": 512, "out": "dist/icon-512.png" },
+
+    { "src": "assets/hatua-avatar-512.svg", "width": 512, "out": "dist/avatar-512.png" },
+    { "src": "assets/hatua-avatar-512-navy.svg", "width": 512, "out": "dist/avatar-512-navy.png" },
+
+    { "src": "assets/hatua-mark.svg", "width": 256, "out": "dist/mark-256.png" },
+    { "src": "assets/hatua-mark.svg", "width": 512, "out": "dist/mark-512.png" },
+    { "src": "assets/hatua-mark-dark.svg", "width": 256, "out": "dist/mark-dark-256.png" },
+    { "src": "assets/hatua-mark-dark.svg", "width": 512, "out": "dist/mark-dark-512.png" },
+
+    { "src": "assets/hatua-lockup.svg", "width": 500, "out": "dist/lockup-500.png" },
+    { "src": "assets/hatua-lockup.svg", "width": 1000, "out": "dist/lockup-1000.png" },
+    { "src": "assets/hatua-lockup-dark.svg", "width": 500, "out": "dist/lockup-dark-500.png" },
+    { "src": "assets/hatua-lockup-dark.svg", "width": 1000, "out": "dist/lockup-dark-1000.png" }
+  ]
+}

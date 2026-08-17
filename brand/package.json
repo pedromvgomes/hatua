@@ -1,0 +1,32 @@
+{
+  "name": "@hatua/brand",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Hatua brand kit — logo, mark and avatar SVGs plus the on-demand PNG rasterizer",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pedromvgomes/hatua.git",
+    "directory": "brand"
+  },
+  "bin": {
+    "hatua-brand-png": "tools/build-png.js"
+  },
+  "exports": {
+    "./svg/*": "./assets/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "assets",
+    "tools",
+    "README.md"
+  ],
+  "scripts": {
+    "build:png": "node tools/build-png.js --all",
+    "png": "node tools/build-png.js"
+  },
+  "dependencies": {
+    "@resvg/resvg-js": "^2.6.2"
+  }
+}
