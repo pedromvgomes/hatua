@@ -29,6 +29,21 @@ correctly, and there is no build step between source and distributable.
 | `hatua-avatar-512-navy.svg` | Same, navy ground — use if the profile row is light. |
 | `hatua-favicon.svg` | 32×32 favicon; mark scaled to fill, minimal padding. |
 
+### Known inconsistencies in the artwork
+
+Two things to settle with whoever owns the logo before this gets used widely. Both are in the
+supplied artwork, so they are recorded rather than silently "corrected".
+
+- **The lockup's mark is not the standalone mark.** `hatua-mark.svg` uses 8×8 risers with a 1px
+  horizontal gap (bounding box 26×24); the lockup uses 10×10 risers touching on both axes
+  (bounding box 30×30). Side by side — favicon next to a README header, nav mark next to a
+  splash lockup — they read as two slightly different logos, and being hand-authored in two
+  places they will drift further.
+- **The favicon is 1px bottom-heavy.** The mark's bounding box is centred at `(16, 15)`, but the
+  favicon scales about `(16, 16)`: padding comes out 1.44px on the left, right and top against
+  3.68px on the bottom. At 16px that is a visible whole pixel of downward bias. Scaling about
+  `(16, 15)` fixes it.
+
 ---
 
 ## Using from code
@@ -56,7 +71,7 @@ git-ignored.
 pnpm install          # one-time, in this folder
 
 pnpm build:png        # render every output declared in tools/png-manifest.json → dist/
-pnpm png assets/hatua-avatar-512.svg 1024        # one-off, arbitrary size
+pnpm png assets/hatua-avatar-512.svg 1024        # one-off → dist/hatua-avatar-512-1024.png
 pnpm png assets/hatua-lockup.svg 800 /tmp/x.png  # one-off, explicit destination
 ```
 
@@ -68,9 +83,14 @@ routine; use the one-off form when it doesn't. See [`tools/README.md`](./tools/R
 
 ## Geometry
 
-Mark drawn on a 32×32 grid. Three 8×8 squares, corner radius 2.5, stepping up-right in 9px
-increments: `(3,19) (12,11) (21,3)`. Riser one and two are navy, riser three is teal. Never
-recolour a different riser, never add a fourth, never change the 9px offset.
+Mark drawn on a 32×32 grid. Three 8×8 squares, corner radius 2.5, at `(3,19) (12,11) (21,3)` —
+stepping **9px right and 8px up** each time. Because the step is 9 across but 8 up against an 8px
+riser, the risers sit 1px apart horizontally and touch vertically. That asymmetry is the shape;
+matching the two steps would visibly change it. Riser one and two are navy, riser three is teal.
+Never recolour a different riser, never add a fourth, never change the offsets.
+
+> The lockup does **not** reuse this geometry — it draws 10×10 risers at `(0,20) (10,10) (20,0)`,
+> which touch on both axes. See the note under [Files](#files).
 
 ## Colour
 

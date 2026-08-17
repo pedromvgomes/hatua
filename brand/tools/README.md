@@ -35,12 +35,13 @@ Prefer the one-off form for anything you'll need once.
 ```sh
 node tools/build-png.js <input.svg> <width> [output.png]
 
-node tools/build-png.js assets/hatua-avatar-512.svg 1024
+node tools/build-png.js assets/hatua-avatar-512.svg 1024   # → dist/hatua-avatar-512-1024.png
 node tools/build-png.js assets/hatua-lockup.svg 800 ~/Desktop/logo-800.png
 ```
 
-Paths here **are** relative to the working directory, as you'd expect from a CLI. With no output
-path the PNG is written next to the input with a `-<width>` suffix.
+The input path **is** relative to the working directory, as you'd expect from a CLI. With no output
+path the PNG goes to `../dist/<stem>-<width>.png` — deliberately *not* next to the input, since
+that would drop an untracked PNG into `assets/`, which is not git-ignored.
 
 ---
 

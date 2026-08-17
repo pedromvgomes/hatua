@@ -26,6 +26,11 @@
     "build:png": "node tools/build-png.js --all",
     "png": "node tools/build-png.js"
   },
+  "packageManager": "pnpm@11.9.0",
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
   "dependencies": {
     "@resvg/resvg-js": "^2.6.2"
   }
