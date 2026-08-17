@@ -14,5 +14,5 @@ Hatua is an embeddable workflow builder. Drag steps together, map one step's typ
 | [`source/`](./source/) | The monorepo — the React workflow designer and the packages it ships. |
 | [`brand/`](./brand/) | The logo, and the tooling that rasterizes it to PNG. Versioned separately; the product depends on it, not the other way round. |
 
-Node ≥ 20 and [pnpm](https://pnpm.io) ≥ 9. Both are declared in `engines`, and the exact pnpm
-version is pinned via `packageManager` for Corepack.
+Node 24 (Active LTS) and [pnpm](https://pnpm.io) ≥ 11. Both are declared in `engines`; `.nvmrc`
+pins the exact Node version for `nvm use`, and `packageManager` pins pnpm for Corepack.
