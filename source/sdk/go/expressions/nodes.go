@@ -90,8 +90,8 @@ func ternaryNode(cond, tail any) (any, error) {
 	return &Ternary{
 		At:        offsetOfNode(cond),
 		Cond:      cond.(Expression),
-		Then:      parts[1].(Expression),
-		Otherwise: parts[3].(Expression),
+		WhenTrue:  parts[1].(Expression),
+		WhenFalse: parts[3].(Expression),
 	}, nil
 }
 

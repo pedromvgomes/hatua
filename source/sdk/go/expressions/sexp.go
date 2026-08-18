@@ -75,7 +75,7 @@ func ToSexp(node Expression, options SexpOptions) string {
 	case *Binary:
 		return "(" + n.Op + at + " " + nested(n.Left) + " " + nested(n.Right) + ")"
 	case *Ternary:
-		return "(?:" + at + " " + nested(n.Cond) + " " + nested(n.Then) + " " + nested(n.Otherwise) + ")"
+		return "(?:" + at + " " + nested(n.Cond) + " " + nested(n.WhenTrue) + " " + nested(n.WhenFalse) + ")"
 	}
 	return "(unknown)"
 }

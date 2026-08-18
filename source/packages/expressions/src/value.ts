@@ -108,9 +108,9 @@ export function asText(value: Value): string {
  * would print and the other could not.
  */
 export function datetimeToText(value: Date): string {
-  return value.toISOString().replace(/\.(\d*?)0*Z$/, (_whole, digits: string) =>
-    digits === '' ? 'Z' : `.${digits}Z`,
-  )
+  return value
+    .toISOString()
+    .replace(/\.(\d*?)0*Z$/, (_whole, digits: string) => (digits === '' ? 'Z' : `.${digits}Z`))
 }
 
 /**
@@ -146,12 +146,18 @@ const JSON_ESCAPES: Record<string, string> = {
   '\f': '\\f',
 }
 
+/** Character by character rather than by regex, which is also how Go spells it. */
 function jsonString(value: string): string {
-  const escaped = value.replace(/["\\\u0000-\u001f]/g, (char) => {
+  let escaped = ''
+  for (const char of value) {
     const known = JSON_ESCAPES[char]
-    if (known) return known
-    return `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`
-  })
+    if (known) {
+      escaped += known
+      continue
+    }
+    const code = char.codePointAt(0) ?? 0
+    escaped += code < 0x20 ? `\\u${code.toString(16).padStart(4, '0')}` : char
+  }
   return `"${escaped}"`
 }
 

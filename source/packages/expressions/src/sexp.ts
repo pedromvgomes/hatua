@@ -50,7 +50,7 @@ export function toSexp(node: Expression, options: SexpOptions = {}): string {
     case 'Binary':
       return `(${node.op}${at} ${nested(node.left)} ${nested(node.right)})`
     case 'Ternary':
-      return `(?:${at} ${nested(node.cond)} ${nested(node.then)} ${nested(node.otherwise)})`
+      return `(?:${at} ${nested(node.cond)} ${nested(node.whenTrue)} ${nested(node.whenFalse)})`
   }
 }
 

@@ -90,7 +90,7 @@ func TestParseExpressionAssociativity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parsing: %v", err)
 	}
-	if _, ok := conditional.(*Ternary).Otherwise.(*Ternary); !ok {
+	if _, ok := conditional.(*Ternary).WhenFalse.(*Ternary); !ok {
 		t.Fatal("expected the conditional to fold right")
 	}
 }

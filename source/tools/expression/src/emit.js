@@ -48,7 +48,10 @@ export function readFunctions(schemasDir) {
   const dir = path.join(schemasDir, 'functions')
   const specs = []
 
-  for (const file of fs.readdirSync(dir).filter((f) => f.endsWith('.yaml')).sort()) {
+  for (const file of fs
+    .readdirSync(dir)
+    .filter((f) => f.endsWith('.yaml'))
+    .sort()) {
     const doc = parse(fs.readFileSync(path.join(dir, file), 'utf8'))
     if (!doc.namespace) throw new Error(`${file}: missing \`namespace\``)
 

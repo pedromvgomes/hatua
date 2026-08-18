@@ -15,6 +15,8 @@ export default defineConfig({
     rollupOptions: { external: [/^@hatua\//] },
   },
   plugins: [dts({ rollupTypes: true })],
-  resolve: generated ? { alias: [{ find: /^#generated\/(.*)$/, replacement: `${generated}/$1` }] } : {},
+  resolve: generated
+    ? { alias: [{ find: /^#generated\/(.*)$/, replacement: `${generated}/$1` }] }
+    : {},
   test: { include: ['src/**/*.test.ts'] },
 })

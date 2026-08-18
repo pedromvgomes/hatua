@@ -266,9 +266,9 @@ func evaluateRaw(node Expression, ctx Context) any {
 		return binary(n, ctx)
 	case *Ternary:
 		if condition(n.Cond, ctx) {
-			return Evaluate(n.Then, ctx)
+			return Evaluate(n.WhenTrue, ctx)
 		}
-		return Evaluate(n.Otherwise, ctx)
+		return Evaluate(n.WhenFalse, ctx)
 	}
 	panic(fmt.Sprintf("unknown expression %T", node))
 }

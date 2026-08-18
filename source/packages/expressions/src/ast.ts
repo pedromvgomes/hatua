@@ -117,8 +117,13 @@ export interface TernaryNode {
   readonly kind: 'Ternary'
   readonly at: number
   readonly cond: Expression
-  readonly then: Expression
-  readonly otherwise: Expression
+  /**
+   * Named `whenTrue`/`whenFalse` rather than `then`/`otherwise`: an object with
+   * a `then` property is a thenable, and an AST node that changes behaviour
+   * when it happens to be awaited is a trap nobody would find twice.
+   */
+  readonly whenTrue: Expression
+  readonly whenFalse: Expression
 }
 
 export type LiteralType = 'text' | 'number' | 'boolean' | 'null'

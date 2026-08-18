@@ -17,9 +17,9 @@
  */
 import type { FunctionSpec } from '#generated/builtins.js'
 import type { Expression, TemplateNode } from './ast.js'
-import { type Diagnostic, diagnostic, type DiagnosticCode, ExpressionError } from './errors.js'
+import { type Diagnostic, type DiagnosticCode, diagnostic, ExpressionError } from './errors.js'
 import { parseTemplate } from './parse.js'
-import { asText, isScalar, satisfies, type Value, type ValueType, typeOf } from './value.js'
+import { asText, isScalar, satisfies, typeOf, type Value, type ValueType } from './value.js'
 
 /**
  * What a path does when it resolves to nothing.
@@ -249,8 +249,8 @@ function evaluateRaw(node: Expression, context: EvaluationContext): Raw {
       return binary(node, context)
     case 'Ternary':
       return condition(node.cond, context)
-        ? evaluate(node.then, context)
-        : evaluate(node.otherwise, context)
+        ? evaluate(node.whenTrue, context)
+        : evaluate(node.whenFalse, context)
   }
 }
 

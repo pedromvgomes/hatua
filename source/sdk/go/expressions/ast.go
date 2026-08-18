@@ -90,12 +90,16 @@ type Binary struct {
 	Right Expression
 }
 
-// Ternary is `cond ? then : otherwise`.
+// Ternary is `cond ? whenTrue : whenFalse`.
+//
+// The arms are named rather than called Then/Otherwise so the two languages
+// share one vocabulary: TypeScript cannot call one of them `then` without
+// making every conditional node a thenable.
 type Ternary struct {
 	At        int
 	Cond      Expression
-	Then      Expression
-	Otherwise Expression
+	WhenTrue  Expression
+	WhenFalse Expression
 }
 
 // LiteralKind is the type a literal denotes.

@@ -24,7 +24,7 @@ describe('parseTemplate', () => {
     expect(template.segments[0]).toMatchObject({ kind: 'Hole', at: 3 })
   })
 
-  it('treats `{{ \'{{\' }}` as a hole holding a text literal, not a special case', () => {
+  it("treats `{{ '{{' }}` as a hole holding a text literal, not a special case", () => {
     const template = parseTemplate("{{ '{{' }}")
     expect(template.segments[0]).toMatchObject({
       kind: 'Hole',
@@ -57,7 +57,7 @@ describe('parseExpression', () => {
   it('folds the conditional to the right', () => {
     expect(parseExpression('a ? b : c ? d : e')).toMatchObject({
       kind: 'Ternary',
-      otherwise: { kind: 'Ternary' },
+      whenFalse: { kind: 'Ternary' },
     })
   })
 })

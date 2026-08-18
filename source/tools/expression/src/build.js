@@ -191,12 +191,21 @@ function run(command, args, options = {}) {
 
 function parseArgs(argv) {
   const options = { langs: Object.keys(TARGETS), out: null, checkDrift: false }
-  for (let i = 0; i < argv.length; i += 1) {
+  let i = 0
+  while (i < argv.length) {
     const arg = argv[i]
-    if (arg === '--check-drift') options.checkDrift = true
-    else if (arg === '--lang') options.langs = [argv[(i += 1)]]
-    else if (arg === '--out') options.out = path.resolve(argv[(i += 1)])
-    else throw new Error(`unknown argument ${arg}`)
+    i += 1
+    if (arg === '--check-drift') {
+      options.checkDrift = true
+    } else if (arg === '--lang') {
+      options.langs = [argv[i]]
+      i += 1
+    } else if (arg === '--out') {
+      options.out = path.resolve(argv[i])
+      i += 1
+    } else {
+      throw new Error(`unknown argument ${arg}`)
+    }
   }
   for (const lang of options.langs) {
     if (!TARGETS[lang]) throw new Error(`unknown language ${lang}; expected go or ts`)
@@ -218,7 +227,7 @@ function main() {
     process.exit(1)
   }
 
-  let stale = []
+  const stale = []
   for (const lang of options.langs) {
     const target = { ...TARGETS[lang], out: options.out ?? TARGETS[lang].out }
     console.log(`\nhatua · expression ${lang}\n`)

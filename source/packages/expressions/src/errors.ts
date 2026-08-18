@@ -7,7 +7,7 @@
  * run aborts, or whether the value should quietly become empty — those are the
  * Host's calls, and it can only make them if it is told exactly what happened.
  */
-import { type DiagnosticCode, DIAGNOSTICS, type Severity } from '#generated/diagnostics.js'
+import { DIAGNOSTICS, type DiagnosticCode, type Severity } from '#generated/diagnostics.js'
 
 export type { DiagnosticCode, Phase, Severity } from '#generated/diagnostics.js'
 export { DIAGNOSTICS } from '#generated/diagnostics.js'
@@ -30,7 +30,10 @@ export interface Diagnostic {
  * byte-identical output: a message that reads one way in the builder and
  * another in a runner's logs is a support ticket nobody can close.
  */
-export function formatMessage(template: string, args: Readonly<Record<string, string>> = {}): string {
+export function formatMessage(
+  template: string,
+  args: Readonly<Record<string, string>> = {},
+): string {
   return template.replace(/\{([a-z_]+)\}/g, (whole, key: string) =>
     Object.hasOwn(args, key) ? (args[key] as string) : whole,
   )

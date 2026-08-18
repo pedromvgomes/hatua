@@ -8,7 +8,7 @@
  * them later.
  */
 import { equals, type FunctionImpl } from '../resolve.js'
-import { asText, isScalar, type Value, type ValueType, typeOf } from '../value.js'
+import { asText, isScalar, typeOf, type Value, type ValueType } from '../value.js'
 import { badArgument } from './registry.js'
 
 const clamp = (index: number, length: number): number =>

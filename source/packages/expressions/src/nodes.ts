@@ -75,8 +75,8 @@ export function ternaryNode(cond: Matched, tail: Matched): Expression {
     kind: 'Ternary',
     at: atOf(cond),
     cond: cond as Expression,
-    then: parts[1] as Expression,
-    otherwise: parts[3] as Expression,
+    whenTrue: parts[1] as Expression,
+    whenFalse: parts[3] as Expression,
   }
   return node
 }

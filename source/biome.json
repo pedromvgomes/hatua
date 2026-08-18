@@ -7,12 +7,7 @@
     "root": ".."
   },
   "files": {
-    "includes": [
-      "**",
-      "!**/dist",
-      "!**/.turbo",
-      "!**/coverage"
-    ]
+    "includes": ["**", "!**/dist", "!**/.turbo", "!**/coverage"]
   },
   "formatter": {
     "enabled": true,
@@ -47,9 +42,7 @@
       }
     },
     {
-      "includes": [
-        "packages/react/src/primitives/**"
-      ],
+      "includes": ["packages/react/src/primitives/**"],
       "linter": {
         "rules": {
           "style": {
@@ -75,10 +68,7 @@
       }
     },
     {
-      "includes": [
-        "packages/react/src/compounds/**",
-        "packages/react/src/blocks/**"
-      ],
+      "includes": ["packages/react/src/compounds/**", "packages/react/src/blocks/**"],
       "linter": {
         "rules": {
           "style": {
@@ -87,11 +77,7 @@
               "options": {
                 "patterns": [
                   {
-                    "group": [
-                      "@hatua/services",
-                      "**/layouts/**",
-                      "**/views/**"
-                    ],
+                    "group": ["@hatua/services", "**/layouts/**", "**/views/**"],
                     "message": "compounds and blocks are presentational: props in, events out. Only layouts and views may reach @hatua/services."
                   }
                 ]
@@ -102,11 +88,7 @@
       }
     },
     {
-      "includes": [
-        "**/*.test.ts",
-        "**/*.test.tsx",
-        "**/fixtures.ts"
-      ],
+      "includes": ["**/*.test.ts", "**/*.test.tsx", "**/fixtures.ts"],
       "linter": {
         "rules": {
           "style": {
