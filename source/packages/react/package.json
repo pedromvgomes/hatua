@@ -7,16 +7,14 @@
   "license": "MIT",
   "sideEffects": false,
   "exports": {
-    ".": "./src/index.ts",
-    "./styles.css": "./src/styles/base.css"
+    ".": "./src/index.ts"
   },
   "publishConfig": {
     "exports": {
       ".": {
         "types": "./dist/index.d.ts",
         "import": "./dist/index.js"
-      },
-      "./styles.css": "./dist/styles.css"
+      }
     }
   },
   "scripts": {

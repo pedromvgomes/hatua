@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { componentSpec } from './component'
-import { workflowDefinition } from './definition'
+import { REFERENCE_PATTERN, referencePattern, workflowDefinition } from './definition'
 
 // The document from the design handoff, abridged — the shape the contract must accept.
 const EXAMPLE = {
@@ -82,5 +82,24 @@ describe('componentSpec', () => {
       outputs: [],
     }
     expect(componentSpec.safeParse(bad).success).toBe(false)
+  })
+})
+
+describe('reference patterns', () => {
+  // Regression: REFERENCE_PATTERN was exported with /g, so its lastIndex was
+  // shared mutable state — repeated .test() calls alternated true/false.
+  it('REFERENCE_PATTERN is stateless across repeated tests', () => {
+    const value = 'Inbox digest · {{s2.count}} messages'
+    expect(REFERENCE_PATTERN.test(value)).toBe(true)
+    expect(REFERENCE_PATTERN.test(value)).toBe(true)
+    expect(REFERENCE_PATTERN.test(value)).toBe(true)
+  })
+
+  it('referencePattern() hands out a fresh matcher each time', () => {
+    const value = '{{s4.item.subject}} from {{s4.item.from}}'
+    const first = [...value.matchAll(referencePattern())].map((m) => m[1])
+    const second = [...value.matchAll(referencePattern())].map((m) => m[1])
+    expect(first).toEqual(['s4.item.subject', 's4.item.from'])
+    expect(second).toEqual(first)
   })
 })

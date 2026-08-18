@@ -42,3 +42,44 @@ describe('yaml layer fidelity', () => {
     expect(String(ast)).not.toContain('"0 7 * * 1-5"   #') // its spacing does not
   })
 })
+
+describe('edits', () => {
+  // Regression: toString() previously keyed off a `dirty` flag nothing ever
+  // set, so it always replayed the CST and silently discarded every AST edit.
+  // HostPorts.save() takes this text, so edits were reported saved and lost.
+  it('reflects an AST edit in the serialised output', () => {
+    const doc = parseWorkflow(SOURCE)
+    doc.ast.setIn(['steps', 0, 'name'], 'Kick off')
+
+    expect(doc.toString()).toContain('Kick off')
+    expect(doc.toString()).not.toContain('"Start workflow"')
+  })
+
+  it('still keeps comments after an edit', () => {
+    const doc = parseWorkflow(SOURCE)
+    doc.ast.setIn(['steps', 0, 'name'], 'Kick off')
+    expect(doc.toString()).toContain('# weekdays only')
+  })
+
+  it('leaves an untouched document byte-identical even after reading it', () => {
+    const doc = parseWorkflow(SOURCE)
+    doc.toJSON()
+    doc.toString()
+    expect(doc.toString()).toBe(SOURCE)
+  })
+})
+
+describe('validation', () => {
+  it('rejects YAML that parses but is not a workflow', () => {
+    const doc = parseWorkflow('just: a mapping\n')
+    expect(doc.validate().success).toBe(false)
+    // Previously this cast straight through, and the first consumer blew up
+    // inside walkSteps with "steps is not iterable".
+    expect(() => doc.toJSON()).toThrow(/not a valid workflow definition/i)
+  })
+
+  it('still exposes the text of an invalid document, so Text Mode can fix it', () => {
+    const broken = 'name: half written\n'
+    expect(parseWorkflow(broken).toString()).toBe(broken)
+  })
+})

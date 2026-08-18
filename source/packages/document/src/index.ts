@@ -1,4 +1,4 @@
-import type { WorkflowDefinition } from '@hatua/schema'
+import { type WorkflowDefinition, workflowDefinition } from '@hatua/schema'
 import { Composer, CST, type Document, Parser } from 'yaml'
 
 /**
@@ -14,19 +14,24 @@ import { Composer, CST, type Document, Parser } from 'yaml'
  *          comments, but it NORMALISES some whitespace: three spaces before an
  *          inline comment come back as one.
  *
- * We keep both. Because Hatua does not own the file, surgical edits belong on
- * the CST; the AST is for reading and for edits where a normalised diff is
- * acceptable. `toString()` returns the original bytes while untouched.
+ * We keep both. Because Hatua does not own the file, an untouched document must
+ * come back byte-identical; once edited, the AST's serialisation is the best
+ * available and still keeps every comment.
  */
 
 export interface WorkflowDocument {
-  /** Concrete syntax tree. Byte-exact; the authoritative representation. */
-  readonly cst: ReturnType<Parser['parse']> extends Generator<infer T> ? T[] : never
-  /** Ergonomic view over the same document. Preserves comments, normalises some spacing. */
+  /** Ergonomic view. Mutating it is how you edit the document. */
   readonly ast: Document
-  /** Typed projection, re-derived. Never mutate this — it is a copy. */
+  /**
+   * Typed projection. Throws if the document is not a valid Workflow
+   * Definition — use `validate()` first when the source may be malformed, and
+   * `toString()`/`ast` to drive Text Mode over a document that does not parse
+   * into a workflow yet.
+   */
   toJSON(): WorkflowDefinition
-  /** Serialise back to text. Byte-identical to the input until something is edited. */
+  /** Non-throwing counterpart to `toJSON()`. */
+  validate(): ReturnType<typeof workflowDefinition.safeParse>
+  /** Byte-identical to the input while untouched; comment-preserving once edited. */
   toString(): string
 }
 
@@ -35,14 +40,27 @@ export function parseWorkflow(source: string): WorkflowDocument {
   const [ast] = [...new Composer({ keepSourceTokens: true }).compose(cst)]
   if (!ast) throw new Error('No YAML document found in source')
 
-  const dirty = false
+  // Serialisation of the untouched AST. Comparing against it detects edits
+  // however they were made — no dirty flag for a future caller to forget to
+  // set, which is what previously made toString() silently discard edits.
+  const pristine = String(ast)
+  const original = cst.map((t) => CST.stringify(t)).join('')
+
+  const serialise = () => {
+    const current = String(ast)
+    return current === pristine ? original : current
+  }
+
   return {
-    cst: cst as never,
     ast,
-    toJSON: () => ast.toJS() as WorkflowDefinition,
-    // While nothing has been edited, replay the CST for a byte-exact result.
-    // Once the AST is touched we fall back to its serialiser, which keeps
-    // comments but may normalise whitespace around them.
-    toString: () => (dirty ? String(ast) : cst.map((t) => CST.stringify(t)).join('')),
+    toString: serialise,
+    validate: () => workflowDefinition.safeParse(ast.toJS()),
+    toJSON: () => {
+      const result = workflowDefinition.safeParse(ast.toJS())
+      if (!result.success) {
+        throw new Error(`Not a valid Workflow Definition: ${result.error.issues[0]?.message}`)
+      }
+      return result.data
+    },
   }
 }

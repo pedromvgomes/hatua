@@ -37,4 +37,8 @@ renders ship their CSS.** Since `@hatua/react` exports its parts individually, a
   `styles.layer.css`.
 - Per React's documented caveats, the stylesheets must be static (props are ignored after render) and
   may remain in the DOM after unmount.
-- `@hatua/react/styles.css` is still exported as an escape hatch, but is never the required path.
+- A plain-stylesheet escape hatch (`@hatua/react/styles.css`) is **deferred**, not shipped. A
+  meaningful one has to aggregate every component's CSS, and the lib build inlines that CSS into
+  the JS by design — so exporting the path today would resolve to a file the build never emits.
+  Add it, with a build step that aggregates, once there are components to aggregate. Until then the
+  React 19 path is the only path, which is consistent with requiring React 19 anyway.

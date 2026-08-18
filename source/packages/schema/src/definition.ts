@@ -10,8 +10,19 @@ import { z } from 'zod'
  * file to disagree with the flow map. See ADR-0001.
  */
 
-/** A `{{source.path}}` token. Stored verbatim so renaming a step never breaks one. */
-export const REFERENCE_PATTERN = /\{\{([^}]+)\}\}/g
+/**
+ * Matches one `{{source.path}}` token. References are stored verbatim, so
+ * renaming a step never breaks one.
+ *
+ * Deliberately NOT global. A shared /g regex carries mutable `lastIndex` across
+ * every consumer: alternating `.test()` calls on the same string return true,
+ * false, true…, and an abandoned `exec()` loop leaves the next caller starting
+ * mid-string. Call `referencePattern()` when you need to iterate.
+ */
+export const REFERENCE_PATTERN = /\{\{([^}]+)\}\}/
+
+/** A fresh global matcher, safe to iterate — no shared state. */
+export const referencePattern = (): RegExp => /\{\{([^}]+)\}\}/g
 
 export const workflowInput = z.object({
   key: z.string().min(1),
