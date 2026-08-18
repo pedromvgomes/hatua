@@ -1,0 +1,35 @@
+{
+  "name": "@hatua/expressions",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The {{ … }} expression language: parse, check, resolve",
+  "license": "MIT",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "imports": {
+    "#generated/*": "./src/generated/*",
+    "#nodes": "./src/nodes.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    }
+  },
+  "scripts": {
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@hatua/schema": "workspace:*"
+  },
+  "devDependencies": {
+    "yaml": "^2.8.1"
+  }
+}

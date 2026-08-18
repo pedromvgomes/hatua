@@ -1,0 +1,83 @@
+namespace: text
+summary: Strings. Case mapping is full Unicode and language-neutral, never locale-sensitive.
+functions:
+  - name: upper
+    summary: Uppercase.
+    params:
+      - { name: value, type: text }
+    returns: text
+
+  - name: lower
+    summary: Lowercase.
+    params:
+      - { name: value, type: text }
+    returns: text
+
+  - name: trim
+    summary: Remove leading and trailing whitespace.
+    params:
+      - { name: value, type: text }
+    returns: text
+
+  - name: concat
+    summary: Join values end to end. There is no `+` for text.
+    params:
+      - { name: parts, type: text, variadic: true }
+    returns: text
+
+  - name: split
+    summary: Split on a separator.
+    params:
+      - { name: value, type: text }
+      - { name: separator, type: text }
+    returns: list
+
+  - name: join
+    summary: Join a list with a separator.
+    params:
+      - { name: values, type: list }
+      - { name: separator, type: text }
+    returns: text
+
+  - name: replace
+    summary: Replace every occurrence.
+    params:
+      - { name: value, type: text }
+      - { name: search, type: text }
+      - { name: replacement, type: text }
+    returns: text
+
+  - name: contains
+    summary: Whether the value contains the search string.
+    params:
+      - { name: value, type: text }
+      - { name: search, type: text }
+    returns: boolean
+
+  - name: starts_with
+    summary: Whether the value begins with the prefix.
+    params:
+      - { name: value, type: text }
+      - { name: prefix, type: text }
+    returns: boolean
+
+  - name: ends_with
+    summary: Whether the value ends with the suffix.
+    params:
+      - { name: value, type: text }
+      - { name: suffix, type: text }
+    returns: boolean
+
+  - name: slice
+    summary: Characters from start up to but not including end. Counted in code points.
+    params:
+      - { name: value, type: text }
+      - { name: start, type: number }
+      - { name: end, type: number, optional: true }
+    returns: text
+
+  - name: len
+    summary: Length in code points.
+    params:
+      - { name: value, type: text }
+    returns: number

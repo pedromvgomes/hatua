@@ -1,0 +1,4 @@
+
+// Supplied per language: reading the current offset is the one construct the
+// two PEG dialects spell differently.
+At = "" { return c.pos.offset, nil }

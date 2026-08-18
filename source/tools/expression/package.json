@@ -1,0 +1,16 @@
+{
+  "name": "@hatua/expression-toolchain",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The one expression grammar, its two generators, and the drift check that keeps them honest",
+  "scripts": {
+    "build": "node src/build.js",
+    "lint": "node src/lint-grammar.js",
+    "check-drift": "node src/build.js --check-drift"
+  },
+  "dependencies": {
+    "peggy": "5.1.0",
+    "yaml": "^2.8.1"
+  }
+}
