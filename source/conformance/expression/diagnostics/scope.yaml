@@ -1,0 +1,91 @@
+about: >-
+  What a step may address. Scope arrives as an argument rather than being
+  derived inside the expressions package, which is what keeps it depending on
+  `@hatua/schema` alone — and it is why these scenarios can state a scope
+  directly instead of building a whole Workflow Definition to imply one.
+
+scenarios:
+  - name: a step in scope resolves
+    template: "{{ s2.count }}"
+    type: number
+    scope: &wide
+      - path: s2
+        type:
+          type: object
+          members:
+            count: { type: number }
+      - path: triggers.nightly
+        type:
+          type: object
+          members:
+            triggered_at: { type: datetime }
+      - path: var.digest_to
+        type: { type: text }
+      - path: TRIGGER
+        type: { type: text }
+    expect: []
+
+  - name: a step that is not in scope is refused
+    template: "{{ s9.count }}"
+    type: number
+    scope: *wide
+    expect:
+      - { code: EXPR_UNKNOWN_REFERENCE, severity: error }
+
+  - name: >-
+      a dotted scope path is one entry, not two — `triggers` alone is a prefix
+      rather than a value, which is what lets several triggers coexist
+    template: "{{ triggers.nightly.triggered_at }}"
+    type: datetime
+    scope: *wide
+    expect: []
+
+  - name: an unknown trigger is refused
+    template: "{{ triggers.hourly.triggered_at }}"
+    type: datetime
+    scope: *wide
+    expect:
+      - { code: EXPR_UNKNOWN_REFERENCE, severity: error }
+
+  - name: a workflow variable
+    template: "{{ var.digest_to }}"
+    type: text
+    scope: *wide
+    expect: []
+
+  - name: an unknown variable is refused
+    template: "{{ var.nothing }}"
+    type: text
+    scope: *wide
+    expect:
+      - { code: EXPR_UNKNOWN_REFERENCE, severity: error }
+
+  - name: the TRIGGER built-in
+    template: "{{ TRIGGER == 'nightly' }}"
+    type: boolean
+    scope: *wide
+    expect: []
+
+  - name: an undeclared member of a step is a warning, not an error
+    template: "{{ s2.total }}"
+    type: number
+    scope: *wide
+    expect:
+      - { code: EXPR_TYPE_UNKNOWN, severity: warning }
+
+  - name: >-
+      a name that is neither in scope nor a function namespace is refused
+      wherever it appears, including inside an argument
+    template: "{{ num.abs(nothing) }}"
+    type: number
+    scope: *wide
+    expect:
+      - { code: EXPR_UNKNOWN_REFERENCE, severity: error }
+
+  - name: several problems are all reported, not just the first
+    template: "{{ s9.a }} and {{ s8.b }}"
+    type: text
+    scope: *wide
+    expect:
+      - { code: EXPR_UNKNOWN_REFERENCE, severity: error }
+      - { code: EXPR_UNKNOWN_REFERENCE, severity: error }

@@ -8,6 +8,8 @@ import { coreFunctions } from './functions/registry.js'
 import { parseExpression, parseTemplate } from './parse.js'
 import { type EvaluationContext, resolve, type Slot } from './resolve.js'
 import { templateToSexp, toSexp } from './sexp.js'
+import type { ScopeEntry } from './types.js'
+import { validate } from './validate.js'
 import { datetimeToText, numberToText, type Value, type ValueType } from './value.js'
 
 /**
@@ -42,6 +44,14 @@ interface EvalScenario {
   context?: Record<string, unknown>
   value?: unknown
   error?: string
+}
+
+interface DiagnosticScenario {
+  name: string
+  template: string
+  type?: ValueType
+  scope?: ScopeEntry[]
+  expect: { code: string; severity: string }[]
 }
 
 let counted = 0
@@ -127,6 +137,28 @@ describe('conformance · eval', () => {
           }
 
           expect(canon(resolve(context, slot))).toBe(canon(decode(scenario.value ?? null) as Value))
+        })
+      }
+    })
+  }
+})
+
+describe('conformance · diagnostics', () => {
+  for (const { file, scenarios } of scenariosIn<DiagnosticScenario>('diagnostics')) {
+    describe(file, () => {
+      for (const scenario of scenarios) {
+        counted += 1
+        it(scenario.name, () => {
+          const found = validate(scenario.template, scenario.type ?? 'text', {
+            scope: scenario.scope ?? [],
+            functions: FUNCTIONS,
+          })
+
+          // Codes *and* severities. A code that errors here and warns in Go
+          // would let a workflow publish from one builder and not another.
+          expect(found.map((d) => `${d.code}:${d.severity}`).sort()).toEqual(
+            scenario.expect.map((d) => `${d.code}:${d.severity}`).sort(),
+          )
         })
       }
     })

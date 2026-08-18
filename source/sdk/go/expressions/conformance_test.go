@@ -297,6 +297,70 @@ func canon(value Value) string {
 	return "?"
 }
 
+type diagnosticExpectation struct {
+	Code     string `yaml:"code"`
+	Severity string `yaml:"severity"`
+}
+
+type diagnosticScenario struct {
+	Name     string                  `yaml:"name"`
+	Template string                  `yaml:"template"`
+	Type     string                  `yaml:"type"`
+	Scope    []ScopeEntry            `yaml:"scope"`
+	Expect   []diagnosticExpectation `yaml:"expect"`
+}
+
+type diagnosticFile struct {
+	Scenarios []diagnosticScenario `yaml:"scenarios"`
+}
+
+func TestConformanceDiagnostics(t *testing.T) {
+	functions := CoreFunctions()
+
+	for _, path := range scenarioFiles(t, "diagnostics") {
+		var file diagnosticFile
+		loadScenarios(t, path, &file)
+		if len(file.Scenarios) == 0 {
+			t.Fatalf("%s declares no scenarios", filepath.Base(path))
+		}
+
+		t.Run(filepath.Base(path), func(t *testing.T) {
+			for _, scenario := range file.Scenarios {
+				counted++
+				t.Run(scenario.Name, func(t *testing.T) {
+					expected := TypeText
+					if scenario.Type != "" {
+						expected = ValueType(scenario.Type)
+					}
+
+					found := Validate(scenario.Template, expected, CheckContext{
+						Scope:     scenario.Scope,
+						Functions: functions,
+					})
+
+					// Codes *and* severities. A code that errors here and warns
+					// in TypeScript would let a workflow publish from one
+					// builder and not another.
+					actual := make([]string, 0, len(found))
+					for _, d := range found {
+						actual = append(actual, string(d.Code)+":"+string(d.Severity))
+					}
+					want := make([]string, 0, len(scenario.Expect))
+					for _, d := range scenario.Expect {
+						want = append(want, d.Code+":"+d.Severity)
+					}
+					sort.Strings(actual)
+					sort.Strings(want)
+
+					if strings.Join(actual, " ") != strings.Join(want, " ") {
+						t.Fatalf("\n  expected %v\n  got      %v", want, actual)
+					}
+				})
+			}
+		})
+	}
+}
+
 // TestMain writes the tally the cross-language harness compares. Ordinary `go
 // test` runs are unaffected: with the variable unset it does nothing.
 func TestMain(m *testing.M) {

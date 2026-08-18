@@ -1,0 +1,109 @@
+about: >-
+  Calls, checked before anything runs. A namespace needs no reserved word
+  because the `(` is what tells a call from a path, so `json` is a perfectly
+  good step id right up until someone writes `json(`.
+
+scenarios:
+  - name: a declared function checks clean
+    template: "{{ text.upper(s2.subject) }}"
+    type: text
+    scope: &inbox
+      - path: s2
+        type:
+          type: object
+          members:
+            count: { type: number }
+            subject: { type: text }
+            output: { type: text }
+            messages:
+              type: list
+              members:
+                subject: { type: text }
+    expect: []
+
+  - name: an unknown function in a known namespace is refused
+    template: "{{ text.shout(s2.subject) }}"
+    type: text
+    scope: *inbox
+    expect:
+      - { code: EXPR_UNKNOWN_FUNCTION, severity: error }
+
+  - name: an unknown namespace reads as an unknown reference, which is what it is
+    template: "{{ maths.sqrt(4) }}"
+    type: number
+    scope: *inbox
+    expect:
+      - { code: EXPR_UNKNOWN_REFERENCE, severity: error }
+
+  - name: too few arguments
+    template: "{{ text.replace(s2.subject, 'a') }}"
+    type: text
+    scope: *inbox
+    expect:
+      - { code: EXPR_ARITY_MISMATCH, severity: error }
+
+  - name: too many arguments
+    template: "{{ text.upper(s2.subject, 'a') }}"
+    type: text
+    scope: *inbox
+    expect:
+      - { code: EXPR_ARITY_MISMATCH, severity: error }
+
+  - name: an optional argument may be omitted
+    template: "{{ text.slice(s2.subject, 1) }}"
+    type: text
+    scope: *inbox
+    expect: []
+
+  - name: a variadic function takes as many as it is given
+    template: "{{ num.max(1, 2, 3) }}"
+    type: number
+    scope: *inbox
+    expect: []
+
+  - name: an argument of a known wrong type is refused
+    template: "{{ num.abs(s2.subject) }}"
+    type: number
+    scope: *inbox
+    expect:
+      - { code: EXPR_ARGUMENT_TYPE, severity: error }
+
+  - name: >-
+      an argument of unknown type is not — it is left to the run-time check
+      rather than blocking a publish over something that may well be right
+    template: "{{ num.abs(json.parse(s2.output).count) }}"
+    type: number
+    scope: *inbox
+    expect: []
+
+  - name: a scalar argument into a text parameter is fine, as everywhere else
+    template: "{{ text.concat('count: ', s2.count) }}"
+    type: text
+    scope: *inbox
+    expect: []
+
+  - name: the return type is what gets matched against the field
+    template: "{{ text.len(s2.subject) }}"
+    type: number
+    scope: *inbox
+    expect: []
+
+  - name: and a wrong one is a known conflict
+    template: "{{ text.len(s2.subject) }}"
+    type: boolean
+    scope: *inbox
+    expect:
+      - { code: EXPR_TYPE_MISMATCH, severity: error }
+
+  - name: calls compose, and each is checked
+    template: "{{ text.upper(text.slice(s2.subject, 0, 3)) }}"
+    type: text
+    scope: *inbox
+    expect: []
+
+  - name: a call on a step output is not a function call, so it is refused
+    template: "{{ s2.count(1) }}"
+    type: number
+    scope: *inbox
+    expect:
+      - { code: EXPR_UNKNOWN_FUNCTION, severity: error }

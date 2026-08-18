@@ -1,0 +1,162 @@
+about: >-
+  One scenario per row of the type-matching table, plus the boundary rules.
+
+  The expected type is always known before the expression is looked at: it comes
+  from the field's `kind`, and it is `boolean` for a branch's `when`. Nothing
+  infers a field's type *from* its expression. What varies is whether the
+  expression's own type can be determined statically, and that is what decides
+  between an error, a warning, and silence.
+
+scenarios:
+  - name: known and matching is accepted silently
+    template: "{{ s2.count }}"
+    type: number
+    scope: &inbox
+      - path: s2
+        type:
+          type: object
+          members:
+            count: { type: number }
+            subject: { type: text }
+            urgent: { type: boolean }
+            output: { type: text }
+            messages:
+              type: list
+              members:
+                subject: { type: text }
+    expect: []
+
+  - name: a known conflict blocks publish
+    template: "{{ s2.subject }}"
+    type: number
+    scope: *inbox
+    expect:
+      - { code: EXPR_TYPE_MISMATCH, severity: error }
+
+  - name: >-
+      an unknown type is accepted with a warning and deferred to run time.
+      json.parse returns an opaque structure, so `.count` has no static type —
+      rejecting it would make the function unusable, and accepting it silently
+      would hide a real risk.
+    template: "{{ json.parse(s2.output).count }}"
+    type: number
+    scope: *inbox
+    expect:
+      - { code: EXPR_TYPE_UNKNOWN, severity: warning }
+
+  - name: >-
+      the legacy `when` is the middle row inverted — statically text against a
+      declared boolean, a known conflict, publish refused. It never reaches a
+      runner to be mistaken for truthy.
+    template: "{{s2.count}} > 0"
+    type: boolean
+    scope: *inbox
+    expect:
+      - { code: EXPR_TYPE_MISMATCH, severity: error }
+
+  - name: written the way the language means it, the same condition is clean
+    template: "{{ s2.count > 0 }}"
+    type: boolean
+    scope: *inbox
+    expect: []
+
+  - name: any scalar may enter a text field — it is the universal sink
+    template: "{{ s2.count }}"
+    type: text
+    scope: *inbox
+    expect: []
+
+  - name: a boolean may too
+    template: "{{ s2.urgent }}"
+    type: text
+    scope: *inbox
+    expect: []
+
+  - name: a list may not
+    template: "{{ s2.messages }}"
+    type: text
+    scope: *inbox
+    expect:
+      - { code: EXPR_TYPE_MISMATCH, severity: error }
+
+  - name: text into number is not implicit
+    template: "{{ s2.subject }}"
+    type: number
+    scope: *inbox
+    expect:
+      - { code: EXPR_TYPE_MISMATCH, severity: error }
+
+  - name: num.parse is how it is said instead, and it checks clean
+    template: "{{ num.parse(s2.subject) }}"
+    type: number
+    scope: *inbox
+    expect: []
+
+  - name: a multi-hole template is text, so a number field refuses it
+    template: "{{ s2.count }} of {{ s2.count }}"
+    type: number
+    scope: *inbox
+    expect:
+      - { code: EXPR_TYPE_MISMATCH, severity: error }
+
+  - name: and the same template is fine in a text field
+    template: "{{ s2.count }} of {{ s2.count }}"
+    type: text
+    scope: *inbox
+    expect: []
+
+  - name: literal text with no holes at all raises nothing
+    template: "just words"
+    type: text
+    scope: *inbox
+    expect: []
+
+  - name: projection yields a list
+    template: "{{ s2.messages[].subject }}"
+    type: list
+    scope: *inbox
+    expect: []
+
+  - name: and a list is not text
+    template: "{{ s2.messages[].subject }}"
+    type: text
+    scope: *inbox
+    expect:
+      - { code: EXPR_TYPE_MISMATCH, severity: error }
+
+  - name: indexing a list yields one element
+    template: "{{ s2.messages[0].subject }}"
+    type: text
+    scope: *inbox
+    expect: []
+
+  - name: >-
+      projecting something that is not a list is a known conflict, since the
+      operator cannot succeed at run time either
+    template: "{{ s2.count[] }}"
+    type: list
+    scope: *inbox
+    expect:
+      - { code: EXPR_OPERAND_TYPE, severity: error }
+
+  - name: >-
+      an `item` field accepts anything, because a loop's element shape is not
+      known statically
+    template: "{{ s2.messages }}"
+    type: item
+    scope: *inbox
+    expect: []
+
+  - name: a text output in an object field is a known conflict
+    template: "{{ s2.output }}"
+    type: object
+    scope: *inbox
+    expect:
+      - { code: EXPR_TYPE_MISMATCH, severity: error }
+
+  - name: a syntactically broken template reports the parse error and stops there
+    template: "{{ a + }}"
+    type: text
+    scope: *inbox
+    expect:
+      - { code: EXPR_PARSE_ERROR, severity: error }

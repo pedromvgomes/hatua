@@ -9,4 +9,6 @@ export {
 export * from './parse.js'
 export * from './resolve.js'
 export { templateToSexp, toSexp } from './sexp.js'
+export * from './types.js'
+export * from './validate.js'
 export * from './value.js'
