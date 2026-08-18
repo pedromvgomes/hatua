@@ -1,0 +1,3 @@
+# A Host on a fresh install serves this. Go previously failed with a baffling
+# unmarshal error while the builder was perfectly happy.
+components: []

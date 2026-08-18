@@ -24,7 +24,15 @@ export async function drain<T>(
       if (seen.has(cursor)) throw new Error(`Paging did not advance: cursor "${cursor}" repeated`)
       seen.add(cursor)
     }
-  } while (cursor !== undefined && out.length < limit)
+    // Throw rather than return early. Returning would make a truncated list
+    // indistinguishable from a complete one, and the caller would render a
+    // Host's first 10,000 runs as if they were all of them.
+    if (cursor !== undefined && out.length >= limit) {
+      throw new Error(
+        `Refusing to drain past ${limit} items — page through explicitly instead of loading everything`,
+      )
+    }
+  } while (cursor !== undefined)
 
   return out
 }

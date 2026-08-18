@@ -1,5 +1,5 @@
 // GENERATED — do not edit.
-// Regenerate: pnpm --filter @hatua/codegen build
+// Regenerate: pnpm codegen
 
 export * from './component'
 export * from './definition'

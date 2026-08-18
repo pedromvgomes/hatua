@@ -36,7 +36,7 @@ for (const { file, out } of FILES) {
 
 const index = [
   '// GENERATED — do not edit.',
-  '// Regenerate: pnpm --filter @hatua/codegen build',
+  '// Regenerate: pnpm codegen',
   ...FILES.map(({ out }) => `export * from './${out.replace(/\.ts$/, '')}'`),
   '',
 ].join('\n')

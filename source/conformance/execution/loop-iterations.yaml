@@ -46,7 +46,7 @@ steps:
   - id: s9
     status: skipped
 log:
-  - at: 2026-08-18T07:00:05Z
+  - at: 2026-08-18T07:00:00.580Z
     step: s2
     channel: email
     message: 'mcp/gmail.list filter="is:unread" → 24 messages'

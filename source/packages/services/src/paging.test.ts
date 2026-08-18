@@ -31,3 +31,20 @@ describe('drain', () => {
     await expect(drain(stuck)).rejects.toThrow(/did not advance/)
   })
 })
+
+describe('drain safety bound', () => {
+  // Regression: hitting the limit returned normally, so a truncated list looked
+  // exactly like a complete one to the caller.
+  it('throws rather than silently truncating', async () => {
+    const endless = async (): Promise<Cursor<string>> => ({
+      items: ['a', 'b', 'c'],
+      next: String(Math.random()),
+    })
+    await expect(drain(endless, { limit: 10 })).rejects.toThrow(/Refusing to drain past 10/)
+  })
+
+  it('does not throw when the cursor exhausts exactly at the bound', async () => {
+    const exact = async (): Promise<Cursor<string>> => ({ items: ['a', 'b'] })
+    await expect(drain(exact, { limit: 2 })).resolves.toEqual(['a', 'b'])
+  })
+})

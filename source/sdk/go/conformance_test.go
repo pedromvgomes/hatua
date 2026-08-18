@@ -83,9 +83,8 @@ func TestManifest(t *testing.T) {
 			if err != nil {
 				t.Fatalf("expected %s to be accepted, got: %v", filepath.Base(path), err)
 			}
-			if len(manifests) == 0 {
-				t.Fatal("expected at least one manifest")
-			}
+			// Zero is legitimate: a Host with no custom components yet serves
+			// `components: []`, and that must parse rather than error.
 			for _, m := range manifests {
 				for _, o := range m.Outputs {
 					// Labels are required on outputs, not just fields — the

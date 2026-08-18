@@ -1,0 +1,8 @@
+# expect: SCHEMA_INVALID
+id: wf_bad_trigger
+name: Bad trigger
+version: 1
+status: draft
+triggers:
+  - id: nightly
+steps: []

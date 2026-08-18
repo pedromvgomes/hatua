@@ -1,6 +1,6 @@
 // GENERATED — do not edit.
 // Source: schemas/workflow-definition.schema.yaml
-// Regenerate: pnpm --filter @hatua/codegen build
+// Regenerate: pnpm codegen
 import { z } from 'zod'
 
 export const connection = z.strictObject({
@@ -65,7 +65,7 @@ export const step = z.strictObject({
    * Fork children. Only meaningful on `core.fork`.
    */
   get branches() {
-    return z.array(branch).optional()
+    return z.array(branch).min(1).optional()
   },
   /**
    * Loop children, nested directly with no branch wrapper. Only on `core.for_each`.

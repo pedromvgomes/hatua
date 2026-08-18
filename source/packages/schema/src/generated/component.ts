@@ -1,6 +1,6 @@
 // GENERATED — do not edit.
 // Source: schemas/component-manifest.schema.yaml
-// Regenerate: pnpm --filter @hatua/codegen build
+// Regenerate: pnpm codegen
 import { z } from 'zod'
 
 export const manifest = z.strictObject({
@@ -97,7 +97,7 @@ export const field = z.strictObject({
   /**
    * Show this field only while another field equals a value — `[otherKey, value]`. This is how one trigger component reshapes its form across schedule / API / upstream modes.
    */
-  when: z.array(z.string()).optional(),
+  when: z.array(z.string()).min(2).max(2).optional(),
 })
 export type Field = z.infer<typeof field>
 

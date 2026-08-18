@@ -1,6 +1,7 @@
 import {
   type ComponentManifest,
   componentManifest,
+  type Manifest,
   type WorkflowDefinition,
   type WorkflowExecution,
   workflowDefinition,
@@ -40,12 +41,14 @@ export const loadDefinition = (yaml: string): WorkflowDefinition =>
 export const loadExecution = (yaml: string): WorkflowExecution =>
   load(yaml, workflowExecution, 'Workflow Execution')
 
-/** Accepts a single manifest or a `components:` catalogue, returning a flat list. */
-export function loadManifests(yaml: string): ComponentManifest[] {
-  const parsed = load<ComponentManifest | { components: ComponentManifest[] }>(
-    yaml,
-    componentManifest,
-    'Component Manifest',
-  )
+/**
+ * Accepts a single manifest or a `components:` catalogue, always returning a
+ * FLAT list. The return type is deliberately `Manifest[]` rather than the
+ * parse-time union: leaving the catalogue variant in the type forces every
+ * consumer to narrow, and a consumer that narrows by dropping — rather than
+ * flattening — silently loses every component in the catalogue.
+ */
+export function loadManifests(yaml: string): Manifest[] {
+  const parsed = load<ComponentManifest>(yaml, componentManifest, 'Component Manifest')
   return 'components' in parsed ? parsed.components : [parsed]
 }

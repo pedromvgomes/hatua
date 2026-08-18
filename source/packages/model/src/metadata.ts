@@ -1,4 +1,4 @@
-import type { ComponentManifest, WorkflowExecution } from '@hatua/schema'
+import type { Manifest, WorkflowExecution } from '@hatua/schema'
 
 /**
  * Run metadata is derived, not reported.
@@ -38,12 +38,12 @@ export interface Pivot {
 
 /** Every metadata key any manifest declares, keyed by component `use`. */
 export function descriptorsByUse(
-  manifests: readonly ComponentManifest[],
+  manifests: readonly Manifest[],
 ): Map<string, MetadataDescriptor[]> {
   const out = new Map<string, MetadataDescriptor[]>()
   for (const manifest of manifests) {
-    if (!('use' in manifest) || !manifest.metadata?.length) continue
-    out.set(manifest.use as string, manifest.metadata as MetadataDescriptor[])
+    if (!manifest.metadata?.length) continue
+    out.set(manifest.use, manifest.metadata as MetadataDescriptor[])
   }
   return out
 }
@@ -113,16 +113,31 @@ export function pivot(
   measureKey: string,
   dimensionKey: string,
 ): Pivot | null {
+  // Both must be declared by the SAME component. Searching independently would
+  // happily pair component A's measure with component B's dimension and return
+  // a fully-populated Pivot whose rows are empty, since the two never co-occur
+  // on one sample.
   let measure: MetadataDescriptor | undefined
   let dimension: MetadataDescriptor | undefined
-  for (const list of descriptors.values()) {
-    measure ??= list.find((d) => d.k === measureKey && d.role === 'measure')
-    dimension ??= list.find((d) => d.k === dimensionKey && d.role === 'dimension')
+  const declaringUses = new Set<string>()
+
+  for (const [use, list] of descriptors) {
+    const m = list.find((d) => d.k === measureKey && d.role === 'measure')
+    const d = list.find((d) => d.k === dimensionKey && d.role === 'dimension')
+    if (!m || !d) continue
+    measure ??= m
+    dimension ??= d
+    declaringUses.add(use)
   }
   if (!measure || !dimension) return null
 
   const rows = new Map<string, number>()
-  for (const { values } of samples(execution, useOf)) {
+  for (const { use, values } of samples(execution, useOf)) {
+    // Only count samples from a component that declared both. Without this the
+    // pivot would include an undeclared key of the same name, so its rows would
+    // not sum to the total rendered beside them.
+    if (!declaringUses.has(use)) continue
+
     const value = values[measureKey]
     const group = values[dimensionKey]
     if (typeof value !== 'number' || group === undefined || group === null) continue

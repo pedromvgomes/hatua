@@ -1,0 +1,6 @@
+# expect: SCHEMA_INVALID
+# `steps` is required. An empty list is fine; an absent key is not.
+id: wf_no_steps
+name: No steps
+version: 1
+status: draft

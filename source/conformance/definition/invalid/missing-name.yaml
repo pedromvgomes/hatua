@@ -1,0 +1,7 @@
+# expect: SCHEMA_INVALID
+# Go accepted this while zod rejected it — the exact divergence the corpus
+# exists to catch, and which it previously had no fixture for.
+id: wf_nameless
+version: 1
+status: draft
+steps: []

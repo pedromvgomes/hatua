@@ -13,9 +13,52 @@
  * away the types this whole pipeline exists to produce.
  */
 
+/** Keywords this converter understands. Anything else must fail loudly. */
+const HANDLED = new Set([
+  '$ref',
+  '$schema',
+  '$id',
+  '$defs',
+  'title',
+  'description',
+  'type',
+  'enum',
+  'oneOf',
+  'properties',
+  'required',
+  'additionalProperties',
+  'items',
+  'minLength',
+  'minimum',
+  'maximum',
+  'minItems',
+  'maxItems',
+  'format',
+  'pattern',
+])
+
+/** Throw on any keyword we would otherwise drop in silence. */
+function assertHandled(node) {
+  for (const key of Object.keys(node)) {
+    if (!HANDLED.has(key)) {
+      throw new Error(
+        `Unhandled JSON Schema keyword "${key}". Silently dropping it would let Go accept ` +
+          `input TypeScript rejects — add support in json-schema-to-zod.js. Node: ` +
+          JSON.stringify(node).slice(0, 160),
+      )
+    }
+  }
+}
+
+/** A JS string literal. Guards against a value containing a quote or backslash. */
+const literal = (value) => `'${String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`
+
 /** Wrap a description as a JSDoc block at the given indent. */
 export function jsdoc(description, indent = '') {
   if (!description) return ''
+  if (String(description).includes('*/')) {
+    throw new Error('A schema description contains "*/", which would close the JSDoc block early')
+  }
   const body = String(description)
     .trim()
     .split('\n')
@@ -41,6 +84,11 @@ function scalar(node) {
     case 'string':
       out = 'z.string()'
       if (node.minLength) out += `.min(${node.minLength})`
+      if (node.pattern) out += `.regex(/${node.pattern}/)`
+      // The execution schema promises date-time on started_at and friends; a
+      // runner handing the Runs view an unparseable timestamp would otherwise
+      // pass validation.
+      if (node.format === 'date-time') out = `z.iso.datetime({ offset: true })`
       break
     case 'integer':
       out = 'z.number().int()'
@@ -62,15 +110,19 @@ function scalar(node) {
 }
 
 export function toZod(node, indent = '  ') {
+  assertHandled(node)
   if (node.$ref) return node.$ref.replace('#/$defs/', '')
-  if (node.enum) return `z.enum([${node.enum.map((v) => `'${v}'`).join(', ')}])`
+  if (node.enum) return `z.enum([${node.enum.map(literal).join(', ')}])`
   if (node.oneOf) return `z.union([${node.oneOf.map((n) => toZod(n, indent)).join(', ')}])`
 
   const asScalar = scalar(node)
   if (asScalar) return asScalar
 
   if (node.type === 'array') {
-    return `z.array(${node.items ? toZod(node.items, indent) : 'z.unknown()'})`
+    let out = `z.array(${node.items ? toZod(node.items, indent) : 'z.unknown()'})`
+    if (node.minItems !== undefined) out += `.min(${node.minItems})`
+    if (node.maxItems !== undefined) out += `.max(${node.maxItems})`
+    return out
   }
 
   if (node.type === 'object') {
@@ -112,7 +164,7 @@ export function generateModule(schema, { sourceFile }) {
   const out = [
     '// GENERATED — do not edit.',
     `// Source: schemas/${sourceFile}`,
-    '// Regenerate: pnpm --filter @hatua/codegen build',
+    '// Regenerate: pnpm codegen',
     "import { z } from 'zod'",
     '',
   ]

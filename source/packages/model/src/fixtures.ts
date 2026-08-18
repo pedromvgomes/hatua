@@ -1,4 +1,4 @@
-import type { ComponentManifest, WorkflowDefinition } from '@hatua/schema'
+import type { Manifest, WorkflowDefinition } from '@hatua/schema'
 
 /** Mirrors the worked example in the plan, so tests and docs cannot drift apart. */
 export const DOC: WorkflowDefinition = {
@@ -51,7 +51,7 @@ export const DOC: WorkflowDefinition = {
   ],
 }
 
-export const MANIFESTS: ComponentManifest[] = [
+export const MANIFESTS: Manifest[] = [
   {
     kind: 'component',
     use: 'email.send',

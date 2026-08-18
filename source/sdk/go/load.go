@@ -46,11 +46,26 @@ func LoadExecution(data []byte) (*Execution, error) {
 
 // LoadManifests accepts either a single manifest or a components: catalogue,
 // returning a flat list.
+//
+// Catalogue-ness is decided by whether the document HAS a components key, not
+// by whether that key is non-empty. A Host with no custom components yet
+// legitimately serves `components: []`, and treating that as a single manifest
+// fails with a baffling error while the builder is perfectly happy.
 func LoadManifests(data []byte) ([]Manifest, error) {
-	var catalogue Catalogue
-	if err := decode(data, &catalogue, "Component Manifest"); err == nil && len(catalogue.Components) > 0 {
+	var probe struct {
+		Components *[]Manifest `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(data, &probe); err == nil && probe.Components != nil {
+		var catalogue Catalogue
+		if err := decode(data, &catalogue, "Component Manifest"); err != nil {
+			return nil, err
+		}
+		if catalogue.Components == nil {
+			return []Manifest{}, nil
+		}
 		return catalogue.Components, nil
 	}
+
 	var single Manifest
 	if err := decode(data, &single, "Component Manifest"); err != nil {
 		return nil, err
@@ -58,28 +73,87 @@ func LoadManifests(data []byte) ([]Manifest, error) {
 	return []Manifest{single}, nil
 }
 
-// Validate covers the rules the schema expresses. Cross-field rules that depend
-// on manifests — connection type matching, empty loops, unmapped required
-// fields — belong to the builder's model layer and are pinned by the shared
-// conformance corpus rather than duplicated here.
+// Validate covers every key the schema marks required. It must reject exactly
+// what the TypeScript side rejects: a document Go accepts and zod refuses is a
+// workflow that fails in the builder and runs anyway, which is the divergence
+// this SDK exists to prevent. conformance/definition/invalid/ pins each case.
+//
+// Cross-field rules that depend on manifests — connection type matching, empty
+// loops, unmapped required fields — belong to the builder's model layer and are
+// not duplicated here.
 func (d *Definition) Validate() error {
+	const prefix = "not a valid Workflow Definition"
+
 	if d.ID == "" {
-		return fmt.Errorf("not a valid Workflow Definition: id is required")
+		return fmt.Errorf("%s: id is required", prefix)
+	}
+	if d.Name == "" {
+		return fmt.Errorf("%s: name is required", prefix)
 	}
 	if d.Version < 1 {
-		return fmt.Errorf("not a valid Workflow Definition: version must be at least 1, got %d", d.Version)
+		return fmt.Errorf("%s: version must be at least 1, got %d", prefix, d.Version)
 	}
 	switch d.Status {
 	case StatusPublished, StatusDraft, StatusArchived:
 	default:
-		return fmt.Errorf("not a valid Workflow Definition: unknown status %q", d.Status)
+		return fmt.Errorf("%s: unknown status %q", prefix, d.Status)
+	}
+	if d.Steps == nil {
+		return fmt.Errorf("%s: steps is required", prefix)
+	}
+
+	for _, c := range d.Connections {
+		if c.ID == "" {
+			return fmt.Errorf("%s: every connection needs an id", prefix)
+		}
+	}
+	for _, t := range d.Triggers {
+		if t.ID == "" {
+			return fmt.Errorf("%s: every trigger needs an id", prefix)
+		}
+		if t.Use == "" {
+			return fmt.Errorf("%s: trigger %q needs a use", prefix, t.ID)
+		}
+	}
+	for _, v := range d.Vars {
+		if v.Key == "" {
+			return fmt.Errorf("%s: every var needs a key", prefix)
+		}
 	}
 
 	var err error
 	WalkSteps(d.Steps, func(s Step) {
-		if err == nil && s.ID == "" {
-			err = fmt.Errorf("not a valid Workflow Definition: every step needs an id — references point at it")
+		if err != nil {
+			return
+		}
+		if s.ID == "" {
+			err = fmt.Errorf("%s: every step needs an id — references point at it", prefix)
+			return
+		}
+		if s.Use == "" {
+			err = fmt.Errorf("%s: step %q needs a use", prefix, s.ID)
 		}
 	})
-	return err
+	if err != nil {
+		return err
+	}
+
+	return validateBranches(d.Steps, prefix)
+}
+
+func validateBranches(steps []Step, prefix string) error {
+	for _, s := range steps {
+		for _, b := range s.Branches {
+			if b.Steps == nil {
+				return fmt.Errorf("%s: branch %q of step %q needs a steps list", prefix, b.Label, s.ID)
+			}
+			if err := validateBranches(b.Steps, prefix); err != nil {
+				return err
+			}
+		}
+		if err := validateBranches(s.Steps, prefix); err != nil {
+			return err
+		}
+	}
+	return nil
 }

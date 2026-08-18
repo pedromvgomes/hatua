@@ -1,4 +1,4 @@
-import type { ComponentManifest, WorkflowDefinition } from '@hatua/schema'
+import type { Manifest, WorkflowDefinition } from '@hatua/schema'
 
 /**
  * Connection rules. Two of them, and they fail at different moments on purpose.
@@ -14,10 +14,11 @@ export interface Diagnostic {
   fieldKey?: string
 }
 
-type ManifestIndex = ReadonlyMap<string, ComponentManifest>
+type ManifestIndex = ReadonlyMap<string, Manifest>
 
-export const indexManifests = (manifests: readonly ComponentManifest[]): ManifestIndex =>
-  new Map(manifests.filter((m) => 'use' in m).map((m) => [m.use as string, m]))
+/** Takes flat manifests. Catalogues are flattened at load time, not here. */
+export const indexManifests = (manifests: readonly Manifest[]): ManifestIndex =>
+  new Map(manifests.map((m) => [m.use, m]))
 
 /**
  * A connection with no `ref` was never established. That blocks publish but not
@@ -52,8 +53,8 @@ export function mismatchedConnections(
 
   const check = (stepId: string, use: string, values: Record<string, unknown> | undefined) => {
     const manifest = manifests.get(use)
-    if (!manifest || !('fields' in manifest)) return
-    for (const field of manifest.fields ?? []) {
+    if (!manifest) return
+    for (const field of manifest.fields) {
       if (field.kind !== 'conn' || !field.conn_type) continue
       const connectionId = values?.[field.k]
       if (typeof connectionId !== 'string') continue
@@ -73,7 +74,21 @@ export function mismatchedConnections(
       if (!connection.ref) continue
 
       const actual = typeOf(connection.ref)
-      if (actual && actual !== field.conn_type) {
+      if (!actual) {
+        // The Host no longer recognises this handle — revoked, deleted, or
+        // pointing at another environment. Silence here would look identical
+        // to a matching type.
+        out.push({
+          code: 'CONNECTION_UNRESOLVABLE',
+          message: `"${connection.id}" no longer resolves. Reconnect it or pick another.`,
+          blocks: 'publish',
+          stepId,
+          connectionId: connection.id,
+          fieldKey: field.k,
+        })
+        continue
+      }
+      if (actual !== field.conn_type) {
         out.push({
           code: 'CONNECTION_TYPE_MISMATCH',
           message: `${field.label} needs a ${field.conn_type} connection, but "${connection.id}" is ${actual}.`,

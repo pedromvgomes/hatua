@@ -52,17 +52,17 @@ type Catalogue struct {
 // Field is one configurable input. Label is always required — the key is never
 // shown to a user raw.
 type Field struct {
-	Kind        string       `yaml:"kind"`
-	K           string       `yaml:"k"`
-	Label       string       `yaml:"label"`
-	ConnType    string       `yaml:"conn_type,omitempty"`
-	Req         bool         `yaml:"req,omitempty"`
-	Hint        string       `yaml:"hint,omitempty"`
-	Placeholder string       `yaml:"ph,omitempty"`
-	Mono        bool         `yaml:"mono,omitempty"`
+	Kind        string        `yaml:"kind"`
+	K           string        `yaml:"k"`
+	Label       string        `yaml:"label"`
+	ConnType    string        `yaml:"conn_type,omitempty"`
+	Req         bool          `yaml:"req,omitempty"`
+	Hint        string        `yaml:"hint,omitempty"`
+	Placeholder string        `yaml:"ph,omitempty"`
+	Mono        bool          `yaml:"mono,omitempty"`
 	Options     []FieldOption `yaml:"options,omitempty"`
-	ToggleLabel string       `yaml:"toggleLabel,omitempty"`
-	When        []string     `yaml:"when,omitempty"`
+	ToggleLabel string        `yaml:"toggleLabel,omitempty"`
+	When        []string      `yaml:"when,omitempty"`
 }
 
 // FieldOption is one choice of an enum field.

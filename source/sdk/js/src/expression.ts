@@ -35,6 +35,18 @@ export interface EvaluationContext {
  */
 const FORBIDDEN_SEGMENTS = new Set(['__proto__', 'constructor', 'prototype'])
 
+/**
+ * Read one own property, or undefined. The only place in this module that
+ * indexes an object with a caller-supplied key, so every prototype-chain guard
+ * lives here rather than being repeated at each call site.
+ */
+function readOwn(source: unknown, key: string): unknown {
+  if (FORBIDDEN_SEGMENTS.has(key)) return undefined
+  if (source === null || typeof source !== 'object') return undefined
+  if (!Object.hasOwn(source, key)) return undefined
+  return Reflect.get(source, key)
+}
+
 /** Walk a dotted path, treating `a[].b` as "that field of each element". */
 function resolve(root: unknown, path: string): unknown {
   let current: unknown = root
@@ -45,10 +57,8 @@ function resolve(root: unknown, path: string): unknown {
     const segment = each ? rawSegment.slice(0, -2) : rawSegment
 
     if (segment) {
-      if (FORBIDDEN_SEGMENTS.has(segment)) return undefined
-      if (typeof current !== 'object') return undefined
-      if (!Object.hasOwn(current, segment)) return undefined
-      current = (current as Record<string, unknown>)[segment]
+      current = readOwn(current, segment)
+      if (current === undefined) return undefined
     }
     if (each) {
       if (!Array.isArray(current)) return undefined

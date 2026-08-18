@@ -1,6 +1,6 @@
 // GENERATED — do not edit.
 // Source: schemas/workflow-execution.schema.yaml
-// Regenerate: pnpm --filter @hatua/codegen build
+// Regenerate: pnpm codegen
 import { z } from 'zod'
 
 export const stepExecution = z.strictObject({
@@ -54,7 +54,7 @@ export const error = z.strictObject({
 export type Error = z.infer<typeof error>
 
 export const logEntry = z.strictObject({
-  at: z.string(),
+  at: z.iso.datetime({ offset: true }),
   /**
    * Optional — run-level entries have no step.
    */
@@ -94,8 +94,8 @@ export const workflowExecution = z.strictObject({
       payload: z.record(z.string(), z.unknown()).optional(),
     })
     .optional(),
-  started_at: z.string(),
-  finished_at: z.string().optional(),
+  started_at: z.iso.datetime({ offset: true }),
+  finished_at: z.iso.datetime({ offset: true }).optional(),
   duration_ms: z.number().min(0).optional(),
   get steps() {
     return z.array(stepExecution)

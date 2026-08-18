@@ -1,4 +1,4 @@
-import type { ComponentManifest, WorkflowExecution } from '@hatua/schema'
+import type { Manifest, WorkflowExecution } from '@hatua/schema'
 
 /**
  * What the Host implements. Hatua stores nothing and runs nothing, so every
@@ -91,7 +91,14 @@ export interface WorkflowStore {
  * design in a way run history is not.
  */
 export interface ManifestSource {
-  loadManifests(): Promise<ComponentManifest[]>
+  /**
+   * Flat manifests, never a catalogue. `ComponentManifest` — the parse-time
+   * type — is a union of "one manifest" and "a `components:` catalogue", so
+   * typing this with it would let a Host return `[{ components: [...] }]`,
+   * which typechecks and is then silently dropped by every consumer. Use
+   * `loadManifests()` from @hatua/sdk, which flattens.
+   */
+  loadManifests(): Promise<Manifest[]>
 }
 
 export interface ExecutionSummary {

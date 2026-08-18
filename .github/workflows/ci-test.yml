@@ -53,5 +53,13 @@ jobs:
       - name: Go SDK
         working-directory: source/sdk/go
         run: |
+          # gofmt has no equivalent of `biome ci` in the JS gate, so check it
+          # explicitly — otherwise Go formatting drifts unnoticed.
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::gofmt would reformat these files:"
+            echo "$unformatted"
+            exit 1
+          fi
           go vet ./...
           go test ./...

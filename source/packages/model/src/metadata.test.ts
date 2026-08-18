@@ -79,3 +79,36 @@ describe('pivot', () => {
     expect(pivot(RUN, descriptors, useOf, 'model', 'tokens')).toBeNull()
   })
 })
+
+describe('pivot correctness', () => {
+  // Regression: pivot ignored descriptors entirely and summed any key literally
+  // named `tokens`, so its rows failed to add up to the total beside them.
+  it('ignores an undeclared key of the same name', () => {
+    const withStray: WorkflowExecution = {
+      ...RUN,
+      steps: [
+        ...RUN.steps,
+        // email.send declares no metadata at all, so this must not count.
+        { id: 's6', status: 'succeeded', metadata: { tokens: 999, model: 'ghost' } },
+      ],
+    }
+    const useFor = (id: string) =>
+      id === 's5' ? 'agent.act' : id === 's6' ? 'email.send' : 'core.for_each'
+
+    expect(totals(withStray, descriptors, useFor)[0]?.total).toBe(5500)
+    const rows = pivot(withStray, descriptors, useFor, 'tokens', 'model')?.rows ?? []
+    // The rows must sum to the headline total, not exceed it.
+    expect(rows.reduce((sum, r) => sum + r.total, 0)).toBe(5500)
+    expect(rows.map((r) => r.value)).not.toContain('ghost')
+  })
+
+  it('returns null when measure and dimension come from different components', () => {
+    const split = new Map([
+      ['a.one', [{ k: 'tokens', label: 'Tokens', t: 'number', role: 'measure' as const }]],
+      ['b.two', [{ k: 'model', label: 'Model', t: 'text', role: 'dimension' as const }]],
+    ])
+    // They can never co-occur on one sample, so a Pivot here would be a
+    // fully-labelled object with empty rows — worse than null.
+    expect(pivot(RUN, split, useOf, 'tokens', 'model')).toBeNull()
+  })
+})
