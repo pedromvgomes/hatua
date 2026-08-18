@@ -1,0 +1,52 @@
+# A loop that ran four times across two models, one iteration failing. The
+# per-iteration records are what make "succeeded 3 times, failed once"
+# expressible at all.
+run_id: run_8f215
+status: failed
+workflow:
+  id: wf_morning_inbox_triage
+  version: 7
+trigger:
+  id: nightly
+  payload:
+    triggered_at: 2026-08-18T07:00:00Z
+started_at: 2026-08-18T07:00:00.000Z
+finished_at: 2026-08-18T07:00:01.470Z
+duration_ms: 1470
+steps:
+  - id: s2
+    status: succeeded
+    duration_ms: 580
+    resolved_input:
+      connection: mailbox
+      filter: "is:unread newer_than:1d"
+    output:
+      count: 24
+  - id: s4
+    status: succeeded
+    duration_ms: 660
+    iterations:
+      - index: 0
+        status: succeeded
+        steps:
+          - id: s5
+            status: succeeded
+            duration_ms: 210
+            metadata:
+              tokens: 1000
+              model: haiku
+      - index: 1
+        status: failed
+        steps:
+          - id: s5
+            status: failed
+            error:
+              message: Model call timed out
+              code: UPSTREAM_TIMEOUT
+  - id: s9
+    status: skipped
+log:
+  - at: 2026-08-18T07:00:05Z
+    step: s2
+    channel: email
+    message: 'mcp/gmail.list filter="is:unread" → 24 messages'

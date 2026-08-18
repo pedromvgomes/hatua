@@ -1,0 +1,13 @@
+# expect: SCHEMA_INVALID
+# `inputs:` was removed — a trigger's declared outputs ARE the parameter
+# contract. A file still carrying it must fail loudly rather than be ignored.
+id: wf_legacy
+name: Legacy
+version: 1
+status: draft
+inputs:
+  - key: run_reason
+    type: text
+steps:
+  - id: s1
+    use: core.end

@@ -1,0 +1,13 @@
+# The smallest thing that is a workflow: one trigger, one step, nothing optional.
+id: wf_minimal
+name: Minimal
+version: 1
+status: published
+triggers:
+  - id: manual
+    use: core.manual
+steps:
+  - id: s1
+    use: core.end
+    with:
+      status: ok

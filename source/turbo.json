@@ -1,7 +1,13 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "ui": "tui",
-  "globalDependencies": ["tsconfig.base.json", "biome.json", "types/**"],
+  "globalDependencies": [
+    "tsconfig.base.json",
+    "biome.json",
+    "types/**",
+    "schemas/**",
+    "conformance/**"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

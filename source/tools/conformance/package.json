@@ -1,0 +1,18 @@
+{
+  "name": "@hatua/conformance",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Runs the shared fixture corpus against the TypeScript implementation; sdk/go runs the same files",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hatua/schema": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "yaml": "^2.8.1"
+  }
+}

@@ -1,0 +1,9 @@
+# expect: SCHEMA_INVALID
+# Only published | draft | archived. "live" is a plausible-looking typo.
+id: wf_status
+name: Bad status
+version: 3
+status: live
+steps:
+  - id: s1
+    use: core.end

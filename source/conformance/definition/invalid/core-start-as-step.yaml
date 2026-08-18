@@ -1,0 +1,12 @@
+# expect: SCHEMA_INVALID
+# core.start no longer exists; starting a workflow is a trigger's job. This is
+# only invalid because `triggers` is absent AND version is zero — the schema
+# cannot reject `use: core.start` itself, which is why the model layer owns
+# that rule. Kept as a fixture so the boundary is documented.
+id: wf_start
+name: Old style
+version: 0
+status: draft
+steps:
+  - id: s1
+    use: core.start

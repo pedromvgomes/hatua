@@ -1,7 +1,11 @@
 # Hatua
 
-An embeddable, front-end-only workflow designer. Hatua edits and renders workflow YAML inside a
-**Host** application; it has no runtime, no storage and no server of its own.
+An embeddable workflow designer. Hatua edits and renders workflow YAML inside a **Host**
+application; it has no runtime, no storage and no server of its own.
+
+It is not, however, front-end only: Hatua also ships SDKs so a **Host**'s runner can read the same
+contract and evaluate the same **References** the builder wrote. Hatua still never executes a
+workflow — it provides libraries, not a runtime.
 
 ## Language
 
@@ -46,9 +50,11 @@ instance of one. Adding a component is adding a manifest entry; no screen-level 
 _Avoid_: block, plugin, node type, activity
 
 **Reference**:
-A `{{source.path}}` token inside a field value that reads an earlier **Step**'s output, a workflow
-variable, or a workflow input — `{{s2.messages[].subject}}`. Stored verbatim in the YAML, so a
-**Step** can be renamed without breaking one.
+A `{{source.path}}` token inside a field value that reads an earlier **Step**'s output, a
+**Trigger**'s payload, or a workflow variable — `{{s2.messages[].subject}}`,
+`{{triggers.nightly.triggered_at}}`, `{{var.digest_to}}`. Stored verbatim in the YAML, so a **Step**
+can be renamed without breaking one. There is no "workflow input": a **Trigger**'s declared outputs
+are the parameter contract.
 _Avoid_: binding, expression, interpolation, variable
 
 **Fork**:
@@ -66,6 +72,39 @@ The rule that a **Step**'s position on the flow map is computed from the tree on
 never persisted. This is what guarantees a hand-edited **Workflow Definition** and the map can never
 disagree.
 _Avoid_: auto-layout as a mere feature name — it is a constraint, not a convenience
+
+**Published Version**:
+An immutable, numbered snapshot of a **Workflow Definition**, carrying `status: published`. Exactly
+one is live at a time; earlier ones become `archived` on the next **Publish** and are retained
+because a **Workflow Execution** references the version it ran against.
+_Avoid_: revision, release, snapshot
+
+**Draft**:
+The single mutable working copy of a **Workflow Definition** — a real version file numbered
+`base + 1` and carrying `status: draft`. At most one exists per workflow: two would guarantee the
+second **Publish** fails, forcing either a merge or the loss of someone's work. Discarding one frees
+its number, because a number only becomes permanent at **Publish**.
+_Avoid_: working copy, unpublished version, WIP
+
+**Publish**:
+Promoting the **Draft** to a new **Published Version**. The moment a version number becomes
+permanent, the outgoing version is archived, and the **Host** rejects the whole operation if the
+version the draft branched from is no longer the live one. Conflict is detected here and nowhere
+else, because only publish can collide.
+_Avoid_: commit, release, deploy, save
+
+**Trigger**:
+What starts a workflow. A **Trigger** is *not* a **Step** — it lives in its own section of the
+**Workflow Definition**, and its declared outputs are the workflow's parameter contract. A workflow
+may declare several, addressed by name.
+_Avoid_: start node, entry point, event, hook
+
+**Connection**:
+A workflow-local name bound to an opaque handle for something the **Host** already connected — a
+mailbox, a model. Hatua never establishes one: it has no server, so it can hold no client secret and
+receive no redirect. Everything shown about a **Connection** comes from asking the **Host** to
+describe its handle.
+_Avoid_: credential, integration, account, connector
 
 ## Flagged ambiguities
 

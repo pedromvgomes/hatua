@@ -41,3 +41,17 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm turbo run test
+
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: source/sdk/go/go.mod
+          cache-dependency-path: source/sdk/go/go.sum
+
+      # The Go SDK runs the SAME conformance fixtures as the TypeScript suite.
+      # Generation guarantees the two share a shape; only this guarantees they
+      # share behaviour.
+      - name: Go SDK
+        working-directory: source/sdk/go
+        run: |
+          go vet ./...
+          go test ./...

@@ -1,0 +1,13 @@
+{
+  "name": "@hatua/codegen",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Generates zod and Go from the YAML JSON Schema in schemas/",
+  "scripts": {
+    "generate": "node src/index.js"
+  },
+  "dependencies": {
+    "yaml": "^2.8.1"
+  }
+}

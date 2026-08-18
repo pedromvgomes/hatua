@@ -1,0 +1,30 @@
+{
+  "name": "@hatua/sdk",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Hatua SDK for Node backends and workflow runners — the contract plus the shared expression evaluator",
+  "license": "MIT",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    }
+  },
+  "scripts": {
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@hatua/model": "workspace:*",
+    "@hatua/schema": "workspace:*",
+    "yaml": "^2.8.1"
+  }
+}

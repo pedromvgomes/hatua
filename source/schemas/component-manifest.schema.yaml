@@ -1,0 +1,164 @@
+# yaml-language-server: $schema=https://json-schema.org/draft/2020-12/schema
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: https://hatua.dev/schemas/component-manifest.json
+title: Component Manifest
+description: >-
+  The Host-supplied declaration of a step type. Hatua ships its own set and Hosts add
+  business-specific ones; the format is identical and the only difference is who wrote the file.
+
+  Adding a component is adding a manifest entry: the library card, the inspector form, the reference
+  tree, the map chips, the validation and the YAML output all follow from it, with no screen-level
+  code.
+
+  There is deliberately no connector manifest. Connections are established outside Hatua and arrive
+  from a Host interface carrying their own type, which a `conn` field matches against via
+  `conn_type`.
+
+  Accepts either a single manifest or a `components:` catalogue — one file per component suits
+  authoring and diffing, a catalogue suits serving.
+
+oneOf:
+  - $ref: "#/$defs/manifest"
+  - type: object
+    additionalProperties: false
+    required: [components]
+    properties:
+      components:
+        type: array
+        items: { $ref: "#/$defs/manifest" }
+
+$defs:
+  manifest:
+    type: object
+    additionalProperties: false
+    required: [kind, use, name, fields, outputs]
+    properties:
+      kind:
+        enum: [component, trigger]
+        description: >-
+          A trigger is declared identically to a component; its `outputs` are the payload it
+          delivers when it fires, which is the workflow's parameter contract.
+      use:
+        type: string
+        minLength: 1
+        description: The YAML verb a step or trigger writes, e.g. `email.send`.
+      name:
+        type: string
+        minLength: 1
+        description: Sentence case, e.g. "Send email".
+      group:
+        type: string
+        description: Library grouping. Free-form so Hosts can add their own sections.
+      icon:
+        type: string
+        description: Icon name from the design system's set.
+      blurb:
+        type: string
+        description: One sentence, shown on the library card.
+      once:
+        type: boolean
+        description: At most one instance per workflow.
+      fixed:
+        type: boolean
+        description: Cannot be deleted from a workflow.
+      fields:
+        type: array
+        items: { $ref: "#/$defs/field" }
+      outputs:
+        type: array
+        items: { $ref: "#/$defs/output" }
+      metadata:
+        type: array
+        description: >-
+          What this component reports about each run — tokens spent, model used, retries. Declared
+          here rather than invented by the runner so the Runs view renders any component's metadata
+          generically.
+        items: { $ref: "#/$defs/metadataDescriptor" }
+
+  field:
+    type: object
+    additionalProperties: false
+    required: [k, label, kind]
+    properties:
+      k:
+        type: string
+        minLength: 1
+        description: Key under the step's `with:` map.
+      label:
+        type: string
+        minLength: 1
+        description: Friendly name shown to the user. Always required — `k` is never shown raw.
+      kind:
+        enum: [text, mono, number, textarea, ref, enum, bool, conn, secret]
+        description: >-
+          `text`, `mono`, `number`, `textarea` and `ref` accept References; the rest hold literals
+          only. `ref` holds exactly one reference and replaces rather than appends.
+      conn_type:
+        type: string
+        description: >-
+          Only on `kind: conn`. Offers only connections whose Host-reported type matches, so a
+          "send email" step is never handed an LLM connection.
+      req: { type: boolean }
+      hint:
+        type: string
+        description: One sentence, shown under the field and replaced by the error when invalid.
+      ph: { type: string, description: Placeholder. }
+      mono: { type: boolean, description: Render an enum's options in the mono face. }
+      options:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          required: [value, label]
+          properties:
+            value: { type: string }
+            label: { type: string }
+            hint: { type: string }
+      toggleLabel: { type: string, description: "`bool` only." }
+      when:
+        type: array
+        minItems: 2
+        maxItems: 2
+        items: { type: string }
+        description: >-
+          Show this field only while another field equals a value — `[otherKey, value]`. This is how
+          one trigger component reshapes its form across schedule / API / upstream modes.
+
+  output:
+    type: object
+    additionalProperties: false
+    required: [k, label, t]
+    properties:
+      k: { type: string, minLength: 1 }
+      label:
+        type: string
+        minLength: 1
+        description: Friendly name shown in the reference tree, alongside the mono path.
+      t:
+        enum: [text, number, boolean, datetime, object, list, item]
+        description: >-
+          `item` is the for-each escape hatch: the shape is not known statically, so it is resolved
+          by following the loop's `list` reference to the source output's `of`.
+      of:
+        type: array
+        description: Shape of each list element or object member.
+        items: { $ref: "#/$defs/output" }
+
+  metadataDescriptor:
+    type: object
+    additionalProperties: false
+    required: [k, label, t, role]
+    properties:
+      k: { type: string, minLength: 1 }
+      label: { type: string, minLength: 1 }
+      t:
+        enum: [text, number, boolean, datetime]
+      role:
+        enum: [measure, dimension]
+        description: >-
+          A `measure` is summable across steps and iterations — tokens, cost, retries. A `dimension`
+          is groupable — model, region. Declaring both is what lets Hatua derive "tokens per model"
+          without any runner-supplied schema: it sums the measure, grouped by the dimension.
+      unit:
+        type: string
+        description: Rendered after the value, e.g. `tokens`, `ms`.
