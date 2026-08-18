@@ -1,8 +1,9 @@
 package expressions
 
 import (
-	"encoding/json"
+	"fmt"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -108,13 +109,93 @@ func AsText(value Value) string {
 		}
 		return "false"
 	case time.Time:
-		return v.UTC().Format(time.RFC3339Nano)
+		return DatetimeToText(v)
 	}
-	encoded, err := json.Marshal(value)
-	if err != nil {
-		return ""
+	return ToJSON(value)
+}
+
+// ToJSON is canonical JSON — what json.stringify produces.
+//
+// Hand-rolled in both languages rather than reaching for the built-in, because
+// the two built-ins disagree in ways that would reach a user: Go sorts object
+// keys and JavaScript preserves insertion order, Go escapes `<` and `&` by
+// default, and each formats numbers its own way. Sorting keys in both is the
+// only choice that can be made identical, so both sort.
+func ToJSON(value Value) string {
+	switch v := value.(type) {
+	case nil:
+		return "null"
+	case string:
+		return jsonString(v)
+	case float64:
+		return NumberToText(v)
+	case bool:
+		if v {
+			return "true"
+		}
+		return "false"
+	case time.Time:
+		return jsonString(DatetimeToText(v))
+	case []Value:
+		parts := make([]string, 0, len(v))
+		for _, item := range v {
+			parts = append(parts, ToJSON(item))
+		}
+		return "[" + strings.Join(parts, ",") + "]"
+	case map[string]Value:
+		keys := make([]string, 0, len(v))
+		for key := range v {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		parts := make([]string, 0, len(keys))
+		for _, key := range keys {
+			parts = append(parts, jsonString(key)+":"+ToJSON(v[key]))
+		}
+		return "{" + strings.Join(parts, ",") + "}"
 	}
-	return string(encoded)
+	return "null"
+}
+
+func jsonString(value string) string {
+	var out strings.Builder
+	out.WriteByte('"')
+	for _, char := range value {
+		switch char {
+		case '"':
+			out.WriteString(`\"`)
+		case '\\':
+			out.WriteString(`\\`)
+		case '\n':
+			out.WriteString(`\n`)
+		case '\r':
+			out.WriteString(`\r`)
+		case '\t':
+			out.WriteString(`\t`)
+		case '\b':
+			out.WriteString(`\b`)
+		case '\f':
+			out.WriteString(`\f`)
+		default:
+			if char < 0x20 {
+				out.WriteString(fmt.Sprintf(`\u%04x`, char))
+				continue
+			}
+			out.WriteRune(char)
+		}
+	}
+	out.WriteByte('"')
+	return out.String()
+}
+
+// DatetimeToText renders an instant as RFC 3339 in UTC, with a fractional part
+// only when there is one.
+//
+// RFC3339Nano is exactly that; the note is for the TypeScript side, where
+// Date.toISOString() always writes three decimal places and has to be trimmed
+// to match this.
+func DatetimeToText(value time.Time) string {
+	return value.UTC().Format(time.RFC3339Nano)
 }
 
 // NumberToText is the ECMAScript Number::toString algorithm, ported.

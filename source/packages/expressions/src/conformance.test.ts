@@ -4,8 +4,11 @@ import { fileURLToPath } from 'node:url'
 import { afterAll, describe, expect, it } from 'vitest'
 import { parse as parseYaml } from 'yaml'
 import { ExpressionError } from './errors.js'
+import { coreFunctions } from './functions/registry.js'
 import { parseExpression, parseTemplate } from './parse.js'
+import { type EvaluationContext, resolve, type Slot } from './resolve.js'
 import { templateToSexp, toSexp } from './sexp.js'
+import { datetimeToText, numberToText, type Value, type ValueType } from './value.js'
 
 /**
  * The TypeScript half of the shared expression corpus.
@@ -30,7 +33,20 @@ interface ParseScenario {
   offsets?: boolean
 }
 
+interface EvalScenario {
+  name: string
+  template: string
+  type?: ValueType
+  on_missing?: 'error' | 'null'
+  now?: string
+  context?: Record<string, unknown>
+  value?: unknown
+  error?: string
+}
+
 let counted = 0
+
+const FUNCTIONS = coreFunctions()
 
 function scenariosIn<T>(kind: string): { file: string; scenarios: T[] }[] {
   const dir = path.join(CORPUS, kind)
@@ -76,6 +92,79 @@ describe('conformance · parse', () => {
     })
   }
 })
+
+describe('conformance · eval', () => {
+  for (const { file, scenarios } of scenariosIn<EvalScenario>('eval')) {
+    describe(file, () => {
+      for (const scenario of scenarios) {
+        counted += 1
+        it(scenario.name, () => {
+          const slot: Slot = {
+            name: 'field',
+            template: scenario.template,
+            expectedType: scenario.type ?? 'text',
+          }
+          const context: EvaluationContext = {
+            ...(decode(scenario.context ?? {}) as EvaluationContext),
+            onMissing: scenario.on_missing ?? 'error',
+            functions: FUNCTIONS,
+            ...(scenario.now ? { now: new Date(scenario.now) } : {}),
+          }
+
+          if (scenario.error !== undefined) {
+            let thrown: unknown
+            try {
+              resolve(context, slot)
+            } catch (error) {
+              thrown = error
+            }
+            expect(thrown, 'expected this to fail').toBeInstanceOf(ExpressionError)
+            expect((thrown as ExpressionError).code).toBe(scenario.error)
+            // Every evaluation failure names the slot it happened in: the Host
+            // decides what to do about it, and cannot without being told where.
+            expect((thrown as ExpressionError).diagnostics[0]?.slot).toBe('field')
+            return
+          }
+
+          expect(canon(resolve(context, slot))).toBe(canon(decode(scenario.value ?? null) as Value))
+        })
+      }
+    })
+  }
+})
+
+/** `{ $datetime: … }` is how a scenario writes an instant that YAML cannot. */
+function decode(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(decode)
+  if (value !== null && typeof value === 'object') {
+    const marker = (value as Record<string, unknown>).$datetime
+    if (typeof marker === 'string') return new Date(marker)
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, decode(item)]),
+    )
+  }
+  return value
+}
+
+/**
+ * A canonical rendering, so an expectation compares the same way in both
+ * languages. Deliberately not the evaluator's own `equals`: a bug there would
+ * then hide itself.
+ */
+function canon(value: Value): string {
+  if (value === null) return 'null'
+  if (typeof value === 'boolean') return value ? 'true' : 'false'
+  if (typeof value === 'number') return numberToText(value)
+  if (typeof value === 'string') return JSON.stringify(value)
+  if (value instanceof Date) return `@${datetimeToText(value)}`
+  if (Array.isArray(value)) return `[${value.map(canon).join(',')}]`
+
+  const object = value as Record<string, Value>
+  const entries = Object.keys(object)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${canon(object[key] as Value)}`)
+  return `{${entries.join(',')}}`
+}
 
 function render(scenario: ParseScenario, options: { offsets: boolean }): string {
   if (scenario.template !== undefined) {

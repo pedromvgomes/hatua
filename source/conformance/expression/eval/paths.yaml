@@ -1,0 +1,146 @@
+about: >-
+  Path resolution: what is addressable, what happens when it is not there, and
+  how projection and indexing behave. `onMissing` governs resolution and nothing
+  else — an absent value and a present null are indistinguishable once resolved,
+  which is what keeps the operator truth tables single-valued.
+
+scenarios:
+  - name: a step output keeps its own type
+    template: "{{ s2.count }}"
+    type: number
+    context: { steps: { s2: { count: 24 } } }
+    value: 24
+
+  - name: a trigger payload is addressed through `triggers`
+    template: "{{ triggers.nightly.triggered_at }}"
+    type: text
+    context: { triggers: { nightly: { triggered_at: "07:00" } } }
+    value: "07:00"
+
+  - name: a workflow variable is addressed through `var`
+    template: "{{ var.digest_to }}"
+    type: text
+    context: { var: { digest_to: "me@dane.dev" } }
+    value: "me@dane.dev"
+
+  - name: TRIGGER names which trigger fired
+    template: "{{ TRIGGER }}"
+    type: text
+    context: { TRIGGER: nightly }
+    value: nightly
+
+  - name: a nested path walks objects
+    template: "{{ s2.meta.sender.name }}"
+    type: text
+    context: { steps: { s2: { meta: { sender: { name: Dane } } } } }
+    value: Dane
+
+  - name: a missing step is an error by default
+    template: "{{ s9.count }}"
+    type: number
+    context: { steps: { s2: { count: 24 } } }
+    error: EVAL_MISSING_PATH
+
+  - name: a missing key is an error by default
+    template: "{{ s2.total }}"
+    type: number
+    context: { steps: { s2: { count: 24 } } }
+    error: EVAL_MISSING_PATH
+
+  - name: "under onMissing: null the same path simply yields null"
+    template: "{{ s2.total }}"
+    type: number
+    on_missing: "null"
+    context: { steps: { s2: { count: 24 } } }
+    value: null
+
+  - name: a present null is not missing, so it never raises
+    template: "{{ s2.total }}"
+    type: number
+    context: { steps: { s2: { total: null } } }
+    value: null
+
+  - name: reading a property of null yields null again
+    template: "{{ s2.meta.sender.name }}"
+    type: text
+    context: { steps: { s2: { meta: null } } }
+    value: null
+
+  - name: projection reads a field of every element
+    template: "{{ s2.messages[].subject }}"
+    type: list
+    context:
+      steps:
+        s2:
+          messages:
+            - { subject: One }
+            - { subject: Two }
+    value: [One, Two]
+
+  - name: projection over a missing field in one element yields null there
+    template: "{{ s2.messages[].subject }}"
+    type: list
+    on_missing: "null"
+    context:
+      steps:
+        s2:
+          messages:
+            - { subject: One }
+            - { body: Two }
+    value: [One, null]
+
+  - name: numeric indexing selects one element
+    template: "{{ s2.messages[0].subject }}"
+    type: text
+    context: { steps: { s2: { messages: [{ subject: One }, { subject: Two }] } } }
+    value: One
+
+  - name: a negative index counts from the end
+    template: "{{ s2.messages[-1].subject }}"
+    type: text
+    context: { steps: { s2: { messages: [{ subject: One }, { subject: Two }] } } }
+    value: Two
+
+  - name: an index past the end is missing
+    template: "{{ s2.messages[9] }}"
+    type: object
+    context: { steps: { s2: { messages: [] } } }
+    error: EVAL_MISSING_PATH
+
+  - name: text indexing reads a key, which is how opaque payloads are walked
+    template: "{{ s2.body['order id'] }}"
+    type: text
+    context: { steps: { s2: { body: { "order id": abc } } } }
+    value: abc
+
+  - name: indexing a non-list with a number is a type error, not a miss
+    template: "{{ s2.count[0] }}"
+    type: number
+    context: { steps: { s2: { count: 24 } } }
+    error: EVAL_OPERAND_TYPE
+
+  - name: projecting something that is not a list is a type error
+    template: "{{ s2.count[] }}"
+    type: list
+    context: { steps: { s2: { count: 24 } } }
+    error: EVAL_OPERAND_TYPE
+
+  - name: >-
+      `__proto__` never resolves. A Workflow Definition is user-editable YAML,
+      so this is reachable input rather than a hypothetical.
+    template: "{{ s2.__proto__ }}"
+    type: object
+    context: { steps: { s2: { count: 24 } } }
+    error: EVAL_MISSING_PATH
+
+  - name: neither does `constructor`
+    template: "{{ s2.constructor }}"
+    type: object
+    context: { steps: { s2: { count: 24 } } }
+    error: EVAL_MISSING_PATH
+
+  - name: nor `prototype`
+    template: "{{ s2.prototype }}"
+    type: object
+    context: { steps: { s2: { count: 24 } } }
+    error: EVAL_MISSING_PATH

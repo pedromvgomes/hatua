@@ -1,0 +1,474 @@
+about: >-
+  The core library. Several of these exist because probing Go against Node
+  turned up a silent disagreement: `round(-0.5)` is -0 in JavaScript and -1 in
+  Go, `upper("ß")` is "SS" in JavaScript and unchanged in Go. Each of those is a
+  workflow that would quietly produce different output depending on which runner
+  ran it, and each has a scenario here for that reason.
+
+scenarios:
+  # ---- dt ------------------------------------------------------------------
+
+  - name: dt.now reads the caller's clock, never the system's
+    template: "{{ dt.iso(dt.now()) }}"
+    type: text
+    now: "2026-01-02T03:04:05Z"
+    value: "2026-01-02T03:04:05Z"
+
+  - name: without a clock in the context, dt.now refuses rather than inventing one
+    template: "{{ dt.iso(dt.now()) }}"
+    type: text
+    error: EVAL_BAD_ARGUMENT
+
+  - name: dt.parse accepts RFC 3339
+    template: "{{ dt.iso(dt.parse('2026-01-02T03:04:05Z')) }}"
+    type: text
+    value: "2026-01-02T03:04:05Z"
+
+  - name: it normalises an offset to UTC
+    template: "{{ dt.iso(dt.parse('2026-01-02T03:04:05+02:00')) }}"
+    type: text
+    value: "2026-01-02T01:04:05Z"
+
+  - name: it keeps a fractional part when there is one
+    template: "{{ dt.iso(dt.parse('2026-01-02T03:04:05.250Z')) }}"
+    type: text
+    value: "2026-01-02T03:04:05.25Z"
+
+  - name: >-
+      a bare date is refused. Date.parse accepts it and Go's parser does not,
+      so the stricter of the two is the contract.
+    template: "{{ dt.parse('2026-01-02') }}"
+    type: datetime
+    error: EVAL_BAD_ARGUMENT
+
+  - name: so is anything else that is not a timestamp
+    template: "{{ dt.parse('yesterday') }}"
+    type: datetime
+    error: EVAL_BAD_ARGUMENT
+
+  - name: dt.add shifts by whole units
+    template: "{{ dt.iso(dt.add(dt.parse('2026-01-02T03:04:05Z'), 2, 'hours')) }}"
+    type: text
+    value: "2026-01-02T05:04:05Z"
+
+  - name: it shifts backwards too
+    template: "{{ dt.iso(dt.add(dt.parse('2026-01-02T03:04:05Z'), -1, 'days')) }}"
+    type: text
+    value: "2026-01-01T03:04:05Z"
+
+  - name: an unknown unit is refused rather than silently ignored
+    template: "{{ dt.add(dt.parse('2026-01-02T03:04:05Z'), 1, 'fortnights') }}"
+    type: datetime
+    error: EVAL_BAD_ARGUMENT
+
+  - name: dt.diff counts whole units from the second instant to the first
+    template: "{{ dt.diff(dt.parse('2026-01-03T00:00:00Z'), dt.parse('2026-01-02T00:00:00Z'), 'hours') }}"
+    type: number
+    value: 24
+
+  - name: it truncates toward zero rather than rounding
+    template: "{{ dt.diff(dt.parse('2026-01-02T00:00:59Z'), dt.parse('2026-01-02T00:00:00Z'), 'minutes') }}"
+    type: number
+    value: 0
+
+  - name: and it goes negative in the other direction
+    template: "{{ dt.diff(dt.parse('2026-01-02T00:00:00Z'), dt.parse('2026-01-03T00:00:00Z'), 'days') }}"
+    type: number
+    value: -1
+
+  # ---- text ----------------------------------------------------------------
+
+  - name: text.upper
+    template: "{{ text.upper('hatua') }}"
+    type: text
+    value: "HATUA"
+
+  - name: >-
+      full Unicode case mapping, not the simple one. `strings.ToUpper` leaves ß
+      alone; ECMAScript expands it, and the expansion is the contract.
+    template: "{{ text.upper('straße') }}"
+    type: text
+    value: "STRASSE"
+
+  - name: a ligature expands the same way
+    template: "{{ text.upper('ﬁnd') }}"
+    type: text
+    value: "FIND"
+
+  - name: >-
+      lowering a dotted capital I yields two code points, and does so
+      language-neutrally — a locale-sensitive mapping would make one workflow
+      produce different text depending on where its runner happens to run
+    template: "{{ text.len(text.lower('İ')) }}"
+    type: number
+    value: 2
+
+  - name: text.lower
+    template: "{{ text.lower('HATUA') }}"
+    type: text
+    value: "hatua"
+
+  - name: text.trim takes whitespace off both ends
+    template: "{{ text.trim('  hi  ') }}"
+    type: text
+    value: "hi"
+
+  - name: text.concat is the concatenation primitive, since `+` is numeric only
+    template: "{{ text.concat('a', 'b', 'c') }}"
+    type: text
+    value: "abc"
+
+  - name: it takes any scalar, because text is the universal sink
+    template: "{{ text.concat('count: ', s2.count) }}"
+    type: text
+    context: { steps: { s2: { count: 24 } } }
+    value: "count: 24"
+
+  - name: text.split
+    template: "{{ list.join(text.split('a,b,c', ','), '|') }}"
+    type: text
+    value: "a|b|c"
+
+  - name: splitting on empty text yields code points, not UTF-16 units
+    template: "{{ list.len(text.split('añb', '')) }}"
+    type: number
+    value: 3
+
+  - name: text.replace replaces every occurrence
+    template: "{{ text.replace('a-b-c', '-', '+') }}"
+    type: text
+    value: "a+b+c"
+
+  - name: text.contains
+    template: "{{ text.contains('inbox triage', 'triage') }}"
+    type: boolean
+    value: true
+
+  - name: text.starts_with
+    template: "{{ text.starts_with('inbox', 'in') }}"
+    type: boolean
+    value: true
+
+  - name: text.ends_with
+    template: "{{ text.ends_with('inbox', 'box') }}"
+    type: boolean
+    value: true
+
+  - name: text.slice counts in code points
+    template: "{{ text.slice('héllo', 0, 2) }}"
+    type: text
+    value: "hé"
+
+  - name: its end is optional
+    template: "{{ text.slice('héllo', 3) }}"
+    type: text
+    value: "lo"
+
+  - name: a negative start counts from the end
+    template: "{{ text.slice('héllo', -2) }}"
+    type: text
+    value: "lo"
+
+  - name: an out-of-range slice clamps rather than failing
+    template: "{{ text.slice('hi', 5, 9) }}"
+    type: text
+    value: ""
+
+  - name: text.len counts code points, not bytes and not UTF-16 units
+    template: "{{ text.len('héllo') }}"
+    type: number
+    value: 5
+
+  - name: an emoji outside the basic plane is one character
+    template: "{{ text.len('a🎉b') }}"
+    type: number
+    value: 3
+
+  # ---- num -----------------------------------------------------------------
+
+  - name: >-
+      rounding is half away from zero. Math.round(-0.5) is -0 in JavaScript,
+      which rounds halves toward positive infinity; Go's spelling is the
+      symmetric one and it wins.
+    template: "{{ num.round(-0.5) }}"
+    type: number
+    value: -1
+
+  - name: and positive halves round away from zero too
+    template: "{{ num.round(0.5) }}"
+    type: number
+    value: 1
+
+  - name: num.round on a negative half-integer further out
+    template: "{{ num.round(-2.5) }}"
+    type: number
+    value: -3
+
+  - name: num.floor
+    template: "{{ num.floor(-1.2) }}"
+    type: number
+    value: -2
+
+  - name: num.ceil
+    template: "{{ num.ceil(-1.2) }}"
+    type: number
+    value: -1
+
+  - name: num.abs
+    template: "{{ num.abs(-3.5) }}"
+    type: number
+    value: 3.5
+
+  - name: num.min is variadic
+    template: "{{ num.min(3, 1, 2) }}"
+    type: number
+    value: 1
+
+  - name: num.max is variadic
+    template: "{{ num.max(3, 1, 2) }}"
+    type: number
+    value: 3
+
+  - name: num.parse is the only text-to-number conversion
+    template: "{{ num.parse('3.5') }}"
+    type: number
+    value: 3.5
+
+  - name: it accepts an exponent
+    template: "{{ num.parse('1e3') }}"
+    type: number
+    value: 1000
+
+  - name: it refuses text that is not a number
+    template: "{{ num.parse('24 messages') }}"
+    type: number
+    error: EVAL_BAD_ARGUMENT
+
+  - name: >-
+      and it refuses the spellings only one language's parser accepts —
+      strconv.ParseFloat takes "Inf" and a leading "+", ECMAScript does not
+    template: "{{ num.parse('Inf') }}"
+    type: number
+    error: EVAL_BAD_ARGUMENT
+
+  # ---- list ----------------------------------------------------------------
+
+  - name: list.len
+    template: "{{ list.len(s2.ids) }}"
+    type: number
+    context: { steps: { s2: { ids: [1, 2, 3] } } }
+    value: 3
+
+  - name: list.first
+    template: "{{ list.first(s2.ids) }}"
+    type: number
+    context: { steps: { s2: { ids: [1, 2, 3] } } }
+    value: 1
+
+  - name: list.first of an empty list is null, not an error
+    template: "{{ list.first(s2.ids) }}"
+    type: number
+    context: { steps: { s2: { ids: [] } } }
+    value: null
+
+  - name: list.last
+    template: "{{ list.last(s2.ids) }}"
+    type: number
+    context: { steps: { s2: { ids: [1, 2, 3] } } }
+    value: 3
+
+  - name: list.slice
+    template: "{{ list.slice(s2.ids, 1, 3) }}"
+    type: list
+    context: { steps: { s2: { ids: [1, 2, 3, 4] } } }
+    value: [2, 3]
+
+  - name: list.contains compares by the same rule as `==`
+    template: "{{ list.contains(s2.ids, 2) }}"
+    type: boolean
+    context: { steps: { s2: { ids: [1, 2, 3] } } }
+    value: true
+
+  - name: so a number is not its text here either
+    template: "{{ list.contains(s2.ids, '2') }}"
+    type: boolean
+    context: { steps: { s2: { ids: [1, 2, 3] } } }
+    value: false
+
+  - name: it reaches inside objects
+    template: "{{ list.contains(s2.people, s2.needle) }}"
+    type: boolean
+    context:
+      steps:
+        s2:
+          people: [{ name: Dane }, { name: Kai }]
+          needle: { name: Kai }
+    value: true
+
+  - name: list.join renders each element as text
+    template: "{{ list.join(s2.ids, ', ') }}"
+    type: text
+    context: { steps: { s2: { ids: [1, 2, 3] } } }
+    value: "1, 2, 3"
+
+  - name: a null element joins as empty, the same softness interpolation has
+    template: "{{ list.join(s2.ids, ',') }}"
+    type: text
+    context: { steps: { s2: { ids: [1, null, 3] } } }
+    value: "1,,3"
+
+  - name: a list of lists does not join — json.stringify is how that is said
+    template: "{{ list.join(s2.ids, ',') }}"
+    type: text
+    context: { steps: { s2: { ids: [[1], [2]] } } }
+    error: EVAL_BAD_ARGUMENT
+
+  - name: list.unique keeps the first of each, in order
+    template: "{{ list.unique(s2.ids) }}"
+    type: list
+    context: { steps: { s2: { ids: [3, 1, 3, 2, 1] } } }
+    value: [3, 1, 2]
+
+  - name: list.sort ascends
+    template: "{{ list.sort(s2.ids) }}"
+    type: list
+    context: { steps: { s2: { ids: [3, 1, 2] } } }
+    value: [1, 2, 3]
+
+  - name: it sorts text too
+    template: "{{ list.sort(s2.names) }}"
+    type: list
+    context: { steps: { s2: { names: [kai, dane] } } }
+    value: [dane, kai]
+
+  - name: an empty list sorts to an empty list
+    template: "{{ list.sort(s2.ids) }}"
+    type: list
+    context: { steps: { s2: { ids: [] } } }
+    value: []
+
+  - name: >-
+      a mixed list has no defensible ordering, so it is refused rather than
+      given an invented one
+    template: "{{ list.sort(s2.mixed) }}"
+    type: list
+    context: { steps: { s2: { mixed: [1, "a"] } } }
+    error: EVAL_BAD_ARGUMENT
+
+  - name: neither do booleans
+    template: "{{ list.sort(s2.flags) }}"
+    type: list
+    context: { steps: { s2: { flags: [true, false] } } }
+    error: EVAL_BAD_ARGUMENT
+
+  # ---- json ----------------------------------------------------------------
+
+  - name: json.parse walks an opaque payload
+    template: "{{ json.parse(s2.body).order_id }}"
+    type: text
+    context: { steps: { s2: { body: '{"order_id":"abc"}' } } }
+    value: abc
+
+  - name: its numbers are ordinary numbers
+    template: "{{ json.parse(s2.body).count + 1 }}"
+    type: number
+    context: { steps: { s2: { body: '{"count":24}' } } }
+    value: 25
+
+  - name: indexing reaches a key a path cannot spell
+    template: "{{ json.parse(s2.body)['order id'] }}"
+    type: text
+    context: { steps: { s2: { body: '{"order id":"abc"}' } } }
+    value: abc
+
+  - name: text that is not JSON is refused
+    template: "{{ json.parse(s2.body) }}"
+    type: unknown
+    context: { steps: { s2: { body: "not json" } } }
+    error: EVAL_BAD_ARGUMENT
+
+  - name: >-
+      json.stringify sorts object keys. Go sorts and JavaScript preserves
+      insertion order, so sorting in both is the only choice that can be made
+      identical.
+    template: "{{ json.stringify(s2.payload) }}"
+    type: text
+    context: { steps: { s2: { payload: { b: 2, a: 1 } } } }
+    value: '{"a":1,"b":2}'
+
+  - name: it renders numbers the same way everything else does
+    template: "{{ json.stringify(s2.payload) }}"
+    type: text
+    context: { steps: { s2: { payload: { n: 0.000001 } } } }
+    value: '{"n":0.000001}'
+
+  - name: >-
+      it does not escape HTML. Go's encoder does by default and JavaScript's
+      does not, so the un-escaped spelling is the contract.
+    template: "{{ json.stringify(s2.payload) }}"
+    type: text
+    context: { steps: { s2: { payload: { html: "<b>&</b>" } } } }
+    value: '{"html":"<b>&</b>"}'
+
+  - name: it accepts null, because `unknown` parameters do
+    template: "{{ json.stringify(s2.nothing) }}"
+    type: text
+    context: { steps: { s2: { nothing: null } } }
+    value: "null"
+
+  - name: it round-trips with json.parse
+    template: "{{ json.stringify(json.parse(s2.body)) }}"
+    type: text
+    context: { steps: { s2: { body: '{"b":2,"a":[1,true,null]}' } } }
+    value: '{"a":[1,true,null],"b":2}'
+
+  # ---- calling ------------------------------------------------------------
+
+  - name: an unknown function is refused at run time
+    template: "{{ text.shout('hi') }}"
+    type: text
+    error: EVAL_UNKNOWN_FUNCTION
+
+  - name: so is an unknown namespace
+    template: "{{ maths.sqrt(4) }}"
+    type: number
+    error: EVAL_UNKNOWN_FUNCTION
+
+  - name: too few arguments
+    template: "{{ text.replace('a', 'b') }}"
+    type: text
+    error: EVAL_ARITY_MISMATCH
+
+  - name: too many arguments
+    template: "{{ text.upper('a', 'b') }}"
+    type: text
+    error: EVAL_ARITY_MISMATCH
+
+  - name: an optional argument may be omitted
+    template: "{{ text.slice('abc', 1) }}"
+    type: text
+    value: "bc"
+
+  - name: a variadic function takes as many as it is given
+    template: "{{ num.max(1, 2, 3, 4, 5) }}"
+    type: number
+    value: 5
+
+  - name: an argument of the wrong type is refused, since nothing coerces
+    template: "{{ num.abs('3') }}"
+    type: number
+    error: EVAL_BAD_ARGUMENT
+
+  - name: >-
+      and so is null, so `text.upper(s2.name)` on an absent name fails loudly
+      instead of inventing a value
+    template: "{{ text.upper(s2.name) }}"
+    type: text
+    context: { steps: { s2: { name: null } } }
+    error: EVAL_BAD_ARGUMENT
+
+  - name: "`??` is how a caller says otherwise"
+    template: "{{ text.upper(s2.name ?? 'unknown') }}"
+    type: text
+    context: { steps: { s2: { name: null } } }
+    value: "UNKNOWN"

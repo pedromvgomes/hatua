@@ -176,9 +176,10 @@ export function functionsToGo(specs) {
     '\tReturns   ValueType',
     '}',
     '',
-    '// CoreFunctions is what every implementation is checked against at load',
-    '// time. Neither language may add, rename or re-sign a function on its own.',
-    'var CoreFunctions = []FunctionSpec{',
+    '// CoreFunctionSpecs is what every implementation is checked against at',
+    '// load time. Neither language may add, rename or re-sign a function on its',
+    '// own. The registry that pairs these with implementations is CoreFunctions().',
+    'var CoreFunctionSpecs = []FunctionSpec{',
   ]
 
   for (const spec of specs) {
