@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "paths": {
+      "@hatua/schema": ["./packages/schema/src/index.ts"],
+      "@hatua/document": ["./packages/document/src/index.ts"],
+      "@hatua/model": ["./packages/model/src/index.ts"],
+      "@hatua/layout": ["./packages/layout/src/index.ts"],
+      "@hatua/services": ["./packages/services/src/index.ts"],
+      "@hatua/react": ["./packages/react/src/index.ts"]
+    }
+  },
+  "files": [],
+  "include": []
+}

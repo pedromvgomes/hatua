@@ -155,3 +155,6 @@ vite.config.ts.timestamp-*
 /.claude/
 /CLAUDE.md
 /.mcp.json
+
+# Turbo task cache
+.turbo/
