@@ -62,13 +62,10 @@ describe('evaluate', () => {
 describe('path safety', () => {
   // A Workflow Definition is user-editable YAML, so these paths are reachable
   // input, not hypothetical.
-  it.each(['__proto__', 'constructor', 'prototype'])(
-    'refuses to resolve through %s',
-    (segment) => {
-      expect(evaluate(`{{s2.${segment}}}`, CTX)).toBeUndefined()
-      expect(evaluate(`{{${segment}.polluted}}`, CTX)).toBeUndefined()
-    },
-  )
+  it.each(['__proto__', 'constructor', 'prototype'])('refuses to resolve through %s', (segment) => {
+    expect(evaluate(`{{s2.${segment}}}`, CTX)).toBeUndefined()
+    expect(evaluate(`{{${segment}.polluted}}`, CTX)).toBeUndefined()
+  })
 
   it('reads own properties only, not inherited ones', () => {
     expect(evaluate('{{s2.toString}}', CTX)).toBeUndefined()
