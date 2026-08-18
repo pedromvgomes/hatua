@@ -49,13 +49,26 @@ A step *type* declared by a **Component Manifest** — `email.send`, `core.fork`
 instance of one. Adding a component is adding a manifest entry; no screen-level code follows.
 _Avoid_: block, plugin, node type, activity
 
+**Template**:
+The whole value of a mappable field — literal text with **Expression** holes in `{{ … }}`. What the
+evaluator is handed, always together with the type the field expects it to produce.
+_Avoid_: interpolation, string template, format string
+
+**Expression**:
+The code inside one `{{ … }}`, evaluated to a single typed value. A **Reference** is its simplest
+form; the rest of the language exists so a **Template** can choose, compare and reshape without the
+**Host** writing code.
+_Avoid_: formula, script, code, binding
+
 **Reference**:
-A `{{source.path}}` token inside a field value that reads an earlier **Step**'s output, a
-**Trigger**'s payload, or a workflow variable — `{{s2.messages[].subject}}`,
-`{{triggers.nightly.triggered_at}}`, `{{var.digest_to}}`. Stored verbatim in the YAML, so a **Step**
-can be renamed without breaking one. There is no "workflow input": a **Trigger**'s declared outputs
-are the parameter contract.
-_Avoid_: binding, expression, interpolation, variable
+An **Expression** that is exactly one path, reading an earlier **Step**'s output, a **Trigger**'s
+payload, or a workflow variable — `{{s2.messages[].subject}}`, `{{triggers.nightly.triggered_at}}`,
+`{{var.digest_to}}`. Stored verbatim in the YAML, so a **Step** can be renamed without breaking one.
+It is a *shape*, not a syntax: no marker distinguishes one, so what makes a **Reference** special is
+that it names a value and nothing more — which is exactly what lets the builder draw it as a pill
+the user can retarget. There is no "workflow input": a **Trigger**'s declared outputs are the
+parameter contract.
+_Avoid_: binding, interpolation, variable
 
 **Fork**:
 A container **Step** (`core.fork`) holding two or more **Branches**, in either `condition` mode
