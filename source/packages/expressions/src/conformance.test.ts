@@ -6,6 +6,7 @@ import { parse as parseYaml } from 'yaml'
 import { ExpressionError } from './errors.js'
 import { coreFunctions } from './functions/registry.js'
 import { parseExpression, parseTemplate } from './parse.js'
+import { sourceReference } from './reference.js'
 import { type EvaluationContext, resolve, type Slot } from './resolve.js'
 import { templateToSexp, toSexp } from './sexp.js'
 import type { ScopeEntry } from './types.js'
@@ -33,6 +34,7 @@ interface ParseScenario {
   sexp?: string
   error?: string
   offsets?: boolean
+  reference?: string | false
 }
 
 interface EvalScenario {
@@ -97,6 +99,12 @@ describe('conformance · parse', () => {
           }
 
           expect(render(scenario, options)).toBe(scenario.sexp)
+
+          if (scenario.reference !== undefined && scenario.template !== undefined) {
+            expect(sourceReference(scenario.template)).toBe(
+              scenario.reference === false ? null : scenario.reference,
+            )
+          }
         })
       }
     })

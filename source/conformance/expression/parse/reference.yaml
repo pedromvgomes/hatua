@@ -1,0 +1,83 @@
+about: >-
+  Which Templates hold a Reference. A Reference is an AST shape rather than a
+  syntax — no sigil marks one — so this is the whole of its definition, and it
+  replaces the regex `@hatua/schema` used to carry. Two definitions of one thing
+  disagree eventually, and that one matched `{{ a + b }}`.
+
+  `reference:` is the path the Template names, or `false` when it names nothing
+  and the builder must render an expression chip instead of a pill.
+
+scenarios:
+  - name: a bare step output
+    template: "{{ s2.count }}"
+    sexp: "(template (hole (. s2 count)))"
+    reference: "s2.count"
+
+  - name: a trigger payload
+    template: "{{ triggers.nightly.triggered_at }}"
+    sexp: "(template (hole (. (. triggers nightly) triggered_at)))"
+    reference: "triggers.nightly.triggered_at"
+
+  - name: a workflow variable
+    template: "{{ var.digest_to }}"
+    sexp: "(template (hole (. var digest_to)))"
+    reference: "var.digest_to"
+
+  - name: the TRIGGER built-in
+    template: "{{ TRIGGER }}"
+    sexp: "(template (hole TRIGGER))"
+    reference: "TRIGGER"
+
+  - name: projection still names one value
+    template: "{{ s2.messages[].subject }}"
+    sexp: "(template (hole (. (project (. s2 messages)) subject)))"
+    reference: "s2.messages[].subject"
+
+  - name: so does indexing with a literal
+    template: "{{ s2.messages[0].subject }}"
+    sexp: "(template (hole (. ([] (. s2 messages) 0) subject)))"
+    reference: "s2.messages[…].subject"
+
+  - name: >-
+      a computed index does not — there is no fixed target to retarget once the
+      index is itself an expression
+    template: "{{ s2.messages[s2.count].subject }}"
+    sexp: "(template (hole (. ([] (. s2 messages) (. s2 count)) subject)))"
+    reference: false
+
+  - name: arithmetic is not a Reference, though it is the same language
+    template: "{{ s2.count + 1 }}"
+    sexp: "(template (hole (+ (. s2 count) 1)))"
+    reference: false
+
+  - name: neither is a call
+    template: "{{ text.upper(s2.subject) }}"
+    sexp: "(template (hole (call (. text upper) (. s2 subject))))"
+    reference: false
+
+  - name: nor a conditional
+    template: "{{ a ? b : c }}"
+    sexp: "(template (hole (?: a b c)))"
+    reference: false
+
+  - name: a literal names nothing
+    template: "{{ 'hi' }}"
+    sexp: '(template (hole "hi"))'
+    reference: false
+
+  - name: >-
+      text around the hole makes it not a whole-field Reference — the pill
+      belongs inside the field rather than instead of it
+    template: "Hi {{ s2.name }}"
+    sexp: '(template (text "Hi ") (hole (. s2 name)))'
+    reference: false
+
+  - name: two holes are not one Reference either
+    template: "{{ a }}{{ b }}"
+    sexp: "(template (hole a) (hole b))"
+    reference: false
+
+  - name: literal text with no holes is not one
+    template: "just words"
+    sexp: '(template (text "just words"))'
+    reference: false

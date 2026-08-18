@@ -22,6 +22,7 @@ const FILES = [
   { file: 'workflow-definition.schema.yaml', out: 'definition.ts' },
   { file: 'workflow-execution.schema.yaml', out: 'execution.ts' },
   { file: 'component-manifest.schema.yaml', out: 'component.ts' },
+  { file: 'function-manifest.schema.yaml', out: 'function.ts' },
 ]
 
 fs.mkdirSync(OUT, { recursive: true })
@@ -32,6 +33,19 @@ for (const { file, out } of FILES) {
   const code = generateModule(schema, { sourceFile: file })
   fs.writeFileSync(path.join(OUT, out), code, 'utf8')
   console.log(`  ✓ ${out}  (${code.split('\n').length} lines)`)
+}
+
+// Two schemas naming the same `$def` collide in the barrel below, and the
+// resulting error names the barrel rather than either schema. Catching it here
+// says which two files disagree and about what.
+const exported = new Map()
+for (const { file, out } of FILES) {
+  const source = fs.readFileSync(path.join(OUT, out), 'utf8')
+  for (const [, name] of source.matchAll(/^export const (\w+)/gm)) {
+    const owner = exported.get(name)
+    if (owner) throw new Error(`${file} and ${owner} both export "${name}" — rename one $def`)
+    exported.set(name, file)
+  }
 }
 
 const index = [

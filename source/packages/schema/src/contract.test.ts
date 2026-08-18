@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  componentManifest,
-  REFERENCE_PATTERN,
-  referencePattern,
-  workflowDefinition,
-  workflowExecution,
-} from './index'
+import { componentManifest, functionManifest, workflowDefinition, workflowExecution } from './index'
 
 // The shape agreed in the plan: triggers as a section, connections holding only
 // an opaque ref, vars as key/value objects, no `inputs`, no core.start.
@@ -201,17 +195,48 @@ describe('componentManifest', () => {
   })
 })
 
-describe('reference helpers', () => {
-  it('REFERENCE_PATTERN is stateless across repeated tests', () => {
-    const value = 'Inbox digest · {{s2.count}} messages'
-    expect(REFERENCE_PATTERN.test(value)).toBe(true)
-    expect(REFERENCE_PATTERN.test(value)).toBe(true)
+describe('function manifest', () => {
+  it('accepts a Host namespace declaration', () => {
+    const manifest = {
+      kind: 'function',
+      namespace: 'crm',
+      summary: 'Customer lookups.',
+      functions: [
+        {
+          name: 'owner_of',
+          summary: 'Who owns an account.',
+          params: [{ name: 'account_id', type: 'text' }],
+          returns: 'text',
+        },
+      ],
+    }
+    expect(functionManifest.safeParse(manifest).success).toBe(true)
   })
 
-  it('referencePattern() hands out a fresh matcher each time', () => {
-    const value = '{{s4.item.subject}} from {{s4.item.from}}'
-    const first = [...value.matchAll(referencePattern())].map((m) => m[1])
-    expect(first).toEqual(['s4.item.subject', 's4.item.from'])
-    expect([...value.matchAll(referencePattern())].map((m) => m[1])).toEqual(first)
+  it('accepts a catalogue of namespaces', () => {
+    const catalogue = {
+      namespaces: [
+        { kind: 'function', namespace: 'crm', functions: [{ name: 'tier', returns: 'number' }] },
+      ],
+    }
+    expect(functionManifest.safeParse(catalogue).success).toBe(true)
+  })
+
+  it('refuses a namespace that is not a plain lowercase name', () => {
+    const manifest = {
+      kind: 'function',
+      namespace: 'CRM Lookups',
+      functions: [{ name: 'tier', returns: 'number' }],
+    }
+    expect(functionManifest.safeParse(manifest).success).toBe(false)
+  })
+
+  it('refuses a return type outside the value space', () => {
+    const manifest = {
+      kind: 'function',
+      namespace: 'crm',
+      functions: [{ name: 'tier', returns: 'money' }],
+    }
+    expect(functionManifest.safeParse(manifest).success).toBe(false)
   })
 })

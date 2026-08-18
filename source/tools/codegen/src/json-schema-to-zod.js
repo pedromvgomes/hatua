@@ -159,6 +159,53 @@ const pascal = (s) => {
   return c.charAt(0).toUpperCase() + c.slice(1)
 }
 
+/**
+ * Names that cannot become `export const <name>`.
+ *
+ * A `$def` called `function` emits syntactically invalid TypeScript, and the
+ * formatter that runs afterwards then reports something unrelated about the
+ * wreckage. Refusing the name here says what actually went wrong.
+ */
+const RESERVED = new Set([
+  'break',
+  'case',
+  'catch',
+  'class',
+  'const',
+  'continue',
+  'debugger',
+  'default',
+  'delete',
+  'do',
+  'else',
+  'enum',
+  'export',
+  'extends',
+  'false',
+  'finally',
+  'for',
+  'function',
+  'if',
+  'import',
+  'in',
+  'instanceof',
+  'new',
+  'null',
+  'return',
+  'super',
+  'switch',
+  'this',
+  'throw',
+  'true',
+  'try',
+  'typeof',
+  'var',
+  'void',
+  'while',
+  'with',
+  'yield',
+])
+
 /** A whole schema document -> a zod module. */
 export function generateModule(schema, { sourceFile }) {
   const out = [
@@ -170,6 +217,12 @@ export function generateModule(schema, { sourceFile }) {
   ]
 
   for (const [name, node] of Object.entries(schema.$defs ?? {})) {
+    if (RESERVED.has(name)) {
+      throw new Error(
+        `${sourceFile}: $def "${name}" is a JavaScript reserved word and cannot be emitted. ` +
+          'Rename it in the schema.',
+      )
+    }
     const doc = jsdoc(node.description).trimEnd()
     if (doc) out.push(doc)
     out.push(`export const ${name} = ${toZod(node)}`)

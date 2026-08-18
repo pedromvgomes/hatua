@@ -1,5 +1,12 @@
 # Every section exercised: multiple triggers, a null connection ref, an
-# expression var, a condition fork with a fallback branch, and a nested loop.
+# expression var, a condition fork with a fallback branch, a mapping step, and a
+# nested loop.
+#
+# The `when:` below reads `{{ s2.count > 0 }}`, not `{{s2.count}} > 0`. That is a
+# contract edit rather than a typo fix: the second is a *text* template, and a
+# branch condition is declared boolean, so the builder refuses to publish it. It
+# would otherwise reach a runner as the string "24 > 0" and be mistaken for
+# truthy.
 id: wf_morning_inbox_triage
 name: Morning inbox triage
 version: 8
@@ -47,7 +54,7 @@ steps:
       mode: condition
     branches:
       - label: Has new mail
-        when: "{{s2.count}} > 0"
+        when: "{{ s2.count > 0 }}"
         steps:
           - id: s4
             use: core.for_each
@@ -69,6 +76,24 @@ steps:
               connection: mailbox
       - label: Otherwise
         steps: []
+  - id: s8
+    use: data.map
+    name: Shape the digest
+    with:
+      # data.map is the third verb interpreted structurally: its outputs are
+      # whatever these entries name, which no manifest can declare in advance.
+      # A downstream step addresses them as `{{s8.headline}}` with the type
+      # declared here.
+      entries:
+        - key: headline
+          value: "Inbox digest · {{ s2.count }} messages"
+          type: text
+        - key: unread
+          value: "{{ s2.count }}"
+          type: number
+        - key: busy
+          value: "{{ s2.count > 20 }}"
+          type: boolean
   - id: s9
     use: core.end
     name: End workflow

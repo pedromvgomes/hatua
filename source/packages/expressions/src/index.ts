@@ -7,6 +7,7 @@ export {
   mergeRegistries,
 } from './functions/registry.js'
 export * from './parse.js'
+export * from './reference.js'
 export * from './resolve.js'
 export { templateToSexp, toSexp } from './sexp.js'
 export * from './types.js'

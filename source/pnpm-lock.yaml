@@ -79,6 +79,9 @@ importers:
       '@hatua/document':
         specifier: workspace:*
         version: link:../document
+      '@hatua/expressions':
+        specifier: workspace:*
+        version: link:../expressions
       '@hatua/schema':
         specifier: workspace:*
         version: link:../schema
@@ -143,6 +146,9 @@ importers:
 
   sdk/js:
     dependencies:
+      '@hatua/expressions':
+        specifier: workspace:*
+        version: link:../../packages/expressions
       '@hatua/model':
         specifier: workspace:*
         version: link:../../packages/model

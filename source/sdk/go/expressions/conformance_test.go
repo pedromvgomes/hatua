@@ -25,12 +25,13 @@ const corpusRoot = "../../../conformance/expression"
 var counted int
 
 type parseScenario struct {
-	Name     string  `yaml:"name"`
-	Expr     *string `yaml:"expr"`
-	Template *string `yaml:"template"`
-	Sexp     string  `yaml:"sexp"`
-	Error    string  `yaml:"error"`
-	Offsets  bool    `yaml:"offsets"`
+	Name      string  `yaml:"name"`
+	Expr      *string `yaml:"expr"`
+	Template  *string `yaml:"template"`
+	Sexp      string  `yaml:"sexp"`
+	Error     string  `yaml:"error"`
+	Offsets   bool    `yaml:"offsets"`
+	Reference *any    `yaml:"reference"`
 }
 
 type parseFile struct {
@@ -93,6 +94,16 @@ func TestConformanceParse(t *testing.T) {
 					}
 					if actual != scenario.Sexp {
 						t.Fatalf("\n  expected %s\n  got      %s", scenario.Sexp, actual)
+					}
+
+					if scenario.Reference != nil && scenario.Template != nil {
+						want := ""
+						if path, ok := (*scenario.Reference).(string); ok {
+							want = path
+						}
+						if got := SourceReference(*scenario.Template); got != want {
+							t.Fatalf("expected reference %q, got %q", want, got)
+						}
 					}
 				})
 			}
