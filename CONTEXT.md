@@ -70,6 +70,31 @@ the user can retarget. There is no "workflow input": a **Trigger**'s declared ou
 parameter contract.
 _Avoid_: binding, interpolation, variable
 
+**Function**:
+A named operation an **Expression** may call, always as `namespace.name(…)` — `dt.now()`,
+`text.upper(s1.subject)`. Hatua ships a core set and a **Host** declares its own in a function
+manifest; the format is identical and the only difference is who wrote the file. Hatua never
+implements a **Host**'s function: it reads the signature so the builder can offer and check it, and
+the **Host**'s runner supplies the code. The `(` is what distinguishes a call from a path, which is
+why a namespace needs no reserved word and a step may still be called `crm`.
+_Avoid_: helper, macro, formula, built-in
+
+**Slot**:
+A named **Template** together with the type it must produce — `{name: "to", template: "{{
+var.digest_to }}", expectedType: text}`. It names the *place* something is resolved into, which is
+what distinguishes it from the **Template** it holds. The type is always the field's, declared by
+the **Component Manifest** or — for a **Branch**'s `when` — by the language; it is never inferred
+from the expression.
+_Avoid_: binding, target, assignment, field value
+
+**Mapping**:
+A **Step** (`data.map`) whose outputs are the entries the user wrote into it rather than anything
+its **Component Manifest** declares. It is the third verb Hatua interprets structurally, alongside
+`core.fork` and `core.for_each` — and the only one read from a field's *value* rather than from its
+position in the tree. Each entry is a key, a **Template** and a declared type, so a downstream
+**Step** addresses `{{s8.headline}}` and type-checks against it like any other output.
+_Avoid_: transform, set variables, assign, formula step
+
 **Fork**:
 A container **Step** (`core.fork`) holding two or more **Branches**, in either `condition` mode
 (first match wins, last branch is the fallback) or `parallel` mode.
@@ -120,6 +145,14 @@ describe its handle.
 _Avoid_: credential, integration, account, connector
 
 ## Flagged ambiguities
+
+**"Expression" vs "Reference"** — these were one term with the other on its avoid list, which
+stopped working the moment `{{ … }}` held more than a path. Resolution: they are now distinct and
+nested. An **Expression** is the code inside one `{{ … }}`; a **Reference** is an **Expression**
+that is exactly one path and nothing more. The distinction is structural, not syntactic — no marker
+tells them apart, and `isReference()` answers by looking at the parsed shape. That is also why the
+`REFERENCE_PATTERN` regex was retired: it was a second definition of the same term, and it already
+disagreed, matching `{{ a + b }}` and calling the whole thing a path.
 
 **"Reads and writes YAML"** — the root README's phrasing hides that the two payloads flow in
 opposite directions. Resolution: a **Workflow Definition** is read and written; a **Workflow
