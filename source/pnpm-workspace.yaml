@@ -2,6 +2,19 @@ packages:
   - packages/*
   - apps/*
 
-# esbuild ships a postinstall that fetches its platform binary; Vite needs it.
+# Supply-chain hardening. Required by the bulwark gate; see semgrep rules
+# package_managers.pnpm.*.
+#
+# Wait seven days before installing a newly published version, so a compromised
+# release has time to be caught and yanked.
+minimumReleaseAge: 10080
+# Refuse transitive dependencies resolved from git/http rather than the registry.
+blockExoticSubdeps: true
+# Never accept a package whose trust evidence is weaker than an earlier release
+# of the same package — a downgrade can indicate a takeover.
+trustPolicy: no-downgrade
+
+# Native binaries fetched by postinstall: esbuild and SWC both need theirs.
 allowBuilds:
   esbuild: true
+  '@swc/core': true
