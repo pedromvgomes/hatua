@@ -1,0 +1,47 @@
+about: >-
+  Where each node claims to start. Offsets are what let a diagnostic point at
+  the failing sub-expression rather than at the whole field, and they are the
+  one construct pigeon and Peggy genuinely spell differently — `c.pos.offset`
+  against `offset()`. So they are the one thing in the grammar not shared
+  verbatim, and therefore the one thing most worth pinning here.
+
+scenarios:
+  - name: a hole starts after the braces and the whitespace
+    template: "{{ s2.count }}"
+    offsets: true
+    sexp: "(template (hole@3 (.@5 s2@3 count)))"
+
+  - name: a second hole counts from the start of the whole Template
+    template: "Hi {{ a }} and {{ b }}"
+    offsets: true
+    sexp: '(template (text "Hi ") (hole@6 a@6) (text " and ") (hole@18 b@18))'
+
+  - name: a binary node claims its left operand's offset
+    expr: "1 + 2"
+    offsets: true
+    sexp: "(+@0 1@0 2@4)"
+
+  - name: a nested binary claims the leftmost leaf
+    expr: "1 + 2 * 3"
+    offsets: true
+    sexp: "(+@0 1@0 (*@4 2@4 3@8))"
+
+  - name: a unary node claims the operator, not the operand
+    expr: "!a"
+    offsets: true
+    sexp: "(!@0 a@1)"
+
+  - name: a suffix claims the punctuation that introduced it
+    expr: "a.b"
+    offsets: true
+    sexp: "(.@1 a@0 b)"
+
+  - name: a call claims its opening parenthesis
+    expr: "dt.now()"
+    offsets: true
+    sexp: "(call@6 (.@2 dt@0 now))"
+
+  - name: a conditional claims its condition's offset
+    expr: "a ? b : c"
+    offsets: true
+    sexp: "(?:@0 a@0 b@4 c@8)"
