@@ -69,6 +69,16 @@ scenarios:
     expr: "_s2_a1"
     sexp: "_s2_a1"
 
+  - name: >-
+      a reserved word never becomes a name, so it cannot be the root of a path —
+      `true` here is the boolean, and the member read is of that
+    expr: "true.x"
+    sexp: "(. true x)"
+
+  - name: nor can it be a function namespace
+    expr: "null.parse('1')"
+    sexp: '(call (. null parse) "1")'
+
   - name: an unknown escape is refused rather than silently dropped
     expr: "'a\\qb'"
     error: EXPR_PARSE_ERROR

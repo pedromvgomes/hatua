@@ -66,6 +66,13 @@ scenarios:
     context: { steps: { s2: { meta: null } } }
     value: null
 
+  - name: >-
+      reading a member of a reserved word reads a member of that value, and
+      `null.x` is null like every other property of the absent value
+    template: "{{ null.x }}"
+    type: text
+    value: null
+
   - name: projection reads a field of every element
     template: "{{ s2.messages[].subject }}"
     type: list
