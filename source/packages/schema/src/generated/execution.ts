@@ -4,59 +4,67 @@
 import { z } from 'zod'
 
 export const stepExecution = z.strictObject({
-    /**
-     * Matches a `Step.id` in the referenced definition version.
-     */
-    id: z.string().min(1),
-    status: z.enum(['pending', 'running', 'succeeded', 'failed', 'skipped']),
-    duration_ms: z.number().min(0).optional(),
-    /**
-     * The step's inputs with every Reference replaced by the value it received.
-     */
-    resolved_input: z.unknown().optional(),
-    output: z.unknown().optional(),
-    /**
-     * Values for the keys this step's component declares under `metadata` in its manifest. The manifest supplies the label, type, unit, and whether each key is a measure or a dimension; this carries only the values, so the UI renders any component's metadata generically.
-     */
-    metadata: z.record(z.string(), z.unknown()).optional(),
-    get error() { return error.optional() },
-    /**
-     * Present only on loop steps. `core.for_each` runs its children once per item, so a flat `stepId -> status` list cannot express "this step succeeded 23 times and failed once". Each pass gets its own record with its own nested step results.
-     */
-    get iterations() { return z.array(iteration).optional() },
-  })
+  /**
+   * Matches a `Step.id` in the referenced definition version.
+   */
+  id: z.string().min(1),
+  status: z.enum(['pending', 'running', 'succeeded', 'failed', 'skipped']),
+  duration_ms: z.number().min(0).optional(),
+  /**
+   * The step's inputs with every Reference replaced by the value it received.
+   */
+  resolved_input: z.unknown().optional(),
+  output: z.unknown().optional(),
+  /**
+   * Values for the keys this step's component declares under `metadata` in its manifest. The manifest supplies the label, type, unit, and whether each key is a measure or a dimension; this carries only the values, so the UI renders any component's metadata generically.
+   */
+  metadata: z.record(z.string(), z.unknown()).optional(),
+  get error() {
+    return error.optional()
+  },
+  /**
+   * Present only on loop steps. `core.for_each` runs its children once per item, so a flat `stepId -> status` list cannot express "this step succeeded 23 times and failed once". Each pass gets its own record with its own nested step results.
+   */
+  get iterations() {
+    return z.array(iteration).optional()
+  },
+})
 export type StepExecution = z.infer<typeof stepExecution>
 
 export const iteration = z.strictObject({
-    index: z.number().int().min(0),
-    status: z.enum(['pending', 'running', 'succeeded', 'failed', 'skipped']),
-    duration_ms: z.number().min(0).optional(),
-    get steps() { return z.array(stepExecution).optional() },
-    get error() { return error.optional() },
-  })
+  index: z.number().int().min(0),
+  status: z.enum(['pending', 'running', 'succeeded', 'failed', 'skipped']),
+  duration_ms: z.number().min(0).optional(),
+  get steps() {
+    return z.array(stepExecution).optional()
+  },
+  get error() {
+    return error.optional()
+  },
+})
 export type Iteration = z.infer<typeof iteration>
 
 export const error = z.strictObject({
-    message: z.string(),
-    /**
-     * Stable machine code, so the UI can react without parsing prose.
-     */
-    code: z.string().optional(),
-  })
+  message: z.string(),
+  /**
+   * Stable machine code, so the UI can react without parsing prose.
+   */
+  code: z.string().optional(),
+})
 export type Error = z.infer<typeof error>
 
 export const logEntry = z.strictObject({
-    at: z.string(),
-    /**
-     * Optional — run-level entries have no step.
-     */
-    step: z.string().optional(),
-    /**
-     * Free-form origin label, e.g. `email`, `error`.
-     */
-    channel: z.string().optional(),
-    message: z.string(),
-  })
+  at: z.string(),
+  /**
+   * Optional — run-level entries have no step.
+   */
+  step: z.string().optional(),
+  /**
+   * Free-form origin label, e.g. `email`, `error`.
+   */
+  channel: z.string().optional(),
+  message: z.string(),
+})
 export type LogEntry = z.infer<typeof logEntry>
 
 /**
@@ -65,29 +73,35 @@ export type LogEntry = z.infer<typeof logEntry>
  * There is no run-level metadata block. Totals and pivots (`tokens per model`, `tokens per step`) are derived by Hatua from the per-step values below, using the `measure` / `dimension` roles the component manifests declare. That keeps runners from each inventing their own summary shape.
  */
 export const workflowExecution = z.strictObject({
-    run_id: z.string().min(1),
-    status: z.enum(['running', 'succeeded', 'failed']),
-    /**
-     * Resolved through `WorkflowStore.loadVersion(id, version)`.
-     */
-    workflow: z.strictObject({
-      id: z.string().min(1),
-      version: z.number().int().min(1),
-    }),
-    /**
-     * Which declared trigger fired, and what it delivered.
-     */
-    trigger: z.strictObject({
+  run_id: z.string().min(1),
+  status: z.enum(['running', 'succeeded', 'failed']),
+  /**
+   * Resolved through `WorkflowStore.loadVersion(id, version)`.
+   */
+  workflow: z.strictObject({
+    id: z.string().min(1),
+    version: z.number().int().min(1),
+  }),
+  /**
+   * Which declared trigger fired, and what it delivered.
+   */
+  trigger: z
+    .strictObject({
       /**
        * Matches a `triggers[].id` in the referenced definition.
        */
       id: z.string().min(1),
       payload: z.record(z.string(), z.unknown()).optional(),
-    }).optional(),
-    started_at: z.string(),
-    finished_at: z.string().optional(),
-    duration_ms: z.number().min(0).optional(),
-    get steps() { return z.array(stepExecution) },
-    get log() { return z.array(logEntry).optional() },
-  })
+    })
+    .optional(),
+  started_at: z.string(),
+  finished_at: z.string().optional(),
+  duration_ms: z.number().min(0).optional(),
+  get steps() {
+    return z.array(stepExecution)
+  },
+  get log() {
+    return z.array(logEntry).optional()
+  },
+})
 export type WorkflowExecution = z.infer<typeof workflowExecution>

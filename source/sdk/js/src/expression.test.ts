@@ -58,3 +58,24 @@ describe('evaluate', () => {
     expect(evaluate('plain text', CTX)).toBe('plain text')
   })
 })
+
+describe('path safety', () => {
+  // A Workflow Definition is user-editable YAML, so these paths are reachable
+  // input, not hypothetical.
+  it.each(['__proto__', 'constructor', 'prototype'])(
+    'refuses to resolve through %s',
+    (segment) => {
+      expect(evaluate(`{{s2.${segment}}}`, CTX)).toBeUndefined()
+      expect(evaluate(`{{${segment}.polluted}}`, CTX)).toBeUndefined()
+    },
+  )
+
+  it('reads own properties only, not inherited ones', () => {
+    expect(evaluate('{{s2.toString}}', CTX)).toBeUndefined()
+    expect(evaluate('{{s2.hasOwnProperty}}', CTX)).toBeUndefined()
+  })
+
+  it('still resolves ordinary paths', () => {
+    expect(evaluate('{{s2.count}}', CTX)).toBe(24)
+  })
+})

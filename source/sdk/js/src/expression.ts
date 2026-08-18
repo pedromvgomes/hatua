@@ -26,6 +26,15 @@ export interface EvaluationContext {
   TRIGGER?: string
 }
 
+/**
+ * Path segments that must never resolve. A Workflow Definition is user-editable
+ * YAML, so a reference like `{{__proto__.constructor}}` is reachable input —
+ * without this it would walk into prototype internals and leak them into a
+ * workflow value. Reading own properties only makes the evaluator's behaviour
+ * well-defined for any path a user can write.
+ */
+const FORBIDDEN_SEGMENTS = new Set(['__proto__', 'constructor', 'prototype'])
+
 /** Walk a dotted path, treating `a[].b` as "that field of each element". */
 function resolve(root: unknown, path: string): unknown {
   let current: unknown = root
@@ -36,7 +45,9 @@ function resolve(root: unknown, path: string): unknown {
     const segment = each ? rawSegment.slice(0, -2) : rawSegment
 
     if (segment) {
+      if (FORBIDDEN_SEGMENTS.has(segment)) return undefined
       if (typeof current !== 'object') return undefined
+      if (!Object.hasOwn(current, segment)) return undefined
       current = (current as Record<string, unknown>)[segment]
     }
     if (each) {

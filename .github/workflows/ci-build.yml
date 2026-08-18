@@ -46,7 +46,14 @@ jobs:
       - name: Codegen is reproducible
         run: |
           pnpm codegen
-          git diff --exit-code -- packages/schema/src/generated \
-            || { echo "::error::generated code is stale — run 'pnpm codegen' and commit"; exit 1; }
+          # `git status --porcelain`, not `git diff`: diff ignores untracked
+          # files, so a newly generated file would pass this check vacuously.
+          changed="$(git status --porcelain -- packages/schema/src/generated)"
+          if [ -n "$changed" ]; then
+            echo "::error::generated code is stale — run 'pnpm codegen' and commit"
+            echo "$changed"
+            git diff -- packages/schema/src/generated
+            exit 1
+          fi
 
       - run: pnpm turbo run typecheck build

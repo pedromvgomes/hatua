@@ -6,6 +6,7 @@
  * structs against the same schemas and is kept honest by conformance/. The
  * generator lands when the Go SDK grows past its scaffold.
  */
+import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -41,4 +42,13 @@ const index = [
 ].join('\n')
 fs.writeFileSync(path.join(OUT, 'index.ts'), index, 'utf8')
 console.log('  ✓ index.ts')
-console.log(`\nDone. ${FILES.length + 1} files written to packages/schema/src/generated/\n`)
+
+// Format the output. Generated code still gets read and reviewed, and leaving
+// it unformatted would make `biome ci` fail on files nobody is allowed to edit
+// by hand. Doing it here also makes generation idempotent: regenerating twice
+// produces identical bytes, which is what the CI drift check depends on.
+execFileSync('pnpm', ['biome', 'check', '--write', '--files-ignore-unknown=true', OUT], {
+  cwd: ROOT,
+  stdio: 'pipe',
+})
+console.log('  ✓ formatted\n')
