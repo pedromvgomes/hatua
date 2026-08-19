@@ -1,0 +1,8 @@
+# expect: SCHEMA_INVALID
+# A step with no `use` has no component, so nothing can render or run it.
+id: wf_no_use
+name: No use
+version: 1
+status: draft
+steps:
+  - id: s1

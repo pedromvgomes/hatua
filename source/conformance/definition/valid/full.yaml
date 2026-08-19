@@ -1,0 +1,76 @@
+# Every section exercised: multiple triggers, a null connection ref, an
+# expression var, a condition fork with a fallback branch, and a nested loop.
+id: wf_morning_inbox_triage
+name: Morning inbox triage
+version: 8
+status: draft
+
+connections:
+  - id: mailbox
+    ref: conn_9f21c
+  - id: brain
+    ref: conn_44b0e
+  - id: notifier
+    ref: ~
+
+triggers:
+  - id: nightly
+    use: core.schedule
+    name: Weekday mornings
+    with:
+      cron: "0 7 * * 1-5"
+      catchup: false
+  - id: on_mail
+    use: email.received
+    name: When mail arrives
+    with:
+      connection: mailbox
+
+vars:
+  - key: triage_date
+    value: "{{ TRIGGER == 'nightly' ? triggers.nightly.triggered_at : triggers.on_mail.received_at }}"
+  - key: digest_to
+    value: me@dane.dev
+
+steps:
+  - id: s2
+    use: email.fetch
+    name: Fetch emails
+    with:
+      connection: mailbox
+      filter: "is:unread newer_than:1d"
+      max: 50
+  - id: s3
+    use: core.fork
+    name: Fork on new mail
+    with:
+      mode: condition
+    branches:
+      - label: Has new mail
+        when: "{{s2.count}} > 0"
+        steps:
+          - id: s4
+            use: core.for_each
+            name: For each message
+            with:
+              list: "{{s2.messages}}"
+              concurrency: 1
+            steps:
+              - id: s5
+                use: agent.act
+                name: Triage message
+                with:
+                  connection: brain
+                  instruction: "Classify {{s4.item.subject}}."
+          - id: s6
+            use: email.send
+            name: Send digest
+            with:
+              connection: mailbox
+      - label: Otherwise
+        steps: []
+  - id: s9
+    use: core.end
+    name: End workflow
+    with:
+      status: ok

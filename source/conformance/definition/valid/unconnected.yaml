@@ -1,0 +1,17 @@
+# A workflow mid-build: connections declared but not yet established. This must
+# VALIDATE — an unresolved ref blocks publish, not editing.
+id: wf_unconnected
+name: Not wired up yet
+version: 2
+status: draft
+connections:
+  - id: mailbox
+    ref: ~
+triggers:
+  - id: manual
+    use: core.manual
+steps:
+  - id: s1
+    use: email.send
+    with:
+      connection: mailbox

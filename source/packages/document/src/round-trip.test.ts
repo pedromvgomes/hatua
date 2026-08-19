@@ -6,6 +6,8 @@ import { parseWorkflow } from './index'
 // anything the user wrote must survive being read and written back.
 const SOURCE = `name: "Morning inbox triage"
 id: wf_morning_inbox_triage
+version: 7
+status: published
 
 # The host runs this on a schedule; we only ever edit it.
 steps:

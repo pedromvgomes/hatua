@@ -40,4 +40,20 @@ jobs:
       # into services, and so on) — see biome.json overrides.
       - run: pnpm biome ci .
 
+      # The zod in packages/schema is generated from schemas/*.schema.yaml.
+      # Regenerate and fail on any diff, so a stale committed artefact — which
+      # would silently disagree with the Go SDK — cannot merge.
+      - name: Codegen is reproducible
+        run: |
+          pnpm codegen
+          # `git status --porcelain`, not `git diff`: diff ignores untracked
+          # files, so a newly generated file would pass this check vacuously.
+          changed="$(git status --porcelain -- packages/schema/src/generated)"
+          if [ -n "$changed" ]; then
+            echo "::error::generated code is stale — run 'pnpm codegen' and commit"
+            echo "$changed"
+            git diff -- packages/schema/src/generated
+            exit 1
+          fi
+
       - run: pnpm turbo run typecheck build

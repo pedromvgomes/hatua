@@ -1,0 +1,71 @@
+# A Host serving many manifests at one URL. Both this and a bare single manifest
+# must parse, since one file per component suits authoring and a catalogue suits
+# serving.
+components:
+  - kind: component
+    use: email.send
+    name: Send email
+    group: Email
+    icon: mail
+    blurb: Send a message through a connected mailbox.
+    fields:
+      - k: connection
+        label: Mailbox
+        kind: conn
+        conn_type: email
+        req: true
+      - k: to
+        label: To
+        kind: text
+        req: true
+        hint: Who receives it.
+    outputs:
+      - k: message_id
+        label: Message ID
+        t: text
+  - kind: trigger
+    use: email.received
+    name: When mail arrives
+    group: Email
+    icon: inbox
+    blurb: Starts the workflow when a message arrives.
+    fields:
+      - k: connection
+        label: Mailbox
+        kind: conn
+        conn_type: email
+        req: true
+    outputs:
+      - k: message
+        label: Message
+        t: object
+        of:
+          - k: subject
+            label: Subject
+            t: text
+  - kind: component
+    use: agent.act
+    name: Run agent
+    group: Intelligence
+    icon: zap
+    blurb: Ask a model to act on the workflow's data.
+    fields:
+      - k: connection
+        label: Model
+        kind: conn
+        conn_type: llm
+        req: true
+    outputs:
+      - k: result
+        label: Result
+        t: text
+    metadata:
+      - k: tokens
+        label: Tokens used
+        t: number
+        role: measure
+        unit: tokens
+      - k: model
+        label: Model
+        t: text
+        role: dimension

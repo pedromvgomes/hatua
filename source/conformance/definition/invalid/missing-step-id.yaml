@@ -1,0 +1,8 @@
+# expect: SCHEMA_INVALID
+# References point at step ids, so a step without one is unaddressable.
+id: wf_bad
+name: Bad
+version: 1
+status: draft
+steps:
+  - use: core.end
