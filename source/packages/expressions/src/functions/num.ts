@@ -3,7 +3,7 @@
  * has an integer path to disagree about.
  */
 import type { FunctionImpl } from '../resolve.js'
-import type { Value } from '../value.js'
+import { roundHalfAwayFromZero, type Value } from '../value.js'
 import { badArgument } from './registry.js'
 
 /** What `num.parse` accepts. Deliberately the same shape the grammar accepts. */
@@ -22,10 +22,7 @@ export const numFunctions: Record<string, FunctionImpl> = {
    * `0.49999999999999994 + 0.5` is exactly `1` in IEEE-754, so it rounds a
    * number *below* a half up.
    */
-  'num.round': (args: readonly Value[]): Value => {
-    const value = args[0] as number
-    return value < 0 ? -Math.round(-value) : Math.round(value)
-  },
+  'num.round': (args: readonly Value[]): Value => roundHalfAwayFromZero(args[0] as number),
 
   'num.floor': (args: readonly Value[]): Value => Math.floor(args[0] as number),
   'num.ceil': (args: readonly Value[]): Value => Math.ceil(args[0] as number),

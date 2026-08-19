@@ -186,6 +186,21 @@ export function compareText(left: string, right: string): number {
   return left.length - a - (right.length - b)
 }
 
+/**
+ * Half away from zero, which is Go's `math.Round`.
+ *
+ * `Math.round` rounds halves toward *positive infinity*, so it disagrees on
+ * every negative half. Reflecting the negative case and letting `Math.round` do
+ * the work is the whole fix; reimplementing rounding is how
+ * `sign * floor(abs + 0.5)` got written, which is wrong just below a half.
+ *
+ * Anything that rounds must come through here. `num.round` and `dt.add` both
+ * did their own thing, and only one of them was right.
+ */
+export function roundHalfAwayFromZero(value: number): number {
+  return value < 0 ? -Math.round(-value) : Math.round(value)
+}
+
 /** ECMAScript `Number::toString`. Named so the Go port has something to point at. */
 export function numberToText(value: number): string {
   return String(value)

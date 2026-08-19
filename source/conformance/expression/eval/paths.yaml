@@ -29,6 +29,15 @@ scenarios:
     context: { TRIGGER: nightly }
     value: nightly
 
+  - name: >-
+      an empty TRIGGER is absent rather than present-and-empty. Go cannot tell
+      an unset string from an empty one, and a trigger id is required to be
+      non-empty anyway.
+    template: "{{ TRIGGER }}"
+    type: text
+    context: { TRIGGER: "" }
+    error: EVAL_MISSING_PATH
+
   - name: a nested path walks objects
     template: "{{ s2.meta.sender.name }}"
     type: text

@@ -55,6 +55,16 @@ scenarios:
     scope: *inbox
     expect: []
 
+  - name: >-
+      and omitting a required one reports the accepted range rather than the
+      parameter count — "takes 3" sends the reader to add two arguments to a
+      call that wants one
+    template: "{{ text.slice(s2.subject) }}"
+    type: text
+    scope: *inbox
+    expect:
+      - { code: EXPR_ARITY_MISMATCH, severity: error }
+
   - name: a variadic function takes as many as it is given
     template: "{{ num.max(1, 2, 3) }}"
     type: number

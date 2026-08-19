@@ -271,7 +271,11 @@ function step(target: Raw, apply: (value: Value) => Raw): Raw {
 }
 
 function root(name: string, context: EvaluationContext): Raw {
-  if (name === 'TRIGGER') return context.TRIGGER ?? MISSING
+  // An empty id is absent, not present-and-empty. The schema requires a
+  // trigger id to be non-empty, so the only way to see one is a hand-edited
+  // context — and Go, which cannot tell an unset string from an empty one,
+  // would call it missing.
+  if (name === 'TRIGGER') return context.TRIGGER ? context.TRIGGER : MISSING
   if (name === 'triggers') return (context.triggers ?? {}) as Value
   if (name === 'var') return (context.var ?? {}) as Value
   const steps = context.steps ?? {}

@@ -51,15 +51,17 @@ func offsetTable(source string) []int {
 	table := make([]int, len(source)+1)
 	units := 0
 	for byteIndex, r := range source {
-		table[byteIndex] = units
+		start := units
+		table[byteIndex] = start
+		// Fill the continuation bytes so an offset landing mid-rune — which the
+		// grammar never produces, but a future rule might — still resolves, and
+		// resolves to the rune it is *inside* rather than to the one after it.
+		for fill := byteIndex + 1; fill < len(source) && source[fill]&0xC0 == 0x80; fill++ {
+			table[fill] = start
+		}
 		// Everything above the basic multilingual plane is a surrogate pair,
 		// which JavaScript counts as two.
 		units += utf16.RuneLen(r)
-		// Fill the continuation bytes so an offset landing mid-rune — which the
-		// grammar never produces, but a future rule might — still resolves.
-		for fill := byteIndex + 1; fill < len(source) && source[fill]&0xC0 == 0x80; fill++ {
-			table[fill] = units
-		}
 	}
 	table[len(source)] = units
 	return table

@@ -82,13 +82,28 @@ function scalar(node) {
   let out
   switch (base) {
     case 'string':
-      out = 'z.string()'
-      if (node.minLength) out += `.min(${node.minLength})`
-      if (node.pattern) out += `.regex(/${node.pattern}/)`
       // The execution schema promises date-time on started_at and friends; a
       // runner handing the Runs view an unparseable timestamp would otherwise
       // pass validation.
-      if (node.format === 'date-time') out = `z.iso.datetime({ offset: true })`
+      //
+      // It used to be assigned over whatever minLength/pattern had built,
+      // dropping those constraints without a word. Refusing the combination is
+      // the honest version: nothing in schemas/ writes it, and emitting an
+      // intersection nobody has exercised is exactly the plausible-but-wrong
+      // output this generator is meant not to produce.
+      if (node.format === 'date-time') {
+        if (node.minLength || node.pattern) {
+          throw new Error(
+            'Unhandled `format: date-time` combined with minLength/pattern. ' +
+              'Add support in json-schema-to-zod.js rather than dropping either.',
+          )
+        }
+        out = 'z.iso.datetime({ offset: true })'
+        break
+      }
+      out = 'z.string()'
+      if (node.minLength) out += `.min(${node.minLength})`
+      if (node.pattern) out += `.regex(/${node.pattern}/)`
       break
     case 'integer':
       out = 'z.number().int()'

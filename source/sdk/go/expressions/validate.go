@@ -323,7 +323,9 @@ func walkCall(node *Call, ctx CheckContext, found *[]Diagnostic) walkResult {
 	}
 
 	if len(args) < required || (!variadic && len(args) > len(spec.Params)) {
-		expected := fmt.Sprint(len(spec.Params))
+		// The accepted *range*, not the parameter count: `text.slice('abc')`
+		// takes 2 to 3, and saying "takes 3" sends the reader to add two.
+		expected := arityText(required, len(spec.Params))
 		if variadic {
 			expected = fmt.Sprintf("at least %d", required)
 		}

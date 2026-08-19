@@ -299,7 +299,9 @@ function walkCall(
     found.push(
       diagnostic('EXPR_ARITY_MISMATCH', node.at, {
         name: spec.qualified,
-        expected: variadic ? `at least ${required}` : String(spec.params.length),
+        // The accepted *range*, not the parameter count: `text.slice('abc')`
+        // takes 2 to 3, and saying "takes 3" sends the reader to add two.
+        expected: variadic ? `at least ${required}` : arityText(required, spec.params.length),
         actual: String(args.length),
       }),
     )
@@ -399,6 +401,9 @@ function walkTernary(
   const whenFalse = inferType(node.whenFalse, context, found)
   return known(whenTrue === whenFalse ? whenTrue : 'unknown')
 }
+
+const arityText = (required: number, most: number): string =>
+  required === most ? String(required) : `${required} to ${most}`
 
 const known = (type: ValueType): Walk => ({
   kind: 'value',

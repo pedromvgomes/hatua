@@ -42,6 +42,24 @@ scenarios:
     value: "2026-01-02T03:04:05Z"
 
   - name: >-
+      an offset that carries the instant into the previous day is still a valid
+      timestamp. Checking the written day against the *parsed* UTC day looked
+      equivalent and refused every one of these.
+    template: "{{ dt.iso(dt.parse('2026-01-01T02:00:00+05:00')) }}"
+    type: text
+    value: "2025-12-31T21:00:00Z"
+
+  - name: and one that carries it into the next day
+    template: "{{ dt.iso(dt.parse('2026-01-01T22:00:00-05:00')) }}"
+    type: text
+    value: "2026-01-02T03:00:00Z"
+
+  - name: the last day of a month, which is the boundary the day check sits on
+    template: "{{ dt.iso(dt.parse('2026-01-31T23:00:00+02:00')) }}"
+    type: text
+    value: "2026-01-31T21:00:00Z"
+
+  - name: >-
       an impossible day is refused rather than rolled forward. Date.parse turns
       the 30th of February into the 2nd of March — a date the user never wrote —
       while Go says "day out of range".
@@ -51,6 +69,21 @@ scenarios:
 
   - name: the 29th of February in a non-leap year is refused for the same reason
     template: "{{ dt.parse('2026-02-29T00:00:00Z') }}"
+    type: datetime
+    error: EVAL_BAD_ARGUMENT
+
+  - name: a century year that is not a leap year
+    template: "{{ dt.parse('2100-02-29T00:00:00Z') }}"
+    type: datetime
+    error: EVAL_BAD_ARGUMENT
+
+  - name: but a four-hundred year is
+    template: "{{ dt.iso(dt.parse('2000-02-29T00:00:00Z')) }}"
+    type: text
+    value: "2000-02-29T00:00:00Z"
+
+  - name: a thirty-first of a thirty-day month
+    template: "{{ dt.parse('2026-04-31T00:00:00Z') }}"
     type: datetime
     error: EVAL_BAD_ARGUMENT
 
@@ -93,6 +126,18 @@ scenarios:
     template: "{{ dt.add(dt.parse('2020-01-01T00:00:00Z'), 1e15, 'days') }}"
     type: datetime
     error: EVAL_BAD_ARGUMENT
+
+  - name: >-
+      dt.add rounds half away from zero, like everything else that rounds.
+      Math.round sends every negative half the other way.
+    template: "{{ dt.iso(dt.add(dt.parse('2026-01-01T00:00:10Z'), -0.0015, 'seconds')) }}"
+    type: text
+    value: "2026-01-01T00:00:09.998Z"
+
+  - name: and a negative half exactly
+    template: "{{ dt.iso(dt.add(dt.parse('2026-01-01T00:00:10Z'), -0.0005, 'seconds')) }}"
+    type: text
+    value: "2026-01-01T00:00:09.999Z"
 
   - name: an unknown unit is refused rather than silently ignored
     template: "{{ dt.add(dt.parse('2026-01-02T03:04:05Z'), 1, 'fortnights') }}"
