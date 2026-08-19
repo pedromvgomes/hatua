@@ -1,0 +1,31 @@
+{
+  "name": "@hatua/services",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Editing commands, undo/redo, validation orchestration and Host ports",
+  "license": "MIT",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    }
+  },
+  "scripts": {
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@hatua/schema": "workspace:*",
+    "@hatua/document": "workspace:*",
+    "@hatua/model": "workspace:*",
+    "@hatua/layout": "workspace:*"
+  }
+}

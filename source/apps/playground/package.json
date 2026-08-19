@@ -1,0 +1,22 @@
+{
+  "name": "@hatua/playground",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Development harness for the Hatua designer — not published",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hatua/react": "workspace:*",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.1",
+    "@vitejs/plugin-react-swc": "^4.3.3"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "name": "@hatua/document",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Owns the YAML document: parse, surgical edit, serialise, source positions",
+  "license": "MIT",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    }
+  },
+  "scripts": {
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@hatua/schema": "workspace:*",
+    "yaml": "^2.8.1"
+  }
+}

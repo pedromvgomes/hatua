@@ -1,0 +1,72 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.7/schema.json",
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true, "root": ".." },
+  "files": { "includes": ["**", "!**/dist", "!**/.turbo", "!**/coverage"] },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "correctness": {
+        "noUnusedImports": "error",
+        "noUnusedVariables": "error"
+      }
+    }
+  },
+  "javascript": {
+    "formatter": { "quoteStyle": "single", "semicolons": "asNeeded" }
+  },
+  "overrides": [
+    {
+      "includes": ["packages/react/src/primitives/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "@hatua/**",
+                      "**/compounds/**",
+                      "**/blocks/**",
+                      "**/layouts/**",
+                      "**/views/**"
+                    ],
+                    "message": "primitives carry no domain knowledge: no @hatua/* packages and no higher tiers."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/react/src/compounds/**", "packages/react/src/blocks/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["@hatua/services", "**/layouts/**", "**/views/**"],
+                    "message": "compounds and blocks are presentational: props in, events out. Only layouts and views may reach @hatua/services."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

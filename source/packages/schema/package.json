@@ -1,0 +1,28 @@
+{
+  "name": "@hatua/schema",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Workflow Definition and Workflow Execution contract types and validation",
+  "license": "MIT",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    }
+  },
+  "scripts": {
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "zod": "^4.1.12"
+  }
+}
