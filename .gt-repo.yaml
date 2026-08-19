@@ -10,7 +10,7 @@
 # never touches them again. Branch protection needs exactly one check, ci-gate,
 # which waits on all of them.
 
-gt_version: 1.0.0
+gt_version: 1.1.0
 dependabot:
   # github-actions becomes valid as soon as 'gt repo sync' writes the workflows
   # below. Add the npm ecosystem when package.json lands — Dependabot errors on
@@ -22,6 +22,10 @@ dependabot_auto_merge:
   schedule: 0 1 * * *
   max_bump: minor
   delete_branch: true
+  # No bot App on this account, so the workflow authenticates as the default
+  # token. gt 1.1.0 made this explicit rather than defaulted; leaving it out
+  # renders the same file.
+  github_app: false
 bulwark:
   enabled: true
 pipeline:
