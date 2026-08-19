@@ -46,4 +46,11 @@
     min-block-size: 0;
     overflow: hidden;
   }
+
+  /* The panel is a tab stop (see TabbedPanel.tsx), so it must show where focus
+     landed. Inset, because the panel is flush against the strip above it. */
+  .body:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: -2px;
+  }
 }

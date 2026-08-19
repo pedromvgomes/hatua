@@ -70,14 +70,25 @@ export function Toast({ open, tone = 'info', autoDismissAfter, onDismiss, childr
     setFocused(false)
   }, [open])
 
-  // Finding a toast untimed clears the pause flags, because the handlers that
-  // would clear them are attached only while it IS timed. A toast that loses
-  // its timer under the pointer — a store swapping autoDismissAfter to
-  // undefined — otherwise never sees the pointer leave, and `hovered` latches
-  // at true: restoring the timer without cycling `open` would leave a frozen
-  // bar on a toast that never dismisses.
+  /*
+   * Losing the timer ends the countdown; getting one back starts a fresh one.
+   *
+   * The pause flags have to be cleared because the handlers that would clear
+   * them are attached only while the toast IS timed: a toast that loses its
+   * timer under the pointer otherwise never sees the pointer leave, and
+   * `hovered` latches at true.
+   *
+   * The elapsed time has to go with them, and that is the half easy to miss.
+   * The progress bar unmounts with the timer and a new one mounts at 100%, so
+   * keeping the spent time would leave the bar promising a full wait while the
+   * timer fired after what little remained — and Toast.module.css says in as
+   * many words that the two cannot tell the user different things. Clearing
+   * `asked` alongside is what lets the new countdown arm at all.
+   */
   useEffect(() => {
     if (timed) return
+    elapsedRef.current = 0
+    askedRef.current = false
     setHovered(false)
     setFocused(false)
   }, [timed])

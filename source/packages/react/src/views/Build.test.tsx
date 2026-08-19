@@ -15,7 +15,7 @@ type Equals<A, B> =
 describe('Build', () => {
   it('arranges the toolbar, the tabs and the step editor', () => {
     render(<Build />)
-    expect(screen.getByRole('banner')).toBeDefined()
+    expect(screen.getByRole('region', { name: 'Toolbar' })).toBeDefined()
     expect(screen.getByRole('tablist')).toBeDefined()
     expect(screen.getByRole('complementary', { name: 'Inspector' })).toBeDefined()
   })
@@ -35,6 +35,12 @@ describe('Build', () => {
     render(<Build />)
     expect(screen.queryByRole('region', { name: 'Library' })).toBeNull()
     expect(screen.queryByRole('region', { name: 'Data' })).toBeNull()
+  })
+
+  it('claims neither the page banner nor its <h1>, wherever a Host puts it', () => {
+    render(<Build />)
+    expect(screen.queryByRole('banner')).toBeNull()
+    expect(screen.queryByRole('heading', { level: 1 })).toBeNull()
   })
 
   it('renders without a provider above it, like any other part', () => {

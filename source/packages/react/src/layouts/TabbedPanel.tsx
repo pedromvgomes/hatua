@@ -40,7 +40,13 @@ export function TabbedPanel({ tabs, defaultTabId, className, ...rest }: TabbedPa
   const move = (delta: number) => {
     const from = tabs.findIndex((tab) => tab.id === active?.id)
     const next = tabs[(from + delta + tabs.length) % tabs.length]
-    if (next) setSelectedId(next.id)
+    if (!next) return
+    setSelectedId(next.id)
+    // Focus follows selection, or the roving tabindex desynchronises: the old
+    // button keeps DOM focus while being re-rendered with tabIndex={-1}, so the
+    // next Enter fires ITS onClick and the selection snaps back. A screen
+    // reader also announces nothing, because nothing moved.
+    document.getElementById(`${base}-tab-${next.id}`)?.focus()
   }
 
   return (
@@ -69,7 +75,10 @@ export function TabbedPanel({ tabs, defaultTabId, className, ...rest }: TabbedPa
                 type="button"
                 role="tab"
                 id={`${base}-tab-${tab.id}`}
-                aria-controls={`${base}-panel-${tab.id}`}
+                // Only the open tab's panel is rendered, so only the open tab
+                // may claim one. Pointing every tab at an id that does not
+                // exist gives a screen reader a panel it cannot navigate to.
+                aria-controls={selected ? `${base}-panel-${tab.id}` : undefined}
                 aria-selected={selected}
                 // Roving tabindex: Tab reaches the tablist once and lands on the
                 // open tab, then the arrow keys move within it.
@@ -87,6 +96,11 @@ export function TabbedPanel({ tabs, defaultTabId, className, ...rest }: TabbedPa
             role="tabpanel"
             id={`${base}-panel-${active.id}`}
             aria-labelledby={`${base}-tab-${active.id}`}
+            // The regions scroll and, until their own PRs fill them, hold
+            // nothing focusable — so without a tab stop here a keyboard-only
+            // user tabs off the strip and past a panel they can never scroll.
+            // biome-ignore lint/a11y/noNoninteractiveTabindex: a tabpanel whose content has no focusable descendant is the documented exception (APG), not an oversight.
+            tabIndex={0}
             className={styles.body}
           >
             {active.content}

@@ -92,14 +92,25 @@ export function ConfirmDialog({
     if (!open) return
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        // Consumed, not merely observed. A Host with its own document-level
-        // Escape — closing a side panel, leaving a full-screen editor — would
-        // otherwise act on the same keystroke, so dismissing the dialog would
-        // also tear down the UI behind it. aria-modal="true" tells assistive
-        // technology that UI is unreachable; letting its shortcuts fire anyway
-        // is the same claim broken for everyone else.
+        /*
+         * Consumed, not merely observed. A Host with its own Escape — closing a
+         * side panel, leaving a full-screen editor — would otherwise act on the
+         * same keystroke, so dismissing the dialog would also tear down the UI
+         * behind it. aria-modal="true" tells assistive technology that UI is
+         * unreachable; letting its shortcuts fire anyway breaks the same claim
+         * for everyone else.
+         *
+         * stopImmediatePropagation, not stopPropagation: the plain form leaves
+         * other listeners on the SAME node running, and `window` is where a
+         * Host's global shortcut handler most often sits.
+         *
+         * What this cannot beat, honestly: a Host that registers its own
+         * capture-phase listener on `window` before Hatua mounts is earlier in
+         * the dispatch and still fires. There is no position that wins from
+         * inside a library, so this takes the earliest one available.
+         */
         event.preventDefault()
-        event.stopPropagation()
+        event.stopImmediatePropagation()
         onCancel()
         return
       }
@@ -125,12 +136,11 @@ export function ConfirmDialog({
         first.focus()
       }
     }
-    // Capture, so stopPropagation above actually stops something: a listener
-    // the Host registered on document or window is reached later in the
-    // dispatch and is skipped once the stop flag is set. In the bubble phase
-    // there is nothing left to stop.
-    document.addEventListener('keydown', onKeyDown, true)
-    return () => document.removeEventListener('keydown', onKeyDown, true)
+    // window and capture: the first point in the dispatch a listener can hold,
+    // so everything the two calls above can stop is still ahead of it. On
+    // document, or in the bubble phase, a Host's own handler has already run.
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [open, onCancel])
 
   if (!open || !container) return null

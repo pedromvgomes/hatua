@@ -15,7 +15,7 @@ describe('Hatua', () => {
     const root = container.querySelector('.hatua-root')
     expect(root).not.toBeNull()
     expect(screen.getByRole('tablist').closest('.hatua-root')).toBe(root)
-    expect(screen.getByRole('banner')).toBeDefined()
+    expect(screen.getByRole('region', { name: 'Toolbar' })).toBeDefined()
   })
 
   it('takes no children, so there is no third way to embed', () => {

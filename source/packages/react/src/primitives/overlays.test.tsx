@@ -299,6 +299,42 @@ describe('Toast auto-dismiss', () => {
   })
 
   /*
+   * The bar unmounts with the timer and a new one mounts at 100%, so the spent
+   * time has to go with it. Keeping it would leave the bar promising a full
+   * wait while the timer fired after whatever little remained — and the
+   * stylesheet says in as many words that the two cannot tell the user
+   * different things.
+   */
+  it('restarts the wait when the timer is taken away and given back', async () => {
+    const onDismiss = vi.fn()
+    const timed = (
+      <HatuaProvider>
+        <Toast open autoDismissAfter={4} onDismiss={onDismiss}>
+          Draft published
+        </Toast>
+      </HatuaProvider>
+    )
+    const { rerender } = render(timed)
+
+    // Three of the four seconds go by, then the timer is cleared and restored.
+    await advance(3000)
+    rerender(
+      <HatuaProvider>
+        <Toast open onDismiss={onDismiss}>
+          Draft published
+        </Toast>
+      </HatuaProvider>,
+    )
+    rerender(timed)
+
+    // The bar is showing a fresh 4s, so the timer owes a fresh 4s.
+    await advance(3900)
+    expect(onDismiss).not.toHaveBeenCalled()
+    await advance(200)
+    expect(onDismiss).toHaveBeenCalledTimes(1)
+  })
+
+  /*
    * The toast is controlled, so a caller may leave it open after onDismiss —
    * and an inline closure gives the effect a new identity on every render. With
    * the wait already spent the remaining time collapses to zero, so without
@@ -435,6 +471,31 @@ describe('ConfirmDialog', () => {
     expect(onCancel).toHaveBeenCalledTimes(1)
     expect(hostEscape).not.toHaveBeenCalled()
     document.removeEventListener('keydown', hostEscape)
+  })
+
+  /*
+   * The harder half of the same rule. `window` in the capture phase is where a
+   * Host's global shortcut handler most often sits, and it is the same node the
+   * dialog listens on — so plain stopPropagation, which spares other listeners
+   * on the node it fires from, would leave this one running.
+   */
+  it('stops a Host shortcut sharing its own listening position', async () => {
+    const onCancel = vi.fn()
+    render(
+      <HatuaProvider>
+        <ConfirmDialog {...props} onCancel={onCancel} />
+      </HatuaProvider>,
+    )
+    await screen.findByRole('dialog')
+
+    // Registered after the dialog, on the same node and in the same phase.
+    const hostShortcut = vi.fn()
+    window.addEventListener('keydown', hostShortcut, true)
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    window.removeEventListener('keydown', hostShortcut, true)
+
+    expect(onCancel).toHaveBeenCalledTimes(1)
+    expect(hostShortcut).not.toHaveBeenCalled()
   })
 
   /*

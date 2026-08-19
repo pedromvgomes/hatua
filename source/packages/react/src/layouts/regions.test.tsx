@@ -18,7 +18,7 @@ import { TopBar } from './TopBar'
  * broken embedding.
  */
 const REGIONS = [
-  { name: 'TopBar', element: <TopBar />, role: 'banner', label: undefined, href: 'hatua-topbar' },
+  { name: 'TopBar', element: <TopBar />, role: 'region', label: 'Toolbar', href: 'hatua-topbar' },
   {
     name: 'Library',
     element: <Library />,
@@ -53,6 +53,16 @@ describe.each(REGIONS)('$name', ({ element, role, label, href }) => {
   it('names itself, so a Host composing regions gets a landmark it can label', () => {
     render(element)
     expect(screen.getByRole(role, label ? { name: label } : {})).toBeDefined()
+  })
+
+  it('claims no page-level landmark, because Hatua is the guest', () => {
+    // A <header> with no sectioning ancestor IS the page banner, and an
+    // embedded designer has no business owning one — the Host has its own.
+    // Same for <h1>: the workflow's name must not outrank the application.
+    render(element)
+    expect(screen.queryByRole('banner')).toBeNull()
+    expect(screen.queryByRole('main')).toBeNull()
+    expect(screen.queryByRole('heading', { level: 1 })).toBeNull()
   })
 
   it('carries its own stylesheet, so mounting it alone still paints it', () => {
@@ -104,6 +114,44 @@ describe('TabbedPanel', () => {
     fireEvent.keyDown(tablist, { key: 'ArrowLeft' })
     fireEvent.keyDown(tablist, { key: 'ArrowLeft' })
     expect(screen.getByRole('tab', { selected: true }).textContent).toBe('Data')
+  })
+
+  /*
+   * Selection without focus desynchronises the roving tabindex: the old button
+   * keeps DOM focus while being re-rendered with tabIndex={-1}, so the next
+   * Enter fires ITS onClick and the selection snaps straight back. A screen
+   * reader announces nothing either, because nothing moved.
+   */
+  it('takes focus with it, so Enter acts on the tab the arrow opened', () => {
+    render(<TabbedPanel tabs={TABS} />)
+    fireEvent.keyDown(screen.getByRole('tablist'), { key: 'ArrowRight' })
+
+    const opened = screen.getByRole('tab', { name: 'Flow' })
+    expect(document.activeElement).toBe(opened)
+
+    // The reflex that used to undo the move.
+    fireEvent.click(document.activeElement as HTMLElement)
+    expect(screen.getByRole('tab', { selected: true }).textContent).toBe('Flow')
+  })
+
+  it('points aria-controls only at a panel that exists', () => {
+    // Just one panel is rendered, so a tab that is not open has nothing to
+    // control — and an id nobody carries is a panel a screen reader offers to
+    // navigate to and then cannot find.
+    render(<TabbedPanel tabs={TABS} />)
+    for (const tab of screen.getAllByRole('tab')) {
+      const controls = tab.getAttribute('aria-controls')
+      if (tab.getAttribute('aria-selected') === 'true') {
+        expect(document.getElementById(controls as string)).not.toBeNull()
+      } else {
+        expect(controls).toBeNull()
+      }
+    }
+  })
+
+  it('gives the panel a tab stop, because the regions scroll and hold nothing focusable', () => {
+    render(<TabbedPanel tabs={TABS} />)
+    expect(screen.getByRole('tabpanel').tabIndex).toBe(0)
   })
 
   it('keeps one stop in the tab order, so Tab does not walk the whole strip', () => {

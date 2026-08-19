@@ -34,6 +34,12 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      # configure-pages reads the site config through the Pages API, so read is
+      # load-bearing here — a job-level block REPLACES the workflow default
+      # rather than narrowing it, and `contents: read` alone leaves this job
+      # with pages: none and the step 403s. Only `write` is withheld, which is
+      # the scope this job has no business holding.
+      pages: read
     defaults:
       run:
         working-directory: source
