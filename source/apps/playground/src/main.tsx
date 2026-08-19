@@ -1,6 +1,7 @@
 import { Hatua } from '@hatua/react'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { SOURCES } from './catalogue'
 
 // The Host imports no CSS — Hatua renders its own stylesheet (ADR-0003).
 
@@ -8,6 +9,15 @@ import { createRoot } from 'react-dom/client'
  * The default embedding: a Host writes <Hatua> and nothing else. It mounts the
  * provider and the designer screen, so everything visible below arrived from
  * one element and one import.
+ *
+ * It now passes one thing: `ports`. That is not a third way to embed — it is
+ * the Host answering the only question Hatua cannot answer for itself. Hatua
+ * never invents a Component, so a designer with no ManifestSource has an empty
+ * Library by definition, and the alternative to a prop here is Hatua shipping a
+ * catalogue of its own, which is the thing CONTEXT.md says it does not do.
+ *
+ * This entry takes the happy path deliberately. The Library's slow, failing and
+ * empty states are exercised by host.tsx, where a Host can switch between them.
  *
  * There is no <Scaffold> around it any more, and nothing passed as children.
  * <Hatua> renders <Build>; children would have been a third way to embed
@@ -22,6 +32,6 @@ import { createRoot } from 'react-dom/client'
  */
 createRoot(document.getElementById('root') as HTMLElement).render(
   <StrictMode>
-    <Hatua />
+    <Hatua ports={{ manifests: SOURCES.ready }} />
   </StrictMode>,
 )

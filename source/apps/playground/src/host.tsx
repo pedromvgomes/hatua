@@ -4,11 +4,13 @@ import {
   HatuaProvider,
   Inspector,
   Library,
+  type Manifest,
   TabbedPanel,
   TopBar,
 } from '@hatua/react'
-import { StrictMode } from 'react'
+import { StrictMode, useState } from 'react'
 import { createRoot } from 'react-dom/client'
+import { SOURCES, type SourceName } from './catalogue'
 
 /**
  * The Host-authored embedding, served at /host.html.
@@ -19,7 +21,16 @@ import { createRoot } from 'react-dom/client'
  * about what a Host does NOT have to pull in can only be checked by a bundle
  * that does not pull it in. A bundler cannot include what nobody imports, so
  * the evidence is dist/assets/host-*.js sitting next to dist/assets/main-*.js
- * and being visibly smaller, with no `Build` in it.
+ * with no `Build` in it: grep the two for `hatua-build` and `hatua-data` — the
+ * style hrefs of the container and of the region this page leaves out — and
+ * only main's chunk has them.
+ *
+ * That is the durable half of the measurement, and it is now the whole of it.
+ * PR 2 could also point at host-*.js being the smaller file (1.29 kB against
+ * main's 1.87 kB); this page's own chrome has since overtaken that (2.07 kB
+ * against 1.93 kB), because the source switcher below is a Host feature and
+ * every byte of it is the Host's. Comparing entry chunks was only ever a proxy
+ * for what they contain, and what they contain is checkable directly.
  *
  * What it proves, beyond that the parts exist:
  *
@@ -31,35 +42,84 @@ import { createRoot } from 'react-dom/client'
  *     accept whole.
  *  3. **The tab strip owns nothing.** <TabbedPanel> is handed two regions and
  *     renders two tabs. It has no third child to lose.
+ *  4. **The regions take no data props.** <Library /> is still written exactly
+ *     as it was before it rendered anything — the catalogue reaches it through
+ *     the provider's ports. Had the manifests arrived as a prop, this line
+ *     would have had to change, and "mount the regions wherever you like" would
+ *     have quietly become "mount them and wire each one up".
  *
  * <HatuaProvider> is the one thing this page must mount that the <Hatua> path
- * mounts for you. It carries the theme's custom properties and the container
- * overlays portal into; the regions read both and hold neither (ADR-0002). It
- * is the parts path's root, not a third way to embed — there is still nothing
- * here to configure that <Hatua> would not configure identically.
+ * mounts for you. It carries the theme's custom properties, the container
+ * overlays portal into, and now the Host's ports; the regions read all three
+ * and hold none (ADR-0002). It is the parts path's root, not a third way to
+ * embed — there is still nothing here to configure that <Hatua> would not
+ * configure identically.
+ *
+ * The source switcher below is the half of the Library that the default entry
+ * cannot show. A catalogue that always resolves instantly makes loading,
+ * failure and emptiness look theoretical; they are not — they are what a Host
+ * fetching manifests over a network gets — so this page lets you pick one and
+ * look at it.
  */
 const theme = createTheme({ accent: 'oklch(0.63 0.115 195)' })
 
+const SOURCE_LABELS: Record<SourceName, string> = {
+  ready: 'Resolves at once',
+  slow: 'Slow (1.8s)',
+  failing: 'Fails',
+  empty: 'Declares nothing',
+}
+
 function HostPage() {
+  const [sourceName, setSourceName] = useState<SourceName>('ready')
+  const [lastSelected, setLastSelected] = useState<Manifest | null>(null)
+
   return (
     <div style={{ blockSize: '100vh', display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)' }}>
       {/* The Host's own chrome, in the Host's own CSS. Hatua ships no
           stylesheet for it to import (ADR-0003), and out here there are no
           Hatua tokens to read either. */}
-      <p
+      <div
         style={{
-          margin: 0,
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          gap: 12,
           padding: '8px 16px',
           fontFamily: 'system-ui, sans-serif',
           fontSize: 13,
           borderBottom: '1px solid #d8dae1',
         }}
       >
-        Host-authored embedding — the Inspector on the left, the toolbar at the bottom, and no Data
-        tab at all. Compare with <a href="/index.html">the default embedding</a>.
-      </p>
+        <p style={{ margin: 0 }}>
+          Host-authored embedding — the Inspector on the left, the toolbar at the bottom, and no
+          Data tab at all. Compare with <a href="/index.html">the default embedding</a>.
+        </p>
+        <fieldset style={{ display: 'flex', gap: 10, border: 0, margin: 0, padding: 0 }}>
+          <legend style={{ float: 'left', padding: 0, marginInlineEnd: 10 }}>
+            Manifest source:
+          </legend>
+          {(Object.keys(SOURCES) as SourceName[]).map((name) => (
+            <label key={name} style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+              <input
+                type="radio"
+                name="source"
+                checked={sourceName === name}
+                onChange={() => setSourceName(name)}
+              />
+              {SOURCE_LABELS[name]}
+            </label>
+          ))}
+        </fieldset>
+        <p style={{ margin: 0, color: '#5a6070' }}>
+          {/* onSelect is props out, and that is all it is: adding the Step needs
+              the editing store, which this PR does not have. What the Host does
+              with the manifest is the Host's business — here, print it. */}
+          {lastSelected ? `Last selected: ${lastSelected.use}` : 'Nothing selected yet.'}
+        </p>
+      </div>
 
-      <HatuaProvider theme={theme}>
+      <HatuaProvider theme={theme} ports={{ manifests: SOURCES[sourceName] }}>
         <div
           style={{
             blockSize: '100%',
@@ -74,8 +134,12 @@ function HostPage() {
           <div style={{ gridColumn: 2, gridRow: 1, minWidth: 0 }}>
             <TabbedPanel
               tabs={[
+                {
+                  id: 'library',
+                  label: 'Library',
+                  content: <Library onSelect={setLastSelected} />,
+                },
                 { id: 'flow', label: 'Flow', content: <FlowMap /> },
-                { id: 'library', label: 'Library', content: <Library /> },
               ]}
             />
           </div>

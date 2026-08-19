@@ -75,7 +75,7 @@
                 "patterns": [
                   {
                     "group": ["@hatua/services", "**/layouts/**", "**/views/**"],
-                    "message": "compounds and blocks are presentational: props in, events out. Only layouts and views may reach @hatua/services."
+                    "message": "compounds and blocks are presentational: props in, events out. Only layouts, views and the provider may reach @hatua/services."
                   }
                 ]
               }

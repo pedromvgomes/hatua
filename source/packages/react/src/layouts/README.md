@@ -10,9 +10,30 @@ and puts them wherever it likes. `apps/playground/src/host.tsx` is that Host,
 and `layouts/regions.test.tsx` mounts every region outside `<Build>` so the
 container cannot quietly become required.
 
-**Rule:** these are the components that may call `@hatua/services`. None does
-yet — the editing store arrives later, and nothing in this tier holds state
-today except `TabbedPanel`, which remembers which tab is open.
+**Rule:** these are the components that may call `@hatua/services`. `Library` is
+the first that does: it subscribes to the manifest store through
+`useSyncExternalStore` and holds nothing but the text in its filter box. The
+editing store arrives later; `TabbedPanel` still owns only which tab is open,
+which is chrome state and not in the Workflow Definition.
+
+`HatuaProvider` reaches `@hatua/services` too, and is the one component outside
+this tier that may. It is not a region — it is the composition root, and what it
+does with the package is build the stores from the Host's ports, not read them.
+See `theme/HatuaProvider.tsx`.
+
+## Where a region's data comes from
+
+Not from props. `Library` takes no manifests, `Inspector` will take no Step, and
+that is forced rather than chosen: `apps/playground/src/host.tsx` mounts each
+region bare and `regions.test.tsx` renders every one of them with nothing above
+it, so a required data prop would break both. Everything a region reads arrives
+through `<HatuaProvider>` — the Host's ports go in, and the stores that read
+them come out.
+
+What regions still send *out* is props. `Library` takes an optional `onSelect`;
+it does not add the Step itself, because adding one needs the editing store. A
+region that emits an event stays mountable alone; a region that requires a
+handler does not, so every such prop is optional.
 
 ## Two vocabularies, reconciled
 

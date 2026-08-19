@@ -49,6 +49,11 @@
     --shadow-color: oklch(from var(--hatua-ink) l c h / 0.22);
     --scrim: oklch(from var(--hatua-ink) calc(l * 0.6) c h / 0.55);
 
+    /* The mono face, aliased so a component can read it: seeds are off limits
+       above this file, and `mono` is a field kind the manifest declares — the
+       Library's code spans are only the first thing to need it. */
+    --font-mono: var(--hatua-font-mono);
+
     --radius-sm: calc(var(--hatua-radius) * 0.6);
     --radius-md: var(--hatua-radius);
     --radius-lg: calc(var(--hatua-radius) * 1.4);

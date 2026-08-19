@@ -24,7 +24,9 @@ definition/valid/*.yaml     must parse and validate clean
 definition/invalid/*.yaml   must fail; the expected diagnostic codes are in the
                             file's own `# expect:` header
 execution/*.yaml            must parse
-manifest/*.yaml             must parse
+manifest/*.yaml             must parse; also served by the playground, which
+                            reads them at build time so its Library shows the
+                            same catalogue both SDKs are held to
 expression/                 the {{ … }} language — see its own README
 ```
 
