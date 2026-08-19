@@ -124,6 +124,10 @@ dist
 # churn in the history, and the raster can never drift from the vector.
 /brand/dist/
 
+# Storybook build output — published to GitHub Pages from main by
+# .github/workflows/pages.yml, never committed.
+storybook-static/
+
 # TernJS port file
 .tern-port
 

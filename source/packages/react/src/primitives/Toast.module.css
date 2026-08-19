@@ -1,0 +1,63 @@
+@layer hatua {
+  /* Absolute, against .hatua-portals — which spans the provider's box — so the
+     toast lands in Hatua's corner, not the browser's. */
+  .toast {
+    position: absolute;
+    inset-block-end: 16px;
+    inset-inline-end: 16px;
+    z-index: 60;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    max-width: 380px;
+    padding: 10px 12px;
+    border: 1px solid var(--border-subtle);
+    border-inline-start: 3px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    background: var(--surface-raised);
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    line-height: 1.4;
+    box-shadow: 0 10px 30px var(--shadow-color);
+  }
+
+  .info {
+    border-inline-start-color: var(--accent);
+  }
+
+  .success {
+    border-inline-start-color: var(--status-ok);
+  }
+
+  .error {
+    border-inline-start-color: var(--status-error);
+  }
+
+  .body {
+    flex: 1;
+  }
+
+  .dismiss {
+    flex: none;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-muted);
+    font: inherit;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .dismiss:hover {
+    background: var(--surface-sunken);
+    color: var(--text-primary);
+  }
+
+  .dismiss:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 1px;
+  }
+}

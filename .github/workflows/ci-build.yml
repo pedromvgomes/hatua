@@ -65,3 +65,27 @@ jobs:
         run: make lint
 
       - run: pnpm turbo run typecheck build
+
+      # ADR-0003: a Host imports nothing. Every component renders its own CSS
+      # through React 19's <style href precedence>, so the published bundle must
+      # carry that CSS inside the JavaScript and must NOT carry a stylesheet
+      # beside it — exporting one is deferred until there is a build step that
+      # aggregates. Vite would emit one from the class-map imports; a plugin in
+      # packages/react/vite.config.ts drops it, and this is what notices if that
+      # plugin stops working.
+      - name: The library ships no stylesheet
+        run: |
+          if find packages/react/dist -name '*.css' | grep -q .; then
+            echo "::error::packages/react/dist contains a stylesheet; see ADR-0003"
+            find packages/react/dist -name '*.css'
+            exit 1
+          fi
+          if ! grep -q '@layer hatua' packages/react/dist/index.js; then
+            echo "::error::the base layer is not inlined in dist/index.js; see ADR-0003"
+            exit 1
+          fi
+
+      # The Storybook only deploys from main (.github/workflows/pages.yml), so
+      # without this a pull request could break it and nothing would say so
+      # until after the merge.
+      - run: pnpm --filter @hatua/react storybook:build

@@ -4,5 +4,5 @@
     "baseUrl": ".",
     "paths": { "@/*": ["./src/*"] }
   },
-  "include": ["src", "../../types"]
+  "include": ["src", ".storybook", "../../types"]
 }
