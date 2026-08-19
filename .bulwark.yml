@@ -61,5 +61,20 @@ typescript:
   enabled: true
   linter: biome
 
+# Stays `run`, and the guidance at the top of this file — flip to `report` once
+# ci-test uploads a gt-coverage artifact — does NOT apply to this repo.
+#
+# bulwark finds TypeScript coverage at <packageDir>/coverage/coverage-summary.json
+# and <packageDir>/coverage/lcov.info, one pair per package, and there is
+# deliberately no `coverage.typescript.report` override because those paths are
+# Vitest convention rather than a project's choice. The gt-coverage artifact
+# convention lands exactly two files, coverage.out and lcov.info, at the scan
+# root. Those two facts do not meet: under `report` bulwark would look for nine
+# per-package reports, find none, and silently drop TypeScript from the gate
+# again — which is the failure this whole change exists to end.
+#
+# So bulwark runs the suites itself. That does mean the TypeScript tests run
+# twice per pipeline, once in ci-test and once here. The alternative is not
+# "faster coverage", it is "no TypeScript coverage".
 coverage:
   source: run

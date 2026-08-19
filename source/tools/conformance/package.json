@@ -6,6 +6,7 @@
   "description": "Runs the shared fixture corpus against the TypeScript implementation; sdk/go runs the same files",
   "scripts": {
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage --coverage.reporter=text-summary --coverage.reporter=json-summary --coverage.reporter=lcovonly",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

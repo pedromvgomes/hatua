@@ -1,6 +1,7 @@
 import react from '@vitejs/plugin-react-swc'
 import { defineConfig, type Plugin } from 'vite'
 import dts from 'vite-plugin-dts'
+import { coverageConfigDefaults } from 'vitest/config'
 
 /**
  * ADR-0003: a Host imports nothing. Every component renders its own CSS through
@@ -65,5 +66,17 @@ export default defineConfig({
     environment: 'jsdom',
     include: ['src/**/*.test.{ts,tsx}'],
     setupFiles: ['./src/setupTests.ts'],
+    coverage: {
+      // Spread the defaults rather than replacing them — a bare `exclude` drops
+      // node_modules and dist from the list and coverage starts measuring the
+      // dependency tree.
+      //
+      // Stories are excluded because they are not the library: they document it,
+      // they ship to the Storybook rather than to a Host, and counting them
+      // reported this package at 49% while every component in it was at 100%.
+      // A coverage gate that can be satisfied by testing the stories is worse
+      // than no gate.
+      exclude: [...coverageConfigDefaults.exclude, 'src/**/*.stories.tsx', 'src/setupTests.ts'],
+    },
   },
 })

@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "The {{ … }} expression language: parse, check, resolve",
+  "description": "The {{ \u2026 }} expression language: parse, check, resolve",
   "license": "MIT",
   "sideEffects": false,
   "exports": {
@@ -24,7 +24,8 @@
   "scripts": {
     "build": "vite build",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage --coverage.reporter=text-summary --coverage.reporter=json-summary --coverage.reporter=lcovonly"
   },
   "dependencies": {
     "@hatua/schema": "workspace:*"
