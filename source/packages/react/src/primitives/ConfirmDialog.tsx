@@ -42,6 +42,7 @@ export function ConfirmDialog({
   const titleId = useId()
   const descriptionId = useId()
   const confirmRef = useRef<HTMLButtonElement>(null)
+  const cancelRef = useRef<HTMLButtonElement>(null)
   const dialogRef = useRef<HTMLDivElement>(null)
   const restoreRef = useRef<Element | null>(null)
 
@@ -58,11 +59,22 @@ export function ConfirmDialog({
     }
   }, [open])
 
-  // `container` belongs in the dependencies: it is null on the first render,
-  // so on that pass there is no dialog and nothing to focus.
+  /*
+   * `container` belongs in the dependencies: it is null on the first render, so
+   * on that pass there is no dialog and nothing to focus.
+   *
+   * A danger dialog opens on Cancel, not Confirm. The destructive action is the
+   * one the dialog exists to put a step in front of, and focusing it hands that
+   * step straight back: someone who presses Enter or Space reflexively as the
+   * dialog appears — which is exactly what happens when the keystroke that
+   * opened it is still under their finger — would discard the Draft. Focus the
+   * safe action and the reflex costs nothing.
+   */
   useEffect(() => {
-    if (open && container) confirmRef.current?.focus()
-  }, [open, container])
+    if (!open || !container) return
+    const opensOn = tone === 'danger' ? cancelRef.current : confirmRef.current
+    opensOn?.focus()
+  }, [open, container, tone])
 
   /*
    * Escape, and the focus trap.
@@ -80,6 +92,14 @@ export function ConfirmDialog({
     if (!open) return
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        // Consumed, not merely observed. A Host with its own document-level
+        // Escape — closing a side panel, leaving a full-screen editor — would
+        // otherwise act on the same keystroke, so dismissing the dialog would
+        // also tear down the UI behind it. aria-modal="true" tells assistive
+        // technology that UI is unreachable; letting its shortcuts fire anyway
+        // is the same claim broken for everyone else.
+        event.preventDefault()
+        event.stopPropagation()
         onCancel()
         return
       }
@@ -105,8 +125,12 @@ export function ConfirmDialog({
         first.focus()
       }
     }
-    document.addEventListener('keydown', onKeyDown)
-    return () => document.removeEventListener('keydown', onKeyDown)
+    // Capture, so stopPropagation above actually stops something: a listener
+    // the Host registered on document or window is reached later in the
+    // dispatch and is skipped once the stop flag is set. In the bubble phase
+    // there is nothing left to stop.
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => document.removeEventListener('keydown', onKeyDown, true)
   }, [open, onCancel])
 
   if (!open || !container) return null
@@ -142,7 +166,7 @@ export function ConfirmDialog({
             </p>
           )}
           <div className={styles.actions}>
-            <Button variant="ghost" onClick={onCancel}>
+            <Button ref={cancelRef} variant="ghost" onClick={onCancel}>
               {cancelLabel}
             </Button>
             <Button
