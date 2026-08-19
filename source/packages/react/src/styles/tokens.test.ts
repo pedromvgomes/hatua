@@ -56,12 +56,11 @@ const cssFiles = sources.filter((f) => f.path.endsWith('.css') && f.path !== BAS
 const SELF = 'src/styles/tokens.test.ts'
 const componentFiles = sources.filter((f) => /\.tsx?$/.test(f.path) && f.path !== SELF)
 
+const definitionsIn = (text: string) =>
+  new Set([...text.matchAll(/^\s*(--[\w-]+)\s*:/gm)].map((m) => m[1] as string))
+
 /** Every custom property base.css defines — i.e. the alias vocabulary. */
-const definedAliases = new Set(
-  [...(sources.find((f) => f.path === BASE)?.text ?? '').matchAll(/^\s*(--[\w-]+)\s*:/gm)].map(
-    (m) => m[1] as string,
-  ),
-)
+const definedAliases = definitionsIn(sources.find((f) => f.path === BASE)?.text ?? '')
 
 /** Every var(--x) a file reads, wherever it appears. */
 const referencedAliases = (text: string) =>
@@ -93,8 +92,14 @@ describe('token discipline (ADR-0002)', () => {
     expect(text.match(COLOUR_LITERAL) ?? []).toEqual([])
   })
 
-  it.each(cssFiles)('$path reads only aliases base.css defines', ({ text }) => {
-    const unknown = referencedAliases(text).filter((a) => !definedAliases.has(a))
+  // A component may also define a property of its own — Toast's --toast-tone,
+  // read by both its stripe and its progress bar — so the file's own
+  // definitions count. That does not weaken the rule the check exists for:
+  // a typo still names something nobody defines, and a local definition
+  // holding a seed or a literal is caught by the two rules above.
+  it.each(cssFiles)('$path reads only properties something defines', ({ text }) => {
+    const known = definitionsIn(text)
+    const unknown = referencedAliases(text).filter((a) => !definedAliases.has(a) && !known.has(a))
     expect(unknown).toEqual([])
   })
 

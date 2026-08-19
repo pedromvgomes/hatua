@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HatuaProvider } from '../theme/HatuaProvider'
 import { ConfirmDialog } from './ConfirmDialog'
 import { Toast } from './Toast'
@@ -48,6 +48,134 @@ describe('Toast', () => {
     )
     await screen.findByRole('status')
     expect(screen.queryByRole('button', { name: 'Dismiss' })).toBeNull()
+  })
+})
+
+describe('Toast auto-dismiss', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  const renderTimed = (onDismiss: () => void, seconds = 4) =>
+    render(
+      <HatuaProvider>
+        <Toast open autoDismissAfter={seconds} onDismiss={onDismiss}>
+          Draft published
+        </Toast>
+      </HatuaProvider>,
+    )
+
+  const advance = async (ms: number) => {
+    await act(async () => {
+      vi.advanceTimersByTime(ms)
+    })
+  }
+
+  it('asks to be closed once the seconds are up, and not before', async () => {
+    const onDismiss = vi.fn()
+    renderTimed(onDismiss)
+    await advance(3900)
+    expect(onDismiss).not.toHaveBeenCalled()
+    await advance(200)
+    expect(onDismiss).toHaveBeenCalledTimes(1)
+  })
+
+  it('counts seconds, not milliseconds', async () => {
+    const onDismiss = vi.fn()
+    renderTimed(onDismiss, 2)
+    await advance(1999)
+    expect(onDismiss).not.toHaveBeenCalled()
+    await advance(2)
+    expect(onDismiss).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows a progress bar carrying the same duration the timer uses', () => {
+    renderTimed(vi.fn(), 6)
+    expect(screen.getByTestId('hatua-toast-progress').style.animationDuration).toBe('6s')
+  })
+
+  it('renders no progress bar when the toast is not timed', () => {
+    render(
+      <HatuaProvider>
+        <Toast open onDismiss={vi.fn()}>
+          Draft published
+        </Toast>
+      </HatuaProvider>,
+    )
+    expect(screen.queryByTestId('hatua-toast-progress')).toBeNull()
+  })
+
+  // A message that expires while it is being read, or while the pointer is on
+  // its way to the dismiss button, is worse than one that never expires.
+  it('pauses while the pointer is inside, and resumes on the way out', async () => {
+    const onDismiss = vi.fn()
+    renderTimed(onDismiss)
+    await advance(1000)
+
+    // React synthesises onMouseEnter/onMouseLeave from mouseover/mouseout.
+    fireEvent.mouseOver(screen.getByRole('status'))
+    await advance(60_000)
+    expect(onDismiss).not.toHaveBeenCalled()
+    expect(screen.getByRole('status').getAttribute('data-paused')).toBe('true')
+
+    fireEvent.mouseOut(screen.getByRole('status'))
+    expect(screen.getByRole('status').hasAttribute('data-paused')).toBe(false)
+
+    // Resuming continues the wait rather than restarting it: 1s was already
+    // spent before the pause, so 3s is what remains of the 4.
+    await advance(2900)
+    expect(onDismiss).not.toHaveBeenCalled()
+    await advance(200)
+    expect(onDismiss).toHaveBeenCalledTimes(1)
+  })
+
+  it('pauses while focus is inside, so keyboard users are not rushed', async () => {
+    const onDismiss = vi.fn()
+    renderTimed(onDismiss)
+    fireEvent.focus(screen.getByRole('button', { name: 'Dismiss' }))
+    await advance(60_000)
+    expect(onDismiss).not.toHaveBeenCalled()
+  })
+
+  it('drops the timer when it closes, and gives a reopened toast the full wait', async () => {
+    const onDismiss = vi.fn()
+    const at = (open: boolean) => (
+      <HatuaProvider>
+        <Toast open={open} autoDismissAfter={4} onDismiss={onDismiss}>
+          Draft published
+        </Toast>
+      </HatuaProvider>
+    )
+    const { rerender } = render(at(true))
+
+    await advance(3000)
+    rerender(at(false))
+    await advance(60_000)
+    expect(onDismiss).not.toHaveBeenCalled()
+
+    // Reopened: the 3s already spent must not carry over, or this would fire
+    // almost immediately.
+    rerender(at(true))
+    await advance(3900)
+    expect(onDismiss).not.toHaveBeenCalled()
+    await advance(200)
+    expect(onDismiss).toHaveBeenCalledTimes(1)
+  })
+
+  it('ignores the duration when there is no handler to call', async () => {
+    render(
+      <HatuaProvider>
+        <Toast open autoDismissAfter={1}>
+          Draft published
+        </Toast>
+      </HatuaProvider>,
+    )
+    await advance(60_000)
+    expect(screen.queryByTestId('hatua-toast-progress')).toBeNull()
+    expect(screen.getByRole('status')).toBeDefined()
   })
 })
 

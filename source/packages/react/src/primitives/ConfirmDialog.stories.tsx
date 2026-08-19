@@ -1,5 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { ConfirmDialog } from './ConfirmDialog'
+import { useState } from 'react'
+import { Button } from './Button'
+import { ConfirmDialog, type ConfirmDialogProps } from './ConfirmDialog'
 
 const meta = {
   title: 'Primitives/ConfirmDialog',
@@ -25,12 +27,54 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-export const Default: Story = {}
+/**
+ * Opens on load so the story is a review surface, but Cancel, Escape and the
+ * backdrop all really close it — the dialog's whole job is the answer it
+ * returns, and a story that swallows the answer shows none of it.
+ */
+function Answerable(props: Omit<ConfirmDialogProps, 'open' | 'onConfirm' | 'onCancel'>) {
+  const [open, setOpen] = useState(true)
+  const [answer, setAnswer] = useState<string | null>(null)
+
+  return (
+    <>
+      <Button variant="secondary" onClick={() => setOpen(true)} disabled={open}>
+        Open dialog
+      </Button>
+      {answer && (
+        <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>Answered: {answer}</p>
+      )}
+      <ConfirmDialog
+        {...props}
+        open={open}
+        onConfirm={() => {
+          setAnswer('confirmed')
+          setOpen(false)
+        }}
+        onCancel={() => {
+          setAnswer('cancelled')
+          setOpen(false)
+        }}
+      />
+    </>
+  )
+}
+
+export const Default: Story = {
+  render: (args) => <Answerable title={args.title} description={args.description} />,
+}
 
 export const Danger: Story = {
-  args: { tone: 'danger', confirmLabel: 'Discard Draft' },
+  render: (args) => (
+    <Answerable
+      title={args.title}
+      description={args.description}
+      tone="danger"
+      confirmLabel="Discard Draft"
+    />
+  ),
 }
 
 export const TitleOnly: Story = {
-  args: { description: undefined, title: 'Leave Text Mode without saving?' },
+  render: () => <Answerable title="Leave Text Mode without saving?" />,
 }

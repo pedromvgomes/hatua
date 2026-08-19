@@ -47,7 +47,7 @@ function Scaffold() {
         <Toggle checked={parallel} onCheckedChange={setParallel} label="Run branches in parallel" />
       </div>
 
-      <Toast open={toast} tone="success" onDismiss={() => setToast(false)}>
+      <Toast open={toast} tone="success" autoDismissAfter={6} onDismiss={() => setToast(false)}>
         Draft published as version 4.
       </Toast>
 
