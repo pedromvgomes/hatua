@@ -22,7 +22,14 @@ than a linked stylesheet would; and with CSR nothing paints before the JS execut
 
 Per-component delivery also buys something no stylesheet can: **only the components a host actually
 renders ship their CSS.** Since `@hatua/react` exports its parts individually, a host embedding just
-`<Hatua.Canvas />` does not pay for the Runs view.
+`<FlowMap />` does not pay for the Runs view.
+
+The parts are **individual named exports, never properties of `Hatua`.** An earlier draft of this
+ADR wrote the example as `<Hatua.Canvas />`, which reads well and cannot work: reaching a static
+property means evaluating the function it hangs off, so `import { Hatua }` would pull the whole
+designer into a bundle that wanted one region and the saving this paragraph claims would be
+unmeasurable. `apps/playground/src/host.tsx` is the measurement, and it imports neither `Hatua` nor
+`Build`.
 
 ## Consequences
 

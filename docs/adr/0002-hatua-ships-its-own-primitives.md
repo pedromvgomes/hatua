@@ -29,7 +29,11 @@ pixel-parity for free, because the two token sets are already identical (ink `#2
 - Theming is **seed-and-derive**: a host supplies a handful of brand seeds and the ramps are generated
   in CSS via oklch relative colour syntax. Every derived step stays individually overridable.
 - `createTheme()` is a pure function producing a serialisable object; Hatua's own control mounts the
-  provider internally, so a host passes an optional `theme` prop and never mounts anything.
+  provider internally, so a host writing `<Hatua theme={…} />` passes a prop and mounts nothing.
+  A host that instead composes the regions itself — the other of the two ways to embed — does mount
+  `<HatuaProvider>`, because that is the element carrying the custom properties and the overlay
+  container, and the regions read both and hold neither. It is the parts path's root, not a third
+  way in: there is nothing to configure on it that `<Hatua>` would not configure identically.
 - **Theme and colour mode are separate.** A theme carries both alias sets; the mode is inherited from
   the host (ancestor `[data-theme]`, else `prefers-color-scheme`) with a prop to pin it.
 - Overlays — the reference picker, toasts, `ConfirmDialog`, the run drawer — must portal into a

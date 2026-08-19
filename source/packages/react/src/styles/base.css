@@ -57,6 +57,12 @@
        whatever the Host happens to have positioned. */
     position: relative;
 
+    /* The designer is an application surface: it fills the box the Host gives
+       it. Against an auto-height container this resolves to auto, so a Host
+       that has not sized anything still gets a screen the height of its
+       content rather than a collapsed one. */
+    block-size: 100%;
+
     font-family: var(--hatua-font);
     color: var(--text-primary);
     background: var(--surface-page);

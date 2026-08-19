@@ -1,0 +1,11 @@
+@layer hatua {
+  .inspector {
+    display: flex;
+    flex-direction: column;
+    block-size: 100%;
+    min-block-size: 0;
+    overflow-y: auto;
+    background: var(--surface-card);
+    border-inline-start: 1px solid var(--border-subtle);
+  }
+}
