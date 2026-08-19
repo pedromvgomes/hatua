@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/** biome-ignore-all lint/correctness/noNodejsModules: Node-side tooling, never bundled for a browser — the built-ins are the point. */
 /**
  * schemas/*.schema.yaml -> packages/schema/src/generated/*.ts
  *

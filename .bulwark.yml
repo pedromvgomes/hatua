@@ -23,16 +23,43 @@
 # Everything else bulwark supports — per-language enablement, coverage
 # tolerances, patch-coverage opt-outs, toolchain overrides — belongs here too.
 # See bulwark's README.
-# bulwark's TypeScript check is ESLint, and ESLint 9+ hard-errors when there is
-# no eslint.config.js rather than falling back to defaults. brand/ carries a
-# package.json for the PNG rasterizer, so bulwark detects it as a JS package and
-# the scan fails on a repo that has deliberately not adopted ESLint: biome is
-# the intended linter here, and bulwark is being updated to support it.
+# bulwark's TypeScript gate, on, running Biome.
 #
-# Off until that lands. Flip back to true in the same commit that adds the biome
-# config — the check should come back the moment there is a linter for it to run.
+# It was off because bulwark's only TypeScript checker was ESLint, and ESLint 9+
+# hard-errors when a package has no eslint.config.js rather than falling back to
+# defaults — which is every package here, since biome is this repo's linter.
+# bulwark v1.9.0 added `linter: biome`, so the reason is gone.
+#
+# `linter` defaults to eslint, so naming it is what actually switches this over.
+# The two are NOT the same rule set and swapping them changes what is enforced in
+# both directions: eslint-plugin-security is Node/backend heuristics, while
+# bulwark's Biome profile gates on Biome's `security` and `correctness` groups.
+#
+# That profile is bulwark's own, passed with --config-path, and it overrides this
+# repo's biome.json rather than merging with it. Two consequences worth knowing
+# before touching either file:
+#
+#   * `correctness` is enabled as a whole group, not the recommended subset, so
+#     it is stricter than `pnpm biome check`. source/biome.json now sets
+#     `security` and `correctness` to error for exactly this reason — the local
+#     lint and this gate should agree, or every suppression written for one is
+#     dead code to the other.
+#
+#   * There is no per-project ignore surface. `typescript.exclude` only skips
+#     package DISCOVERY, and everything here lives under source/, which is itself
+#     a detected package — so an excluded subdirectory still gets linted as part
+#     of its parent. The only lever is a `biome-ignore` in the source, which is
+#     why the Node-side tooling and tests carry file-level suppressions, and why
+#     tools/expression/src/build.js writes two into the generated parser.
+#
+# source/biome.json also carries no `$schema` any more. bulwark reports every
+# diagnostic Biome emits regardless of severity, and a `$schema` naming a version
+# other than bulwark's pinned CLI is an *informational* deserialize notice — so
+# the two pins drifting by a patch release turned the gate red on its own. Worth
+# fixing upstream; until then, not declaring the schema is what decouples us.
 typescript:
-  enabled: false
+  enabled: true
+  linter: biome
 
 coverage:
   source: run

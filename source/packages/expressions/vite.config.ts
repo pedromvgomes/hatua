@@ -1,3 +1,4 @@
+/** biome-ignore-all lint/correctness/noProcessGlobal: a Vite config runs in Node, not in the app it configures. */
 import { defineConfig } from 'vite'
 import dts from 'vite-plugin-dts'
 

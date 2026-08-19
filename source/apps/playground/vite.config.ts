@@ -1,3 +1,4 @@
+/** biome-ignore-all lint/correctness/noNodejsModules: a Vite config runs in Node, not in the app it configures. */
 import { fileURLToPath } from 'node:url'
 import react from '@vitejs/plugin-react-swc'
 import { defineConfig, type Plugin } from 'vite'

@@ -1,3 +1,4 @@
+/** biome-ignore-all lint/correctness/noNodejsModules: a Node test reading fixtures from disk; nothing here ships to a browser. */
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { componentManifest, workflowDefinition, workflowExecution } from '@hatua/schema'

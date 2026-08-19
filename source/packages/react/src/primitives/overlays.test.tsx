@@ -68,6 +68,7 @@ describe('Toast', () => {
   it('renders nothing outside a provider, rather than falling back to the body', () => {
     render(<Toast open>Draft published</Toast>)
     expect(screen.queryByRole('status')).toBeNull()
+    // biome-ignore lint/security/noSecrets: an attribute selector, not a credential.
     expect(document.body.querySelector('[role="status"]')).toBeNull()
   })
 
