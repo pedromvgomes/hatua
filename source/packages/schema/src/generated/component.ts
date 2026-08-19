@@ -61,9 +61,21 @@ export const field = z.strictObject({
    */
   label: z.string().min(1),
   /**
-   * `text`, `mono`, `number`, `textarea` and `ref` accept References; the rest hold literals only. `ref` holds exactly one reference and replaces rather than appends.
+   * `text`, `mono`, `number`, `textarea`, `ref` and `map` accept Expressions; the rest hold literals only. `ref` holds exactly one expression and replaces rather than appends.
+   * `map` is a list of named, typed entries the user builds — the shape a component like `data.map` needs, where the outputs are not fixed by the manifest but by what the user wrote into the field. It is the third field kind Hatua interprets structurally, alongside the two control-flow verbs, and the only one whose value decides a step's outputs.
    */
-  kind: z.enum(['text', 'mono', 'number', 'textarea', 'ref', 'enum', 'bool', 'conn', 'secret']),
+  kind: z.enum([
+    'text',
+    'mono',
+    'number',
+    'textarea',
+    'ref',
+    'map',
+    'enum',
+    'bool',
+    'conn',
+    'secret',
+  ]),
   /**
    * Only on `kind: conn`. Offers only connections whose Host-reported type matches, so a "send email" step is never handed an LLM connection.
    */
@@ -94,6 +106,12 @@ export const field = z.strictObject({
    * `bool` only.
    */
   toggleLabel: z.string().optional(),
+  /**
+   * Only on `kind: map`. Which types an entry may declare, defaulting to every scalar plus `list` and `object`. A component that maps only text — a header set, say — narrows it.
+   */
+  entry_types: z
+    .array(z.enum(['text', 'number', 'boolean', 'datetime', 'list', 'object']))
+    .optional(),
   /**
    * Show this field only while another field equals a value — `[otherKey, value]`. This is how one trigger component reshapes its form across schedule / API / upstream modes.
    */

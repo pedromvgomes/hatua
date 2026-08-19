@@ -1,0 +1,81 @@
+about: >-
+  Where each node claims to start. Offsets are what let a diagnostic point at
+  the failing sub-expression rather than at the whole field, and they are the
+  one construct pigeon and Peggy genuinely spell differently — `c.pos.offset`
+  against `offset()`. So they are the one thing in the grammar not shared
+  verbatim, and therefore the one thing most worth pinning here.
+
+scenarios:
+  - name: >-
+      offsets are UTF-16 code units, not bytes. pigeon reports a byte offset and
+      Peggy reports a JavaScript string index; every non-ASCII byte before a
+      hole drove them apart, and this file was entirely ASCII, which is why it
+      never noticed.
+    template: "héllo {{ a }}"
+    offsets: true
+    sexp: '(template (text "héllo ") (hole@9 a@9))'
+
+  - name: a character outside the basic plane counts as two, as a Date index does
+    template: "a😀b {{ x }}"
+    offsets: true
+    sexp: '(template (text "a😀b ") (hole@8 x@8))'
+
+  - name: and several of them accumulate
+    template: "日本語 {{ x }}"
+    offsets: true
+    sexp: '(template (text "日本語 ") (hole@7 x@7))'
+
+  - name: a hole starts after the braces and the whitespace
+    template: "{{ s2.count }}"
+    offsets: true
+    sexp: "(template (hole@3 (.@3 s2@3 count)))"
+
+  - name: a second hole counts from the start of the whole Template
+    template: "Hi {{ a }} and {{ b }}"
+    offsets: true
+    sexp: '(template (text "Hi ") (hole@6 a@6) (text " and ") (hole@18 b@18))'
+
+  - name: a binary node claims its left operand's offset
+    expr: "1 + 2"
+    offsets: true
+    sexp: "(+@0 1@0 2@4)"
+
+  - name: a nested binary claims the leftmost leaf
+    expr: "1 + 2 * 3"
+    offsets: true
+    sexp: "(+@0 1@0 (*@4 2@4 3@8))"
+
+  - name: a unary node claims the operator, not the operand
+    expr: "!a"
+    offsets: true
+    sexp: "(!@0 a@1)"
+
+  - name: >-
+      a suffix claims where its *object* starts, not where its own punctuation
+      is — `a.b` begins at `a`, and a diagnostic about it that pointed at the dot
+      would send the reader into the middle of the thing that failed
+    expr: "a.b"
+    offsets: true
+    sexp: "(.@0 a@0 b)"
+
+  - name: so a whole postfix chain claims the root it hangs off
+    expr: "s2.messages[0].subject"
+    offsets: true
+    sexp: "(.@0 ([]@0 (.@0 s2@0 messages) 0@12) subject)"
+
+  - name: a call claims the start of its callee, not its opening parenthesis
+    expr: "dt.now()"
+    offsets: true
+    sexp: "(call@0 (.@0 dt@0 now))"
+
+  - name: >-
+      an argument keeps its own position, so a failure inside a call still
+      points at the argument that caused it
+    expr: "num.abs(x)"
+    offsets: true
+    sexp: "(call@0 (.@0 num@0 abs) x@8)"
+
+  - name: a conditional claims its condition's offset
+    expr: "a ? b : c"
+    offsets: true
+    sexp: "(?:@0 a@0 b@4 c@8)"

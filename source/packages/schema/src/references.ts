@@ -1,21 +1,14 @@
 /**
- * Reference helpers. Hand-written, not generated: a Reference is a string as far
- * as the schema is concerned, and everything interesting about it is behaviour.
- */
-
-/**
- * Matches one `{{source.path}}` token. References are stored verbatim in the
- * YAML, so renaming a step never breaks one.
+ * What a mappable field is, and the one built-in name.
  *
- * Deliberately NOT global. A shared /g regex carries mutable `lastIndex` across
- * every consumer: alternating `.test()` calls on the same string return true,
- * false, true…, and an abandoned `exec()` loop leaves the next caller starting
- * mid-string. Call `referencePattern()` when you need to iterate.
+ * There used to be a `REFERENCE_PATTERN` regex here, and it was a *second*
+ * definition of what a Reference is. Two definitions of one thing disagree
+ * eventually, and that one already did: it matched `{{ a + b }}` and called the
+ * whole thing a reference path.
+ *
+ * A Reference is now an AST shape — `isReference()` in `@hatua/expressions` —
+ * and this file keeps only what the schema layer genuinely owns.
  */
-export const REFERENCE_PATTERN = /\{\{([^}]+)\}\}/
-
-/** A fresh global matcher, safe to iterate — no shared state. */
-export const referencePattern = (): RegExp => /\{\{([^}]+)\}\}/g
 
 /**
  * The built-in holding the id of whichever Trigger actually fired. Needed
@@ -24,8 +17,13 @@ export const referencePattern = (): RegExp => /\{\{([^}]+)\}\}/g
  */
 export const TRIGGER_BUILTIN = 'TRIGGER'
 
-/** Field kinds that accept a Reference. The rest hold literal values only. */
-export const MAPPABLE_FIELD_KINDS = ['text', 'mono', 'number', 'textarea', 'ref'] as const
+/**
+ * Field kinds whose value is a Template. The rest hold literal values only.
+ *
+ * `map` is here because each of its entries holds one, even though the field
+ * itself holds a list rather than a string.
+ */
+export const MAPPABLE_FIELD_KINDS = ['text', 'mono', 'number', 'textarea', 'ref', 'map'] as const
 
 export const isMappable = (kind: string): boolean =>
   (MAPPABLE_FIELD_KINDS as readonly string[]).includes(kind)

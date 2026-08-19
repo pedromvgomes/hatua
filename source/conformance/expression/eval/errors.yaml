@@ -1,0 +1,104 @@
+about: >-
+  What a failure looks like from the outside: which code, in which slot, at which
+  offset.
+
+  Offsets are the part most likely to rot unnoticed. `parse/offsets.yaml` pins
+  where each *node* claims to start, but nothing until now checked that a
+  *diagnostic* points at the sub-expression that actually failed rather than at
+  the start of the field. A checker whose squiggle is in the wrong place is worse
+  than one with no squiggle, because it sends the user to correct code.
+
+  The parse failures below matter for a different reason: a Host may call
+  `resolve` on a Template nothing ever checked — a hand-edited YAML that never
+  went through the builder — so the parser's errors have to survive that path
+  with the slot attached, in both languages.
+
+scenarios:
+  # ---- an unchecked Template reaching a runner -----------------------------
+
+  - name: an incomplete expression fails at resolve, not just at validate
+    template: "{{ a + }}"
+    type: text
+    error: EXPR_PARSE_ERROR
+
+  - name: an unclosed hole does too
+    template: "unclosed {{ a"
+    type: text
+    error: EXPR_PARSE_ERROR
+
+  - name: an empty hole does too
+    template: "{{ }}"
+    type: text
+    error: EXPR_PARSE_ERROR
+
+  - name: and an unknown escape inside a text literal
+    template: "{{ 'a\\qb' }}"
+    type: text
+    error: EXPR_PARSE_ERROR
+
+  # ---- where the failure points -------------------------------------------
+
+  - name: a missing path points at the path, not at the start of the field
+    template: "Hi {{ s9.name }}"
+    type: text
+    context: { steps: {} }
+    error: EVAL_MISSING_PATH
+    at: 6
+
+  - name: a comparison against null points at the comparison
+    template: "{{ s2.total > 0 }}"
+    type: boolean
+    context: { steps: { s2: { total: null } } }
+    error: EVAL_COMPARE_NULL
+    at: 3
+
+  - name: division by zero points at the operator's left operand
+    template: "text {{ 1 / 0 }}"
+    type: text
+    error: EVAL_DIVISION_BY_ZERO
+    at: 8
+
+  - name: a bad operand points at the operator, not at the whole expression
+    template: "{{ 1 + s2.name }}"
+    type: number
+    context: { steps: { s2: { name: Dane } } }
+    error: EVAL_OPERAND_TYPE
+    at: 3
+
+  - name: an unknown function points at the start of the call, not at its bracket
+    template: "{{ text.shout('hi') }}"
+    type: text
+    error: EVAL_UNKNOWN_FUNCTION
+    at: 3
+
+  - name: a bad argument points at the call that received it
+    template: "{{ num.abs('3') }}"
+    type: number
+    error: EVAL_BAD_ARGUMENT
+    at: 3
+
+  - name: >-
+      and so does a failure raised *inside* an implementation — dt.parse knows
+      the timestamp is unreadable but not where it was written, so the call site
+      stamps the position on the way past
+    template: "digest for {{ dt.parse(s2.day) }}"
+    type: text
+    context: { steps: { s2: { day: yesterday } } }
+    error: EVAL_BAD_ARGUMENT
+    at: 14
+
+  - name: >-
+      a second hole's failure points into that hole, which is the whole reason
+      offsets are relative to the Template rather than to the expression
+    template: "{{ s2.a }} then {{ s9.b }}"
+    type: text
+    context: { steps: { s2: { a: one } } }
+    error: EVAL_MISSING_PATH
+    at: 19
+
+  - name: a type mismatch at the slot boundary points at the expression
+    template: "{{ s2.messages }}"
+    type: text
+    context: { steps: { s2: { messages: [1, 2] } } }
+    error: EVAL_TYPE_MISMATCH
+    at: 3

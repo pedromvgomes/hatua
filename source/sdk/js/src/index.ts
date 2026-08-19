@@ -7,10 +7,44 @@
  * the wrong thing in production. One evaluator, shared, removes that.
  *
  * It re-exports the contract rather than duplicating it, so a runner validates
- * with exactly the code the builder validated with.
+ * with exactly the code the builder validated with — and the same is now true
+ * of evaluation: `@hatua/expressions` is the one implementation, and
+ * `hatua.dev/go/expressions` is its Go counterpart, kept honest by
+ * conformance/expression/.
  */
 
-export { findStep, scopeFor, upstreamOf, walkSteps } from '@hatua/model'
+export {
+  type CheckContext,
+  coreFunctions,
+  type Diagnostic,
+  type DiagnosticCode,
+  type EvaluationContext,
+  ExpressionError,
+  type FunctionImpl,
+  type FunctionRegistry,
+  hostFunctions,
+  isReference,
+  mergeRegistries,
+  type OnMissing,
+  parseTemplate,
+  resolve,
+  resolveAll,
+  type ScopeEntry,
+  type Severity,
+  type Slot,
+  sourceReference,
+  type TypeNode,
+  type Value,
+  type ValueType,
+  validate,
+} from '@hatua/expressions'
+export {
+  findStep,
+  scopeFor,
+  slotsFor,
+  upstreamOf,
+  walkSteps,
+  whenSlot,
+} from '@hatua/model'
 export * from '@hatua/schema'
-export { type EvaluationContext, evaluate } from './expression'
 export { loadDefinition, loadExecution, loadManifests } from './load'

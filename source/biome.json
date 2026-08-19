@@ -33,6 +33,15 @@
   },
   "overrides": [
     {
+      "includes": [
+        "packages/expressions/src/generated/**",
+        "packages/expressions/src/generated.staged/**"
+      ],
+      "linter": {
+        "enabled": false
+      }
+    },
+    {
       "includes": ["packages/react/src/primitives/**"],
       "linter": {
         "rules": {

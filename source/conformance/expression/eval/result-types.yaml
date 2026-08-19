@@ -1,0 +1,169 @@
+about: >-
+  What type an expression *produces*, checked against the type its field
+  declares.
+
+  `boundary.yaml` checks values that came out of a path. These check values that
+  were *computed* — which is where the two implementations have the most room to
+  differ, because each operator and each function decides its own result type in
+  its own language. An operator that yields a number in TypeScript and text in Go
+  would pass every value-equality scenario written with a `text` slot.
+
+  Each block is the same expression against a slot that accepts it and a slot
+  that does not, so the type is pinned from both sides.
+
+scenarios:
+  # ---- arithmetic ----------------------------------------------------------
+
+  - name: arithmetic yields a number
+    template: "{{ 1 + 1 }}"
+    type: number
+    value: 2
+
+  - name: and a number is not a boolean
+    template: "{{ 1 + 1 }}"
+    type: boolean
+    error: EVAL_TYPE_MISMATCH
+
+  - name: unary minus yields a number
+    template: "{{ -s2.count }}"
+    type: number
+    context: { steps: { s2: { count: 24 } } }
+    value: -24
+
+  # ---- comparison and logic ------------------------------------------------
+
+  - name: comparison yields a boolean
+    template: "{{ 2 > 1 }}"
+    type: boolean
+    value: true
+
+  - name: and a boolean is not a number
+    template: "{{ 2 > 1 }}"
+    type: number
+    error: EVAL_TYPE_MISMATCH
+
+  - name: equality yields a boolean even across types
+    template: "{{ 1 == 'a' }}"
+    type: boolean
+    value: false
+
+  - name: conjunction yields a boolean
+    template: "{{ true && false }}"
+    type: boolean
+    value: false
+
+  - name: negation yields a boolean
+    template: "{{ !true }}"
+    type: boolean
+    value: false
+
+  # ---- the conditional and the fallback ------------------------------------
+
+  - name: a conditional yields whichever arm it took, with that arm's type
+    template: "{{ true ? s2.count : 0 }}"
+    type: number
+    context: { steps: { s2: { count: 24 } } }
+    value: 24
+
+  - name: >-
+      so arms of different types are decided at run time — this one yields text
+      and a number slot refuses it
+    template: "{{ false ? 1 : 'two' }}"
+    type: number
+    error: EVAL_TYPE_MISMATCH
+
+  - name: and the same expression is fine in a text slot
+    template: "{{ false ? 1 : 'two' }}"
+    type: text
+    value: two
+
+  - name: the fallback yields the type of whichever side it took
+    template: "{{ s2.total ?? 'none' }}"
+    type: text
+    context: { steps: { s2: { total: null } } }
+    value: none
+
+  - name: and of the left side when there is one
+    template: "{{ s2.count ?? 'none' }}"
+    type: number
+    context: { steps: { s2: { count: 24 } } }
+    value: 24
+
+  # ---- functions -----------------------------------------------------------
+
+  - name: text.len yields a number
+    template: "{{ text.len('hello') }}"
+    type: number
+    value: 5
+
+  - name: and not text, however printable it looks
+    template: "{{ text.len('hello') }}"
+    type: boolean
+    error: EVAL_TYPE_MISMATCH
+
+  - name: text.contains yields a boolean
+    template: "{{ text.contains('inbox', 'in') }}"
+    type: boolean
+    value: true
+
+  - name: text.split yields a list
+    template: "{{ text.split('a,b', ',') }}"
+    type: list
+    value: [a, b]
+
+  - name: and a list into a number slot is refused
+    template: "{{ text.split('a,b', ',') }}"
+    type: number
+    error: EVAL_TYPE_MISMATCH
+
+  - name: list.sort yields a list
+    template: "{{ list.sort(s2.ids) }}"
+    type: list
+    context: { steps: { s2: { ids: [2, 1] } } }
+    value: [1, 2]
+
+  - name: json.parse yields whatever the document held — here an object
+    template: "{{ json.parse(s2.body) }}"
+    type: object
+    context: { steps: { s2: { body: '{"a":1}' } } }
+    value: { a: 1 }
+
+  - name: and here a list, from the same function
+    template: "{{ json.parse(s2.body) }}"
+    type: list
+    context: { steps: { s2: { body: "[1,2]" } } }
+    value: [1, 2]
+
+  - name: >-
+      which is exactly why its return type is unknown at design time and checked
+      here instead — a list does not satisfy an object slot
+    template: "{{ json.parse(s2.body) }}"
+    type: object
+    context: { steps: { s2: { body: "[1,2]" } } }
+    error: EVAL_TYPE_MISMATCH
+
+  - name: json.stringify yields text
+    template: "{{ json.stringify(s2.ids) }}"
+    type: text
+    context: { steps: { s2: { ids: [1, 2] } } }
+    value: "[1,2]"
+
+  # ---- paths ---------------------------------------------------------------
+
+  - name: projection yields a list, whatever the projected members are
+    template: "{{ s2.messages[].subject }}"
+    type: list
+    context: { steps: { s2: { messages: [{ subject: One }] } } }
+    value: [One]
+
+  - name: and a projection into a text slot is refused like any other list
+    template: "{{ s2.messages[].subject }}"
+    type: text
+    context: { steps: { s2: { messages: [{ subject: One }] } } }
+    error: EVAL_TYPE_MISMATCH
+
+  - name: indexing a list yields the element, with the element's own type
+    template: "{{ s2.messages[0].count }}"
+    type: number
+    context: { steps: { s2: { messages: [{ count: 3 }] } } }
+    value: 3

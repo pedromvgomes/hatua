@@ -1,0 +1,79 @@
+about: >-
+  Mixed text — the one place the language is deliberately soft. A null inside a
+  sentence renders as empty rather than failing, because that is what mixed text
+  means; everywhere else null is strict. It gets its own file so the exception
+  is visible rather than buried.
+
+scenarios:
+  - name: text around a hole survives verbatim
+    template: "Hi {{ s2.name }}, welcome."
+    type: text
+    context: { steps: { s2: { name: Dane } } }
+    value: "Hi Dane, welcome."
+
+  - name: several holes
+    template: "{{ s2.a }}-{{ s2.b }}"
+    type: text
+    context: { steps: { s2: { a: one, b: two } } }
+    value: "one-two"
+
+  - name: a null renders as empty rather than failing
+    template: "Hi {{ s2.name }}!"
+    type: text
+    context: { steps: { s2: { name: null } } }
+    value: "Hi !"
+
+  - name: >-
+      that softness is interpolation's alone — the same null in a single-hole
+      template stays null rather than becoming empty text
+    template: "{{ s2.name }}"
+    type: text
+    context: { steps: { s2: { name: null } } }
+    value: null
+
+  - name: a missing path is still missing, softness notwithstanding
+    template: "Hi {{ s9.name }}!"
+    type: text
+    context: { steps: {} }
+    error: EVAL_MISSING_PATH
+
+  - name: a number interpolates through the shared rendering
+    template: "You have {{ s2.count }} messages"
+    type: text
+    context: { steps: { s2: { count: 24 } } }
+    value: "You have 24 messages"
+
+  - name: a boolean interpolates as its literal spelling
+    template: "urgent: {{ s2.urgent }}"
+    type: text
+    context: { steps: { s2: { urgent: false } } }
+    value: "urgent: false"
+
+  - name: >-
+      a list does not interpolate. A text template is a rendering context, not a
+      serialisation one; json.stringify is how a payload becomes text.
+    template: "ids: {{ s2.ids }}"
+    type: text
+    context: { steps: { s2: { ids: [1, 2] } } }
+    error: EVAL_TYPE_MISMATCH
+
+  - name: json.stringify is how it is done instead
+    template: "ids: {{ json.stringify(s2.ids) }}"
+    type: text
+    context: { steps: { s2: { ids: [1, 2] } } }
+    value: "ids: [1,2]"
+
+  - name: the escape renders as the braces themselves
+    template: "literal {{ '{{' }} braces"
+    type: text
+    value: "literal {{ braces"
+
+  - name: a template with no holes at all is its own text
+    template: "no holes here"
+    type: text
+    value: "no holes here"
+
+  - name: an empty template is empty text
+    template: ""
+    type: text
+    value: ""

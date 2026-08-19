@@ -33,5 +33,8 @@ credential into version control. Nothing secret is ever stored in a definition.
   arise from a hand-edit.
 - **There are only two manifest kinds**, `component` and `trigger`. Connection types arrive with the
   connections themselves, and a `conn` field matches against them via `conn_type`.
+  *(Superseded by [ADR-0010](0010-functions-are-namespaced-and-declared.md): there is now a third,
+  `function`. This consequence was reasoning about connections and never considered functions, which
+  hold no credentials and describe no flow Hatua cannot run. Everything else here stands.)*
 - **Per-use variation is a component field, not a connection option.** Two models means two
   connections, which keeps connections opaque and leaves one mechanism for varying behaviour.

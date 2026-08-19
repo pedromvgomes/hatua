@@ -1,0 +1,144 @@
+// ---------------------------------------------------------------------------
+// The Hatua expression grammar.
+//
+// Shared VERBATIM by pigeon (Go) and Peggy (TypeScript). Four constraints keep
+// it shared; `make lint` enforces them:
+//
+//   1. Rules assign with `=`  (pigeon accepts it; Peggy has no `<-`).
+//   2. No `$` text capture    (Peggy-only; `str(...)` flattens instead).
+//   3. No label named `c`     (pigeon names the action receiver `c`).
+//   4. Every action body is exactly `return <helper>(...)`, so the body is
+//      simultaneously valid Go and valid JavaScript.
+//
+// The `At` rule is supplied per language by the epilogue: reading the current
+// offset is the one construct the two dialects genuinely spell differently
+// (`c.pos.offset` vs `offset()`). It is the only rule not shared verbatim, and
+// it lives last because the first rule in the file is the start rule.
+//
+// See docs/adr/0008-one-peg-grammar-two-runtime-free-generators.md.
+// ---------------------------------------------------------------------------
+
+// ---- Template --------------------------------------------------------------
+
+Template = segs:Segment* EOF { return templateNode(segs) }
+
+Segment = Hole / TextRun
+
+Hole = "{{" _ at:At e:Expr _ "}}" { return holeNode(at, e) }
+
+TextRun = cs:TextChar+ { return textNode(cs) }
+
+TextChar = !"{{" ch:. { return str(ch) }
+
+// ---- Expressions, lowest precedence first ----------------------------------
+
+Expr = Ternary
+
+// The entry point for parsing a bare Expression, which only the corpus and
+// tooling use — a field value is always a whole Template.
+//
+// It exists separately from `Expr` because `Expr` is also what a hole contains,
+// so it cannot demand EOF, and because the two generators disagree about
+// whether a start rule must consume its input: Peggy insists, pigeon does not.
+// Without this, `ParseExpression("1 2")` returned the literal 1 in Go and a
+// parse error in TypeScript — silent truncation being the worse half.
+ExpressionEntry = e:Expr EOF { return parenNode(e) }
+
+Ternary = cond:Coalesce t:( QMark Ternary Colon Ternary )? { return ternaryNode(cond, t) }
+
+Coalesce = h:Or t:( CoalesceOp Or )* { return binaryNode(h, t) }
+
+Or = h:And t:( OrOp And )* { return binaryNode(h, t) }
+
+And = h:Equality t:( AndOp Equality )* { return binaryNode(h, t) }
+
+Equality = h:Relational t:( EqualityOp Relational )* { return binaryNode(h, t) }
+
+Relational = h:Additive t:( RelationalOp Additive )* { return binaryNode(h, t) }
+
+Additive = h:Multiplicative t:( AdditiveOp Multiplicative )* { return binaryNode(h, t) }
+
+Multiplicative = h:Unary t:( MultiplicativeOp Unary )* { return binaryNode(h, t) }
+
+Unary = at:At op:UnaryOp operand:Unary { return unaryNode(at, op, operand) }
+      / Postfix
+
+Postfix = base:Primary sfx:Suffix* { return postfixNode(base, sfx) }
+
+Primary = ParenExpr
+        / Literal
+        / NameRef
+
+ParenExpr = "(" _ e:Expr _ ")" { return parenNode(e) }
+
+// ---- Operators -------------------------------------------------------------
+//
+// Each operator rule swallows the whitespace around itself, so the repetition
+// groups above stay two elements wide and the helpers index them positionally.
+
+QMark = _ "?" !"?" _
+Colon = _ ":" _
+
+CoalesceOp       = _ op:"??" _                                 { return str(op) }
+OrOp             = _ op:"||" _                                 { return str(op) }
+AndOp            = _ op:"&&" _                                 { return str(op) }
+EqualityOp       = _ op:("==" / "!=") _                        { return str(op) }
+RelationalOp     = _ op:("<=" / ">=" / "<" / ">") _            { return str(op) }
+AdditiveOp       = _ op:("+" / "-") _                          { return str(op) }
+MultiplicativeOp = _ op:("*" / "/" / "%") _                    { return str(op) }
+UnaryOp          = op:("!" !"=" / "-") _                       { return str(op) }
+
+// ---- Postfix suffixes ------------------------------------------------------
+
+Suffix = MemberSuffix / ProjectSuffix / IndexSuffix / CallSuffix
+
+MemberSuffix  = at:At "." n:Name                       { return memberSuffix(at, n) }
+ProjectSuffix = at:At "[" _ "]"                        { return projectSuffix(at) }
+IndexSuffix   = at:At "[" _ e:Expr _ "]"               { return indexSuffix(at, e) }
+CallSuffix    = at:At "(" _ args:Args? _ ")"           { return callSuffix(at, args) }
+
+Args = h:Expr t:( Comma Expr )* { return argList(h, t) }
+
+Comma = _ "," _
+
+// ---- Names -----------------------------------------------------------------
+
+NameRef = at:At !ReservedWord n:Name { return nameNode(at, n) }
+
+Name = h:NameStart t:NamePart* { return str(h, t) }
+
+NameStart = [a-zA-Z_]
+NamePart  = [a-zA-Z0-9_]
+
+ReservedWord = ("true" / "false" / "null") !NamePart
+
+// ---- Literals --------------------------------------------------------------
+
+Literal = NullLit / BoolLit / NumberLit / StringLit
+
+NullLit = at:At "null" !NamePart              { return nullNode(at) }
+BoolLit = at:At v:("true" / "false") !NamePart { return boolNode(at, v) }
+
+NumberLit = at:At i:Digits f:Frac? e:Exp? { return numberNode(at, i, f, e) }
+
+Digits = d:NumPart+ { return str(d) }
+NumPart = [0-9]
+Frac = "." d:Digits         { return str(".", d) }
+Exp  = e:ExpMark s:Sign? d:Digits { return str(e, s, d) }
+ExpMark = [eE]
+Sign = [+-]
+
+StringLit = at:At "'" cs:SqChar* "'"   { return stringNode(at, cs) }
+          / at:At "\"" cs:DqChar* "\"" { return stringNode(at, cs) }
+
+SqChar = Escape / !"'" !"\\" ch:. { return str(ch) }
+DqChar = Escape / !"\"" !"\\" ch:. { return str(ch) }
+
+Escape = "\\" ch:. { return escapeChar(ch) }
+
+// ---- Trivia ----------------------------------------------------------------
+
+_ = Space*
+Space = [ \t\r\n]
+
+EOF = !.

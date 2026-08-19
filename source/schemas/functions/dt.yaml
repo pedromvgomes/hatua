@@ -1,0 +1,36 @@
+kind: function
+namespace: dt
+summary: Instants. RFC 3339 only — there are no free-form format strings in v1.
+functions:
+  - name: now
+    summary: The current instant, read from the caller-supplied clock.
+    params: []
+    returns: datetime
+
+  - name: parse
+    summary: Read an RFC 3339 timestamp.
+    params:
+      - { name: value, type: text }
+    returns: datetime
+
+  - name: iso
+    summary: Render an instant as RFC 3339 in UTC.
+    params:
+      - { name: value, type: datetime }
+    returns: text
+
+  - name: add
+    summary: Shift an instant. Unit is one of seconds, minutes, hours, days.
+    params:
+      - { name: value, type: datetime }
+      - { name: amount, type: number }
+      - { name: unit, type: text }
+    returns: datetime
+
+  - name: diff
+    summary: Whole units from the second instant to the first, truncated toward zero.
+    params:
+      - { name: a, type: datetime }
+      - { name: b, type: datetime }
+      - { name: unit, type: text }
+    returns: number

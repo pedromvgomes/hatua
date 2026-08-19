@@ -29,9 +29,10 @@ are implemented once per language.
 
 `source/conformance/` is what keeps those implementations honest, and it matters more than the
 codegen does. Both suites run the same fixtures; a file that passes in one language and fails in the
-other is precisely the divergence the corpus exists to catch. When the expression language lands its
-semantics get pinned there too — an evaluator agreeing on syntax but disagreeing on, say, null
-coercion produces a workflow that looks right in the builder and misbehaves in production.
+other is precisely the divergence the corpus exists to catch. The expression language's semantics
+are pinned there too, under `conformance/expression/` — an evaluator agreeing on syntax but
+disagreeing on, say, null coercion produces a workflow that looks right in the builder and
+misbehaves in production. See [ADR-0009](0009-strict-expression-semantics.md).
 
 ## Consequences
 

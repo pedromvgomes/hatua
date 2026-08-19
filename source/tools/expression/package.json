@@ -1,0 +1,18 @@
+{
+  "name": "@hatua/expression-toolchain",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The one expression grammar, its two generators, and the drift check that keeps them honest",
+  "//": "The scripts are deliberately not called build/test: `turbo run build` would otherwise regenerate the parsers on every ordinary build, which needs Go and pigeon on a machine that may have neither.",
+  "scripts": {
+    "generate": "node src/build.js",
+    "check-drift": "node src/build.js --check-drift",
+    "scenarios": "node harness/run.js",
+    "lint": "node src/lint-grammar.js"
+  },
+  "dependencies": {
+    "peggy": "5.1.0",
+    "yaml": "^2.8.1"
+  }
+}

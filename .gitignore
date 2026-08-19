@@ -158,3 +158,11 @@ vite.config.ts.timestamp-*
 
 # Turbo task cache
 .turbo/
+
+# The expression toolchain stages a generation, verifies it, and only then
+# promotes it into the tree. These are the staging areas; nothing here survives
+# a build. `src/generated.staged` sits inside the package on purpose — the
+# generated parser imports `../nodes.js`, and JavaScript resolution is
+# path-based with no equivalent of `go test -overlay`.
+source/tools/expression/.staging/
+source/packages/expressions/src/generated.staged/

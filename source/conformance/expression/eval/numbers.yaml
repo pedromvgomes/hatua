@@ -1,0 +1,61 @@
+about: >-
+  How a number becomes text. Go and JavaScript disagree at both ends of the
+  range — `String(1e-6)` is "0.000001" in JavaScript and "1e-06" in Go — and a
+  workflow that emails a number must not read differently depending on which
+  runner sent it. The ECMAScript spelling wins, and Go ports the algorithm.
+
+scenarios:
+  - name: a whole float drops its fractional part
+    template: "{{ 3.0 }}"
+    type: text
+    value: "3"
+
+  - name: a whole float computed at run time does the same
+    template: "{{ 6 / 2 }}"
+    type: text
+    value: "3"
+
+  - name: negative zero renders as zero
+    template: "{{ -0 }}"
+    type: text
+    value: "0"
+
+  - name: 1e-6 stays in positional notation
+    template: "{{ 0.000001 }}"
+    type: text
+    value: "0.000001"
+
+  - name: 1e-7 crosses into exponent notation
+    template: "{{ 0.0000001 }}"
+    type: text
+    value: "1e-7"
+
+  - name: 1e20 stays positional
+    template: "{{ 1e20 }}"
+    type: text
+    value: "100000000000000000000"
+
+  - name: 1e21 crosses into exponent notation
+    template: "{{ 1e21 }}"
+    type: text
+    value: "1e+21"
+
+  - name: a mantissa with more than one digit keeps its point
+    template: "{{ 1.5e22 }}"
+    type: text
+    value: "1.5e+22"
+
+  - name: a negative exponent keeps its sign
+    template: "{{ 1.5e-9 }}"
+    type: text
+    value: "1.5e-9"
+
+  - name: the shortest round-trip digits are used, not seventeen of them
+    template: "{{ 0.1 + 0.2 }}"
+    type: text
+    value: "0.30000000000000004"
+
+  - name: interpolated into mixed text, the same rendering applies
+    template: "count: {{ 0.000001 }}"
+    type: text
+    value: "count: 0.000001"

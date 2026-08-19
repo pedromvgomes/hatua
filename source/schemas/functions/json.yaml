@@ -1,0 +1,18 @@
+kind: function
+namespace: json
+summary: >-
+  The escape hatch for opaque payloads. `json.parse` returns `unknown`, which is
+  what makes `json.parse(s2.output).count` a warning rather than an error at
+  design time — and a runtime type check at the slot boundary.
+functions:
+  - name: parse
+    summary: Read a JSON document.
+    params:
+      - { name: value, type: text }
+    returns: unknown
+
+  - name: stringify
+    summary: Render a value as compact JSON.
+    params:
+      - { name: value, type: unknown }
+    returns: text

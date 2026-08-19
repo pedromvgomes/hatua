@@ -1,0 +1,236 @@
+about: >-
+  The operator truth tables. Operators never coerce: that is the single rule
+  behind almost every scenario here, and it is what makes the language's
+  behaviour derivable rather than memorised.
+
+scenarios:
+  # ---- arithmetic ----------------------------------------------------------
+
+  - name: there is one numeric type and it is a float, so 7 / 2 is 3.5
+    template: "{{ 7 / 2 }}"
+    type: number
+    value: 3.5
+
+  - name: addition
+    template: "{{ 2 + 3 }}"
+    type: number
+    value: 5
+
+  - name: the remainder takes the sign of the dividend
+    template: "{{ -7 % 3 }}"
+    type: number
+    value: -1
+
+  - name: >-
+      division by zero is an error rather than an infinity, which is what keeps
+      NaN and Infinity out of the value space entirely
+    template: "{{ 1 / 0 }}"
+    type: number
+    error: EVAL_DIVISION_BY_ZERO
+
+  - name: so is a remainder by zero
+    template: "{{ 1 % 0 }}"
+    type: number
+    error: EVAL_DIVISION_BY_ZERO
+
+  - name: >-
+      a result outside the range of a float64 is an error, not Infinity. Excluding
+      Infinity is only worth anything if nothing can produce one.
+    template: "{{ 1e308 * 10 }}"
+    type: number
+    error: EVAL_NUMERIC_OVERFLOW
+
+  - name: and by subtraction at the other end
+    template: "{{ -1e308 - 1e308 }}"
+    type: number
+    error: EVAL_NUMERIC_OVERFLOW
+
+  - name: "`+` is numeric only — there is no string concatenation operator"
+    template: "{{ 'a' + 'b' }}"
+    type: text
+    error: EVAL_OPERAND_TYPE
+
+  - name: and it does not quietly parse text that looks numeric
+    template: "{{ '1' + 1 }}"
+    type: number
+    error: EVAL_OPERAND_TYPE
+
+  # ---- equality ------------------------------------------------------------
+
+  - name: equality is total and never coerces, so a number is not its text
+    template: "{{ 1 == '1' }}"
+    type: boolean
+    value: false
+
+  - name: two nulls are equal
+    template: "{{ null == null }}"
+    type: boolean
+    value: true
+
+  - name: null is not equal to anything else
+    template: "{{ null == 0 }}"
+    type: boolean
+    value: false
+
+  - name: equality reaches inside lists
+    template: "{{ s2.a == s2.b }}"
+    type: boolean
+    context: { steps: { s2: { a: [1, 2], b: [1, 2] } } }
+    value: true
+
+  - name: and inside objects, regardless of key order
+    template: "{{ s2.a == s2.b }}"
+    type: boolean
+    context: { steps: { s2: { a: { x: 1, y: 2 }, b: { y: 2, x: 1 } } } }
+    value: true
+
+  - name: inequality is its negation
+    template: "{{ 1 != 2 }}"
+    type: boolean
+    value: true
+
+  # ---- ordering ------------------------------------------------------------
+
+  - name: numbers order
+    template: "{{ 2 > 1 }}"
+    type: boolean
+    value: true
+
+  - name: text orders by code point
+    template: "{{ 'a' < 'b' }}"
+    type: boolean
+    value: true
+
+  - name: >-
+      including above the basic plane, where JavaScript's own `<` disagrees with
+      Go's: a surrogate pair sorts before U+E000..U+FFFF in UTF-16 order and
+      after it by code point
+    template: "{{ 'ﬁ' < '😀' }}"
+    type: boolean
+    value: true
+
+  - name: instants order
+    template: "{{ dt.parse('2026-01-02T00:00:00Z') < dt.parse('2026-02-01T00:00:00Z') }}"
+    type: boolean
+    value: true
+
+  - name: >-
+      ordering against null is an error, not a quiet false. `null < 1` is
+      neither true nor false, and a branch acting on the false would be wrong.
+    template: "{{ s2.total > 0 }}"
+    type: boolean
+    context: { steps: { s2: { total: null } } }
+    error: EVAL_COMPARE_NULL
+
+  - name: ordering across two types is an error too
+    template: "{{ 1 < 'a' }}"
+    type: boolean
+    error: EVAL_COMPARE_TYPES
+
+  - name: booleans have no order
+    template: "{{ true < false }}"
+    type: boolean
+    error: EVAL_OPERAND_TYPE
+
+  - name: neither do lists
+    template: "{{ s2.a < s2.b }}"
+    type: boolean
+    context: { steps: { s2: { a: [1], b: [2] } } }
+    error: EVAL_OPERAND_TYPE
+
+  # ---- boolean contexts ----------------------------------------------------
+
+  - name: and
+    template: "{{ true && false }}"
+    type: boolean
+    value: false
+
+  - name: or
+    template: "{{ false || true }}"
+    type: boolean
+    value: true
+
+  - name: not
+    template: "{{ !false }}"
+    type: boolean
+    value: true
+
+  - name: >-
+      a boolean context requires a boolean. Nothing is truthy: a non-empty
+      string is not true, and neither is a non-zero number.
+    template: "{{ s2.count && true }}"
+    type: boolean
+    context: { steps: { s2: { count: 24 } } }
+    error: EVAL_OPERAND_TYPE
+
+  - name: null is not false either
+    template: "{{ !s2.total }}"
+    type: boolean
+    context: { steps: { s2: { total: null } } }
+    error: EVAL_OPERAND_TYPE
+
+  - name: >-
+      `&&` short-circuits, so the right-hand side is never reached — which is
+      what makes a guard like this expressible at all
+    template: "{{ false && s9.missing }}"
+    type: boolean
+    value: false
+
+  - name: "`||` short-circuits the same way"
+    template: "{{ true || s9.missing }}"
+    type: boolean
+    value: true
+
+  # ---- the conditional and the fallback ------------------------------------
+
+  - name: the conditional picks one arm
+    template: "{{ TRIGGER == 'nightly' ? 'batch' : 'live' }}"
+    type: text
+    context: { TRIGGER: nightly }
+    value: batch
+
+  - name: its condition must be a boolean, like every other boolean context
+    template: "{{ s2.count ? 'a' : 'b' }}"
+    type: text
+    context: { steps: { s2: { count: 24 } } }
+    error: EVAL_OPERAND_TYPE
+
+  - name: only the chosen arm is evaluated
+    template: "{{ true ? 'a' : s9.missing }}"
+    type: text
+    value: a
+
+  - name: "`??` is the only fallback in the language"
+    template: "{{ s2.total ?? 0 }}"
+    type: number
+    context: { steps: { s2: { total: null } } }
+    value: 0
+
+  - name: it falls back on null only, never on zero or empty text
+    template: "{{ s2.count ?? 99 }}"
+    type: number
+    context: { steps: { s2: { count: 0 } } }
+    value: 0
+
+  - name: >-
+      it also catches a missing path, because absence and null are the same
+      value once resolved
+    template: "{{ s2.total ?? 0 }}"
+    type: number
+    on_missing: "null"
+    context: { steps: { s2: {} } }
+    value: 0
+
+  # ---- unary ---------------------------------------------------------------
+
+  - name: negation needs a number
+    template: "{{ -s2.name }}"
+    type: number
+    context: { steps: { s2: { name: Dane } } }
+    error: EVAL_OPERAND_TYPE
+
+  - name: not needs a boolean
+    template: "{{ !s2.name }}"
+    type: boolean
+    context: { steps: { s2: { name: Dane } } }
+    error: EVAL_OPERAND_TYPE

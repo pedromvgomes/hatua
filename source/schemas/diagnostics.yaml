@@ -1,0 +1,164 @@
+# Diagnostic codes for the expression language — and their severity.
+#
+# Severity is part of the shared contract, not a per-language choice. A code
+# that errors in TypeScript and warns in Go would let a workflow publish from
+# one builder and not another, which is the whole failure this file prevents.
+#
+#   error    blocks Publish. Never blocks editing — ADR-0009.
+#   warning  informs. Does not block anything.
+#
+# `phase` says when a code can be raised:
+#
+#   check    design time, from validate()
+#   eval     run time, from resolve()
+#
+# `message` is a template. `{name}` holes are filled from the diagnostic's own
+# fields by a two-line formatter in each language, so the text a user reads is
+# identical in the builder and in a runner's logs.
+
+codes:
+  # ---- design time ---------------------------------------------------------
+
+  - code: EXPR_PARSE_ERROR
+    severity: error
+    phase: check
+    message: "{detail}"
+    summary: The template could not be parsed.
+
+  - code: EXPR_UNKNOWN_REFERENCE
+    severity: error
+    phase: check
+    message: "Nothing named {name} is in scope here."
+    summary: >-
+      The root of a path is not a step, trigger, var or built-in this step can
+      see. Sibling branches are deliberately out of scope.
+
+  - code: EXPR_UNKNOWN_FUNCTION
+    severity: error
+    phase: check
+    message: "There is no function {name}."
+    summary: Neither Hatua's registry nor the Host's declares it.
+
+  - code: EXPR_ARITY_MISMATCH
+    severity: error
+    phase: check
+    message: "{name} takes {expected} arguments, not {actual}."
+    summary: Wrong number of arguments for a declared signature.
+
+  - code: EXPR_ARGUMENT_TYPE
+    severity: error
+    phase: check
+    message: "{name} expects {expected} for {param}, not {actual}."
+    summary: An argument's statically known type conflicts with the declaration.
+
+  - code: EXPR_TYPE_MISMATCH
+    severity: error
+    phase: check
+    message: "{name} expects {expected}, but this produces {actual}."
+    summary: >-
+      A known conflict between the expression's own type and the type the field
+      declares. Publish is refused; the expression can never be right.
+
+  - code: EXPR_TYPE_UNKNOWN
+    severity: warning
+    phase: check
+    message: "{name} expects {expected}; this type is only known at run time."
+    summary: >-
+      The expression's type cannot be determined statically — `json.parse(...)`
+      and `item` members are the motivating cases. Accepted, and checked against
+      the declared type at run time instead.
+
+  - code: EXPR_OPERAND_TYPE
+    severity: error
+    phase: check
+    message: "{op} expects {expected}, not {actual}."
+    summary: >-
+      An operator applied to a statically known wrong type. Operators never
+      coerce, so this can only ever fail.
+
+  - code: EXPR_FUNCTION_COLLISION
+    severity: error
+    phase: check
+    message: "{name} is declared twice."
+    summary: >-
+      A Host registry declares a namespace and name Hatua already declares.
+      Raised at merge time, loudly, rather than silently picking a winner.
+
+  # ---- run time ------------------------------------------------------------
+
+  - code: EVAL_MISSING_PATH
+    severity: error
+    phase: eval
+    message: "{name} is not present."
+    summary: >-
+      A path resolved to nothing while `onMissing` was `error`. Under
+      `onMissing: null` the same path yields null and raises nothing.
+
+  - code: EVAL_TYPE_MISMATCH
+    severity: error
+    phase: eval
+    message: "{name} expects {expected}, but this produced {actual}."
+    summary: >-
+      The value reaching a slot does not match the type the field declares.
+      This is the run-time half of EXPR_TYPE_UNKNOWN.
+
+  - code: EVAL_OPERAND_TYPE
+    severity: error
+    phase: eval
+    message: "{op} expects {expected}, not {actual}."
+    summary: >-
+      Operators are strict: no operand is ever coerced, and a boolean context
+      requires a boolean.
+
+  - code: EVAL_COMPARE_NULL
+    severity: error
+    phase: eval
+    message: "{op} cannot compare null."
+    summary: >-
+      Ordered comparison with the absent value has no defensible answer, so it
+      is an error rather than a silent false. `==` and `!=` are total and do
+      handle null.
+
+  - code: EVAL_COMPARE_TYPES
+    severity: error
+    phase: eval
+    message: "{op} cannot compare {expected} with {actual}."
+    summary: Ordered comparison across two different types.
+
+  - code: EVAL_NUMERIC_OVERFLOW
+    severity: error
+    phase: eval
+    message: "{op} produced a number too large to represent."
+    summary: >-
+      An arithmetic result outside the range of a 64-bit float. Like division by
+      zero, this is an error rather than a value, because the alternative is
+      Infinity — and the whole point of excluding it is that no operator
+      downstream has to have an opinion about it.
+
+  - code: EVAL_DIVISION_BY_ZERO
+    severity: error
+    phase: eval
+    message: "Division by zero."
+    summary: >-
+      An error rather than an infinity, which is what keeps NaN and Infinity
+      out of the value space entirely.
+
+  - code: EVAL_UNKNOWN_FUNCTION
+    severity: error
+    phase: eval
+    message: "There is no function {name}."
+    summary: A call survived to run time with no implementation registered.
+
+  - code: EVAL_ARITY_MISMATCH
+    severity: error
+    phase: eval
+    message: "{name} takes {expected} arguments, not {actual}."
+    summary: Wrong number of arguments at run time.
+
+  - code: EVAL_BAD_ARGUMENT
+    severity: error
+    phase: eval
+    message: "{name} cannot accept {actual} for {param}."
+    summary: >-
+      A well-typed argument that is nonetheless unusable — an unparseable
+      timestamp, an unknown unit, a sort over mixed types.

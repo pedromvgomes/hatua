@@ -1,0 +1,13 @@
+{
+  "comment": [
+    "Pinned deliberately. A tool upgrade silently altering either parser is the",
+    "exact failure the shared grammar exists to prevent, and it would not show",
+    "up as a test failure — it would show up as a workflow behaving differently",
+    "in a runner than in the builder.",
+    "",
+    "pigeon is fetched by `go run` at its pinned version, so there is nothing to",
+    "install. peggy is a pinned exact dependency of this package."
+  ],
+  "pigeon": "github.com/mna/pigeon@v1.3.0",
+  "peggy": "5.1.0"
+}

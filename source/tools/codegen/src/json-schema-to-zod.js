@@ -82,13 +82,28 @@ function scalar(node) {
   let out
   switch (base) {
     case 'string':
-      out = 'z.string()'
-      if (node.minLength) out += `.min(${node.minLength})`
-      if (node.pattern) out += `.regex(/${node.pattern}/)`
       // The execution schema promises date-time on started_at and friends; a
       // runner handing the Runs view an unparseable timestamp would otherwise
       // pass validation.
-      if (node.format === 'date-time') out = `z.iso.datetime({ offset: true })`
+      //
+      // It used to be assigned over whatever minLength/pattern had built,
+      // dropping those constraints without a word. Refusing the combination is
+      // the honest version: nothing in schemas/ writes it, and emitting an
+      // intersection nobody has exercised is exactly the plausible-but-wrong
+      // output this generator is meant not to produce.
+      if (node.format === 'date-time') {
+        if (node.minLength || node.pattern) {
+          throw new Error(
+            'Unhandled `format: date-time` combined with minLength/pattern. ' +
+              'Add support in json-schema-to-zod.js rather than dropping either.',
+          )
+        }
+        out = 'z.iso.datetime({ offset: true })'
+        break
+      }
+      out = 'z.string()'
+      if (node.minLength) out += `.min(${node.minLength})`
+      if (node.pattern) out += `.regex(/${node.pattern}/)`
       break
     case 'integer':
       out = 'z.number().int()'
@@ -130,6 +145,15 @@ export function toZod(node, indent = '  ') {
     if (node.additionalProperties === true && !node.properties) {
       return 'z.record(z.string(), z.unknown())'
     }
+    // A *schema* for additional properties would need z.record with that value
+    // type, and silently emitting `z.object({})` instead would let Go accept
+    // input TypeScript rejects — the exact failure ADR-0006 exists to prevent.
+    if (node.additionalProperties && typeof node.additionalProperties === 'object') {
+      throw new Error(
+        'Unhandled `additionalProperties: <schema>`. Add z.record support in ' +
+          'json-schema-to-zod.js rather than dropping the constraint.',
+      )
+    }
     const required = new Set(node.required ?? [])
     const inner = `${indent}  `
     const lines = Object.entries(node.properties ?? {}).map(([key, child]) => {
@@ -159,6 +183,53 @@ const pascal = (s) => {
   return c.charAt(0).toUpperCase() + c.slice(1)
 }
 
+/**
+ * Names that cannot become `export const <name>`.
+ *
+ * A `$def` called `function` emits syntactically invalid TypeScript, and the
+ * formatter that runs afterwards then reports something unrelated about the
+ * wreckage. Refusing the name here says what actually went wrong.
+ */
+const RESERVED = new Set([
+  'break',
+  'case',
+  'catch',
+  'class',
+  'const',
+  'continue',
+  'debugger',
+  'default',
+  'delete',
+  'do',
+  'else',
+  'enum',
+  'export',
+  'extends',
+  'false',
+  'finally',
+  'for',
+  'function',
+  'if',
+  'import',
+  'in',
+  'instanceof',
+  'new',
+  'null',
+  'return',
+  'super',
+  'switch',
+  'this',
+  'throw',
+  'true',
+  'try',
+  'typeof',
+  'var',
+  'void',
+  'while',
+  'with',
+  'yield',
+])
+
 /** A whole schema document -> a zod module. */
 export function generateModule(schema, { sourceFile }) {
   const out = [
@@ -170,6 +241,12 @@ export function generateModule(schema, { sourceFile }) {
   ]
 
   for (const [name, node] of Object.entries(schema.$defs ?? {})) {
+    if (RESERVED.has(name)) {
+      throw new Error(
+        `${sourceFile}: $def "${name}" is a JavaScript reserved word and cannot be emitted. ` +
+          'Rename it in the schema.',
+      )
+    }
     const doc = jsdoc(node.description).trimEnd()
     if (doc) out.push(doc)
     out.push(`export const ${name} = ${toZod(node)}`)

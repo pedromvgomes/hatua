@@ -89,10 +89,15 @@ $defs:
         minLength: 1
         description: Friendly name shown to the user. Always required — `k` is never shown raw.
       kind:
-        enum: [text, mono, number, textarea, ref, enum, bool, conn, secret]
+        enum: [text, mono, number, textarea, ref, map, enum, bool, conn, secret]
         description: >-
-          `text`, `mono`, `number`, `textarea` and `ref` accept References; the rest hold literals
-          only. `ref` holds exactly one reference and replaces rather than appends.
+          `text`, `mono`, `number`, `textarea`, `ref` and `map` accept Expressions; the rest hold
+          literals only. `ref` holds exactly one expression and replaces rather than appends.
+
+          `map` is a list of named, typed entries the user builds — the shape a component like
+          `data.map` needs, where the outputs are not fixed by the manifest but by what the user
+          wrote into the field. It is the third field kind Hatua interprets structurally, alongside
+          the two control-flow verbs, and the only one whose value decides a step's outputs.
       conn_type:
         type: string
         description: >-
@@ -115,6 +120,13 @@ $defs:
             label: { type: string }
             hint: { type: string }
       toggleLabel: { type: string, description: "`bool` only." }
+      entry_types:
+        type: array
+        description: >-
+          Only on `kind: map`. Which types an entry may declare, defaulting to every scalar plus
+          `list` and `object`. A component that maps only text — a header set, say — narrows it.
+        items:
+          enum: [text, number, boolean, datetime, list, object]
       when:
         type: array
         minItems: 2

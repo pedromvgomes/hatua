@@ -63,3 +63,20 @@ jobs:
           fi
           go vet ./...
           go test ./...
+
+      # One grammar feeds two generators, and the committed parsers are what
+      # every consumer actually runs. This regenerates both, runs the shared
+      # scenarios against the fresh output, and diffs against what is committed
+      # — so a stale parser and a failing one are both caught, and neither can
+      # be papered over by the check itself rewriting the tree.
+      - name: Expression parsers are current and passing
+        working-directory: source/tools/expression
+        run: make check-drift
+
+      # The single most important signal in the build: the SAME scenario files
+      # passing in both languages. A scenario counted by one harness and skipped
+      # by the other is exactly the divergence the corpus exists to catch, so the
+      # two tallies are compared rather than merely both being green.
+      - name: Expression scenarios agree across languages
+        working-directory: source/tools/expression
+        run: make test

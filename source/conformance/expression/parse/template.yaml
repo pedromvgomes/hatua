@@ -1,0 +1,83 @@
+about: >-
+  The grammar covers the whole Template, not just the expression inside a hole.
+  Scannerless PEG treats the `{{` / `}}` boundary as an ordinary rule, so
+  segmentation is generated in both languages rather than being a hand-written
+  scanner on each side — which would be a divergence surface sitting in front of
+  the parser.
+
+scenarios:
+  - name: a template with no holes is one text segment
+    template: "hello"
+    sexp: '(template (text "hello"))'
+
+  - name: an empty template has no segments at all
+    template: ""
+    sexp: "(template)"
+
+  - name: a template that is exactly one hole
+    template: "{{ s2.count }}"
+    sexp: "(template (hole (. s2 count)))"
+
+  - name: text, hole, text
+    template: "Hi {{ user.name }}!"
+    sexp: '(template (text "Hi ") (hole (. user name)) (text "!"))'
+
+  - name: several holes
+    template: "{{ a }} and {{ b }}"
+    sexp: '(template (hole a) (text " and ") (hole b))'
+
+  - name: adjacent holes with no text between them
+    template: "{{ a }}{{ b }}"
+    sexp: "(template (hole a) (hole b))"
+
+  - name: whitespace inside a hole is insignificant
+    template: "{{a}}"
+    sexp: "(template (hole a))"
+
+  - name: a lone closing brace pair is ordinary text
+    template: "a }} b"
+    sexp: '(template (text "a }} b"))'
+
+  - name: a single brace is ordinary text
+    template: "{ a }"
+    sexp: '(template (text "{ a }"))'
+
+  - name: >-
+      the escape is not a special case — it is a hole holding a text literal,
+      which is why nothing in the grammar mentions it
+    template: "{{ '{{' }}"
+    sexp: '(template (hole "{{"))'
+
+  - name: an expression may span the whole hole
+    template: "{{ TRIGGER == 'nightly' ? a : b }}"
+    sexp: '(template (hole (?: (== TRIGGER "nightly") a b)))'
+
+  - name: >-
+      the legacy spelling — an operator outside the braces — is text, not a
+      comparison. It parses, which is the problem: only the type checker can
+      refuse it.
+    template: "{{s2.count}} > 0"
+    sexp: '(template (hole (. s2 count)) (text " > 0"))'
+
+  - name: >-
+      literal text is rendered as itself even when it looks like the printer's
+      own syntax — the empty case is a branch, not a substring replacement over
+      the finished string
+    template: "(template ) {{ a }}"
+    sexp: '(template (text "(template ) ") (hole a))'
+
+  - name: an unclosed hole is refused rather than treated as text
+    template: "unclosed {{ a"
+    error: EXPR_PARSE_ERROR
+
+  - name: an empty hole is refused
+    template: "{{ }}"
+    error: EXPR_PARSE_ERROR
+
+  - name: an incomplete expression is refused
+    template: "{{ a + }}"
+    error: EXPR_PARSE_ERROR
+
+  - name: a stray closing brace inside a hole is refused
+    template: "{{ a } }}"
+    error: EXPR_PARSE_ERROR

@@ -23,6 +23,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@hatua/expressions": "workspace:*",
     "@hatua/schema": "workspace:*",
     "@hatua/document": "workspace:*"
   }

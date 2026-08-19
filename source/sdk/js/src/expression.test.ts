@@ -1,78 +1,155 @@
 import { describe, expect, it } from 'vitest'
-import { type EvaluationContext, evaluate } from './expression'
+import {
+  coreFunctions,
+  type EvaluationContext,
+  ExpressionError,
+  resolve,
+  resolveAll,
+  scopeFor,
+  slotsFor,
+  sourceReference,
+  validate,
+  whenSlot,
+} from './index'
+import { loadDefinition, loadManifests } from './load'
 
-const CTX: EvaluationContext = {
-  TRIGGER: 'nightly',
+/**
+ * The seam this SDK exists for, exercised end to end.
+ *
+ * The language's own behaviour is pinned by conformance/expression/, which runs
+ * against Go as well — duplicating it here would only mean two places to update
+ * and one of them going stale. What these check is the part the corpus cannot:
+ * that a runner can get from a Workflow Definition and a set of manifests to
+ * resolved values without restating anything the builder knows.
+ */
+
+const MANIFESTS = loadManifests(`
+components:
+  - kind: component
+    use: email.fetch
+    name: Fetch emails
+    fields:
+      - { k: connection, label: Mailbox, kind: conn }
+    outputs:
+      - { k: count, label: Count, t: number }
+      - k: messages
+        label: Messages
+        t: list
+        of:
+          - { k: subject, label: Subject, t: text }
+  - kind: component
+    use: email.send
+    name: Send email
+    fields:
+      - { k: to, label: To, kind: text }
+      - { k: subject, label: Subject, kind: text }
+      - { k: retries, label: Retries, kind: number }
+    outputs: []
+`)
+
+const DOC = loadDefinition(`
+id: wf_digest
+name: Inbox digest
+version: 1
+status: draft
+triggers:
+  - { id: nightly, use: core.schedule, name: Nightly }
+vars:
+  - { key: digest_to, value: me@dane.dev }
+steps:
+  - { id: s2, use: email.fetch, name: Fetch, with: { connection: mailbox } }
+  - id: s6
+    use: email.send
+    name: Send digest
+    with:
+      to: "{{ var.digest_to }}"
+      subject: "Inbox digest · {{ s2.count }} messages"
+      retries: "{{ 1 + 1 }}"
+`)
+
+const CONTEXT: EvaluationContext = {
+  steps: { s2: { count: 24, messages: [{ subject: 'Invoice' }, { subject: 'Receipt' }] } },
   triggers: { nightly: { triggered_at: '2026-08-18T07:00:00Z' } },
   var: { digest_to: 'me@dane.dev' },
-  steps: {
-    s2: { count: 24, messages: [{ subject: 'Invoice' }, { subject: 'Receipt' }] },
-    s4: { item: { subject: 'Invoice', from: 'billing@x.com' } },
-  },
+  TRIGGER: 'nightly',
+  functions: coreFunctions(),
 }
 
-describe('evaluate', () => {
-  it('preserves type when a value is exactly one reference', () => {
-    // {{s2.count}} must yield the number 24, not the string "24" — a runner
-    // that stringifies here would break every numeric comparison downstream.
-    expect(evaluate('{{s2.count}}', CTX)).toBe(24)
+const manifestFor = (use: string) => {
+  const manifest = MANIFESTS.find((candidate) => candidate.use === use)
+  if (!manifest) throw new Error(`no manifest for ${use}`)
+  return manifest
+}
+
+describe('a runner resolving a step', () => {
+  it('resolves a whole `with:` map from the step and its manifest', () => {
+    const step = DOC.steps[1]!
+    expect(resolveAll(CONTEXT, slotsFor(step, manifestFor('email.send')))).toEqual({
+      to: 'me@dane.dev',
+      subject: 'Inbox digest · 24 messages',
+      retries: 2,
+    })
   })
 
-  it('interpolates when a reference is embedded in text', () => {
-    expect(evaluate('Inbox digest · {{s2.count}} messages', CTX)).toBe('Inbox digest · 24 messages')
+  it('keeps a number a number, so a downstream comparison still works', () => {
+    expect(
+      resolve(CONTEXT, { name: 'n', template: '{{ s2.count }}', expectedType: 'number' }),
+    ).toBe(24)
   })
 
-  it('resolves several references in one string', () => {
-    expect(evaluate('{{s4.item.subject}} from {{s4.item.from}}', CTX)).toBe(
-      'Invoice from billing@x.com',
-    )
-  })
+  it('reports every failing field at once rather than stopping at the first', () => {
+    let thrown: unknown
+    try {
+      resolveAll(CONTEXT, [
+        { name: 'a', template: '{{ s9.missing }}', expectedType: 'text' },
+        { name: 'b', template: '{{ s8.missing }}', expectedType: 'text' },
+      ])
+    } catch (error) {
+      thrown = error
+    }
 
-  it('addresses triggers by name', () => {
-    expect(evaluate('{{triggers.nightly.triggered_at}}', CTX)).toBe('2026-08-18T07:00:00Z')
-  })
-
-  it('exposes which trigger fired', () => {
-    expect(evaluate('{{TRIGGER}}', CTX)).toBe('nightly')
-  })
-
-  it('resolves workflow variables', () => {
-    expect(evaluate('{{var.digest_to}}', CTX)).toBe('me@dane.dev')
-  })
-
-  it('maps a field across every element for a [] path', () => {
-    expect(evaluate('{{s2.messages[].subject}}', CTX)).toEqual(['Invoice', 'Receipt'])
-  })
-
-  it('yields undefined for an unresolvable reference rather than throwing', () => {
-    // A half-built workflow references things that do not exist yet; the
-    // builder must be able to render it without crashing.
-    expect(evaluate('{{s9.nope}}', CTX)).toBeUndefined()
-  })
-
-  it('renders an unresolvable reference as empty when interpolating', () => {
-    expect(evaluate('value: {{s9.nope}}', CTX)).toBe('value: ')
-  })
-
-  it('leaves a string with no references untouched', () => {
-    expect(evaluate('plain text', CTX)).toBe('plain text')
+    expect(thrown).toBeInstanceOf(ExpressionError)
+    const diagnostics = (thrown as ExpressionError).diagnostics
+    expect(diagnostics).toHaveLength(2)
+    // The Host disposes: it is told which field failed and why, and decides for
+    // itself whether the step fails or the run aborts.
+    expect(diagnostics.map((d) => d.slot)).toEqual(['a', 'b'])
   })
 })
 
-describe('path safety', () => {
-  // A Workflow Definition is user-editable YAML, so these paths are reachable
-  // input, not hypothetical.
-  it.each(['__proto__', 'constructor', 'prototype'])('refuses to resolve through %s', (segment) => {
-    expect(evaluate(`{{s2.${segment}}}`, CTX)).toBeUndefined()
-    expect(evaluate(`{{${segment}.polluted}}`, CTX)).toBeUndefined()
+describe('a builder checking a step', () => {
+  it('accepts what the manifests say is well typed', () => {
+    const scope = scopeFor(DOC, 's6', MANIFESTS)
+    const context = { scope, functions: coreFunctions() }
+
+    for (const slot of slotsFor(DOC.steps[1]!, manifestFor('email.send'))) {
+      expect(validate(slot.template, slot.expectedType, context), slot.name).toEqual([])
+    }
   })
 
-  it('reads own properties only, not inherited ones', () => {
-    expect(evaluate('{{s2.toString}}', CTX)).toBeUndefined()
-    expect(evaluate('{{s2.hasOwnProperty}}', CTX)).toBeUndefined()
+  it('refuses the legacy condition, which is a text template in a boolean slot', () => {
+    const scope = scopeFor(DOC, 's6', MANIFESTS)
+    const slot = whenSlot('{{s2.count}} > 0')
+    const found = validate(slot.template, slot.expectedType, { scope, functions: coreFunctions() })
+
+    expect(found.map((d) => `${d.code}:${d.severity}`)).toEqual(['EXPR_TYPE_MISMATCH:error'])
   })
 
-  it('still resolves ordinary paths', () => {
-    expect(evaluate('{{s2.count}}', CTX)).toBe(24)
+  it('resolves a projection through the manifest’s declared element shape', () => {
+    const scope = scopeFor(DOC, 's6', MANIFESTS)
+    expect(
+      validate('{{ s2.messages[].subject }}', 'list', { scope, functions: coreFunctions() }),
+    ).toEqual([])
+  })
+})
+
+describe('references', () => {
+  it('recognises a Template that is exactly one path', () => {
+    expect(sourceReference('{{ s2.count }}')).toBe('s2.count')
+  })
+
+  it('and refuses to call anything computed one', () => {
+    expect(sourceReference('{{ s2.count + 1 }}')).toBeNull()
+    expect(sourceReference('Hi {{ s2.count }}')).toBeNull()
   })
 })

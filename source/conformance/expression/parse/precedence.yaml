@@ -1,0 +1,98 @@
+about: >-
+  Every operator's precedence and associativity. PEG has no left recursion, so
+  precedence is an explicit rule cascade and associativity is decided by a fold
+  in a hand-written helper — one per language. That fold is exactly the kind of
+  thing that can be written two subtly different ways, and nothing but these
+  scenarios would notice.
+
+scenarios:
+  - name: multiplication binds tighter than addition
+    expr: "1 + 2 * 3"
+    sexp: "(+ 1 (* 2 3))"
+
+  - name: division and modulo sit with multiplication
+    expr: "1 + 4 / 2 % 3"
+    sexp: "(+ 1 (% (/ 4 2) 3))"
+
+  - name: comparison binds looser than arithmetic
+    expr: "a + 1 > b * 2"
+    sexp: "(> (+ a 1) (* b 2))"
+
+  - name: equality binds looser than comparison
+    expr: "a < b == c > d"
+    sexp: "(== (< a b) (> c d))"
+
+  - name: and binds tighter than or
+    expr: "a || b && c"
+    sexp: "(|| a (&& b c))"
+
+  - name: coalescing binds looser than or
+    expr: "a || b ?? c"
+    sexp: "(?? (|| a b) c)"
+
+  - name: the conditional binds loosest of all
+    expr: "x ?? y ? p : q"
+    sexp: "(?: (?? x y) p q)"
+
+  - name: unary not binds tighter than and
+    expr: "!a && b"
+    sexp: "(&& (! a) b)"
+
+  - name: unary minus binds tighter than multiplication
+    expr: "-a * b"
+    sexp: "(* (neg a) b)"
+
+  - name: subtraction folds left
+    expr: "1 - 2 - 3"
+    sexp: "(- (- 1 2) 3)"
+
+  - name: division folds left
+    expr: "8 / 4 / 2"
+    sexp: "(/ (/ 8 4) 2)"
+
+  - name: comparison folds left
+    expr: "a == b != c"
+    sexp: "(!= (== a b) c)"
+
+  - name: coalescing folds left
+    expr: "a ?? b ?? c"
+    sexp: "(?? (?? a b) c)"
+
+  - name: the conditional folds right
+    expr: "a ? b : c ? d : e"
+    sexp: "(?: a b (?: c d e))"
+
+  - name: a conditional in the middle arm needs no parentheses
+    expr: "a ? b ? c : d : e"
+    sexp: "(?: a (?: b c d) e)"
+
+  - name: parentheses group and leave no node behind
+    expr: "(1 + 2) * 3"
+    sexp: "(* (+ 1 2) 3)"
+
+  - name: nested unary operators stack
+    expr: "!!a"
+    sexp: "(! (! a))"
+
+  - name: negation stacks too, and does not become a decrement
+    expr: "- -1"
+    sexp: "(neg (neg 1))"
+
+  - name: "`!=` is not read as unary not followed by equals"
+    expr: "a != b"
+    sexp: "(!= a b)"
+
+  - name: "`??` is not read as the start of a conditional"
+    expr: "a ?? b"
+    sexp: "(?? a b)"
+
+  - name: >-
+      a bare Expression must consume all of its input. pigeon does not require a
+      start rule to, and Peggy does, so this returned the literal 1 in Go and a
+      parse error in TypeScript — silent truncation being the worse half.
+    expr: "1 2"
+    error: EXPR_PARSE_ERROR
+
+  - name: trailing rubbish after a complete expression is refused too
+    expr: "a.b )"
+    error: EXPR_PARSE_ERROR

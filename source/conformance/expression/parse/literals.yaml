@@ -1,0 +1,91 @@
+about: >-
+  Literals, reserved words, and the boundary between a name and a keyword. There
+  is exactly one absent value and it is spelled `null`; `true` and `false` are
+  the only booleans. All three are reserved, and a name that merely starts with
+  one is not.
+
+scenarios:
+  - name: whole numbers
+    expr: "42"
+    sexp: "42"
+
+  - name: fractional numbers
+    expr: "3.5"
+    sexp: "3.5"
+
+  - name: exponents
+    expr: "1.5e-3"
+    sexp: "0.0015"
+
+  - name: a small number renders the JavaScript way, not the Go way
+    expr: "0.000001"
+    sexp: "0.000001"
+
+  - name: a very small number crosses into exponent notation at 1e-7
+    expr: "0.0000001"
+    sexp: "1e-7"
+
+  - name: a very large number crosses into exponent notation at 1e21
+    expr: "1e21"
+    sexp: "1e+21"
+
+  - name: single-quoted text
+    expr: "'hello'"
+    sexp: '"hello"'
+
+  - name: double-quoted text
+    expr: '"hello"'
+    sexp: '"hello"'
+
+  - name: an escaped quote inside its own quoting
+    expr: "'it\\'s'"
+    sexp: '"it''s"'
+
+  - name: escapes for the whitespace characters
+    expr: "'a\\tb\\nc'"
+    sexp: '"a\tb\nc"'
+
+  - name: an escaped backslash
+    expr: "'a\\\\b'"
+    sexp: '"a\\b"'
+
+  - name: booleans
+    expr: "true"
+    sexp: "true"
+
+  - name: the one absent value
+    expr: "null"
+    sexp: "null"
+
+  - name: a name may begin with a reserved word without becoming one
+    expr: "truest"
+    sexp: "truest"
+
+  - name: a name may begin with null without becoming it
+    expr: "nullish"
+    sexp: "nullish"
+
+  - name: underscores and digits are name characters
+    expr: "_s2_a1"
+    sexp: "_s2_a1"
+
+  - name: >-
+      a reserved word never becomes a name, so it cannot be the root of a path —
+      `true` here is the boolean, and the member read is of that
+    expr: "true.x"
+    sexp: "(. true x)"
+
+  - name: nor can it be a function namespace
+    expr: "null.parse('1')"
+    sexp: '(call (. null parse) "1")'
+
+  - name: >-
+      a literal too large for a 64-bit float is refused rather than becoming
+      Infinity — which is what `Number()` produces and what the value space is
+      defined not to contain
+    expr: "1e999"
+    error: EXPR_PARSE_ERROR
+
+  - name: an unknown escape is refused rather than silently dropped
+    expr: "'a\\qb'"
+    error: EXPR_PARSE_ERROR

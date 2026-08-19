@@ -1,0 +1,54 @@
+about: >-
+  Paths, projection, indexing and calls. All four are postfix suffixes over one
+  primary, which is what lets them compose in any order — `json.parse(x)['k']`
+  and `s2.messages[].subject` fall out of the grammar rather than needing rules
+  of their own.
+
+scenarios:
+  - name: a dotted path nests to the left
+    expr: "a.b.c"
+    sexp: "(. (. a b) c)"
+
+  - name: a Reference is exactly a path and nothing more
+    expr: "s2.messages"
+    sexp: "(. s2 messages)"
+
+  - name: projection applies to what precedes it
+    expr: "s2.messages[].subject"
+    sexp: "(. (project (. s2 messages)) subject)"
+
+  - name: numeric indexing
+    expr: "s2.messages[0].subject"
+    sexp: "(. ([] (. s2 messages) 0) subject)"
+
+  - name: an index may itself be an expression
+    expr: "a[b[c]]"
+    sexp: "([] a ([] b c))"
+
+  - name: a call is a suffix, so the callee is an ordinary path
+    expr: "dt.now()"
+    sexp: "(call (. dt now))"
+
+  - name: arguments are ordinary expressions
+    expr: "text.replace(s1.body, 'a', 'b')"
+    sexp: '(call (. text replace) (. s1 body) "a" "b")'
+
+  - name: calls nest
+    expr: "text.upper(text.trim(s1.name))"
+    sexp: "(call (. text upper) (call (. text trim) (. s1 name)))"
+
+  - name: indexing composes after a call
+    expr: "json.parse(s2.body)['order_id']"
+    sexp: "([] (call (. json parse) (. s2 body)) \"order_id\")"
+
+  - name: member access composes after a call
+    expr: "json.parse(s2.output).count"
+    sexp: "(. (call (. json parse) (. s2 output)) count)"
+
+  - name: projection composes after a call
+    expr: "json.parse(s2.body)[].id"
+    sexp: "(. (project (call (. json parse) (. s2 body))) id)"
+
+  - name: a call may itself be called
+    expr: "f(a)(b)"
+    sexp: "(call (call f a) b)"

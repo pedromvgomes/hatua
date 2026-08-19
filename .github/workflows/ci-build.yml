@@ -56,4 +56,12 @@ jobs:
             exit 1
           fi
 
+      # The shared PEG grammar has to stay inside the subset both generators
+      # accept. Nothing in either tool enforces that, and the failure would
+      # otherwise surface as one language's build breaking long after the change
+      # that caused it.
+      - name: Grammar stays in the shared subset
+        working-directory: source/tools/expression
+        run: make lint
+
       - run: pnpm turbo run typecheck build

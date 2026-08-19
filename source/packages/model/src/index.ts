@@ -1,4 +1,5 @@
 export * from './connections'
 export * from './metadata'
 export * from './scope'
+export * from './slots'
 export * from './tree'

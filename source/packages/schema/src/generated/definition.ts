@@ -54,7 +54,8 @@ export const step = z.strictObject({
    */
   id: z.string().min(1),
   /**
-   * The manifest verb, e.g. `email.send`. Hatua treats most of these as opaque, but interprets the control-flow verbs structurally: `core.fork` creates branches, `core.for_each` nests and exposes `item`, and both drive reference scope and derived layout.
+   * The manifest verb, e.g. `email.send`. Hatua treats most of these as opaque, but interprets three structurally: `core.fork` creates branches, `core.for_each` nests and exposes `item`, and `data.map` derives its outputs from its own `entries` field rather than from its manifest. The first two drive reference scope and derived layout; the third drives reference scope alone.
+   * `data.map` is the one component whose outputs a manifest cannot declare, because they are whatever the user named. Its `with.entries` is a list of `{key, value, type}`, and a downstream step addresses them as `{{<id>.<key>}}` with the declared type — which is what lets the type checker treat a mapping step exactly like any other.
    */
   use: z.string().min(1),
   name: z.string().optional(),
@@ -89,7 +90,9 @@ export const branch = z.strictObject({
 export type Branch = z.infer<typeof branch>
 
 /**
- * Field values keyed by the manifest's `FieldSpec.k`. References remain `{{…}}` strings so the document round-trips and a step can be renamed without breaking a mapping.
+ * Field values keyed by the manifest's `FieldSpec.k`. Templates remain `{{…}}` strings so the document round-trips and a step can be renamed without breaking a mapping.
+ * A `map` field holds a list of `{key, value, type}` objects rather than a scalar — see `data.map` on `use`. That shape is deliberately NOT declared as a `$def` here: which key holds a map field is decided by the Component Manifest, not by this schema, so JSON Schema cannot reach it. It is checked where the manifest is known, in `@hatua/model` and the Go SDK, and an unreferenced definition would be a promise this file does not keep.
+ * `key` is how downstream steps address the entry — `{{<step id>.<key>}}`. `type` is declared rather than inferred from `value`, for the same reason every other field's type is: the expression is checked against the declared type, never the reverse.
  */
 export const values = z.record(z.string(), z.unknown())
 export type Values = z.infer<typeof values>

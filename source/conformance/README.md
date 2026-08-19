@@ -10,9 +10,12 @@ does not match its field — are cross-field and manifest-dependent. None is
 expressible in JSON Schema. Each is implemented once per language, and this
 corpus is the only thing keeping those implementations honest.
 
-When the expression language lands, its semantics get pinned here too: an
+The expression language's semantics are pinned here too, under `expression/`: an
 evaluator that agrees on syntax but disagrees on, say, null coercion produces a
 workflow that looks right in the builder and does the wrong thing in production.
+Those scenarios have their own README, and their own harness — `make test` in
+`tools/expression` runs both languages and compares how many scenarios each one
+actually ran.
 
 ## Layout
 
@@ -22,6 +25,7 @@ definition/invalid/*.yaml   must fail; the expected diagnostic codes are in the
                             file's own `# expect:` header
 execution/*.yaml            must parse
 manifest/*.yaml             must parse
+expression/                 the {{ … }} language — see its own README
 ```
 
 Invalid fixtures carry their expectation inline rather than in a sidecar file, so

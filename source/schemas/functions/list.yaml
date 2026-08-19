@@ -1,0 +1,58 @@
+kind: function
+namespace: list
+summary: >-
+  Lists. There are no lambdas in v1, so no `filter` or `map` — closures would
+  mean implementing scoping and capture twice. `[]` projection and
+  `core.for_each` cover the common cases.
+functions:
+  - name: len
+    summary: Number of elements.
+    params:
+      - { name: value, type: list }
+    returns: number
+
+  - name: first
+    summary: First element, or null when empty.
+    params:
+      - { name: value, type: list }
+    returns: unknown
+
+  - name: last
+    summary: Last element, or null when empty.
+    params:
+      - { name: value, type: list }
+    returns: unknown
+
+  - name: slice
+    summary: Elements from start up to but not including end.
+    params:
+      - { name: value, type: list }
+      - { name: start, type: number }
+      - { name: end, type: number, optional: true }
+    returns: list
+
+  - name: contains
+    summary: Whether the list holds a value equal to the needle, by the same rule as `==`.
+    params:
+      - { name: value, type: list }
+      - { name: needle, type: unknown }
+    returns: boolean
+
+  - name: join
+    summary: Render each element as text and join with a separator.
+    params:
+      - { name: value, type: list }
+      - { name: separator, type: text }
+    returns: text
+
+  - name: unique
+    summary: Elements with later duplicates removed, order preserved.
+    params:
+      - { name: value, type: list }
+    returns: list
+
+  - name: sort
+    summary: Ascending. Every element must be the same comparable type.
+    params:
+      - { name: value, type: list }
+    returns: list

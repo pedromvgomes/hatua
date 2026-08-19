@@ -1,0 +1,157 @@
+about: >-
+  What the checker concludes an expression *produces*, observed where it matters:
+  when that conclusion feeds something else.
+
+  `type-matching.yaml` checks a type against the field it lands in.
+  `eval/result-types.yaml` checks the same thing at run time. Neither exercises
+  composition — a function's return type becoming an operator's operand, a
+  projection becoming a comparison — and that is where an inference bug hides,
+  because the wrong conclusion is only visible one step later.
+
+scenarios:
+  - name: a function's return type becomes the operand it is compared as
+    template: "{{ text.len(s2.subject) > 0 }}"
+    type: boolean
+    scope: &inbox
+      - path: s2
+        type:
+          type: object
+          members:
+            subject: { type: text }
+            count: { type: number }
+            output: { type: text }
+            messages:
+              type: list
+              members:
+                subject: { type: text }
+    expect: []
+
+  - name: >-
+      and a wrong one is caught one step later, at the operator rather than at
+      the call
+    template: "{{ text.upper(s2.subject) + 1 }}"
+    type: number
+    scope: *inbox
+    expect:
+      - { code: EXPR_OPERAND_TYPE, severity: error }
+
+  - name: >-
+      a list-returning function is not orderable, and says so once rather than
+      also complaining that a list is not a number
+    template: "{{ text.split(s2.subject, ',') > 1 }}"
+    type: boolean
+    scope: *inbox
+    expect:
+      - { code: EXPR_OPERAND_TYPE, severity: error }
+
+  - name: nested calls carry their type outward
+    template: "{{ num.abs(text.len(s2.subject)) }}"
+    type: number
+    scope: *inbox
+    expect: []
+
+  - name: and a type error surfaces at the call that could not accept it
+    template: "{{ num.abs(text.upper(s2.subject)) }}"
+    type: number
+    scope: *inbox
+    expect:
+      - { code: EXPR_ARGUMENT_TYPE, severity: error }
+
+  - name: >-
+      a member read straight off a list is refused. A list has no members — its
+      *elements* do, which is what a manifest's `of:` describes — and the
+      forgotten `[]` is the likeliest authoring mistake in the language. It used
+      to type-check clean against the element's fields and then miss at run time.
+    template: "{{ s2.messages.subject }}"
+    type: text
+    scope: *inbox
+    expect:
+      - { code: EXPR_OPERAND_TYPE, severity: error }
+
+  - name: and reported as a conflict rather than as a false claim about its type
+    template: "{{ s2.messages.subject }}"
+    type: number
+    scope: *inbox
+    expect:
+      - { code: EXPR_OPERAND_TYPE, severity: error }
+
+  - name: >-
+      projecting something already projected is accepted, because it is the
+      identity at run time — and an `error` severity means "can never be right"
+    template: "{{ s2.messages[].subject[] }}"
+    type: list
+    scope: *inbox
+    expect: []
+
+  - name: projection produces a list, so it satisfies a list field
+    template: "{{ s2.messages[].subject }}"
+    type: list
+    scope: *inbox
+    expect: []
+
+  - name: and that list is refused as an ordered operand
+    template: "{{ s2.messages[].subject > 'a' }}"
+    type: boolean
+    scope: *inbox
+    expect:
+      - { code: EXPR_OPERAND_TYPE, severity: error }
+
+  - name: indexing a list produces one element, whose members are known
+    template: "{{ s2.messages[0].subject }}"
+    type: text
+    scope: *inbox
+    expect: []
+
+  - name: and that element's member type is enforced
+    template: "{{ s2.messages[0].subject }}"
+    type: number
+    scope: *inbox
+    expect:
+      - { code: EXPR_TYPE_MISMATCH, severity: error }
+
+  - name: an unknown type stays unknown through an operator rather than hardening
+    template: "{{ json.parse(s2.output).count > 0 }}"
+    type: boolean
+    scope: *inbox
+    expect: []
+
+  - name: >-
+      and through a function, so one opaque value does not cascade into a wall
+      of errors
+    template: "{{ num.abs(json.parse(s2.output).count) }}"
+    type: number
+    scope: *inbox
+    expect: []
+
+  - name: a conditional whose arms agree carries that type into a comparison
+    template: "{{ (s2.count > 1 ? s2.count : 0) > 5 }}"
+    type: boolean
+    scope: *inbox
+    expect: []
+
+  - name: >-
+      arms that disagree produce an unknown type, which defers rather than
+      guessing which arm to believe
+    template: "{{ (s2.count > 1 ? s2.count : s2.subject) + 1 }}"
+    type: number
+    scope: *inbox
+    expect: []
+
+  - name: the fallback carries its agreed type into a comparison too
+    template: "{{ (s2.count ?? 0) > 5 }}"
+    type: boolean
+    scope: *inbox
+    expect: []
+
+  - name: a comparison always produces a boolean, whatever it compared
+    template: "{{ s2.subject == s2.count }}"
+    type: boolean
+    scope: *inbox
+    expect: []
+
+  - name: and that boolean is refused by a number field
+    template: "{{ s2.subject == s2.count }}"
+    type: number
+    scope: *inbox
+    expect:
+      - { code: EXPR_TYPE_MISMATCH, severity: error }
