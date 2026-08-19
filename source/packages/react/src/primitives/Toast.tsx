@@ -36,45 +36,52 @@ export interface ToastProps {
  */
 export function Toast({ open, tone = 'info', autoDismissAfter, onDismiss, children }: ToastProps) {
   const container = usePortalContainer()
-  const [paused, setPaused] = useState(false)
 
-  const timed =
-    open && onDismiss !== undefined && autoDismissAfter !== undefined && autoDismissAfter > 0
+  // Two flags, not one shared `paused`: with a single boolean, leaving with the
+  // pointer would resume a countdown that focus is still holding, and a toast
+  // would then dismiss itself out from under the button someone had tabbed to.
+  const [hovered, setHovered] = useState(false)
+  const [focused, setFocused] = useState(false)
+  const paused = hovered || focused
 
-  // What is left of the wait, in ms. A ref rather than state: it changes on
+  const durationMs = (autoDismissAfter ?? 0) * 1000
+  const timed = open && onDismiss !== undefined && durationMs > 0
+
+  // How much of the wait has been spent. A ref rather than state: it changes on
   // every pause and resume, and nothing renders from it — the bar is a CSS
   // animation, which pauses itself.
-  const remainingRef = useRef(0)
+  const elapsedRef = useRef(0)
 
-  // Refill the budget when the toast opens, so a toast shown again gets the
-  // whole wait rather than whatever the last showing left of it.
+  // A new showing is a new countdown. Closing deliberately does NOT reset, so
+  // the cleanup below can still charge the time the last showing used.
   useEffect(() => {
     if (!open) return
-    remainingRef.current = (autoDismissAfter ?? 0) * 1000
-    setPaused(false)
-  }, [open, autoDismissAfter])
+    elapsedRef.current = 0
+    setHovered(false)
+    setFocused(false)
+  }, [open])
 
   useEffect(() => {
     if (!timed || paused) return
     const startedAt = Date.now()
-    const timer = setTimeout(() => onDismiss?.(), remainingRef.current)
+    const timer = setTimeout(() => onDismiss?.(), Math.max(0, durationMs - elapsedRef.current))
     return () => {
       clearTimeout(timer)
-      // Charge the elapsed time to the budget, so resuming continues the wait
-      // instead of restarting it. This also makes the effect safe to re-run
-      // when a caller passes a fresh onDismiss closure on every render.
-      remainingRef.current = Math.max(0, remainingRef.current - (Date.now() - startedAt))
+      // Charge the elapsed time, so resuming continues the wait instead of
+      // restarting it. This also makes the effect safe to re-run when a caller
+      // passes a fresh onDismiss closure on every render.
+      elapsedRef.current += Date.now() - startedAt
     }
-  }, [timed, paused, onDismiss])
+  }, [timed, paused, durationMs, onDismiss])
 
-  if (!open || !container) return null
+  if (!container) return null
 
   const pauseHandlers = timed
     ? {
-        onMouseEnter: () => setPaused(true),
-        onMouseLeave: () => setPaused(false),
-        onFocus: () => setPaused(true),
-        onBlur: () => setPaused(false),
+        onMouseEnter: () => setHovered(true),
+        onMouseLeave: () => setHovered(false),
+        onFocus: () => setFocused(true),
+        onBlur: () => setFocused(false),
       }
     : undefined
 
@@ -83,25 +90,40 @@ export function Toast({ open, tone = 'info', autoDismissAfter, onDismiss, childr
       <style href="hatua-toast" precedence="hatua">
         {css}
       </style>
-      <div
-        className={cx(styles.toast, styles[tone])}
-        role="status"
-        aria-live="polite"
-        data-paused={timed && paused ? 'true' : undefined}
-        {...pauseHandlers}
-      >
-        <span className={styles.body}>{children}</span>
-        {onDismiss && (
-          <button type="button" className={styles.dismiss} onClick={onDismiss} aria-label="Dismiss">
-            ×
-          </button>
-        )}
-        {timed && (
-          <span
-            className={styles.progress}
-            style={{ animationDuration: `${autoDismissAfter}s` }}
-            data-testid="hatua-toast-progress"
-          />
+      {/*
+        The live region stays mounted whether or not a toast is showing. Screen
+        readers announce a region whose CONTENTS change; one inserted with its
+        text already in place is routinely missed, which would leave the toast
+        silent for exactly the people relying on it. This only holds while the
+        <Toast> itself stays mounted — the controlled `open` prop is what makes
+        that the natural way to use it.
+      */}
+      <div className={styles.region} role="status" aria-live="polite">
+        {open && (
+          <div
+            className={cx(styles.toast, styles[tone])}
+            data-paused={timed && paused ? 'true' : undefined}
+            {...pauseHandlers}
+          >
+            <span className={styles.body}>{children}</span>
+            {onDismiss && (
+              <button
+                type="button"
+                className={styles.dismiss}
+                onClick={onDismiss}
+                aria-label="Dismiss"
+              >
+                ×
+              </button>
+            )}
+            {timed && (
+              <span
+                className={styles.progress}
+                style={{ animationDuration: `${autoDismissAfter}s` }}
+                data-testid="hatua-toast-progress"
+              />
+            )}
+          </div>
         )}
       </div>
     </>,

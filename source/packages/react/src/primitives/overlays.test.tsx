@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
+import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HatuaProvider } from '../theme/HatuaProvider'
 import { ConfirmDialog } from './ConfirmDialog'
@@ -12,6 +13,14 @@ import { Toast } from './Toast'
  */
 const themedRootOf = (node: Element | null) => node?.closest('.hatua-root') ?? null
 
+/**
+ * The visible card, as opposed to the live region that wraps it. The region is
+ * mounted whether or not a toast is showing, so `getByRole('status')` is the
+ * wrong handle for anything about the card.
+ */
+const toastCard = (text: string | RegExp = /Draft published/) =>
+  screen.getByText(text).parentElement as HTMLElement
+
 describe('Toast', () => {
   it('lands inside the provider subtree, not on document.body', async () => {
     const { container } = render(
@@ -19,19 +28,41 @@ describe('Toast', () => {
         <Toast open>Draft published</Toast>
       </HatuaProvider>,
     )
-    const toast = await screen.findByRole('status')
-    expect(themedRootOf(toast)).not.toBeNull()
-    expect(container.contains(toast)).toBe(true)
-    expect(toast.closest('.hatua-portals')).not.toBeNull()
+    await screen.findByText('Draft published')
+    const card = toastCard()
+    expect(themedRootOf(card)).not.toBeNull()
+    expect(container.contains(card)).toBe(true)
+    expect(card.closest('.hatua-portals')).not.toBeNull()
   })
 
-  it('renders nothing when closed', () => {
+  it('shows no toast when closed', async () => {
     render(
       <HatuaProvider>
         <Toast open={false}>Draft published</Toast>
       </HatuaProvider>,
     )
-    expect(screen.queryByRole('status')).toBeNull()
+    await screen.findByRole('status')
+    expect(screen.queryByText('Draft published')).toBeNull()
+  })
+
+  /*
+   * Assistive technology announces a live region whose CONTENTS change. One
+   * inserted with its text already in place is routinely missed — so the region
+   * has to exist before there is anything to say, and the message has to arrive
+   * into it. Mounting the two together is silent for screen reader users while
+   * looking perfectly correct on screen, which is why this is a test and not a
+   * comment.
+   */
+  it('keeps an empty live region mounted before there is anything to announce', async () => {
+    render(
+      <HatuaProvider>
+        <Toast open={false}>Draft published</Toast>
+      </HatuaProvider>,
+    )
+    const region = await screen.findByRole('status')
+    expect(region.getAttribute('aria-live')).toBe('polite')
+    expect(region.textContent).toBe('')
+    expect(region.closest('.hatua-portals')).not.toBeNull()
   })
 
   it('renders nothing outside a provider, rather than falling back to the body', () => {
@@ -46,7 +77,7 @@ describe('Toast', () => {
         <Toast open>Draft published</Toast>
       </HatuaProvider>,
     )
-    await screen.findByRole('status')
+    await screen.findByText('Draft published')
     expect(screen.queryByRole('button', { name: 'Dismiss' })).toBeNull()
   })
 })
@@ -116,13 +147,13 @@ describe('Toast auto-dismiss', () => {
     await advance(1000)
 
     // React synthesises onMouseEnter/onMouseLeave from mouseover/mouseout.
-    fireEvent.mouseOver(screen.getByRole('status'))
+    fireEvent.mouseOver(toastCard())
     await advance(60_000)
     expect(onDismiss).not.toHaveBeenCalled()
-    expect(screen.getByRole('status').getAttribute('data-paused')).toBe('true')
+    expect(toastCard().getAttribute('data-paused')).toBe('true')
 
-    fireEvent.mouseOut(screen.getByRole('status'))
-    expect(screen.getByRole('status').hasAttribute('data-paused')).toBe(false)
+    fireEvent.mouseOut(toastCard())
+    expect(toastCard().hasAttribute('data-paused')).toBe(false)
 
     // Resuming continues the wait rather than restarting it: 1s was already
     // spent before the pause, so 3s is what remains of the 4.
@@ -138,6 +169,67 @@ describe('Toast auto-dismiss', () => {
     fireEvent.focus(screen.getByRole('button', { name: 'Dismiss' }))
     await advance(60_000)
     expect(onDismiss).not.toHaveBeenCalled()
+  })
+
+  /*
+   * Hover and focus are two independent holds, not one shared flag. Sharing one
+   * meant the pointer leaving cleared a pause that focus was still holding —
+   * so a toast would dismiss itself out from under the button someone had just
+   * tabbed to, taking their focus with it.
+   */
+  it('stays held by focus after the pointer leaves, and by the pointer after blur', async () => {
+    const onDismiss = vi.fn()
+    renderTimed(onDismiss)
+    const dismiss = screen.getByRole('button', { name: 'Dismiss' })
+
+    fireEvent.mouseOver(toastCard())
+    fireEvent.focus(dismiss)
+    fireEvent.mouseOut(toastCard())
+    await advance(60_000)
+    expect(onDismiss).not.toHaveBeenCalled()
+    expect(toastCard().getAttribute('data-paused')).toBe('true')
+
+    // The mirror case: focus leaves while the pointer is back inside.
+    fireEvent.mouseOver(toastCard())
+    fireEvent.blur(dismiss)
+    await advance(60_000)
+    expect(onDismiss).not.toHaveBeenCalled()
+
+    // Only once both are gone does the countdown run out.
+    fireEvent.mouseOut(toastCard())
+    await advance(4100)
+    expect(onDismiss).toHaveBeenCalledTimes(1)
+  })
+
+  /*
+   * The timer has to follow the duration, not just the bar. With onDismiss
+   * stable — a useCallback, or a toast store — nothing else in the timer's
+   * dependencies changes, so a duration change left the old setTimeout standing
+   * while the bar re-rendered with the new one. The two then told the user
+   * different things, which is exactly what the shared state exists to prevent.
+   */
+  it('reschedules when the duration changes under a stable handler', async () => {
+    const onDismiss = vi.fn()
+    const at = (seconds: number) => (
+      <HatuaProvider>
+        <Toast open autoDismissAfter={seconds} onDismiss={onDismiss}>
+          Draft published
+        </Toast>
+      </HatuaProvider>
+    )
+    const { rerender } = render(at(4))
+
+    await advance(1000)
+    rerender(at(20))
+    expect(screen.getByTestId('hatua-toast-progress').style.animationDuration).toBe('20s')
+
+    // Well past the original 4s deadline, which must not have survived.
+    await advance(3500)
+    expect(onDismiss).not.toHaveBeenCalled()
+
+    // The 1s already spent still counts, so 20s from opening is the deadline.
+    await advance(15_600)
+    expect(onDismiss).toHaveBeenCalledTimes(1)
   })
 
   it('drops the timer when it closes, and gives a reopened toast the full wait', async () => {
@@ -175,7 +267,7 @@ describe('Toast auto-dismiss', () => {
     )
     await advance(60_000)
     expect(screen.queryByTestId('hatua-toast-progress')).toBeNull()
-    expect(screen.getByRole('status')).toBeDefined()
+    expect(screen.getByText('Draft published')).toBeDefined()
   })
 })
 
@@ -230,6 +322,71 @@ describe('ConfirmDialog', () => {
     await screen.findByRole('dialog')
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     expect(onCancel).toHaveBeenCalledTimes(1)
+  })
+
+  /*
+   * aria-modal="true" tells assistive technology the rest of the page is
+   * unreachable. Nothing in the markup makes that true — the backdrop stops
+   * pointer users only — so without keeping Tab inside, a keyboard or screen
+   * reader user can operate exactly the UI the dialog claims is blocked.
+   */
+  it('keeps Tab inside, in both directions', async () => {
+    render(
+      <HatuaProvider>
+        <ConfirmDialog {...props} confirmLabel="Discard" />
+      </HatuaProvider>,
+    )
+    const confirm = await screen.findByRole('button', { name: 'Discard' })
+    const cancel = screen.getByRole('button', { name: 'Cancel' })
+
+    // Confirm is focused on open and is the last stop, so Tab must wrap.
+    expect(document.activeElement).toBe(confirm)
+    fireEvent.keyDown(document, { key: 'Tab' })
+    expect(document.activeElement).toBe(cancel)
+
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true })
+    expect(document.activeElement).toBe(confirm)
+  })
+
+  it('pulls focus back in when it has escaped the dialog entirely', async () => {
+    render(
+      <HatuaProvider>
+        <ConfirmDialog {...props} confirmLabel="Discard" />
+      </HatuaProvider>,
+    )
+    await screen.findByRole('dialog')
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    fireEvent.keyDown(document, { key: 'Tab' })
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Cancel' }))
+  })
+
+  // Otherwise focus lands on document.body and a keyboard user loses their
+  // place in the designer the moment they answer.
+  it('gives focus back to whatever had it before opening', async () => {
+    function Harness() {
+      const [open, setOpen] = useState(false)
+      return (
+        <HatuaProvider>
+          <button type="button" onClick={() => setOpen(true)}>
+            Discard Draft
+          </button>
+          <ConfirmDialog
+            open={open}
+            title="Discard this Draft?"
+            onConfirm={() => setOpen(false)}
+            onCancel={() => setOpen(false)}
+          />
+        </HatuaProvider>
+      )
+    }
+    render(<Harness />)
+    const trigger = screen.getByRole('button', { name: 'Discard Draft' })
+    trigger.focus()
+    fireEvent.click(trigger)
+
+    expect(await screen.findByRole('button', { name: 'Confirm' })).toBe(document.activeElement)
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(document.activeElement).toBe(trigger)
   })
 
   it('stops listening for Escape once closed', async () => {

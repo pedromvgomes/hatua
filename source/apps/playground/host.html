@@ -4,6 +4,17 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Hatua playground — Host-authored</title>
+    <!--
+      The Host's own page reset, not Hatua's. ADR-0003 is about Hatua never
+      asking a Host to import a stylesheet; a Host still styles its own page,
+      and the default body margin would otherwise push <Hatua>'s box past the
+      viewport and give this harness a phantom scrollbar.
+    -->
+    <style>
+      body {
+        margin: 0;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>

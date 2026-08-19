@@ -1,16 +1,25 @@
 @layer hatua {
-  /* Absolute, against .hatua-portals — which spans the provider's box — so the
-     toast lands in Hatua's corner, not the browser's. */
+  /*
+   * The live region, always mounted — see Toast.tsx. It is also what positions
+   * the toast: absolute against .hatua-portals, which spans the provider's box,
+   * so the toast lands in Hatua's corner rather than the browser's. Empty when
+   * nothing is showing, and an empty box has no size to get in the way.
+   */
+  .region {
+    position: absolute;
+    inset-block-end: 16px;
+    inset-inline-end: 16px;
+    z-index: 60;
+  }
+
   .toast {
     /* One tone colour, read by both the stripe and the progress bar. Local to
        this file rather than an alias in base.css: nothing outside a toast has
        any use for it. */
     --toast-tone: var(--border-strong);
 
-    position: absolute;
-    inset-block-end: 16px;
-    inset-inline-end: 16px;
-    z-index: 60;
+    /* Anchors the progress bar below. */
+    position: relative;
     display: flex;
     align-items: flex-start;
     gap: 10px;

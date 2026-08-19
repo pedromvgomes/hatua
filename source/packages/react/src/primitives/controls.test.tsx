@@ -69,6 +69,24 @@ describe('Toggle', () => {
     expect(onCheckedChange).toHaveBeenCalledWith(true)
   })
 
+  /*
+   * `label={showLabel && 'Parallel'}` is how a caller writes a conditional
+   * label, and it produces `false`. When the two branches disagreed about what
+   * counted as "no label", that rendered an empty <label> and left the switch —
+   * whose only content is an empty span — with no accessible name at all.
+   */
+  it.each([
+    ['false', false],
+    ['null', null],
+    ['an empty string', ''],
+  ])('treats %s as no label, so the switch keeps its name', (_name, label) => {
+    render(
+      <Toggle checked={false} onCheckedChange={() => {}} label={label} aria-label="Parallel" />,
+    )
+    expect(screen.getByRole('switch', { name: 'Parallel' })).toBeDefined()
+    expect(document.querySelector('label')).toBeNull()
+  })
+
   it('wires its label to the switch, so clicking the text toggles it', () => {
     render(<Toggle checked={false} onCheckedChange={() => {}} label="Parallel" />)
     // getByRole with a name only resolves if the <label for> found its control.

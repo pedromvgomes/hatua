@@ -21,7 +21,17 @@ function Scaffold() {
 
   return (
     <div
-      style={{ display: 'grid', gap: 16, padding: 24, minHeight: '100vh', alignContent: 'start' }}
+      style={{
+        display: 'grid',
+        gap: 16,
+        padding: 24,
+        minHeight: '100vh',
+        // border-box, or the padding pushes <Hatua>'s box past the viewport and
+        // the overlay layer — which spans that box on purpose — puts the toast
+        // below the fold.
+        boxSizing: 'border-box',
+        alignContent: 'start',
+      }}
     >
       <p style={{ margin: 0, color: 'var(--text-secondary)' }}>
         Hatua scaffold — the designer lands here. Until it does, the primitives.

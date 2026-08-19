@@ -32,6 +32,16 @@ export function Toggle({
   const generatedId = useId()
   const toggleId = id ?? generatedId
 
+  /*
+   * One predicate, used by both branches below. `label={showLabel && 'Run in
+   * parallel'}` is how a caller naturally writes a conditional label, and it
+   * produces `false` — so false, null and '' all have to mean the same thing as
+   * omitting it. Testing `!label` in one place and `label === undefined` in the
+   * other made them disagree: the switch got an empty <label> and therefore no
+   * accessible name at all, and `className` landed on two elements.
+   */
+  const hasLabel = label !== undefined && label !== null && label !== false && label !== ''
+
   const control = (
     <button
       type="button"
@@ -41,7 +51,7 @@ export function Toggle({
       aria-label={ariaLabel}
       disabled={disabled}
       onClick={() => onCheckedChange(!checked)}
-      className={cx(styles.toggle, !label && className)}
+      className={cx(styles.toggle, !hasLabel && className)}
     >
       <span className={styles.thumb} />
     </button>
@@ -52,15 +62,15 @@ export function Toggle({
       <style href="hatua-toggle" precedence="hatua">
         {css}
       </style>
-      {label === undefined ? (
-        control
-      ) : (
+      {hasLabel ? (
         <span className={cx(styles.field, className)}>
           {control}
           <label className={styles.label} htmlFor={toggleId}>
             {label}
           </label>
         </span>
+      ) : (
+        control
       )}
     </>
   )
