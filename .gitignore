@@ -119,6 +119,11 @@ dist
 # Firebase cache directory
 .firebase/
 
+# Brand PNGs — the SVGs in brand/assets/ are the source of truth; every PNG is a
+# build product of `pnpm build:png`. Regenerating beats committing: no binary
+# churn in the history, and the raster can never drift from the vector.
+/brand/dist/
+
 # TernJS port file
 .tern-port
 
