@@ -1,58 +1,90 @@
-import { createTheme } from '@hatua/react'
+import {
+  createTheme,
+  FlowMap,
+  HatuaProvider,
+  Inspector,
+  Library,
+  TabbedPanel,
+  TopBar,
+} from '@hatua/react'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 
 /**
  * The Host-authored embedding, served at /host.html.
  *
- * The rule this entry exists to keep: it never imports <Hatua>. Hatua.tsx
- * promises that "the same regions are exported individually for Hosts that want
- * their own layout", and a promise about what a Host does NOT have to pull in
- * can only be checked by a bundle that does not pull it in. A bundler cannot
- * include what nobody imports, so the evidence is dist/assets/host-*.js sitting
- * next to dist/assets/main-*.js and being visibly smaller.
+ * The rule this entry exists to keep: it never imports <Hatua>, and it never
+ * imports <Build> either. Both promise the same thing — "the same regions are
+ * exported individually for Hosts that want their own layout" — and a promise
+ * about what a Host does NOT have to pull in can only be checked by a bundle
+ * that does not pull it in. A bundler cannot include what nobody imports, so
+ * the evidence is dist/assets/host-*.js sitting next to dist/assets/main-*.js
+ * and being visibly smaller, with no `Build` in it.
  *
- * Today there is nothing to arrange. The parts a Host would compose — the
- * regions, the ports it supplies, the store it drives — arrive with the
- * container shell and the tabs that follow it, and each of those PRs extends
- * this entry alongside the default one. What already exists is the seam a Host
- * touches first: createTheme(), a pure function producing the seeds it hands to
- * whichever parts it mounts (ADR-0002).
+ * What it proves, beyond that the parts exist:
  *
- * Everything visible below is styled by the Host's own CSS, inline. That is the
- * point rather than an omission — Hatua ships no stylesheet for a Host to
- * import (ADR-0003), and outside the provider there are no Hatua tokens to
- * read either.
+ *  1. **They move.** The Inspector is on the left here and the toolbar is at
+ *     the bottom. <Build> puts them the other way round. Neither region knows.
+ *  2. **They are optional.** The Data tab is deliberately not mounted. That is
+ *     the harder half: a region that is merely movable can still be required,
+ *     and a shell that quietly needs all five is a shell every Host has to
+ *     accept whole.
+ *  3. **The tab strip owns nothing.** <TabbedPanel> is handed two regions and
+ *     renders two tabs. It has no third child to lose.
+ *
+ * <HatuaProvider> is the one thing this page must mount that the <Hatua> path
+ * mounts for you. It carries the theme's custom properties and the container
+ * overlays portal into; the regions read both and hold neither (ADR-0002). It
+ * is the parts path's root, not a third way to embed — there is still nothing
+ * here to configure that <Hatua> would not configure identically.
  */
 const theme = createTheme({ accent: 'oklch(0.63 0.115 195)' })
 
 function HostPage() {
   return (
-    <main
-      style={{
-        fontFamily: 'system-ui, sans-serif',
-        maxWidth: 640,
-        margin: '0 auto',
-        padding: 24,
-        lineHeight: 1.5,
-      }}
-    >
-      <h1 style={{ fontSize: '1.125rem' }}>Host-authored embedding</h1>
-      <p>
-        This page imports <code>createTheme</code> and nothing else from <code>@hatua/react</code>.
-        It must never import <code>&lt;Hatua&gt;</code>: the designer assembled by hand is the case
-        this entry exists to keep honest, and importing the all-in-one control would put it in this
-        bundle and end the measurement.
+    <div style={{ blockSize: '100vh', display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)' }}>
+      {/* The Host's own chrome, in the Host's own CSS. Hatua ships no
+          stylesheet for it to import (ADR-0003), and out here there are no
+          Hatua tokens to read either. */}
+      <p
+        style={{
+          margin: 0,
+          padding: '8px 16px',
+          fontFamily: 'system-ui, sans-serif',
+          fontSize: 13,
+          borderBottom: '1px solid #d8dae1',
+        }}
+      >
+        Host-authored embedding — the Inspector on the left, the toolbar at the bottom, and no Data
+        tab at all. Compare with <a href="/index.html">the default embedding</a>.
       </p>
-      <p>
-        Compare with <a href="/index.html">the default embedding</a>, which writes{' '}
-        <code>&lt;Hatua&gt;</code> and lets it mount the provider.
-      </p>
-      <h2 style={{ fontSize: '0.95rem' }}>The seeds this Host would supply</h2>
-      <pre style={{ overflowX: 'auto', background: '#f4f4f6', padding: 12, borderRadius: 6 }}>
-        {JSON.stringify(theme, null, 2)}
-      </pre>
-    </main>
+
+      <HatuaProvider theme={theme}>
+        <div
+          style={{
+            blockSize: '100%',
+            display: 'grid',
+            gridTemplateColumns: 'minmax(200px, 260px) minmax(0, 1fr)',
+            gridTemplateRows: 'minmax(0, 1fr) auto',
+          }}
+        >
+          <div style={{ gridColumn: 1, gridRow: 1 }}>
+            <Inspector />
+          </div>
+          <div style={{ gridColumn: 2, gridRow: 1, minWidth: 0 }}>
+            <TabbedPanel
+              tabs={[
+                { id: 'flow', label: 'Flow', content: <FlowMap /> },
+                { id: 'library', label: 'Library', content: <Library /> },
+              ]}
+            />
+          </div>
+          <div style={{ gridColumn: '1 / -1', gridRow: 2 }}>
+            <TopBar />
+          </div>
+        </div>
+      </HatuaProvider>
+    </div>
   )
 }
 

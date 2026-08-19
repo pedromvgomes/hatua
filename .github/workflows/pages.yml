@@ -15,10 +15,12 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Read-only by default. The Pages deploy credential and the OIDC token belong to
+# the deploy job alone: build runs `pnpm install` with third-party postinstall
+# scripts (esbuild, @swc/core) and then a Storybook build, and none of that
+# should be able to reach a deployment.
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 # One deployment at a time, and never cancel one in flight: a cancelled deploy
 # leaves Pages serving whatever half-state it got to.
@@ -30,6 +32,14 @@ jobs:
   build:
     name: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # configure-pages reads the site config through the Pages API, so read is
+      # load-bearing here — a job-level block REPLACES the workflow default
+      # rather than narrowing it, and `contents: read` alone leaves this job
+      # with pages: none and the step 403s. Only `write` is withheld, which is
+      # the scope this job has no business holding.
+      pages: read
     defaults:
       run:
         working-directory: source
@@ -61,6 +71,9 @@ jobs:
     name: deploy
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

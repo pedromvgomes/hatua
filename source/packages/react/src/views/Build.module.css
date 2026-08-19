@@ -1,0 +1,30 @@
+@layer hatua {
+  .build {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas:
+      "bar bar"
+      "work aside";
+    block-size: 100%;
+    min-block-size: 0;
+    background: var(--surface-page);
+  }
+
+  .bar {
+    grid-area: bar;
+    min-inline-size: 0;
+  }
+
+  .work {
+    grid-area: work;
+    min-inline-size: 0;
+    min-block-size: 0;
+  }
+
+  .aside {
+    grid-area: aside;
+    min-inline-size: 0;
+    min-block-size: 0;
+  }
+}

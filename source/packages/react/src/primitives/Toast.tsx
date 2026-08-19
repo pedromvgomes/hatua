@@ -52,19 +52,57 @@ export function Toast({ open, tone = 'info', autoDismissAfter, onDismiss, childr
   // animation, which pauses itself.
   const elapsedRef = useRef(0)
 
-  // A new showing is a new countdown. Closing deliberately does NOT reset, so
-  // the cleanup below can still charge the time the last showing used.
+  // Whether this showing has already asked to be closed. The toast is
+  // controlled, so a caller is free to leave it open after onDismiss — and
+  // without this the effect below would ask again on every re-render that
+  // brings a fresh onDismiss closure, since the remaining wait has collapsed to
+  // zero. One showing asks once.
+  const askedRef = useRef(false)
+
+  // A new showing is a new countdown. Closing deliberately does NOT reset the
+  // elapsed time, so the cleanup below can still charge what the last showing
+  // used.
   useEffect(() => {
     if (!open) return
     elapsedRef.current = 0
+    askedRef.current = false
     setHovered(false)
     setFocused(false)
   }, [open])
 
+  /*
+   * Losing the timer ends the countdown; getting one back starts a fresh one.
+   *
+   * The pause flags have to be cleared because the handlers that would clear
+   * them are attached only while the toast IS timed: a toast that loses its
+   * timer under the pointer otherwise never sees the pointer leave, and
+   * `hovered` latches at true.
+   *
+   * The elapsed time has to go with them, and that is the half easy to miss.
+   * The progress bar unmounts with the timer and a new one mounts at 100%, so
+   * keeping the spent time would leave the bar promising a full wait while the
+   * timer fired after what little remained — and Toast.module.css says in as
+   * many words that the two cannot tell the user different things. Clearing
+   * `asked` alongside is what lets the new countdown arm at all.
+   */
   useEffect(() => {
-    if (!timed || paused) return
+    if (timed) return
+    elapsedRef.current = 0
+    askedRef.current = false
+    setHovered(false)
+    setFocused(false)
+  }, [timed])
+
+  useEffect(() => {
+    if (!timed || paused || askedRef.current) return
     const startedAt = Date.now()
-    const timer = setTimeout(() => onDismiss?.(), Math.max(0, durationMs - elapsedRef.current))
+    const timer = setTimeout(
+      () => {
+        askedRef.current = true
+        onDismiss?.()
+      },
+      Math.max(0, durationMs - elapsedRef.current),
+    )
     return () => {
       clearTimeout(timer)
       // Charge the elapsed time, so resuming continues the wait instead of

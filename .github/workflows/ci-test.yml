@@ -42,6 +42,24 @@ jobs:
       # test:coverage rather than test: it runs the same suites, and the
       # instrumentation is what lets the bulwark stage read a report instead of
       # running all of this again.
+      #
+      # Which makes test:coverage the ONLY task CI runs, and turbo silently
+      # skips a package that does not declare the task it was asked for. A
+      # package carrying `test` but not `test:coverage` would therefore never
+      # run here at all, and the `collected -eq 0` guard further down cannot
+      # notice: the other packages still produce reports, so the artifact is
+      # non-empty and the gate stays green over a package nothing tested.
+      - name: every package that tests also reports coverage
+        run: |
+          offenders="$(find . -name package.json -not -path '*/node_modules/*' \
+            -exec jq -r 'select(.scripts.test != null and .scripts["test:coverage"] == null)
+                         | input_filename' {} +)"
+          if [ -n "$offenders" ]; then
+            echo "::error::these declare a test script but no test:coverage, so CI never runs them:"
+            echo "$offenders"
+            exit 1
+          fi
+
       - run: pnpm turbo run test:coverage
 
       - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0

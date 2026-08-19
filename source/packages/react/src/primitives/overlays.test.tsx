@@ -258,6 +258,114 @@ describe('Toast auto-dismiss', () => {
     expect(onDismiss).toHaveBeenCalledTimes(1)
   })
 
+  /*
+   * The pause handlers are attached only while the toast is timed, so losing
+   * the timer under the pointer means onMouseLeave is never wired up to observe
+   * the pointer leaving. `hovered` would latch at true, and restoring the timer
+   * without cycling `open` would leave a frozen bar on a toast that never
+   * dismisses itself again.
+   */
+  it('does not latch paused when the timer is taken away under the pointer', async () => {
+    const onDismiss = vi.fn()
+    const { rerender } = render(
+      <HatuaProvider>
+        <Toast open autoDismissAfter={4} onDismiss={onDismiss}>
+          Draft published
+        </Toast>
+      </HatuaProvider>,
+    )
+    fireEvent.mouseOver(toastCard())
+    expect(toastCard().getAttribute('data-paused')).toBe('true')
+
+    // The timer goes away while the pointer is still inside, and comes back.
+    const untimed = (
+      <HatuaProvider>
+        <Toast open onDismiss={onDismiss}>
+          Draft published
+        </Toast>
+      </HatuaProvider>
+    )
+    rerender(untimed)
+    rerender(
+      <HatuaProvider>
+        <Toast open autoDismissAfter={4} onDismiss={onDismiss}>
+          Draft published
+        </Toast>
+      </HatuaProvider>,
+    )
+    expect(toastCard().getAttribute('data-paused')).toBeNull()
+    await advance(4100)
+    expect(onDismiss).toHaveBeenCalledTimes(1)
+  })
+
+  /*
+   * The bar unmounts with the timer and a new one mounts at 100%, so the spent
+   * time has to go with it. Keeping it would leave the bar promising a full
+   * wait while the timer fired after whatever little remained — and the
+   * stylesheet says in as many words that the two cannot tell the user
+   * different things.
+   */
+  it('restarts the wait when the timer is taken away and given back', async () => {
+    const onDismiss = vi.fn()
+    const timed = (
+      <HatuaProvider>
+        <Toast open autoDismissAfter={4} onDismiss={onDismiss}>
+          Draft published
+        </Toast>
+      </HatuaProvider>
+    )
+    const { rerender } = render(timed)
+
+    // Three of the four seconds go by, then the timer is cleared and restored.
+    await advance(3000)
+    rerender(
+      <HatuaProvider>
+        <Toast open onDismiss={onDismiss}>
+          Draft published
+        </Toast>
+      </HatuaProvider>,
+    )
+    rerender(timed)
+
+    // The bar is showing a fresh 4s, so the timer owes a fresh 4s.
+    await advance(3900)
+    expect(onDismiss).not.toHaveBeenCalled()
+    await advance(200)
+    expect(onDismiss).toHaveBeenCalledTimes(1)
+  })
+
+  /*
+   * The toast is controlled, so a caller may leave it open after onDismiss —
+   * and an inline closure gives the effect a new identity on every render. With
+   * the wait already spent the remaining time collapses to zero, so without
+   * treating expiry as terminal the toast asks again on every parent render.
+   */
+  it('asks to be closed once per showing, however often it re-renders', async () => {
+    const onDismiss = vi.fn()
+    const { rerender } = render(
+      <HatuaProvider>
+        <Toast open autoDismissAfter={4} onDismiss={() => onDismiss()}>
+          Draft published
+        </Toast>
+      </HatuaProvider>,
+    )
+    await advance(4100)
+    expect(onDismiss).toHaveBeenCalledTimes(1)
+
+    // The caller ignored it. Three more renders, each with a fresh closure.
+    for (let i = 0; i < 3; i++) {
+      rerender(
+        <HatuaProvider>
+          <Toast open autoDismissAfter={4} onDismiss={() => onDismiss()}>
+            Draft published
+          </Toast>
+        </HatuaProvider>,
+      )
+      await advance(50)
+    }
+    expect(onDismiss).toHaveBeenCalledTimes(1)
+  })
+
   it('ignores the duration when there is no handler to call', async () => {
     render(
       <HatuaProvider>
@@ -313,6 +421,24 @@ describe('ConfirmDialog', () => {
     expect(await screen.findByRole('button', { name: 'Discard' })).toBe(document.activeElement)
   })
 
+  /*
+   * The exception, and the reason the dialog exists at all. A destructive
+   * confirmation that opens on its own destructive action hands back the step
+   * it was put there to add: the keystroke that opened the dialog is still
+   * under the user's finger, and Enter lands on Discard. Focus the safe action
+   * and the reflex costs nothing.
+   */
+  it('focuses cancel instead when the confirmation is destructive', async () => {
+    render(
+      <HatuaProvider>
+        <ConfirmDialog {...props} tone="danger" confirmLabel="Discard" />
+      </HatuaProvider>,
+    )
+    await screen.findByRole('dialog')
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Cancel' }))
+    expect(document.activeElement).not.toBe(screen.getByRole('button', { name: 'Discard' }))
+  })
+
   it('cancels on Escape, wherever focus happens to be', async () => {
     const onCancel = vi.fn()
     render(
@@ -323,6 +449,53 @@ describe('ConfirmDialog', () => {
     await screen.findByRole('dialog')
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     expect(onCancel).toHaveBeenCalledTimes(1)
+  })
+
+  /*
+   * Escape is consumed, not merely observed. A Host closing its own side panel
+   * on Escape would otherwise act on the same keystroke, so dismissing the
+   * dialog would also tear down the UI behind it — and aria-modal="true" is a
+   * claim that that UI is unreachable.
+   */
+  it('does not let Escape reach the Host behind it', async () => {
+    const hostEscape = vi.fn()
+    document.addEventListener('keydown', hostEscape)
+    const onCancel = vi.fn()
+    render(
+      <HatuaProvider>
+        <ConfirmDialog {...props} onCancel={onCancel} />
+      </HatuaProvider>,
+    )
+    await screen.findByRole('dialog')
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(onCancel).toHaveBeenCalledTimes(1)
+    expect(hostEscape).not.toHaveBeenCalled()
+    document.removeEventListener('keydown', hostEscape)
+  })
+
+  /*
+   * The harder half of the same rule. `window` in the capture phase is where a
+   * Host's global shortcut handler most often sits, and it is the same node the
+   * dialog listens on — so plain stopPropagation, which spares other listeners
+   * on the node it fires from, would leave this one running.
+   */
+  it('stops a Host shortcut sharing its own listening position', async () => {
+    const onCancel = vi.fn()
+    render(
+      <HatuaProvider>
+        <ConfirmDialog {...props} onCancel={onCancel} />
+      </HatuaProvider>,
+    )
+    await screen.findByRole('dialog')
+
+    // Registered after the dialog, on the same node and in the same phase.
+    const hostShortcut = vi.fn()
+    window.addEventListener('keydown', hostShortcut, true)
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    window.removeEventListener('keydown', hostShortcut, true)
+
+    expect(onCancel).toHaveBeenCalledTimes(1)
+    expect(hostShortcut).not.toHaveBeenCalled()
   })
 
   /*

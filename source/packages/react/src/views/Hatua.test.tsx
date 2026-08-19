@@ -10,15 +10,23 @@ import { Hatua } from './Hatua'
  * have to do itself, which is exactly what ADR-0002 says it must not have to.
  */
 describe('Hatua', () => {
-  it('mounts the provider, so a Host supplies a theme and mounts nothing', () => {
-    const { container } = render(
-      <Hatua>
-        <p>designer</p>
-      </Hatua>,
-    )
+  it('renders the designer screen, which is the whole of what a Host asked for', () => {
+    const { container } = render(<Hatua />)
     const root = container.querySelector('.hatua-root')
     expect(root).not.toBeNull()
-    expect(screen.getByText('designer').closest('.hatua-root')).toBe(root)
+    expect(screen.getByRole('tablist').closest('.hatua-root')).toBe(root)
+    expect(screen.getByRole('region', { name: 'Toolbar' })).toBeDefined()
+  })
+
+  it('takes no children, so there is no third way to embed', () => {
+    // The type says so and this says so at runtime: passing children used to be
+    // the only thing <Hatua> could do, and a Host still holding that habit
+    // should see its markup ignored rather than half-composed with the screen.
+    // The compiler is the real guard: an unused @ts-expect-error is an error,
+    // so restoring a children prop breaks this line rather than passing it.
+    // @ts-expect-error children is not part of HatuaProps any more.
+    render(<Hatua>escape hatch</Hatua>)
+    expect(screen.queryByText('escape hatch')).toBeNull()
   })
 
   it('carries the overlay container, so overlays have somewhere themed to land', () => {
@@ -37,10 +45,5 @@ describe('Hatua', () => {
     expect(container.querySelector('.hatua-root')?.hasAttribute('data-hatua-mode')).toBe(false)
     rerender(<Hatua colorMode="dark" />)
     expect(container.querySelector('.hatua-root')?.getAttribute('data-hatua-mode')).toBe('dark')
-  })
-
-  it('renders without children, which is what a Host embedding an empty designer does', () => {
-    const { container } = render(<Hatua />)
-    expect(container.querySelector('.hatua-root')).not.toBeNull()
   })
 })

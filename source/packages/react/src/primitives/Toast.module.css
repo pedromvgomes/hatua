@@ -53,10 +53,13 @@
     flex: 1;
   }
 
+  /* 24px, not the 20 this started at: WCAG 2.2 SC 2.5.8 sets 24×24 as the
+     minimum target, and the spacing exception does not apply to a control
+     sitting flush against the toast body. */
   .dismiss {
     flex: none;
-    width: 20px;
-    height: 20px;
+    inline-size: 24px;
+    block-size: 24px;
     padding: 0;
     border: none;
     border-radius: var(--radius-sm);
@@ -88,10 +91,12 @@
    */
   .progress {
     position: absolute;
-    inset-inline: 0;
+    /* Start edge only. With both insets pinned the box is over-constrained and
+       the inline-size below would be ignored. */
+    inset-inline-start: 0;
     inset-block-end: 0;
-    height: 2px;
-    transform-origin: left center;
+    inline-size: 100%;
+    block-size: 2px;
     background: var(--toast-tone);
     animation-name: deplete;
     animation-timing-function: linear;
@@ -105,12 +110,19 @@
     animation-play-state: paused;
   }
 
+  /*
+   * inline-size rather than scaleX. transform-origin has no logical keyword, so
+   * `left center` pinned the bar to the physical left and an RTL Host got a
+   * countdown growing away from the tone stripe instead of draining toward it.
+   * Animating the logical size follows the writing mode for free, and a 2px bar
+   * is not where layout-animation cost is worth arguing about.
+   */
   @keyframes deplete {
     from {
-      transform: scaleX(1);
+      inline-size: 100%;
     }
     to {
-      transform: scaleX(0);
+      inline-size: 0;
     }
   }
 }

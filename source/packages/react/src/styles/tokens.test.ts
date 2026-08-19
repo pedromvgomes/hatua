@@ -68,6 +68,20 @@ const referencedAliases = (text: string) =>
   [...text.matchAll(/var\(\s*(--[\w-]+)/g)].map((m) => m[1] as string)
 
 /**
+ * Alias names written as bare strings, which is how TypeScript reaches for one
+ * without spelling `var()` at the site: tokens.stories.tsx keeps its vocabulary
+ * in arrays and builds every swatch as `var(${alias})`, so the regex above sees
+ * none of them — a typo in the one file whose entire job is to render the alias
+ * set would produce an empty swatch and leave this suite green.
+ *
+ * Scoped to --hatua-* and the alias namespace rather than every string: a
+ * component may still define a property of its own, and those are covered by
+ * the file's own definitions the same way the CSS rules cover them.
+ */
+const quotedAliases = (text: string) =>
+  [...text.matchAll(/['"`](--[\w-]+)['"`]/g)].map((m) => m[1] as string)
+
+/**
  * Colour literals. `oklch(from var(--alias) …)` is a derivation of an alias and
  * therefore fine; `oklch(0.63 0.115 195)` is a literal and is not — hence the
  * negative lookahead rather than a bare check for the function name.
@@ -114,6 +128,24 @@ describe('token discipline (ADR-0002)', () => {
       expect(unknown).toEqual([])
     },
   )
+
+  /*
+   * The same rule for alias names written as bare strings.
+   *
+   * Tests are exempt and stories are not, which is the whole point of the
+   * split: a test NAMES a property to assert something about it — that
+   * <Hatua theme> really does write the --hatua-accent seed — while a story
+   * READS one to paint with, and tokens.stories.tsx reads every alias there is
+   * from arrays of exactly these strings. theme/ stays exempt for the reason it
+   * always was: createTheme writes the seeds.
+   */
+  it.each(
+    componentFiles.filter((f) => !f.path.startsWith('src/theme/') && !/\.test\.tsx?$/.test(f.path)),
+  )('$path names only aliases base.css defines', ({ text }) => {
+    const known = definitionsIn(text)
+    const unknown = quotedAliases(text).filter((a) => !definedAliases.has(a) && !known.has(a))
+    expect(unknown).toEqual([])
+  })
 })
 
 /**

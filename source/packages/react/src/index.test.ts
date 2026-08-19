@@ -11,15 +11,37 @@ import * as api from './index'
 describe('@hatua/react exports', () => {
   it('exports exactly the public surface', () => {
     expect(Object.keys(api).sort()).toEqual([
+      'Build',
       'Button',
       'ConfirmDialog',
+      'Data',
+      'FlowMap',
       'Hatua',
+      'HatuaProvider',
       'Input',
+      'Inspector',
+      'Library',
       'Select',
+      'TabbedPanel',
       'Toast',
       'Toggle',
+      'TopBar',
       'createTheme',
     ])
+  })
+
+  /**
+   * ADR-0003's claim is that a Host embedding one part does not pay for the
+   * rest, and that only holds if a part can be imported without dragging the
+   * container in. A static property would make that impossible — you cannot
+   * reach Hatua.FlowMap without evaluating Hatua — so every part is a named
+   * export and nothing hangs off <Hatua> itself.
+   */
+  it('exports the parts individually, not as properties of Hatua', () => {
+    for (const part of ['Build', 'TopBar', 'FlowMap', 'Inspector', 'Library', 'Data']) {
+      expect(api).toHaveProperty(part)
+      expect(api.Hatua).not.toHaveProperty(part)
+    }
   })
 
   it('exports them as callables a Host can actually render', () => {
