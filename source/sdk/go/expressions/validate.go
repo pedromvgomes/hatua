@@ -356,14 +356,20 @@ func walkBinary(node *Binary, ctx CheckContext, found *[]Diagnostic) walkResult 
 		return known(TypeBoolean)
 
 	case "<", "<=", ">", ">=":
+		orderable := true
 		for _, operand := range []ValueType{left, right} {
 			if !CanOrder(operand) {
+				orderable = false
 				*found = append(*found, NewDiagnostic(CodeExprOperandType, node.At, map[string]string{
 					"op": node.Op, "expected": "number, text or datetime", "actual": string(operand),
 				}))
 			}
 		}
-		if left != TypeUnknown && right != TypeUnknown && left != right {
+		// Only complain that the two sides disagree once both are things that
+		// could have been ordered at all. Telling someone a list is unorderable
+		// *and* that it does not match the text beside it is two squiggles about
+		// one mistake, and the second is a consequence of the first.
+		if orderable && left != TypeUnknown && right != TypeUnknown && left != right {
 			*found = append(*found, NewDiagnostic(CodeExprOperandType, node.At, map[string]string{
 				"op": node.Op, "expected": string(left), "actual": string(right),
 			}))

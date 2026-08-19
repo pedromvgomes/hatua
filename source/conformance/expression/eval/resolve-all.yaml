@@ -1,0 +1,75 @@
+about: >-
+  Resolving a whole `with:` map in one call.
+
+  `resolveAll` exists to report every failure together rather than stopping at
+  the first, because a user fixing one field at a time is a user running the
+  workflow five times to find five mistakes. That behaviour had no shared
+  scenario until now — it was covered in TypeScript by an SDK test and in Go by
+  nothing at all, which is precisely the shape of gap this corpus exists to
+  close.
+
+scenarios:
+  - name: every slot resolves, each keeping the type its field declares
+    slots:
+      - { name: to, template: "{{ var.digest_to }}", type: text }
+      - { name: subject, template: "Digest · {{ s2.count }}", type: text }
+      - { name: retries, template: "{{ 1 + 1 }}", type: number }
+      - { name: urgent, template: "{{ s2.count > 20 }}", type: boolean }
+    context:
+      var: { digest_to: me@dane.dev }
+      steps: { s2: { count: 24 } }
+    values:
+      to: me@dane.dev
+      subject: "Digest · 24"
+      retries: 2
+      urgent: true
+
+  - name: an empty map resolves to nothing rather than failing
+    slots: []
+    values: {}
+
+  - name: >-
+      every failure is reported, not just the first — this is the whole reason
+      the error carries a list
+    slots:
+      - { name: a, template: "{{ s9.missing }}", type: text }
+      - { name: b, template: "{{ s8.missing }}", type: text }
+    context: { steps: {} }
+    errors:
+      - { slot: a, code: EVAL_MISSING_PATH }
+      - { slot: b, code: EVAL_MISSING_PATH }
+
+  - name: failures are reported in slot order, so the report is stable
+    slots:
+      - { name: first, template: "{{ 1 / 0 }}", type: number }
+      - { name: second, template: "{{ s2.count }}", type: number }
+      - { name: third, template: "{{ 'a' + 'b' }}", type: text }
+    context: { steps: { s2: { count: 24 } } }
+    errors:
+      - { slot: first, code: EVAL_DIVISION_BY_ZERO }
+      - { slot: third, code: EVAL_OPERAND_TYPE }
+
+  - name: a failure in one slot does not suppress the others' diagnostics
+    slots:
+      - { name: ok, template: "plain text", type: text }
+      - { name: bad, template: "{{ s9.missing }}", type: text }
+    context: { steps: {} }
+    errors:
+      - { slot: bad, code: EVAL_MISSING_PATH }
+
+  - name: a parse failure names its slot like any other
+    slots:
+      - { name: broken, template: "{{ a + }}", type: text }
+    errors:
+      - { slot: broken, code: EXPR_PARSE_ERROR }
+
+  - name: different kinds of failure report side by side
+    slots:
+      - { name: missing, template: "{{ s9.x }}", type: text }
+      - { name: mistyped, template: "{{ s2.name }}", type: number }
+      - { name: broken, template: "{{ }}", type: text }
+    context: { steps: { s2: { name: Dane } } }
+    errors:
+      - { slot: missing, code: EVAL_MISSING_PATH }
+      - { slot: mistyped, code: EVAL_TYPE_MISMATCH }
+      - { slot: broken, code: EXPR_PARSE_ERROR }

@@ -119,11 +119,24 @@ export function parenNode(expr: Matched): Expression {
 /** A suffix before its object is known. */
 type PartialSuffix = { kind: string; at: number; object?: Expression } & Record<string, unknown>
 
+/**
+ * Attach each suffix to what precedes it.
+ *
+ * A suffix is parsed knowing only where its own punctuation is — the `.`, the
+ * `[`, the `(` — but a node's `at` is documented as the offset of its *first*
+ * character, and `a.b` starts at `a`. So the offset is restamped here, once the
+ * object is known, which is the only point at which it can be.
+ *
+ * It matters because `at` is what an editor squiggles and what a runner logs. A
+ * diagnostic about `s9.name` that points at the dot sends the reader to the
+ * middle of the thing that failed.
+ */
 export function postfixNode(base: Matched, suffixes: Matched): Expression {
   let node = base as Expression
   for (const suffix of list(suffixes)) {
     const partial = suffix as PartialSuffix
     partial.object = node
+    partial.at = atOf(node)
     node = partial as unknown as Expression
   }
   return node

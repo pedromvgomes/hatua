@@ -9,7 +9,7 @@ scenarios:
   - name: a hole starts after the braces and the whitespace
     template: "{{ s2.count }}"
     offsets: true
-    sexp: "(template (hole@3 (.@5 s2@3 count)))"
+    sexp: "(template (hole@3 (.@3 s2@3 count)))"
 
   - name: a second hole counts from the start of the whole Template
     template: "Hi {{ a }} and {{ b }}"
@@ -31,15 +31,30 @@ scenarios:
     offsets: true
     sexp: "(!@0 a@1)"
 
-  - name: a suffix claims the punctuation that introduced it
+  - name: >-
+      a suffix claims where its *object* starts, not where its own punctuation
+      is — `a.b` begins at `a`, and a diagnostic about it that pointed at the dot
+      would send the reader into the middle of the thing that failed
     expr: "a.b"
     offsets: true
-    sexp: "(.@1 a@0 b)"
+    sexp: "(.@0 a@0 b)"
 
-  - name: a call claims its opening parenthesis
+  - name: so a whole postfix chain claims the root it hangs off
+    expr: "s2.messages[0].subject"
+    offsets: true
+    sexp: "(.@0 ([]@0 (.@0 s2@0 messages) 0@12) subject)"
+
+  - name: a call claims the start of its callee, not its opening parenthesis
     expr: "dt.now()"
     offsets: true
-    sexp: "(call@6 (.@2 dt@0 now))"
+    sexp: "(call@0 (.@0 dt@0 now))"
+
+  - name: >-
+      an argument keeps its own position, so a failure inside a call still
+      points at the argument that caused it
+    expr: "num.abs(x)"
+    offsets: true
+    sexp: "(call@0 (.@0 num@0 abs) x@8)"
 
   - name: a conditional claims its condition's offset
     expr: "a ? b : c"

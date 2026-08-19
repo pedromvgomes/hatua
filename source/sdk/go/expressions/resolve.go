@@ -579,7 +579,31 @@ func call(node *Call, ctx Context) Value {
 	for _, arg := range node.Args {
 		args = append(args, Evaluate(arg, ctx))
 	}
-	return registered.Impl(checkArguments(registered.Spec, args, node.At), ctx)
+	checked := checkArguments(registered.Spec, args, node.At)
+
+	// An implementation reports what went wrong but has no idea where it was
+	// called from — dt.parse knows the timestamp is unreadable, not that it sits
+	// at offset 40 of a subject line. The call site is the only place that knows,
+	// so it stamps the position on the way past.
+	defer func() {
+		if failure := recovered(recover()); failure != nil {
+			panic(locate(failure, node.At))
+		}
+	}()
+	return registered.Impl(checked, ctx)
+}
+
+// locate gives a failure a position, for diagnostics raised somewhere that had
+// none.
+func locate(failure *Error, at int) *Error {
+	located := make([]Diagnostic, 0, len(failure.Diagnostics))
+	for _, d := range failure.Diagnostics {
+		if d.At == 0 {
+			d.At = at
+		}
+		located = append(located, d)
+	}
+	return &Error{Diagnostics: located}
 }
 
 // checkArguments enforces arity and argument types once, for every function.

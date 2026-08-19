@@ -330,8 +330,10 @@ function walkBinary(
   if (op === '==' || op === '!=') return known('boolean')
 
   if (op === '<' || op === '<=' || op === '>' || op === '>=') {
+    let orderable = true
     for (const operand of [left, right]) {
       if (!canOrder(operand)) {
+        orderable = false
         found.push(
           diagnostic('EXPR_OPERAND_TYPE', at, {
             op,
@@ -341,7 +343,11 @@ function walkBinary(
         )
       }
     }
-    if (left !== 'unknown' && right !== 'unknown' && left !== right) {
+    // Only complain that the two sides disagree once both are things that could
+    // have been ordered at all. Telling someone a list is unorderable *and*
+    // that it does not match the text beside it is two squiggles about one
+    // mistake, and the second is a consequence of the first.
+    if (orderable && left !== 'unknown' && right !== 'unknown' && left !== right) {
       found.push(diagnostic('EXPR_OPERAND_TYPE', at, { op, expected: left, actual: right }))
     }
     return known('boolean')

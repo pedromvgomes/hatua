@@ -462,7 +462,23 @@ function call(node: Extract<Expression, { kind: 'Call' }>, context: EvaluationCo
   if (!registered) throw fail('EVAL_UNKNOWN_FUNCTION', node.at, { name })
 
   const args = node.args.map((arg) => evaluate(arg, context))
-  return registered.impl(checkArguments(registered.spec, args, node.at), context)
+  const checked = checkArguments(registered.spec, args, node.at)
+
+  try {
+    return registered.impl(checked, context)
+  } catch (error) {
+    // An implementation reports what went wrong but has no idea where it was
+    // called from — `dt.parse` knows the timestamp is unreadable, not that it
+    // sits at offset 40 of a subject line. The call site is the only place that
+    // knows, so it stamps the position on the way past.
+    if (error instanceof ExpressionError) throw locate(error, node.at)
+    throw error
+  }
+}
+
+/** Give a failure a position, for diagnostics raised somewhere that had none. */
+function locate(error: ExpressionError, at: number): ExpressionError {
+  return new ExpressionError(error.diagnostics.map((d) => (d.at === 0 ? { ...d, at } : d)))
 }
 
 /**

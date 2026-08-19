@@ -1,0 +1,92 @@
+about: >-
+  Instants as values rather than as text.
+
+  Every other datetime scenario so far went through `dt.iso(...)` and compared
+  strings, which means the two languages were only ever agreeing about
+  *rendering*. `time.Time` and `Date` are different types with different
+  precision, and a value that survives to a `datetime` slot is the case where
+  that difference would show.
+
+  `{ $datetime: … }` is how a scenario writes one, since YAML's own timestamp
+  handling differs between the two parsers.
+
+scenarios:
+  - name: a parsed instant reaches a datetime slot as an instant
+    template: "{{ dt.parse('2026-01-02T03:04:05Z') }}"
+    type: datetime
+    value: { $datetime: "2026-01-02T03:04:05Z" }
+
+  - name: an offset is normalised to UTC in the value, not only in its rendering
+    template: "{{ dt.parse('2026-01-02T03:04:05+02:00') }}"
+    type: datetime
+    value: { $datetime: "2026-01-02T01:04:05Z" }
+
+  - name: dt.now yields the caller's clock as an instant
+    template: "{{ dt.now() }}"
+    type: datetime
+    now: "2026-08-18T07:00:00Z"
+    value: { $datetime: "2026-08-18T07:00:00Z" }
+
+  - name: dt.add yields an instant
+    template: "{{ dt.add(dt.now(), 90, 'minutes') }}"
+    type: datetime
+    now: "2026-08-18T07:00:00Z"
+    value: { $datetime: "2026-08-18T08:30:00Z" }
+
+  - name: >-
+      instants carry millisecond precision — what a Date can hold — so Go
+      truncates rather than keeping nanoseconds TypeScript could never print
+    template: "{{ dt.parse('2026-01-02T03:04:05.1239Z') }}"
+    type: datetime
+    value: { $datetime: "2026-01-02T03:04:05.123Z" }
+
+  - name: an instant read from the context is an instant
+    template: "{{ triggers.nightly.at }}"
+    type: datetime
+    context:
+      triggers:
+        nightly:
+          at: { $datetime: "2026-08-18T07:00:00Z" }
+    value: { $datetime: "2026-08-18T07:00:00Z" }
+
+  - name: two instants compare by instant, not by their text
+    template: "{{ triggers.nightly.at < dt.parse('2026-08-19T00:00:00Z') }}"
+    type: boolean
+    context:
+      triggers:
+        nightly:
+          at: { $datetime: "2026-08-18T07:00:00Z" }
+    value: true
+
+  - name: equality on instants is by instant too, across offsets
+    template: "{{ dt.parse('2026-01-02T03:04:05Z') == dt.parse('2026-01-02T05:04:05+02:00') }}"
+    type: boolean
+    value: true
+
+  - name: an instant satisfies a text slot, rendering as RFC 3339 in UTC
+    template: "{{ dt.parse('2026-01-02T03:04:05Z') }}"
+    type: text
+    value: "2026-01-02T03:04:05Z"
+
+  - name: and interpolates the same way inside mixed text
+    template: "ran at {{ triggers.nightly.at }}"
+    type: text
+    context:
+      triggers:
+        nightly:
+          at: { $datetime: "2026-08-18T07:00:00Z" }
+    value: "ran at 2026-08-18T07:00:00Z"
+
+  - name: an instant does not satisfy a number slot
+    template: "{{ dt.parse('2026-01-02T03:04:05Z') }}"
+    type: number
+    error: EVAL_TYPE_MISMATCH
+
+  - name: json.stringify renders an instant as its RFC 3339 text
+    template: "{{ json.stringify(triggers.nightly.at) }}"
+    type: text
+    context:
+      triggers:
+        nightly:
+          at: { $datetime: "2026-08-18T07:00:00Z" }
+    value: '"2026-08-18T07:00:00Z"'

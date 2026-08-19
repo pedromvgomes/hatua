@@ -119,21 +119,31 @@ func unaryNode(at, op, operand any) (any, error) {
 // parenNode: parentheses group; they leave no node behind.
 func parenNode(expr any) (any, error) { return expr, nil }
 
+// postfixNode attaches each suffix to what precedes it.
+//
+// A suffix is parsed knowing only where its own punctuation is — the `.`, the
+// `[`, the `(` — but a node's At is documented as the offset of its *first*
+// character, and `a.b` starts at `a`. So the offset is restamped here, once the
+// object is known, which is the only point at which it can be.
+//
+// It matters because At is what an editor squiggles and what a runner logs. A
+// diagnostic about `s9.name` that points at the dot sends the reader to the
+// middle of the thing that failed.
 func postfixNode(base, suffixes any) (any, error) {
 	node := base.(Expression)
 	for _, suffix := range list(suffixes) {
 		switch s := suffix.(type) {
 		case *Member:
-			s.Object = node
+			s.Object, s.At = node, node.Offset()
 			node = s
 		case *Index:
-			s.Object = node
+			s.Object, s.At = node, node.Offset()
 			node = s
 		case *Project:
-			s.Object = node
+			s.Object, s.At = node, node.Offset()
 			node = s
 		case *Call:
-			s.Object = node
+			s.Object, s.At = node, node.Offset()
 			node = s
 		default:
 			return nil, fmt.Errorf("unknown postfix suffix %T", suffix)

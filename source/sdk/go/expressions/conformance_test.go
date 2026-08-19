@@ -135,15 +135,33 @@ var errNoSource = &Error{Diagnostics: []Diagnostic{{
 	Message: "scenario needs either `expr` or `template`",
 }}}
 
+type slotScenario struct {
+	Name     string `yaml:"name"`
+	Template string `yaml:"template"`
+	Type     string `yaml:"type"`
+}
+
+type errorExpectation struct {
+	Slot string `yaml:"slot"`
+	Code string `yaml:"code"`
+}
+
 type evalScenario struct {
-	Name      string         `yaml:"name"`
-	Template  string         `yaml:"template"`
-	Type      string         `yaml:"type"`
-	OnMissing string         `yaml:"on_missing"`
-	Now       string         `yaml:"now"`
-	Context   map[string]any `yaml:"context"`
-	Value     any            `yaml:"value"`
-	Error     string         `yaml:"error"`
+	Name string `yaml:"name"`
+	// One Slot, the common case.
+	Template string `yaml:"template"`
+	Type     string `yaml:"type"`
+	Value    any    `yaml:"value"`
+	Error    string `yaml:"error"`
+	// At is where the failure points. Asserted only when the scenario says so.
+	At *int `yaml:"at"`
+	// Several Slots, resolved together by ResolveAll.
+	Slots     []slotScenario     `yaml:"slots"`
+	Values    map[string]any     `yaml:"values"`
+	Errors    []errorExpectation `yaml:"errors"`
+	OnMissing string             `yaml:"on_missing"`
+	Now       string             `yaml:"now"`
+	Context   map[string]any     `yaml:"context"`
 }
 
 type evalFile struct {
@@ -167,12 +185,16 @@ func TestConformanceEval(t *testing.T) {
 					ctx := scenarioContext(t, scenario)
 					ctx.Functions = functions
 
-					expected := TypeText
-					if scenario.Type != "" {
-						expected = ValueType(scenario.Type)
+					if scenario.Slots != nil {
+						checkResolveAll(t, scenario, ctx)
+						return
 					}
-					slot := Slot{Name: "field", Template: scenario.Template, ExpectedType: expected}
 
+					slot := Slot{
+						Name:         "field",
+						Template:     scenario.Template,
+						ExpectedType: slotType(scenario.Type),
+					}
 					value, err := Resolve(ctx, slot)
 
 					if scenario.Error != "" {
@@ -190,6 +212,10 @@ func TestConformanceEval(t *testing.T) {
 							t.Fatalf("expected the diagnostic to name its slot, got %q",
 								failure.Diagnostics[0].Slot)
 						}
+						if scenario.At != nil && failure.Diagnostics[0].At != *scenario.At {
+							t.Fatalf("expected the failure at offset %d, got %d",
+								*scenario.At, failure.Diagnostics[0].At)
+						}
 						return
 					}
 
@@ -202,6 +228,64 @@ func TestConformanceEval(t *testing.T) {
 				})
 			}
 		})
+	}
+}
+
+func slotType(declared string) ValueType {
+	if declared == "" {
+		return TypeText
+	}
+	return ValueType(declared)
+}
+
+// checkResolveAll pins the behaviour of resolving a whole `with:` map at once.
+//
+// What matters across languages is that it reports *every* failure rather than
+// stopping at the first — a user fixing one field at a time is a user running
+// the workflow five times to find five mistakes.
+func checkResolveAll(t *testing.T, scenario evalScenario, ctx Context) {
+	t.Helper()
+
+	slots := make([]Slot, 0, len(scenario.Slots))
+	for _, declared := range scenario.Slots {
+		slots = append(slots, Slot{
+			Name:         declared.Name,
+			Template:     declared.Template,
+			ExpectedType: slotType(declared.Type),
+		})
+	}
+
+	values, err := ResolveAll(ctx, slots)
+
+	if scenario.Errors != nil {
+		failure, ok := err.(*Error)
+		if !ok {
+			t.Fatalf("expected failures, got %v (err %v)", values, err)
+		}
+		actual := make([]string, 0, len(failure.Diagnostics))
+		for _, d := range failure.Diagnostics {
+			actual = append(actual, d.Slot+":"+string(d.Code))
+		}
+		want := make([]string, 0, len(scenario.Errors))
+		for _, expected := range scenario.Errors {
+			want = append(want, expected.Slot+":"+expected.Code)
+		}
+		if strings.Join(actual, " ") != strings.Join(want, " ") {
+			t.Fatalf("\n  expected %v\n  got      %v", want, actual)
+		}
+		return
+	}
+
+	if err != nil {
+		t.Fatalf("resolving: %v", err)
+	}
+	if len(values) != len(scenario.Values) {
+		t.Fatalf("expected %d values, got %d", len(scenario.Values), len(values))
+	}
+	for name, expected := range scenario.Values {
+		if actual, want := canon(values[name]), canon(decodeValue(expected)); actual != want {
+			t.Fatalf("%s:\n  expected %s\n  got      %s", name, want, actual)
+		}
 	}
 }
 

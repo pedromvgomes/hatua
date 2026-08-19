@@ -7,7 +7,7 @@ import { ExpressionError } from './errors.js'
 import { coreFunctions } from './functions/registry.js'
 import { parseExpression, parseTemplate } from './parse.js'
 import { sourceReference } from './reference.js'
-import { type EvaluationContext, resolve, type Slot } from './resolve.js'
+import { type EvaluationContext, resolve, resolveAll, type Slot } from './resolve.js'
 import { templateToSexp, toSexp } from './sexp.js'
 import type { ScopeEntry } from './types.js'
 import { validate } from './validate.js'
@@ -39,13 +39,20 @@ interface ParseScenario {
 
 interface EvalScenario {
   name: string
-  template: string
+  /** One Slot, the common case. */
+  template?: string
   type?: ValueType
+  value?: unknown
+  error?: string
+  /** Where the failure points. Asserted only when the scenario says so. */
+  at?: number
+  /** Several Slots, resolved together by `resolveAll`. */
+  slots?: { name: string; template: string; type?: ValueType }[]
+  values?: Record<string, unknown>
+  errors?: { slot: string; code: string }[]
   on_missing?: 'error' | 'null'
   now?: string
   context?: Record<string, unknown>
-  value?: unknown
-  error?: string
 }
 
 interface DiagnosticScenario {
@@ -117,11 +124,6 @@ describe('conformance · eval', () => {
       for (const scenario of scenarios) {
         counted += 1
         it(scenario.name, () => {
-          const slot: Slot = {
-            name: 'field',
-            template: scenario.template,
-            expectedType: scenario.type ?? 'text',
-          }
           const context: EvaluationContext = {
             ...(decode(scenario.context ?? {}) as EvaluationContext),
             onMissing: scenario.on_missing ?? 'error',
@@ -129,18 +131,23 @@ describe('conformance · eval', () => {
             ...(scenario.now ? { now: new Date(scenario.now) } : {}),
           }
 
+          if (scenario.slots) return checkResolveAll(scenario, context)
+
+          const slot: Slot = {
+            name: 'field',
+            template: scenario.template ?? '',
+            expectedType: scenario.type ?? 'text',
+          }
+
           if (scenario.error !== undefined) {
-            let thrown: unknown
-            try {
-              resolve(context, slot)
-            } catch (error) {
-              thrown = error
-            }
-            expect(thrown, 'expected this to fail').toBeInstanceOf(ExpressionError)
-            expect((thrown as ExpressionError).code).toBe(scenario.error)
+            const failure = failureOf(() => resolve(context, slot))
+            expect(failure.code).toBe(scenario.error)
             // Every evaluation failure names the slot it happened in: the Host
             // decides what to do about it, and cannot without being told where.
-            expect((thrown as ExpressionError).diagnostics[0]?.slot).toBe('field')
+            expect(failure.diagnostics[0]?.slot).toBe('field')
+            if (scenario.at !== undefined) {
+              expect(failure.diagnostics[0]?.at, 'offset').toBe(scenario.at)
+            }
             return
           }
 
@@ -172,6 +179,47 @@ describe('conformance · diagnostics', () => {
     })
   }
 })
+
+/**
+ * `resolveAll` does a whole `with:` map in one call.
+ *
+ * The behaviour worth pinning across languages is that it reports *every*
+ * failure rather than stopping at the first — a user fixing one field at a time
+ * is a user running the workflow five times to find five mistakes.
+ */
+function checkResolveAll(scenario: EvalScenario, context: EvaluationContext): void {
+  const slots: Slot[] = (scenario.slots ?? []).map((slot) => ({
+    name: slot.name,
+    template: slot.template,
+    expectedType: slot.type ?? 'text',
+  }))
+
+  if (scenario.errors) {
+    const failure = failureOf(() => resolveAll(context, slots))
+    expect(failure.diagnostics.map((d) => `${d.slot}:${d.code}`)).toEqual(
+      scenario.errors.map((expected) => `${expected.slot}:${expected.code}`),
+    )
+    return
+  }
+
+  const resolved = resolveAll(context, slots)
+  const expected = decode(scenario.values ?? {}) as Record<string, Value>
+  expect(Object.keys(resolved).sort()).toEqual(Object.keys(expected).sort())
+  for (const [name, value] of Object.entries(expected)) {
+    expect(canon(resolved[name] ?? null), name).toBe(canon(value))
+  }
+}
+
+function failureOf(run: () => unknown): ExpressionError {
+  let thrown: unknown
+  try {
+    run()
+  } catch (error) {
+    thrown = error
+  }
+  expect(thrown, 'expected this to fail').toBeInstanceOf(ExpressionError)
+  return thrown as ExpressionError
+}
 
 /** `{ $datetime: … }` is how a scenario writes an instant that YAML cannot. */
 function decode(value: unknown): unknown {
