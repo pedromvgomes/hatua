@@ -1,0 +1,116 @@
+@layer hatua {
+  /*
+   * The live region, always mounted — see Toast.tsx. It is also what positions
+   * the toast: absolute against .hatua-portals, which spans the provider's box,
+   * so the toast lands in Hatua's corner rather than the browser's. Empty when
+   * nothing is showing, and an empty box has no size to get in the way.
+   */
+  .region {
+    position: absolute;
+    inset-block-end: 16px;
+    inset-inline-end: 16px;
+    z-index: 60;
+  }
+
+  .toast {
+    /* One tone colour, read by both the stripe and the progress bar. Local to
+       this file rather than an alias in base.css: nothing outside a toast has
+       any use for it. */
+    --toast-tone: var(--border-strong);
+
+    /* Anchors the progress bar below. */
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    max-width: 380px;
+    padding: 10px 12px;
+    /* Clips the progress bar to the rounded corners. */
+    overflow: hidden;
+    border: 1px solid var(--border-subtle);
+    border-inline-start: 3px solid var(--toast-tone);
+    border-radius: var(--radius-md);
+    background: var(--surface-raised);
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    line-height: 1.4;
+    box-shadow: 0 10px 30px var(--shadow-color);
+  }
+
+  .info {
+    --toast-tone: var(--accent);
+  }
+
+  .success {
+    --toast-tone: var(--status-ok);
+  }
+
+  .error {
+    --toast-tone: var(--status-error);
+  }
+
+  .body {
+    flex: 1;
+  }
+
+  .dismiss {
+    flex: none;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-muted);
+    font: inherit;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .dismiss:hover {
+    background: var(--surface-sunken);
+    color: var(--text-primary);
+  }
+
+  .dismiss:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 1px;
+  }
+
+  /*
+   * How long is left. The duration is the one thing that varies per instance,
+   * so it arrives as an inline style — a rendered stylesheet must stay static,
+   * since React ignores changes to one after the first render (ADR-0003).
+   *
+   * Deliberately not disabled under prefers-reduced-motion: this bar is a
+   * countdown readout rather than decoration, and freezing it would leave a
+   * full bar on a toast that is about to vanish.
+   */
+  .progress {
+    position: absolute;
+    inset-inline: 0;
+    inset-block-end: 0;
+    height: 2px;
+    transform-origin: left center;
+    background: var(--toast-tone);
+    animation-name: deplete;
+    animation-timing-function: linear;
+    animation-fill-mode: forwards;
+  }
+
+  /* Paused while the pointer or focus is inside — see Toast.tsx, which pauses
+     the timer on the same events. The bar and the timer read the same state, so
+     they cannot tell the user different things. */
+  .toast[data-paused="true"] .progress {
+    animation-play-state: paused;
+  }
+
+  @keyframes deplete {
+    from {
+      transform: scaleX(1);
+    }
+    to {
+      transform: scaleX(0);
+    }
+  }
+}

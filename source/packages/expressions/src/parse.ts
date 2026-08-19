@@ -35,11 +35,11 @@ export function parseTemplate(source: string): TemplateNode {
  * Parse one Expression, with no surrounding `{{ }}`.
  *
  * Only the conformance corpus and tooling need this; a field value is always a
- * whole Template. It exists because precedence and associativity bugs are
- * *parse* bugs, and they are invisible to evaluation scenarios whenever two
- * parsers build different trees that happen to evaluate alike on the sample
- * data — the most dangerous divergence there is, because it passes everything
- * until one workflow hits the disagreeing case.
+ * whole Template. It exists because precedence and associativity bugs live in
+ * the parse rather than the evaluation, and they are invisible to evaluation
+ * scenarios whenever two parsers build different trees that happen to evaluate
+ * alike on the sample data — the most dangerous divergence there is, because it
+ * passes everything until one workflow hits the disagreeing case.
  */
 export function parseExpression(source: string): Expression {
   try {

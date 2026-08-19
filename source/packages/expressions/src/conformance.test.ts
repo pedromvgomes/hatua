@@ -1,3 +1,5 @@
+/** biome-ignore-all lint/correctness/noNodejsModules: a Node test reading fixtures from disk; nothing here ships to a browser. */
+/** biome-ignore-all lint/correctness/noProcessGlobal: as above: this runs in Node, where process IS the environment. */
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'

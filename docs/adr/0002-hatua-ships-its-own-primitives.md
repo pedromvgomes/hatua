@@ -22,7 +22,10 @@ pixel-parity for free, because the two token sets are already identical (ink `#2
 
 - **Components may only reference semantic aliases** (`--surface-card`, `--text-muted`,
   `--border-subtle`), never base ramps (`--navy-500`, `--teal-600`). This is what makes theming work
-  at all, and it is enforced by lint rather than left to discipline.
+  at all, and it is enforced by lint rather than left to discipline. That lint is
+  `source/packages/react/src/styles/tokens.test.ts`: Biome lints CSS but has no rule that can say
+  "this custom property, not that one", so the check is a test over the authored CSS — no seeds, no
+  colour literals, and no alias `base.css` does not define.
 - Theming is **seed-and-derive**: a host supplies a handful of brand seeds and the ramps are generated
   in CSS via oklch relative colour syntax. Every derived step stays individually overridable.
 - `createTheme()` is a pure function producing a serialisable object; Hatua's own control mounts the

@@ -16,6 +16,14 @@ blockExoticSubdeps: true
 # of the same package — a downgrade can indicate a takeover.
 trustPolicy: no-downgrade
 
+# The one documented exception to trustPolicy above. Storybook reaches
+# @babel/core through react-docgen, and @babel/core pins semver@^6.3.1 — a 2021
+# release published before npm had provenance, while semver 7.x has it. pnpm
+# reads that as a downgrade. Pinned to the exact version so a different one has
+# to be re-examined rather than inheriting the exemption.
+trustPolicyExclude:
+  - semver@6.3.1
+
 # Native binaries fetched by postinstall: esbuild and SWC both need theirs.
 allowBuilds:
   esbuild: true

@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+/** biome-ignore-all lint/correctness/noNodejsModules: Node-side tooling, never bundled for a browser — the built-ins are the point. */
+/** biome-ignore-all lint/correctness/noProcessGlobal: as above: this runs in Node, where process IS the environment. */
 /**
  * The grammar lint.
  *

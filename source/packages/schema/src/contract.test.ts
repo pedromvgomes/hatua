@@ -1,3 +1,4 @@
+/** biome-ignore-all lint/correctness/noNodejsModules: a Node test reading fixtures from disk; nothing here ships to a browser. */
 import { describe, expect, it } from 'vitest'
 import { componentManifest, functionManifest, workflowDefinition, workflowExecution } from './index'
 

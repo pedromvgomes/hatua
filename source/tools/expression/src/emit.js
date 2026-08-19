@@ -1,3 +1,5 @@
+/** biome-ignore-all lint/correctness/noNodejsModules: Node-side tooling, never bundled for a browser — the built-ins are the point. */
+/** biome-ignore-all lint/security/noSecrets: the "secrets" are Go source lines this generator emits, e.g. "var CoreFunctionSpecs = []FunctionSpec{". */
 /**
  * The authored YAML contracts -> both languages.
  *

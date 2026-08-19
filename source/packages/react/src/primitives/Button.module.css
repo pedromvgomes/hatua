@@ -1,0 +1,97 @@
+/*
+ * Wrapped in @layer for the same reason as the base sheet (ADR-0003): a Host's
+ * unlayered rule then wins over ours regardless of which arrived first.
+ *
+ * Every colour here is a semantic alias from base.css, or a derivation of one.
+ * Never a --hatua-* seed and never a literal — see ../styles/tokens.test.ts.
+ */
+@layer hatua {
+  .button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    font: inherit;
+    font-weight: 500;
+    line-height: 1;
+    cursor: pointer;
+    white-space: nowrap;
+    transition:
+      background-color 120ms ease,
+      border-color 120ms ease,
+      color 120ms ease;
+  }
+
+  .button:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+
+  .button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+
+  /* --- sizes --- */
+  .sm {
+    height: 28px;
+    padding: 0 10px;
+    font-size: 0.8125rem;
+  }
+
+  .md {
+    height: 34px;
+    padding: 0 14px;
+    font-size: 0.875rem;
+  }
+
+  /* --- variants --- */
+  .primary {
+    background: var(--accent);
+    color: var(--text-on-accent);
+  }
+
+  .primary:hover:not(:disabled) {
+    background: var(--accent-hover);
+  }
+
+  .primary:active:not(:disabled) {
+    background: var(--accent-press);
+  }
+
+  .secondary {
+    background: var(--surface-card);
+    color: var(--text-primary);
+    border-color: var(--border-strong);
+  }
+
+  .secondary:hover:not(:disabled) {
+    background: var(--surface-sunken);
+    border-color: var(--border-accent);
+  }
+
+  .ghost {
+    background: transparent;
+    color: var(--text-secondary);
+  }
+
+  .ghost:hover:not(:disabled) {
+    background: var(--accent-wash);
+    color: var(--text-accent);
+  }
+
+  .danger {
+    background: var(--status-error);
+    color: var(--text-on-accent);
+  }
+
+  .danger:hover:not(:disabled) {
+    background: oklch(from var(--status-error) calc(l - 0.06) c h);
+  }
+
+  .danger:active:not(:disabled) {
+    background: oklch(from var(--status-error) calc(l - 0.12) c h);
+  }
+}
