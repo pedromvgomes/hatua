@@ -61,20 +61,24 @@ typescript:
   enabled: true
   linter: biome
 
-# Stays `run`, and the guidance at the top of this file — flip to `report` once
-# ci-test uploads a gt-coverage artifact — does NOT apply to this repo.
+# `report`: ci-test already runs every suite with instrumentation and uploads the
+# result as the `gt-coverage` artifact, so bulwark reads those reports rather
+# than running all of it a second time.
 #
-# bulwark finds TypeScript coverage at <packageDir>/coverage/coverage-summary.json
-# and <packageDir>/coverage/lcov.info, one pair per package, and there is
-# deliberately no `coverage.typescript.report` override because those paths are
-# Vitest convention rather than a project's choice. The gt-coverage artifact
-# convention lands exactly two files, coverage.out and lcov.info, at the scan
-# root. Those two facts do not meet: under `report` bulwark would look for nine
-# per-package reports, find none, and silently drop TypeScript from the gate
-# again — which is the failure this whole change exists to end.
+# What makes this work for a repo with nine TypeScript packages is the LAYOUT of
+# that artifact. bulwark looks for each report next to the unit that produced it
+# — <moduleDir>/coverage.out per Go module, and
+# <packageDir>/coverage/{coverage-summary.json,lcov.info} per TypeScript package,
+# the latter with no path override at all because those locations are Vitest
+# convention rather than a project's choice. So ci-test stages the artifact as a
+# mirror of this repository and the bulwark stage restores it into the scan root,
+# where discovery already looks.
 #
-# So bulwark runs the suites itself. That does mean the TypeScript tests run
-# twice per pipeline, once in ci-test and once here. The alternative is not
-# "faster coverage", it is "no TypeScript coverage".
+# That mirroring is gt's reusable-bulwark stage as of pedromvgomes/gt#44. Against
+# an older gt it copies two named files from the artifact root instead, finds
+# neither, and every language reports as unmeasured — a warning, not a failure,
+# so the pipeline stays green while the coverage gate quietly covers nothing.
+# If coverage ever reads [UNMEASURED] for a language that has reports, check the
+# bulwark stage's "Place the coverage report where bulwark looks" step first.
 coverage:
-  source: run
+  source: report

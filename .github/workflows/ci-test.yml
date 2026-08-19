@@ -3,12 +3,11 @@
 # gt created it once and will never modify or delete it again. Put this
 # repository's test suite here; the orchestration around it stays gt's.
 #
-# Upload coverage as an artifact named `gt-coverage` and the bulwark
-# stage will consume it instead of running the suite a second time. Without it
-# bulwark falls back to running the tests itself, which is correct but slower.
-#
-# Not wired yet: `.bulwark.yml` still has `coverage.source: run` and the
-# TypeScript check disabled pending biome support. Flip both together.
+# Coverage is uploaded as an artifact named `gt-coverage`, which the bulwark
+# stage consumes instead of running every suite a second time — `.bulwark.yml`
+# declares `coverage.source: report` to match. The artifact mirrors this
+# repository's own layout, because bulwark looks for each report next to the
+# unit that produced it rather than at one agreed path.
 name: ci-test
 
 on:
@@ -40,7 +39,10 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - run: pnpm turbo run test
+      # test:coverage rather than test: it runs the same suites, and the
+      # instrumentation is what lets the bulwark stage read a report instead of
+      # running all of this again.
+      - run: pnpm turbo run test:coverage
 
       - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
@@ -62,7 +64,55 @@ jobs:
             exit 1
           fi
           go vet ./...
-          go test ./...
+          # Written inside the module it measures: `go test -coverprofile` is
+          # module-scoped, and bulwark looks for <moduleDir>/coverage.out.
+          go test -coverprofile=coverage.out ./...
+
+      - name: Collect coverage into the artifact layout
+        # Staged under one directory whose contents mirror the repository from
+        # its root, rather than listing the report paths on the upload directly.
+        # Multiple `path:` entries make upload-artifact root the archive at their
+        # common ancestor — here `source/` — quietly stripping the prefix every
+        # path needs in order to land correctly at the scan root.
+        #
+        # Nothing is renamed on the way in. bulwark finds a Go module's profile
+        # at <moduleDir>/coverage.out and a TypeScript package's pair at
+        # <packageDir>/coverage/{coverage-summary.json,lcov.info}, so a copy that
+        # preserves the repo-relative path needs no configuration to match it.
+        working-directory: .
+        env:
+          STAGE: ${{ runner.temp }}/gt-coverage
+        run: |
+          set -euo pipefail
+          collected=0
+          while IFS= read -r -d '' report; do
+            mkdir -p "${STAGE}/$(dirname "$report")"
+            cp "$report" "${STAGE}/${report}"
+            echo "collected ${report}"
+            collected=$((collected + 1))
+          done < <(
+            find source \
+              \( -name node_modules -o -name dist -o -name .turbo \) -prune -o \
+              -type f \( -name coverage.out \
+                       -o -path '*/coverage/lcov.info' \
+                       -o -path '*/coverage/coverage-summary.json' \) -print0
+          )
+          # An empty artifact is the failure this arrangement exists to avoid:
+          # bulwark would find no report, mark every language unmeasured, warn,
+          # and still pass — a coverage gate that stopped covering anything,
+          # reported as green.
+          if [[ "$collected" -eq 0 ]]; then
+            echo "::error::no coverage reports found to upload"
+            exit 1
+          fi
+          echo "collected ${collected} report(s)"
+
+      - name: Upload coverage for the bulwark stage
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gt-coverage
+          path: ${{ runner.temp }}/gt-coverage
+          retention-days: 1
 
       # One grammar feeds two generators, and the committed parsers are what
       # every consumer actually runs. This regenerates both, runs the shared

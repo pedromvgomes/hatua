@@ -22,6 +22,11 @@ lib-cov
 coverage
 *.lcov
 
+# Go's coverage profile. `coverage` above matches a directory or a file named
+# exactly that, not this — and ci-test writes one inside the module it measures,
+# where bulwark looks for it.
+coverage.out
+
 # nyc test coverage
 .nyc_output
 
