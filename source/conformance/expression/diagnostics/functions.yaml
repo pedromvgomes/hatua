@@ -61,6 +61,13 @@ scenarios:
     scope: *inbox
     expect: []
 
+  - name: but not none — a variadic parameter is "one or more"
+    template: "{{ num.max() }}"
+    type: number
+    scope: *inbox
+    expect:
+      - { code: EXPR_ARITY_MISMATCH, severity: error }
+
   - name: an argument of a known wrong type is refused
     template: "{{ num.abs(s2.subject) }}"
     type: number

@@ -1,5 +1,10 @@
 import { validate } from '@hatua/expressions'
-import type { Manifest, Step, WorkflowDefinition } from '@hatua/schema'
+import {
+  MAPPABLE_FIELD_KINDS,
+  type Manifest,
+  type Step,
+  type WorkflowDefinition,
+} from '@hatua/schema'
 import { describe, expect, it } from 'vitest'
 import { DOC, MANIFESTS } from './fixtures'
 import { scopeFor } from './scope'
@@ -87,10 +92,12 @@ describe('slotsFor', () => {
     expect(slotsFor(step, MAPPER)).toEqual([])
   })
 
-  it('covers every mappable kind, so a new one cannot be added without a type', () => {
-    for (const kind of ['text', 'mono', 'textarea', 'number', 'ref']) {
-      expect(FIELD_KIND_TYPES[kind], kind).toBeDefined()
-    }
+  it('types exactly the kinds that are mappable — no more, no fewer', () => {
+    // The compiler enforces this too, since the record is keyed by the union.
+    // It is asserted at run time as well because the table is exported through
+    // the SDK: a Host reading it must not find a `bool` entry that `isMappable`
+    // would have rejected before anything ever read it.
+    expect(Object.keys(FIELD_KIND_TYPES).sort()).toEqual([...MAPPABLE_FIELD_KINDS].sort())
   })
 })
 

@@ -70,10 +70,16 @@ func dtFunctions() map[string]FunctionImpl {
 		},
 
 		// Whole units, truncated toward zero — never rounded, in either language.
+		//
+		// Subtracted as milliseconds rather than as a Duration: Sub saturates at
+		// roughly ±292 years, so two instants further apart than that would
+		// silently return a clamped number while TypeScript returned the real
+		// one. Milliseconds also match the precision the value space declares.
 		"dt.diff": func(args []Value, _ Context) Value {
 			a, b, unit := args[0].(time.Time), args[1].(time.Time), args[2].(string)
 			factor := unitFactor(unit, "dt.diff")
-			return math.Trunc(float64(a.Sub(b)) / float64(factor))
+			elapsed := float64(a.UnixMilli() - b.UnixMilli())
+			return math.Trunc(elapsed / float64(factor/time.Millisecond))
 		},
 	}
 }

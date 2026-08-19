@@ -133,8 +133,9 @@ scenarios:
     error: EVAL_OPERAND_TYPE
 
   - name: >-
-      `__proto__` never resolves. A Workflow Definition is user-editable YAML,
-      so this is reachable input rather than a hypothetical.
+      `__proto__` does not resolve on an object that does not own it. A Workflow
+      Definition is user-editable YAML, so this is reachable input rather than a
+      hypothetical — and reading own properties only is the whole guarantee.
     template: "{{ s2.__proto__ }}"
     type: object
     context: { steps: { s2: { count: 24 } } }
@@ -151,3 +152,38 @@ scenarios:
     type: object
     context: { steps: { s2: { count: 24 } } }
     error: EVAL_MISSING_PATH
+
+  - name: >-
+      but a payload that genuinely *holds* one of those keys reads back — it is
+      ordinary data, and a deny list here would have made the two runtimes
+      disagree about it, since Go has no prototype chain to defend
+    template: "{{ s2.constructor }}"
+    type: text
+    context: { steps: { s2: { constructor: Acme Corp } } }
+    value: Acme Corp
+
+  - name: including `__proto__`, which JSON.parse creates as a real own property
+    template: "{{ s2.__proto__ }}"
+    type: text
+    context: { steps: { s2: { __proto__: inherited } } }
+    value: inherited
+
+  - name: and one reached through json.parse, which is how it usually arrives
+    template: "{{ json.parse(s2.body).constructor }}"
+    type: text
+    context: { steps: { s2: { body: '{"constructor":"Acme"}' } } }
+    value: Acme
+
+  - name: >-
+      a fractional index is neither a position nor a key — JavaScript would hand
+      back undefined and Go would truncate, so it is refused instead
+    template: "{{ s2.ids[3 / 2] }}"
+    type: number
+    context: { steps: { s2: { ids: [1, 2, 3] } } }
+    error: EVAL_OPERAND_TYPE
+
+  - name: written as a literal it is refused just the same
+    template: "{{ s2.ids[1.5] }}"
+    type: number
+    context: { steps: { s2: { ids: [1, 2, 3] } } }
+    error: EVAL_OPERAND_TYPE

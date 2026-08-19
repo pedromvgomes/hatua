@@ -194,6 +194,29 @@ scenarios:
     type: number
     value: -1
 
+  - name: >-
+      and the double just below a half rounds down, which the obvious
+      `sign * floor(abs + 0.5)` gets wrong: that sum is exactly 1 in IEEE-754
+    template: "{{ num.round(0.49999999999999994) }}"
+    type: number
+    value: 0
+
+  - name: its negative counterpart rounds down too
+    template: "{{ num.round(-0.49999999999999994) }}"
+    type: number
+    value: 0
+
+  - name: text.slice takes a fractional bound the way Array.slice does
+    template: "{{ text.slice('abcde', -1.5) }}"
+    type: text
+    value: "de"
+
+  - name: and so does list.slice, from the same helper
+    template: "{{ list.join(list.slice(s2.ids, -1.5), ',') }}"
+    type: text
+    context: { steps: { s2: { ids: [1, 2, 3, 4, 5] } } }
+    value: "4,5"
+
   - name: and positive halves round away from zero too
     template: "{{ num.round(0.5) }}"
     type: number
@@ -241,6 +264,13 @@ scenarios:
 
   - name: it refuses text that is not a number
     template: "{{ num.parse('24 messages') }}"
+    type: number
+    error: EVAL_BAD_ARGUMENT
+
+  - name: >-
+      and text that is well formed but out of range — Infinity in JavaScript,
+      ErrRange in Go, and not a value in either
+    template: "{{ num.parse('1e999') }}"
     type: number
     error: EVAL_BAD_ARGUMENT
 
@@ -453,6 +483,25 @@ scenarios:
     template: "{{ num.max(1, 2, 3, 4, 5) }}"
     type: number
     value: 5
+
+  - name: >-
+      but not none of them. A variadic parameter is "one or more", and reading
+      it as "zero or more" let this reach an implementation with nothing to
+      work on — a panic in Go, and Infinity in TypeScript, in a value space
+      defined not to contain it.
+    template: "{{ num.min() }}"
+    type: number
+    error: EVAL_ARITY_MISMATCH
+
+  - name: the same for max
+    template: "{{ num.max() }}"
+    type: number
+    error: EVAL_ARITY_MISMATCH
+
+  - name: and for text.concat, whose only parameter is variadic too
+    template: "{{ text.concat() }}"
+    type: text
+    error: EVAL_ARITY_MISMATCH
 
   - name: an argument of the wrong type is refused, since nothing coerces
     template: "{{ num.abs('3') }}"

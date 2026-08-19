@@ -82,6 +82,26 @@ scenarios:
     type: number
     error: EVAL_TYPE_MISMATCH
 
+  - name: >-
+      instants far outside the Unix nanosecond range still order correctly.
+      Go's UnixNano is undefined past 2262 and wraps to a large negative number,
+      which compared the wrong way round without failing.
+    template: "{{ dt.parse('2300-01-01T00:00:00Z') > dt.parse('2024-01-01T00:00:00Z') }}"
+    type: boolean
+    value: true
+
+  - name: and far in the past, where UnixNano wraps the other way
+    template: "{{ dt.parse('1500-01-01T00:00:00Z') < dt.parse('2024-01-01T00:00:00Z') }}"
+    type: boolean
+    value: true
+
+  - name: >-
+      dt.diff over a span longer than a Duration can hold reports the real
+      figure, not a clamped one — time.Duration saturates at about 292 years
+    template: "{{ dt.diff(dt.parse('2400-01-01T00:00:00Z'), dt.parse('2000-01-01T00:00:00Z'), 'days') }}"
+    type: number
+    value: 146097
+
   - name: json.stringify renders an instant as its RFC 3339 text
     template: "{{ json.stringify(triggers.nightly.at) }}"
     type: text

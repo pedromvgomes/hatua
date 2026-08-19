@@ -105,9 +105,34 @@ scenarios:
     scope: *inbox
     expect: []
 
-  - name: literal text with no holes at all raises nothing
+  - name: literal text with no holes at all is text, and a text field takes it
     template: "just words"
     type: text
+    scope: *inbox
+    expect: []
+
+  - name: >-
+      but a text field is the only one that takes it. A `number` field holding
+      "abc" is a known conflict at design time, not a surprise at run time —
+      there is no hole to make it uncertain.
+    template: "abc"
+    type: number
+    scope: *inbox
+    expect:
+      - { code: EXPR_TYPE_MISMATCH, severity: error }
+
+  - name: and a branch condition spelled as a word rather than an expression
+    template: "yes"
+    type: boolean
+    scope: *inbox
+    expect:
+      - { code: EXPR_TYPE_MISMATCH, severity: error }
+
+  - name: >-
+      an empty value is exempt: nothing was written, so there is nothing to
+      type, and whether the field may be left empty is `req:`'s business
+    template: ""
+    type: number
     scope: *inbox
     expect: []
 

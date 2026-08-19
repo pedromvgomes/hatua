@@ -68,7 +68,12 @@ function checkTemplate(
   for (const segment of template.segments) {
     if (segment.kind === 'Hole') inferType(segment.expr, context, found)
   }
-  if (template.segments.some((segment) => segment.kind === 'Hole')) {
+
+  // A Template with no holes at all is text just as surely, so `when: "yes"`
+  // and a `number` field holding "abc" are known conflicts. Only an *empty*
+  // value is exempt: nothing was written, so there is nothing to type, and
+  // whether the field may be left empty is `req:`'s business.
+  if (template.segments.length > 0) {
     reportMatch(found, 'text', expectedType, 0, 'this template')
   }
   return found
@@ -263,7 +268,8 @@ function walkCall(
 
   const { spec } = callee
   const variadic = spec.params.at(-1)?.variadic === true
-  const required = spec.params.filter((param) => !param.optional && !param.variadic).length
+  // A variadic parameter is "one or more", not "zero or more".
+  const required = spec.params.filter((param) => !param.optional).length
   const most = variadic ? Number.POSITIVE_INFINITY : spec.params.length
 
   if (args.length < required || args.length > most) {

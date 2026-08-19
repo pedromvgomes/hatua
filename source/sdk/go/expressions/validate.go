@@ -49,14 +49,17 @@ func Validate(template string, expectedType ValueType, ctx CheckContext) []Diagn
 	// Mixed text can only be text, whatever the holes hold. This is what refuses
 	// the legacy `when: "{{s2.count}} > 0"` at design time rather than letting a
 	// runner mistake the string "24 > 0" for truth.
-	holes := 0
 	for _, segment := range parsed.Segments {
 		if hole, ok := segment.(*Hole); ok {
-			holes++
 			walk(hole.Expr, ctx, &found)
 		}
 	}
-	if holes > 0 {
+
+	// A Template with no holes at all is text just as surely, so `when: "yes"`
+	// and a `number` field holding "abc" are known conflicts. Only an *empty*
+	// value is exempt: nothing was written, so there is nothing to type, and
+	// whether the field may be left empty is `req:`'s business.
+	if len(parsed.Segments) > 0 {
 		found = reportMatch(found, TypeText, expectedType, 0, "this template")
 	}
 	return found
@@ -293,9 +296,10 @@ func walkCall(node *Call, ctx CheckContext, found *[]Diagnostic) walkResult {
 	spec := callee.spec
 	variadic := len(spec.Params) > 0 && spec.Params[len(spec.Params)-1].Variadic
 
+	// A variadic parameter is "one or more", not "zero or more".
 	required := 0
 	for _, param := range spec.Params {
-		if !param.Optional && !param.Variadic {
+		if !param.Optional {
 			required++
 		}
 	}

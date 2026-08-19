@@ -178,7 +178,12 @@ export function boolNode(at: Matched, value: Matched): LiteralNode {
 
 export function numberNode(at: Matched, int: Matched, frac: Matched, exp: Matched): LiteralNode {
   const raw = flatten(int) + flatten(frac) + flatten(exp)
-  return { kind: 'Literal', at: at as number, type: 'number', value: Number(raw) }
+  const value = Number(raw)
+  // `1e999` is Infinity here and out-of-range in Go's ParseFloat. Refusing it
+  // keeps the two agreeing, and keeps Infinity out of a value space that is
+  // defined not to contain it.
+  if (!Number.isFinite(value)) throw new Error(`${raw} is out of range`)
+  return { kind: 'Literal', at: at as number, type: 'number', value }
 }
 
 export function stringNode(at: Matched, chars: Matched): LiteralNode {

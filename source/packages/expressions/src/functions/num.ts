@@ -14,13 +14,17 @@ export const numFunctions: Record<string, FunctionImpl> = {
    * Half away from zero.
    *
    * `Math.round(-0.5)` is `-0` in JavaScript and `math.Round(-0.5)` is `-1` in
-   * Go: JavaScript rounds halves toward positive infinity. Go's spelling is the
-   * defensible one — it is symmetric about zero — so this is hand-implemented
-   * here and left alone there.
+   * Go: JavaScript rounds halves toward *positive infinity*, which is the only
+   * place the two disagree. So the fix is to reflect negatives and let
+   * `Math.round` do the work, rather than to reimplement rounding.
+   *
+   * `sign(v) * floor(abs(v) + 0.5)` is the idiom that looks right and is not:
+   * `0.49999999999999994 + 0.5` is exactly `1` in IEEE-754, so it rounds a
+   * number *below* a half up.
    */
   'num.round': (args: readonly Value[]): Value => {
     const value = args[0] as number
-    return Math.sign(value) * Math.floor(Math.abs(value) + 0.5)
+    return value < 0 ? -Math.round(-value) : Math.round(value)
   },
 
   'num.floor': (args: readonly Value[]): Value => Math.floor(args[0] as number),
@@ -33,6 +37,9 @@ export const numFunctions: Record<string, FunctionImpl> = {
   'num.parse': (args: readonly Value[]): Value => {
     const text = (args[0] as string).trim()
     if (!NUMBER.test(text)) throw badArgument('num.parse', 'value', text)
-    return Number(text)
+    const value = Number(text)
+    // Well-formed but out of range: Infinity here, ErrRange in Go.
+    if (!Number.isFinite(value)) throw badArgument('num.parse', 'value', text)
+    return value
   },
 }

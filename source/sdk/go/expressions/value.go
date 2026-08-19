@@ -44,13 +44,19 @@ const (
 type Value = any
 
 // TypeOf reports a value's type in the same vocabulary a manifest declares.
+//
+// The integer cases are not part of the value space — there is one numeric type
+// and it is float64 — but they are what a YAML decoder produces, including this
+// SDK's own LoadDefinition. Recognising them here means a Host that feeds
+// decoded YAML straight in gets a number rather than being told its count is an
+// object; Normalize is what actually converts them.
 func TypeOf(value Value) ValueType {
 	switch value.(type) {
 	case nil:
 		return TypeNull
 	case string:
 		return TypeText
-	case float64:
+	case float64, float32, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
 		return TypeNumber
 	case bool:
 		return TypeBoolean
@@ -62,6 +68,55 @@ func TypeOf(value Value) ValueType {
 		return TypeObject
 	}
 	return TypeObject
+}
+
+// Normalize converts a value into the value space: every number becomes a
+// float64, and lists and objects are converted through.
+//
+// It exists because the value space and Go's YAML and JSON decoders disagree
+// about integers. `count: 24` decodes to an `int`, and an `int` reaching the
+// evaluator used to be typed `object` and rendered as "null" — a silent wrong
+// answer rather than a loud failure. Values arriving from a Host are normalized
+// as they are read, so a runner can hand over decoded YAML without knowing any
+// of this.
+func Normalize(value Value) Value {
+	switch v := value.(type) {
+	case int:
+		return float64(v)
+	case int8:
+		return float64(v)
+	case int16:
+		return float64(v)
+	case int32:
+		return float64(v)
+	case int64:
+		return float64(v)
+	case uint:
+		return float64(v)
+	case uint8:
+		return float64(v)
+	case uint16:
+		return float64(v)
+	case uint32:
+		return float64(v)
+	case uint64:
+		return float64(v)
+	case float32:
+		return float64(v)
+	case []any:
+		out := make([]Value, 0, len(v))
+		for _, item := range v {
+			out = append(out, Normalize(item))
+		}
+		return out
+	case map[string]any:
+		out := make(map[string]Value, len(v))
+		for key, item := range v {
+			out[key] = Normalize(item)
+		}
+		return out
+	}
+	return value
 }
 
 // Satisfies reports whether a value matches a declared type.
@@ -194,8 +249,14 @@ func jsonString(value string) string {
 // RFC3339Nano is exactly that; the note is for the TypeScript side, where
 // Date.toISOString() always writes three decimal places and has to be trimmed
 // to match this.
+//
+// Truncated to milliseconds here rather than only in dt.parse and dt.now,
+// because a Host puts instants into the Context too — time.Now() carries
+// nanoseconds, and a Date cannot. Doing it at the rendering boundary is what
+// makes "instants carry millisecond precision" true of every instant rather
+// than only of the ones Hatua created.
 func DatetimeToText(value time.Time) string {
-	return value.UTC().Format(time.RFC3339Nano)
+	return value.UTC().Truncate(time.Millisecond).Format(time.RFC3339Nano)
 }
 
 // NumberToText is the ECMAScript Number::toString algorithm, ported.

@@ -204,16 +204,6 @@ class Projection {
 
 type Raw = Value | Projection | typeof MISSING
 
-/**
- * Segments that must never resolve.
- *
- * A Workflow Definition is user-editable YAML, so `{{ __proto__.constructor }}`
- * is reachable input. Reading own properties only is what makes the evaluator's
- * behaviour well-defined for any path a user can write — and it is why Go's
- * half of this needs no equivalent guard while TypeScript's does.
- */
-const FORBIDDEN = new Set(['__proto__', 'constructor', 'prototype'])
-
 export function evaluate(node: Expression, context: EvaluationContext): Value {
   return settle(evaluateRaw(node, context), node, context)
 }
@@ -276,10 +266,22 @@ function root(name: string, context: EvaluationContext): Raw {
   return Object.hasOwn(steps, name) ? (steps[name] as Value) : MISSING
 }
 
-/** Reading a property of null yields null again — there is one absent value. */
+/**
+ * Reading a property of null yields null again — there is one absent value.
+ *
+ * `Object.hasOwn` is the whole prototype-pollution guarantee. A Workflow
+ * Definition is user-editable YAML, so `{{ s2.constructor }}` is reachable
+ * input, and an own-properties-only read makes it well defined: a plain object
+ * does not *own* `constructor`, `prototype` or `__proto__`, so all three miss.
+ *
+ * There used to be a deny list here as well. It added no security — `hasOwn`
+ * already refuses the inherited members — and it subtracted correctness,
+ * because `JSON.parse('{"constructor":"Acme"}')` creates a genuine own property
+ * that a Host's payload may well contain. Go has no prototype chain and so had
+ * no deny list, which left the two runtimes disagreeing about ordinary data.
+ */
 function read(target: Value, name: string): Raw {
   if (target === null) return null
-  if (FORBIDDEN.has(name)) return MISSING
   if (typeof target !== 'object' || Array.isArray(target) || target instanceof Date) return MISSING
   return Object.hasOwn(target, name) ? ((target as Record<string, Value>)[name] as Value) : MISSING
 }
@@ -290,6 +292,16 @@ function index(target: Value, key: Value, at: number): Raw {
   if (typeof key === 'number') {
     if (!Array.isArray(target)) {
       throw fail('EVAL_OPERAND_TYPE', at, { op: '[]', expected: 'list', actual: typeOf(target) })
+    }
+    // There is one numeric type, so `xs[3/2]` is as writable as `xs[1]`. It is
+    // not a position: JavaScript would read the property named "1.5" and hand
+    // back `undefined`, and Go would truncate to 1. Neither is an answer.
+    if (!Number.isInteger(key)) {
+      throw fail('EVAL_OPERAND_TYPE', at, {
+        op: '[]',
+        expected: 'a whole number',
+        actual: 'a fraction',
+      })
     }
     const position = key < 0 ? target.length + key : key
     return position >= 0 && position < target.length ? (target[position] as Value) : MISSING
@@ -491,7 +503,10 @@ function locate(error: ExpressionError, at: number): ExpressionError {
  */
 function checkArguments(spec: FunctionSpec, args: readonly Value[], at: number): Value[] {
   const variadic = spec.params.at(-1)?.variadic === true
-  const required = spec.params.filter((param) => !param.optional && !param.variadic).length
+  // A variadic parameter is "one or more", not "zero or more" — so it counts
+  // toward the minimum. Excluding it let `num.min()` through the arity check
+  // and into an implementation with nothing to work on.
+  const required = spec.params.filter((param) => !param.optional).length
   const most = variadic ? Number.POSITIVE_INFINITY : spec.params.length
 
   if (args.length < required || args.length > most) {

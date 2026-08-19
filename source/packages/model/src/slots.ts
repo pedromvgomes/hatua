@@ -1,6 +1,6 @@
 import type { Slot, ValueType } from '@hatua/expressions'
 import type { Manifest, Step } from '@hatua/schema'
-import { isMappable } from '@hatua/schema'
+import { isMappable, type MAPPABLE_FIELD_KINDS } from '@hatua/schema'
 
 /**
  * The bridge between a Component Manifest and the expression language.
@@ -13,23 +13,32 @@ import { isMappable } from '@hatua/schema'
  * type mapping and cannot get it subtly different from the builder.
  */
 
+/** The kinds whose value is a Template. Everything else holds a literal. */
+export type MappableFieldKind = (typeof MAPPABLE_FIELD_KINDS)[number]
+
 /**
- * What each field kind's value must produce.
+ * What each mappable field kind's value must produce.
+ *
+ * Keyed by `MappableFieldKind` rather than by `string`, so the compiler refuses
+ * both a missing kind and an invented one. It used to be a loose record that
+ * declared `bool`, `enum`, `secret` and `conn` — kinds `isMappable` rejects
+ * before this is ever read, so those entries were unreachable — while omitting
+ * `map`, which is mappable. That is the same "two definitions of one thing"
+ * failure the reference regex was removed for, and this is what stops it
+ * happening again silently.
  *
  * `mono` and `textarea` are text that renders differently. `ref` is `unknown` on
  * purpose: a ref field holds whatever it points at, and the check belongs at the
- * far end rather than here.
+ * far end. `map` has no single type at all — each of its entries declares its
+ * own, which is why `slotsFor` never reads this for one.
  */
-export const FIELD_KIND_TYPES: Readonly<Record<string, ValueType>> = {
+export const FIELD_KIND_TYPES: Readonly<Record<MappableFieldKind, ValueType>> = {
   text: 'text',
   mono: 'text',
   textarea: 'text',
   number: 'number',
-  bool: 'boolean',
-  enum: 'text',
-  secret: 'text',
-  conn: 'text',
   ref: 'unknown',
+  map: 'unknown',
 }
 
 /** One entry of a `map` field: a name, a Template, and the type it must produce. */
@@ -68,7 +77,7 @@ export function slotsFor(step: Step, manifest: Manifest): Slot[] {
     slots.push({
       name: field.k,
       template: value,
-      expectedType: FIELD_KIND_TYPES[field.kind] ?? 'text',
+      expectedType: FIELD_KIND_TYPES[field.kind as MappableFieldKind] ?? 'text',
     })
   }
 

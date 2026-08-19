@@ -229,6 +229,12 @@ func Evaluate(node Expression, ctx Context) Value {
 	return settle(evaluateRaw(node, ctx), node, ctx)
 }
 
+// settle turns an internal result into a value a caller can hold.
+//
+// It is also the one place every value passes through on its way out of the
+// evaluator, which makes it the right place to normalize: a Host may hand over
+// YAML- or JSON-decoded data whose numbers are ints, and every operator below
+// asserts float64.
 func settle(raw any, node Expression, ctx Context) Value {
 	switch value := raw.(type) {
 	case missing:
@@ -237,9 +243,13 @@ func settle(raw any, node Expression, ctx Context) Value {
 		}
 		panic(fail(CodeEvalMissingPath, node.Offset(), map[string]string{"name": PathText(node)}))
 	case projection:
-		return append([]Value{}, value.items...)
+		items := make([]Value, 0, len(value.items))
+		for _, item := range value.items {
+			items = append(items, Normalize(item))
+		}
+		return items
 	default:
-		return raw
+		return Normalize(raw)
 	}
 }
 
@@ -347,6 +357,14 @@ func indexInto(target Value, key Value, at int) any {
 		if !ok {
 			panic(fail(CodeEvalOperandType, at, map[string]string{
 				"op": "[]", "expected": "list", "actual": string(TypeOf(target)),
+			}))
+		}
+		// There is one numeric type, so `xs[3/2]` is as writable as `xs[1]`. It
+		// is not a position: Go would truncate it to 1 and JavaScript would read
+		// the property named "1.5" and hand back undefined. Neither is an answer.
+		if index != math.Trunc(index) {
+			panic(fail(CodeEvalOperandType, at, map[string]string{
+				"op": "[]", "expected": "a whole number", "actual": "a fraction",
 			}))
 		}
 		position := int(index)
@@ -513,7 +531,11 @@ func compare(op string, left, right Value, at int) bool {
 	case TypeText:
 		return ordered(op, left.(string), right.(string))
 	case TypeDatetime:
-		return ordered(op, left.(time.Time).UnixNano(), right.(time.Time).UnixNano())
+		// Milliseconds, not nanoseconds: UnixNano is undefined once the instant
+		// falls outside 1678–2262, and a year-2300 timestamp wraps to a large
+		// negative number that compares the wrong way round without failing.
+		// Milliseconds are also exactly the precision the value space declares.
+		return ordered(op, left.(time.Time).UnixMilli(), right.(time.Time).UnixMilli())
 	}
 
 	panic(fail(CodeEvalOperandType, at, map[string]string{
@@ -615,9 +637,12 @@ func locate(failure *Error, at int) *Error {
 func checkArguments(spec FunctionSpec, args []Value, at int) []Value {
 	variadic := len(spec.Params) > 0 && spec.Params[len(spec.Params)-1].Variadic
 
+	// A variadic parameter is "one or more", not "zero or more" — so it counts
+	// toward the minimum. Excluding it let `num.min()` through the arity check
+	// and straight into an index-out-of-range panic.
 	required := 0
 	for _, param := range spec.Params {
-		if !param.Optional && !param.Variadic {
+		if !param.Optional {
 			required++
 		}
 	}

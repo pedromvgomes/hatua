@@ -19,8 +19,14 @@ export interface SexpOptions {
 }
 
 export function templateToSexp(template: TemplateNode, options: SexpOptions = {}): string {
+  // Branch on the empty case rather than patching the rendered string
+  // afterwards: a `.replace('(template )', …)` rewrites the first match
+  // *anywhere*, so a field whose literal text happened to contain those
+  // characters came out corrupted — and differently from Go, which has always
+  // branched.
+  if (template.segments.length === 0) return '(template)'
   const parts = template.segments.map((segment) => segmentToSexp(segment, options))
-  return `(template ${parts.join(' ')})`.replace('(template )', '(template)')
+  return `(template ${parts.join(' ')})`
 }
 
 function segmentToSexp(segment: Segment, options: SexpOptions): string {

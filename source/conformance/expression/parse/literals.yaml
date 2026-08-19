@@ -79,6 +79,13 @@ scenarios:
     expr: "null.parse('1')"
     sexp: '(call (. null parse) "1")'
 
+  - name: >-
+      a literal too large for a 64-bit float is refused rather than becoming
+      Infinity — which is what `Number()` produces and what the value space is
+      defined not to contain
+    expr: "1e999"
+    error: EXPR_PARSE_ERROR
+
   - name: an unknown escape is refused rather than silently dropped
     expr: "'a\\qb'"
     error: EXPR_PARSE_ERROR

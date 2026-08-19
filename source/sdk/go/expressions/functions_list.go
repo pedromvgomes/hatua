@@ -37,7 +37,7 @@ func listFunctions() map[string]FunctionImpl {
 
 		"list.slice": func(args []Value, _ Context) Value {
 			items := args[0].([]Value)
-			from, to := sliceRange(len(items), int(args[1].(float64)), optionalIndex(args, 2))
+			from, to := sliceRange(len(items), args[1].(float64), optionalIndex(args, 2))
 			return append([]Value{}, items[from:to]...)
 		},
 
