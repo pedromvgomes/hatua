@@ -12,12 +12,33 @@ package expressions
 
 // ParseTemplate parses a whole Template.
 func ParseTemplate(source string) (*Template, error) {
-	parsed, err := Parse("template", []byte(source), Entrypoint("Template"))
+	parsed, err := Parse("template", []byte(source), parseOptions(source, "Template")...)
 	if err != nil {
 		return nil, parseFailure(err)
 	}
 	return parsed.(*Template), nil
 }
+
+// parseOptions carries the offset table and the expression cap.
+//
+// MaxExpressions is a backstop rather than a tuning knob. Both parsers are
+// recursive descent, and Go's stack overflow is a *fatal error* rather than a
+// panic — a Host's recover() cannot contain it — so one pasted field value with
+// twenty thousand nested parentheses would take the runner's process down.
+// Peggy raises an ordinary RangeError, which parse already turns into a
+// diagnostic. This makes Go fail the same way.
+func parseOptions(source, entrypoint string) []Option {
+	options := []Option{Entrypoint(entrypoint), MaxExpressions(maxParseExpressions)}
+	if table := offsetTable(source); table != nil {
+		options = append(options, GlobalStore(offsetTableKey, table))
+	}
+	return options
+}
+
+// Generous enough that no workflow reaches it, small enough that the stack
+// does not: measured, a template overflows the stack at roughly 20,000 nested
+// groups, and this caps out long before.
+const maxParseExpressions = 1 << 20
 
 // ParseExpression parses one Expression, with no surrounding `{{ }}`.
 //
@@ -28,7 +49,7 @@ func ParseTemplate(source string) (*Template, error) {
 // data — the most dangerous divergence there is, because it passes everything
 // until one workflow hits the disagreeing case.
 func ParseExpression(source string) (Expression, error) {
-	parsed, err := Parse("expression", []byte(source), Entrypoint("Expr"))
+	parsed, err := Parse("expression", []byte(source), parseOptions(source, "ExpressionEntry")...)
 	if err != nil {
 		return nil, parseFailure(err)
 	}

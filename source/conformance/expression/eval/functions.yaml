@@ -35,6 +35,31 @@ scenarios:
     value: "2026-01-02T03:04:05.25Z"
 
   - name: >-
+      RFC 3339 allows a lowercase `t` and `z`, so both runtimes take them.
+      time.Parse does not, and the shared regex did — so Go alone refused this.
+    template: "{{ dt.iso(dt.parse('2026-01-02t03:04:05z')) }}"
+    type: text
+    value: "2026-01-02T03:04:05Z"
+
+  - name: >-
+      an impossible day is refused rather than rolled forward. Date.parse turns
+      the 30th of February into the 2nd of March — a date the user never wrote —
+      while Go says "day out of range".
+    template: "{{ dt.parse('2026-02-30T00:00:00Z') }}"
+    type: datetime
+    error: EVAL_BAD_ARGUMENT
+
+  - name: the 29th of February in a non-leap year is refused for the same reason
+    template: "{{ dt.parse('2026-02-29T00:00:00Z') }}"
+    type: datetime
+    error: EVAL_BAD_ARGUMENT
+
+  - name: and in a leap year it is accepted
+    template: "{{ dt.iso(dt.parse('2028-02-29T00:00:00Z')) }}"
+    type: text
+    value: "2028-02-29T00:00:00Z"
+
+  - name: >-
       a bare date is refused. Date.parse accepts it and Go's parser does not,
       so the stricter of the two is the contract.
     template: "{{ dt.parse('2026-01-02') }}"
@@ -55,6 +80,19 @@ scenarios:
     template: "{{ dt.iso(dt.add(dt.parse('2026-01-02T03:04:05Z'), -1, 'days')) }}"
     type: text
     value: "2026-01-01T03:04:05Z"
+
+  - name: >-
+      a shift past what an instant can represent is refused rather than wrapped.
+      A time.Duration is int64 nanoseconds and saturates at about 292 years, so
+      this used to land in 1763.
+    template: "{{ dt.iso(dt.add(dt.parse('2020-01-01T00:00:00Z'), 120000, 'days')) }}"
+    type: text
+    value: "2348-07-20T00:00:00Z"
+
+  - name: and one beyond any representable instant fails rather than wrapping
+    template: "{{ dt.add(dt.parse('2020-01-01T00:00:00Z'), 1e15, 'days') }}"
+    type: datetime
+    error: EVAL_BAD_ARGUMENT
 
   - name: an unknown unit is refused rather than silently ignored
     template: "{{ dt.add(dt.parse('2026-01-02T03:04:05Z'), 1, 'fortnights') }}"
@@ -173,6 +211,19 @@ scenarios:
     template: "{{ text.slice('hi', 5, 9) }}"
     type: text
     value: ""
+
+  - name: >-
+      a bound far outside the string clamps rather than converting an
+      out-of-range float to an int, which Go leaves implementation-defined —
+      two Go runners on different architectures disagreed with each other
+    template: "{{ text.slice('abcde', 1e20) }}"
+    type: text
+    value: ""
+
+  - name: and at the other end
+    template: "{{ text.slice('abcde', -1e20) }}"
+    type: text
+    value: "abcde"
 
   - name: text.len counts code points, not bytes and not UTF-16 units
     template: "{{ text.len('héllo') }}"
@@ -371,6 +422,20 @@ scenarios:
     context: { steps: { s2: { names: [kai, dane] } } }
     value: [dane, kai]
 
+  - name: >-
+      by code point, so a character above the basic plane sorts after every one
+      below it — JavaScript's UTF-16 order puts it before U+E000..U+FFFF
+    template: "{{ list.join(list.sort(s2.glyphs), '|') }}"
+    type: text
+    context: { steps: { s2: { glyphs: ["😀", "ﬁ"] } } }
+    value: "ﬁ|😀"
+
+  - name: and json.stringify sorts its keys the same way, for the same reason
+    template: "{{ json.stringify(s2.payload) }}"
+    type: text
+    context: { steps: { s2: { payload: { "😀": 1, "ﬁ": 2 } } } }
+    value: '{"ﬁ":2,"😀":1}'
+
   - name: an empty list sorts to an empty list
     template: "{{ list.sort(s2.ids) }}"
     type: list
@@ -410,6 +475,14 @@ scenarios:
     type: text
     context: { steps: { s2: { body: '{"order id":"abc"}' } } }
     value: abc
+
+  - name: >-
+      a JSON number outside the range of a float64 is refused. JSON.parse yields
+      Infinity and Go's decoder errors, and Infinity is not in the value space.
+    template: "{{ json.parse(s2.body) }}"
+    type: unknown
+    context: { steps: { s2: { body: '{"n":1e400}' } } }
+    error: EVAL_BAD_ARGUMENT
 
   - name: text that is not JSON is refused
     template: "{{ json.parse(s2.body) }}"

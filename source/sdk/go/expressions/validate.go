@@ -213,7 +213,7 @@ func walkMember(node *Member, ctx CheckContext, found *[]Diagnostic) walkResult 
 		return walkResult{kind: walkBroken}
 
 	case walkValue:
-		return member(target, node.Name)
+		return member(target, node.Name, node.At, found)
 
 	case walkBroken:
 		return target
@@ -226,7 +226,18 @@ func walkMember(node *Member, ctx CheckContext, found *[]Diagnostic) walkResult 
 // An object with no declared members is opaque, not empty: json.parse(…) and a
 // manifest output typed `object` with no `of:` both land here, and both defer to
 // run time rather than refusing every field name.
-func member(target walkResult, name string) walkResult {
+func member(target walkResult, name string, at int, found *[]Diagnostic) walkResult {
+	// A list has no members — its *elements* do, which is what a manifest's
+	// `of:` describes. Reading one straight off the list is the likeliest
+	// authoring mistake in the language (the forgotten `[]`), and it used to
+	// type-check clean against the element's fields and then miss at run time.
+	if !target.projected && target.node.Type == TypeList {
+		*found = append(*found, NewDiagnostic(CodeExprOperandType, at, map[string]string{
+			"op": ".", "expected": "object", "actual": "list",
+		}))
+		return walkResult{kind: walkBroken}
+	}
+
 	shape := target.node
 	if target.projected {
 		shape = ElementOf(target.node)
@@ -266,6 +277,13 @@ func walkProject(node *Project, ctx CheckContext, found *[]Diagnostic) walkResul
 			return target
 		}
 		return walkResult{kind: walkUnknown}
+	}
+
+	// Projecting something already projected is the identity at run time, so it
+	// must be accepted here: an error severity means "can never be right", and
+	// `s2.messages[].subject[]` evaluates perfectly well.
+	if target.projected {
+		return target
 	}
 
 	if target.node.Type != TypeList && target.node.Type != TypeUnknown {

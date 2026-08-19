@@ -175,6 +175,21 @@ scenarios:
     value: Acme
 
   - name: >-
+      the index is evaluated only once the object resolves, so a missing path
+      short-circuits before it. Evaluating it first — as Go once did — made this
+      a division error in one runtime and a missing path in the other.
+    template: "{{ s1.absent[1 / 0] }}"
+    type: number
+    context: { steps: { s1: {} } }
+    error: EVAL_MISSING_PATH
+
+  - name: and an empty projection short-circuits it too
+    template: "{{ list.len(s1.xs[][1 / 0]) }}"
+    type: number
+    context: { steps: { s1: { xs: [] } } }
+    value: 0
+
+  - name: >-
       a fractional index is neither a position nor a key — JavaScript would hand
       back undefined and Go would truncate, so it is refused instead
     template: "{{ s2.ids[3 / 2] }}"

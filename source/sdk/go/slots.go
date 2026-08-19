@@ -2,6 +2,7 @@ package hatua
 
 import (
 	"strings"
+	"time"
 
 	"hatua.dev/go/expressions"
 )
@@ -210,12 +211,20 @@ func varType(value any) expressions.ValueType {
 			return expressions.TypeUnknown
 		}
 		return expressions.TypeText
-	case float64, int:
+	case float64, float32, int, int8, int16, int32, int64,
+		uint, uint8, uint16, uint32, uint64:
 		return expressions.TypeNumber
 	case bool:
 		return expressions.TypeBoolean
 	case []any:
 		return expressions.TypeList
+	case time.Time:
+		// Text, not datetime, and the reason is the decoders rather than the
+		// language: yaml.v3 turns `value: 2024-01-01T00:00:00Z` into a
+		// time.Time, and the `yaml` package the builder uses leaves it a string.
+		// Typing it `datetime` here would block a publish in the Go SDK that the
+		// builder allows, over one scalar neither of them was told the type of.
+		return expressions.TypeText
 	}
 	return expressions.TypeUnknown
 }

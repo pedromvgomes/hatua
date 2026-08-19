@@ -1,3 +1,4 @@
+kind: function
 namespace: text
 summary: Strings. Case mapping is full Unicode and language-neutral, never locale-sensitive.
 functions:

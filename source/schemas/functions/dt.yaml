@@ -1,3 +1,4 @@
+kind: function
 namespace: dt
 summary: Instants. RFC 3339 only — there are no free-form format strings in v1.
 functions:

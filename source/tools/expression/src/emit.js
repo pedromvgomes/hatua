@@ -53,6 +53,9 @@ export function readFunctions(schemasDir) {
     .filter((f) => f.endsWith('.yaml'))
     .sort()) {
     const doc = parse(fs.readFileSync(path.join(dir, file), 'utf8'))
+    // These files are function manifests in the same format a Host writes, and
+    // the claim only holds if they satisfy their own schema.
+    if (doc.kind !== 'function') throw new Error(`${file}: missing \`kind: function\``)
     if (!doc.namespace) throw new Error(`${file}: missing \`namespace\``)
 
     for (const fn of doc.functions ?? []) {

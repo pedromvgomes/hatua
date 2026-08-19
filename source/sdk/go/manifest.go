@@ -62,7 +62,14 @@ type Field struct {
 	Mono        bool          `yaml:"mono,omitempty"`
 	Options     []FieldOption `yaml:"options,omitempty"`
 	ToggleLabel string        `yaml:"toggleLabel,omitempty"`
-	When        []string      `yaml:"when,omitempty"`
+	// EntryTypes narrows which types a `map` field's entries may declare.
+	//
+	// Absent from this struct, LoadManifests rejected the *whole catalogue* with
+	// "field entry_types not found" — because the decoder runs with
+	// KnownFields(true) — for a manifest the schema documents as valid. Every
+	// key the schema accepts has to exist here.
+	EntryTypes []string `yaml:"entry_types,omitempty"`
+	When       []string `yaml:"when,omitempty"`
 }
 
 // FieldOption is one choice of an enum field.

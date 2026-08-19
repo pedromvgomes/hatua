@@ -19,7 +19,15 @@ import type { FunctionSpec } from '#generated/builtins.js'
 import type { Expression, TemplateNode } from './ast.js'
 import { type Diagnostic, type DiagnosticCode, diagnostic, ExpressionError } from './errors.js'
 import { parseTemplate } from './parse.js'
-import { asText, isScalar, satisfies, typeOf, type Value, type ValueType } from './value.js'
+import {
+  asText,
+  compareText,
+  isScalar,
+  satisfies,
+  typeOf,
+  type Value,
+  type ValueType,
+} from './value.js'
 
 /**
  * What a path does when it resolves to nothing.
@@ -226,6 +234,10 @@ function evaluateRaw(node: Expression, context: EvaluationContext): Raw {
     case 'Member':
       return step(evaluateRaw(node.object, context), (target) => read(target, node.name))
     case 'Index':
+      // The index is evaluated *inside* `step`, so a missing object or an empty
+      // projection short-circuits before it runs. Hoisting it out — as the Go
+      // side once did — makes `{{ s1.absent[1/0] }}` a division error in one
+      // runtime and a missing path in the other.
       return step(evaluateRaw(node.object, context), (target) =>
         index(target, evaluate(node.index, context), node.at),
       )
@@ -426,19 +438,32 @@ function compare(op: string, left: Value, right: Value, at: number): boolean {
     throw fail('EVAL_OPERAND_TYPE', at, { op, expected: 'number, text or datetime', actual: type })
   }
 
-  const a = type === 'datetime' ? (left as Date).getTime() : (left as number | string)
-  const b = type === 'datetime' ? (right as Date).getTime() : (right as number | string)
+  // Text orders by code point, matching Go's byte-wise comparison of UTF-8.
+  // JavaScript's own `<` would order a surrogate pair against U+E000..U+FFFF
+  // the other way round.
+  const order =
+    type === 'text'
+      ? compareText(left as string, right as string)
+      : compareNumbers(
+          type === 'datetime' ? (left as Date).getTime() : (left as number),
+          type === 'datetime' ? (right as Date).getTime() : (right as number),
+        )
 
   switch (op) {
     case '<':
-      return a < b
+      return order < 0
     case '<=':
-      return a <= b
+      return order <= 0
     case '>':
-      return a > b
+      return order > 0
     default:
-      return a >= b
+      return order >= 0
   }
+}
+
+function compareNumbers(left: number, right: number): number {
+  if (left === right) return 0
+  return left < right ? -1 : 1
 }
 
 /** `+` is numeric only. There is no string concatenation operator; use `text.concat`. */
@@ -450,6 +475,17 @@ function arithmetic(op: string, left: Value, right: Value, at: number): number {
     throw fail('EVAL_OPERAND_TYPE', at, { op, expected: 'number', actual: typeOf(right) })
   }
 
+  if ((op === '/' || op === '%') && right === 0) throw fail('EVAL_DIVISION_BY_ZERO', at, {})
+
+  const result = arithmeticResult(op, left, right)
+  // Division by zero is not the only way out of the value space: `1e308 * 10`
+  // is Infinity in both languages, and the point of excluding Infinity is that
+  // nothing downstream should have to hold an opinion about it.
+  if (!Number.isFinite(result)) throw fail('EVAL_NUMERIC_OVERFLOW', at, { op })
+  return result
+}
+
+function arithmeticResult(op: string, left: number, right: number): number {
   switch (op) {
     case '+':
       return left + right
@@ -458,10 +494,8 @@ function arithmetic(op: string, left: Value, right: Value, at: number): number {
     case '*':
       return left * right
     case '/':
-      if (right === 0) throw fail('EVAL_DIVISION_BY_ZERO', at, {})
       return left / right
     default:
-      if (right === 0) throw fail('EVAL_DIVISION_BY_ZERO', at, {})
       return left % right
   }
 }

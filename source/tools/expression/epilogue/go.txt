@@ -1,4 +1,7 @@
 
 // Supplied per language: reading the current offset is the one construct the
 // two PEG dialects spell differently.
-At = "" { return c.pos.offset, nil }
+//
+// `c.pos.offset` is a *byte* offset, and Peggy's `offset()` is a UTF-16
+// code-unit index. `offsetOf` reconciles them — see offsets.go.
+At = "" { return offsetOf(c) }

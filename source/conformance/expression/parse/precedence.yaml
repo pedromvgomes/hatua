@@ -85,3 +85,14 @@ scenarios:
   - name: "`??` is not read as the start of a conditional"
     expr: "a ?? b"
     sexp: "(?? a b)"
+
+  - name: >-
+      a bare Expression must consume all of its input. pigeon does not require a
+      start rule to, and Peggy does, so this returned the literal 1 in Go and a
+      parse error in TypeScript — silent truncation being the worse half.
+    expr: "1 2"
+    error: EXPR_PARSE_ERROR
+
+  - name: trailing rubbish after a complete expression is refused too
+    expr: "a.b )"
+    error: EXPR_PARSE_ERROR

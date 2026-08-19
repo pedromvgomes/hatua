@@ -33,6 +33,18 @@ scenarios:
     type: number
     error: EVAL_DIVISION_BY_ZERO
 
+  - name: >-
+      a result outside the range of a float64 is an error, not Infinity. Excluding
+      Infinity is only worth anything if nothing can produce one.
+    template: "{{ 1e308 * 10 }}"
+    type: number
+    error: EVAL_NUMERIC_OVERFLOW
+
+  - name: and by subtraction at the other end
+    template: "{{ -1e308 - 1e308 }}"
+    type: number
+    error: EVAL_NUMERIC_OVERFLOW
+
   - name: "`+` is numeric only — there is no string concatenation operator"
     template: "{{ 'a' + 'b' }}"
     type: text
@@ -86,6 +98,14 @@ scenarios:
 
   - name: text orders by code point
     template: "{{ 'a' < 'b' }}"
+    type: boolean
+    value: true
+
+  - name: >-
+      including above the basic plane, where JavaScript's own `<` disagrees with
+      Go's: a surrogate pair sorts before U+E000..U+FFFF in UTF-16 order and
+      after it by code point
+    template: "{{ 'ﬁ' < '😀' }}"
     type: boolean
     value: true
 

@@ -6,9 +6,14 @@ checked against these files at load time, so a function that exists in one
 runtime and not the other fails loudly instead of producing a workflow that
 evaluates in the builder and not in the runner.
 
-One file per namespace. A function is addressed `namespace.name(...)` — the
-`(` is what distinguishes a call from a path, which is why namespaces need no
-reserved words.
+One file per namespace, in exactly the format `function-manifest.schema.yaml`
+defines — these files validate against it, and the generator refuses one that
+does not. "The format is identical and the only difference is who wrote the
+file" has to be true of the files themselves, or a Host copying one as a
+template gets a manifest its own validator rejects.
+
+A function is addressed `namespace.name(...)` — the `(` is what distinguishes a
+call from a path, which is why namespaces need no reserved words.
 
 ## Types
 
@@ -23,6 +28,7 @@ Component Manifest's output types. Two more exist only here:
 ## Shape
 
 ```yaml
+kind: function
 namespace: text
 functions:
   - name: slice

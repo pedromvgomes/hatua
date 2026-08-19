@@ -80,7 +80,7 @@ function generate(lang, target) {
       // Only the corpus and tooling parse a bare Expression; a field value is
       // always a whole Template.
       '-alternate-entrypoints',
-      'Expr',
+      'ExpressionEntry',
       '-o',
       path.join(target.staging, 'parser.gen.go'),
       grammarPath,
@@ -94,7 +94,7 @@ function generate(lang, target) {
       'es',
       '--dts',
       '--allowed-start-rules',
-      'Template,Expr',
+      'Template,ExpressionEntry',
       '-o',
       path.join(target.staging, 'parser.js'),
       grammarPath,

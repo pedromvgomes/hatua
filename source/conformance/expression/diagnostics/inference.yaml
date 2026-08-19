@@ -57,6 +57,32 @@ scenarios:
     expect:
       - { code: EXPR_ARGUMENT_TYPE, severity: error }
 
+  - name: >-
+      a member read straight off a list is refused. A list has no members — its
+      *elements* do, which is what a manifest's `of:` describes — and the
+      forgotten `[]` is the likeliest authoring mistake in the language. It used
+      to type-check clean against the element's fields and then miss at run time.
+    template: "{{ s2.messages.subject }}"
+    type: text
+    scope: *inbox
+    expect:
+      - { code: EXPR_OPERAND_TYPE, severity: error }
+
+  - name: and reported as a conflict rather than as a false claim about its type
+    template: "{{ s2.messages.subject }}"
+    type: number
+    scope: *inbox
+    expect:
+      - { code: EXPR_OPERAND_TYPE, severity: error }
+
+  - name: >-
+      projecting something already projected is accepted, because it is the
+      identity at run time — and an `error` severity means "can never be right"
+    template: "{{ s2.messages[].subject[] }}"
+    type: list
+    scope: *inbox
+    expect: []
+
   - name: projection produces a list, so it satisfies a list field
     template: "{{ s2.messages[].subject }}"
     type: list

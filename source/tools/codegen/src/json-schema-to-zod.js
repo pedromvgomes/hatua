@@ -130,6 +130,15 @@ export function toZod(node, indent = '  ') {
     if (node.additionalProperties === true && !node.properties) {
       return 'z.record(z.string(), z.unknown())'
     }
+    // A *schema* for additional properties would need z.record with that value
+    // type, and silently emitting `z.object({})` instead would let Go accept
+    // input TypeScript rejects — the exact failure ADR-0006 exists to prevent.
+    if (node.additionalProperties && typeof node.additionalProperties === 'object') {
+      throw new Error(
+        'Unhandled `additionalProperties: <schema>`. Add z.record support in ' +
+          'json-schema-to-zod.js rather than dropping the constraint.',
+      )
+    }
     const required = new Set(node.required ?? [])
     const inner = `${indent}  `
     const lines = Object.entries(node.properties ?? {}).map(([key, child]) => {

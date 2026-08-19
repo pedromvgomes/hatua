@@ -22,6 +22,7 @@ export type DiagnosticCode =
   | 'EVAL_OPERAND_TYPE'
   | 'EVAL_COMPARE_NULL'
   | 'EVAL_COMPARE_TYPES'
+  | 'EVAL_NUMERIC_OVERFLOW'
   | 'EVAL_DIVISION_BY_ZERO'
   | 'EVAL_UNKNOWN_FUNCTION'
   | 'EVAL_ARITY_MISMATCH'
@@ -123,6 +124,12 @@ export const DIAGNOSTICS: Record<DiagnosticCode, DiagnosticSpec> = {
     severity: 'error',
     phase: 'eval',
     message: '{op} cannot compare {expected} with {actual}.',
+  },
+  EVAL_NUMERIC_OVERFLOW: {
+    code: 'EVAL_NUMERIC_OVERFLOW',
+    severity: 'error',
+    phase: 'eval',
+    message: '{op} produced a number too large to represent.',
   },
   EVAL_DIVISION_BY_ZERO: {
     code: 'EVAL_DIVISION_BY_ZERO',

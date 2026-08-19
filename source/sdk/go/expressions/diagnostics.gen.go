@@ -38,6 +38,7 @@ const (
 	CodeEvalOperandType       Code = "EVAL_OPERAND_TYPE"
 	CodeEvalCompareNull       Code = "EVAL_COMPARE_NULL"
 	CodeEvalCompareTypes      Code = "EVAL_COMPARE_TYPES"
+	CodeEvalNumericOverflow   Code = "EVAL_NUMERIC_OVERFLOW"
 	CodeEvalDivisionByZero    Code = "EVAL_DIVISION_BY_ZERO"
 	CodeEvalUnknownFunction   Code = "EVAL_UNKNOWN_FUNCTION"
 	CodeEvalArityMismatch     Code = "EVAL_ARITY_MISMATCH"
@@ -71,6 +72,7 @@ var Diagnostics = map[Code]DiagnosticSpec{
 	CodeEvalOperandType:       {Code: CodeEvalOperandType, Severity: SeverityError, Phase: PhaseEval, Message: "{op} expects {expected}, not {actual}."},
 	CodeEvalCompareNull:       {Code: CodeEvalCompareNull, Severity: SeverityError, Phase: PhaseEval, Message: "{op} cannot compare null."},
 	CodeEvalCompareTypes:      {Code: CodeEvalCompareTypes, Severity: SeverityError, Phase: PhaseEval, Message: "{op} cannot compare {expected} with {actual}."},
+	CodeEvalNumericOverflow:   {Code: CodeEvalNumericOverflow, Severity: SeverityError, Phase: PhaseEval, Message: "{op} produced a number too large to represent."},
 	CodeEvalDivisionByZero:    {Code: CodeEvalDivisionByZero, Severity: SeverityError, Phase: PhaseEval, Message: "Division by zero."},
 	CodeEvalUnknownFunction:   {Code: CodeEvalUnknownFunction, Severity: SeverityError, Phase: PhaseEval, Message: "There is no function {name}."},
 	CodeEvalArityMismatch:     {Code: CodeEvalArityMismatch, Severity: SeverityError, Phase: PhaseEval, Message: "{name} takes {expected} arguments, not {actual}."},

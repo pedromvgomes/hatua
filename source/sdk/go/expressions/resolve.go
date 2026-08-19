@@ -262,9 +262,12 @@ func evaluateRaw(node Expression, ctx Context) any {
 	case *Member:
 		return step(evaluateRaw(n.Object, ctx), func(target Value) any { return read(target, n.Name) })
 	case *Index:
-		key := Evaluate(n.Index, ctx)
+		// The index is evaluated *inside* step, so a missing object or an empty
+		// projection short-circuits before it runs. Hoisting it out — as this
+		// once did — made `{{ s1.absent[1/0] }}` a division error here and a
+		// missing path in TypeScript.
 		return step(evaluateRaw(n.Object, ctx), func(target Value) any {
-			return indexInto(target, key, n.At)
+			return indexInto(target, Evaluate(n.Index, ctx), n.At)
 		})
 	case *Project:
 		return project(evaluateRaw(n.Object, ctx), n.At)
@@ -567,6 +570,21 @@ func arithmetic(op string, left, right Value, at int) Value {
 		panic(operandType(op, "number", right, at))
 	}
 
+	if (op == "/" || op == "%") && b == 0 {
+		panic(fail(CodeEvalDivisionByZero, at, nil))
+	}
+
+	result := arithmeticResult(op, a, b)
+	// Division by zero is not the only way out of the value space: `1e308 * 10`
+	// is +Inf in both languages, and the point of excluding Inf is that nothing
+	// downstream should have to hold an opinion about it.
+	if math.IsInf(result, 0) || math.IsNaN(result) {
+		panic(fail(CodeEvalNumericOverflow, at, map[string]string{"op": op}))
+	}
+	return result
+}
+
+func arithmeticResult(op string, a, b float64) float64 {
 	switch op {
 	case "+":
 		return a + b
@@ -575,13 +593,7 @@ func arithmetic(op string, left, right Value, at int) Value {
 	case "*":
 		return a * b
 	case "/":
-		if b == 0 {
-			panic(fail(CodeEvalDivisionByZero, at, nil))
-		}
 		return a / b
-	}
-	if b == 0 {
-		panic(fail(CodeEvalDivisionByZero, at, nil))
 	}
 	// math.Mod, never `%`: the operands are float64 and the remainder takes the
 	// sign of the dividend, exactly as it does in JavaScript.

@@ -82,6 +82,23 @@ scenarios:
     expect:
       - { code: EXPR_UNKNOWN_REFERENCE, severity: error }
 
+  - name: >-
+      a name that collides with a JavaScript prototype member is treated like
+      any other undeclared member. Reading `members.constructor` without an
+      own-property check made TypeScript conclude the expression "produces
+      undefined" and block publish, while Go warned and allowed it.
+    template: "{{ s2.constructor }}"
+    type: text
+    scope: *wide
+    expect:
+      - { code: EXPR_TYPE_UNKNOWN, severity: warning }
+
+  - name: and so are the other two
+    template: "{{ s2.__proto__ }}{{ s2.prototype }}"
+    type: text
+    scope: *wide
+    expect: []
+
   - name: several problems are all reported, not just the first
     template: "{{ s9.a }} and {{ s8.b }}"
     type: text

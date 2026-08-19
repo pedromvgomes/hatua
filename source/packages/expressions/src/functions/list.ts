@@ -8,7 +8,7 @@
  * them later.
  */
 import { equals, type FunctionImpl } from '../resolve.js'
-import { asText, isScalar, typeOf, type Value, type ValueType } from '../value.js'
+import { asText, compareText, isScalar, typeOf, type Value, type ValueType } from '../value.js'
 import { badArgument } from './registry.js'
 
 const clamp = (index: number, length: number): number =>
@@ -78,8 +78,13 @@ export const listFunctions: Record<string, FunctionImpl> = {
       throw badArgument('list.sort', 'value', 'a list of mixed types')
     }
 
-    const key = (item: Value): number | string =>
-      type === 'datetime' ? (item as Date).getTime() : (item as number | string)
+    // Text sorts by code point, which is what Go's byte-wise comparison of
+    // UTF-8 gives. JavaScript's own `<` compares UTF-16 code units and would
+    // order a surrogate pair against U+E000..U+FFFF the other way round.
+    if (type === 'text') return [...value].sort((a, b) => compareText(a as string, b as string))
+
+    const key = (item: Value): number =>
+      type === 'datetime' ? (item as Date).getTime() : (item as number)
 
     return [...value].sort((a, b) => {
       const left = key(a)

@@ -91,26 +91,11 @@ export type Branch = z.infer<typeof branch>
 
 /**
  * Field values keyed by the manifest's `FieldSpec.k`. Templates remain `{{…}}` strings so the document round-trips and a step can be renamed without breaking a mapping.
- * A `map` field holds a list of `mapEntry` rather than a scalar; see `data.map` on `use`.
+ * A `map` field holds a list of `{key, value, type}` objects rather than a scalar — see `data.map` on `use`. That shape is deliberately NOT declared as a `$def` here: which key holds a map field is decided by the Component Manifest, not by this schema, so JSON Schema cannot reach it. It is checked where the manifest is known, in `@hatua/model` and the Go SDK, and an unreferenced definition would be a promise this file does not keep.
+ * `key` is how downstream steps address the entry — `{{<step id>.<key>}}`. `type` is declared rather than inferred from `value`, for the same reason every other field's type is: the expression is checked against the declared type, never the reverse.
  */
 export const values = z.record(z.string(), z.unknown())
 export type Values = z.infer<typeof values>
-
-/**
- * One entry of a `map` field. `type` is declared rather than inferred from `value`, for the same reason every other field's type is: the expression is checked against the declared type, never the reverse. It is also what a downstream step's type checker reads.
- */
-export const mapEntry = z.strictObject({
-  /**
-   * How downstream steps address it — `{{<step id>.<key>}}`.
-   */
-  key: z.string().min(1),
-  /**
-   * A Template, evaluated against the declared `type`.
-   */
-  value: z.string(),
-  type: z.enum(['text', 'number', 'boolean', 'datetime', 'list', 'object']),
-})
-export type MapEntry = z.infer<typeof mapEntry>
 
 /**
  * The declarative description of a workflow — its steps, the mapping between one step's typed outputs and the next step's inputs, branches and loops. Read AND written by Hatua, unlike a Workflow Execution which is only ever read.

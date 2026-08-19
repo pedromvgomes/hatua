@@ -34,6 +34,16 @@ TextChar = !"{{" ch:. { return str(ch) }
 
 Expr = Ternary
 
+// The entry point for parsing a bare Expression, which only the corpus and
+// tooling use — a field value is always a whole Template.
+//
+// It exists separately from `Expr` because `Expr` is also what a hole contains,
+// so it cannot demand EOF, and because the two generators disagree about
+// whether a start rule must consume its input: Peggy insists, pigeon does not.
+// Without this, `ParseExpression("1 2")` returned the literal 1 in Go and a
+// parse error in TypeScript — silent truncation being the worse half.
+ExpressionEntry = e:Expr EOF { return parenNode(e) }
+
 Ternary = cond:Coalesce t:( QMark Ternary Colon Ternary )? { return ternaryNode(cond, t) }
 
 Coalesce = h:Or t:( CoalesceOp Or )* { return binaryNode(h, t) }

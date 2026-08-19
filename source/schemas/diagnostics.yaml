@@ -125,6 +125,16 @@ codes:
     message: "{op} cannot compare {expected} with {actual}."
     summary: Ordered comparison across two different types.
 
+  - code: EVAL_NUMERIC_OVERFLOW
+    severity: error
+    phase: eval
+    message: "{op} produced a number too large to represent."
+    summary: >-
+      An arithmetic result outside the range of a 64-bit float. Like division by
+      zero, this is an error rather than a value, because the alternative is
+      Infinity — and the whole point of excluding it is that no operator
+      downstream has to have an opinion about it.
+
   - code: EVAL_DIVISION_BY_ZERO
     severity: error
     phase: eval

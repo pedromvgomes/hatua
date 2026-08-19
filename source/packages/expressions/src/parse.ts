@@ -43,7 +43,7 @@ export function parseTemplate(source: string): TemplateNode {
  */
 export function parseExpression(source: string): Expression {
   try {
-    return generated(source, { startRule: 'Expr' }) as Expression
+    return generated(source, { startRule: 'ExpressionEntry' }) as Expression
   } catch (error) {
     throw new ExpressionError([
       diagnostic('EXPR_PARSE_ERROR', offsetOf(error), { detail: messageOf(error) }),

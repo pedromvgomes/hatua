@@ -165,7 +165,7 @@ export type ParserTracerEvent =
       readonly result: unknown
     }
 
-export type StartRuleNames = 'Template' | 'Expr'
+export type StartRuleNames = 'Template' | 'ExpressionEntry'
 export interface ParseOptions<T extends StartRuleNames = 'Template'> {
   /**
    * String or object that will be attached to the each `LocationRange` object
@@ -198,7 +198,7 @@ declare function ParseFunction<Options extends ParseOptions<'Template'>>(
   options?: Options,
 ): any
 
-declare function ParseFunction<Options extends ParseOptions<'Expr'>>(
+declare function ParseFunction<Options extends ParseOptions<'ExpressionEntry'>>(
   input: string,
   options?: Options,
 ): any

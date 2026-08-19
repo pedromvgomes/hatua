@@ -189,7 +189,7 @@ function walkMember(
     }
 
     case 'value':
-      return member(target, node.name)
+      return member(target, node.name, node.at, found)
 
     default:
       return target.kind === 'broken' ? target : { kind: 'unknown' }
@@ -203,14 +203,32 @@ function walkMember(
  * a manifest output typed `object` with no `of:` both land here, and both defer
  * to run time rather than refusing every field name.
  */
-function member(target: Extract<Walk, { kind: 'value' }>, name: string): Walk {
+function member(
+  target: Extract<Walk, { kind: 'value' }>,
+  name: string,
+  at: number,
+  found: Diagnostic[],
+): Walk {
+  // A list has no members — its *elements* do, which is what a manifest's `of:`
+  // describes. Reading one straight off the list is the likeliest authoring
+  // mistake in the language (the forgotten `[]`), and it used to type-check
+  // clean against the element's fields and then miss at run time.
+  if (!target.projected && target.node.type === 'list') {
+    found.push(diagnostic('EXPR_OPERAND_TYPE', at, { op: '.', expected: 'object', actual: 'list' }))
+    return { kind: 'broken' }
+  }
+
   const shape = target.projected ? elementOf(target.node) : target.node
   if (shape.type === 'unknown' || shape.type === 'item') return { kind: 'unknown' }
   if (!shape.members) return { kind: 'unknown' }
 
-  const declared = shape.members[name]
-  if (!declared) return { kind: 'unknown' }
-  return { kind: 'value', node: declared, projected: target.projected }
+  // `Object.hasOwn`, not a truthiness test: `members.constructor` resolves to
+  // `Object.prototype.constructor`, which is truthy and has no `.type`, so the
+  // checker concluded the expression "produces undefined" and blocked publish
+  // — while Go, whose map lookup has no prototype behind it, warned and allowed
+  // it. The evaluator learned this lesson already; the validator had not.
+  if (!Object.hasOwn(shape.members, name)) return { kind: 'unknown' }
+  return { kind: 'value', node: shape.members[name] as TypeNode, projected: target.projected }
 }
 
 function walkIndex(
@@ -237,6 +255,11 @@ function walkProject(
 ): Walk {
   const target = walk(node.object, context, found)
   if (target.kind !== 'value') return target.kind === 'broken' ? target : { kind: 'unknown' }
+
+  // Projecting something already projected is the identity at run time, so it
+  // must be accepted here: an `error` severity means "can never be right", and
+  // `s2.messages[].subject[]` evaluates perfectly well.
+  if (target.projected) return target
 
   if (target.node.type !== 'list' && target.node.type !== 'unknown') {
     found.push(

@@ -6,6 +6,25 @@ about: >-
   verbatim, and therefore the one thing most worth pinning here.
 
 scenarios:
+  - name: >-
+      offsets are UTF-16 code units, not bytes. pigeon reports a byte offset and
+      Peggy reports a JavaScript string index; every non-ASCII byte before a
+      hole drove them apart, and this file was entirely ASCII, which is why it
+      never noticed.
+    template: "héllo {{ a }}"
+    offsets: true
+    sexp: '(template (text "héllo ") (hole@9 a@9))'
+
+  - name: a character outside the basic plane counts as two, as a Date index does
+    template: "a😀b {{ x }}"
+    offsets: true
+    sexp: '(template (text "a😀b ") (hole@8 x@8))'
+
+  - name: and several of them accumulate
+    template: "日本語 {{ x }}"
+    offsets: true
+    sexp: '(template (text "日本語 ") (hole@7 x@7))'
+
   - name: a hole starts after the braces and the whitespace
     template: "{{ s2.count }}"
     offsets: true

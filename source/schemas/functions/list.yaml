@@ -1,3 +1,4 @@
+kind: function
 namespace: list
 summary: >-
   Lists. There are no lambdas in v1, so no `filter` or `map` — closures would

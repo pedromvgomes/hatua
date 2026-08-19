@@ -131,7 +131,7 @@ export function toJson(value: Value): string {
   if (Array.isArray(value)) return `[${value.map(toJson).join(',')}]`
 
   const entries = Object.keys(value)
-    .sort()
+    .sort(compareText)
     .map((key) => `${jsonString(key)}:${toJson((value as Record<string, Value>)[key] as Value)}`)
   return `{${entries.join(',')}}`
 }
@@ -159,6 +159,31 @@ function jsonString(value: string): string {
     escaped += code < 0x20 ? `\\u${code.toString(16).padStart(4, '0')}` : char
   }
   return `"${escaped}"`
+}
+
+/**
+ * Compare two strings by code point.
+ *
+ * JavaScript's `<` compares UTF-16 code units, and Go's compares UTF-8 bytes.
+ * Those agree for everything in the basic multilingual plane and disagree above
+ * it: a surrogate pair sorts *before* U+E000..U+FFFF in JavaScript and *after*
+ * them in Go, so `list.sort(['ﬁ', '😀'])` came out in opposite orders. Go's byte
+ * order is already code point order, so this is what TypeScript has to be told.
+ *
+ * It matters most for `json.stringify`, whose keys are sorted precisely so the
+ * two languages produce one string.
+ */
+export function compareText(left: string, right: string): number {
+  let a = 0
+  let b = 0
+  while (a < left.length && b < right.length) {
+    const one = left.codePointAt(a) as number
+    const two = right.codePointAt(b) as number
+    if (one !== two) return one < two ? -1 : 1
+    a += one > 0xffff ? 2 : 1
+    b += two > 0xffff ? 2 : 1
+  }
+  return left.length - a - (right.length - b)
 }
 
 /** ECMAScript `Number::toString`. Named so the Go port has something to point at. */

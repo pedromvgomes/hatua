@@ -67,8 +67,19 @@ func sliceRange(length int, start float64, end *float64) (int, int) {
 	return from, max(from, to)
 }
 
+// clampIndex clamps *before* converting to int. Converting an out-of-range
+// float64 to int is implementation-defined in Go, so `text.slice(s, 1e20)`
+// returned the whole string on amd64 and the empty string on arm64 — two Go
+// runners disagreeing with each other, which is worse than disagreeing with
+// TypeScript.
 func clampIndex(index float64, length int) int {
-	return min(max(int(math.Trunc(index)), 0), length)
+	if index <= 0 {
+		return 0
+	}
+	if index >= float64(length) {
+		return length
+	}
+	return int(math.Trunc(index))
 }
 
 // optionalIndex reads a trailing optional number argument.

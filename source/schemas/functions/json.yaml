@@ -1,3 +1,4 @@
+kind: function
 namespace: json
 summary: >-
   The escape hatch for opaque payloads. `json.parse` returns `unknown`, which is

@@ -14,6 +14,9 @@ import { badArgument } from './registry.js'
  */
 const RFC3339 = /^\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(\.\d+)?([Zz]|[+-]\d{2}:\d{2})$/
 
+/** The range a Date can represent: ±100,000,000 days from the epoch. */
+const MAX_INSTANT_MS = 8.64e15
+
 const UNITS: Record<string, number> = {
   seconds: 1000,
   minutes: 60 * 1000,
@@ -45,7 +48,16 @@ export const dtFunctions: Record<string, FunctionImpl> = {
     if (!RFC3339.test(text) || Number.isNaN(milliseconds)) {
       throw badArgument('dt.parse', 'value', text)
     }
-    return new Date(milliseconds)
+
+    const parsed = new Date(milliseconds)
+    // `Date.parse` rolls an impossible day forward rather than refusing it, so
+    // `2026-02-30` became 2 March — a date the user never wrote — while Go said
+    // "day out of range". The regex only ever checked the *shape* of the
+    // digits, so re-reading the day back out is what catches it.
+    if (parsed.getUTCDate() !== Number(text.slice(8, 10))) {
+      throw badArgument('dt.parse', 'value', text)
+    }
+    return parsed
   },
 
   'dt.iso': (args: readonly Value[]): Value => datetimeToText(args[0] as Date),
@@ -53,7 +65,15 @@ export const dtFunctions: Record<string, FunctionImpl> = {
   'dt.add': (args: readonly Value[]): Value => {
     const [value, amount, unit] = args as [Date, number, string]
     const factor = unitFactor(unit, 'dt.add')
-    return new Date(value.getTime() + Math.round(amount * factor))
+    const shifted = value.getTime() + Math.round(amount * factor)
+    // A Date beyond ±100,000,000 days from the epoch is `Invalid Date`, which
+    // is still `instanceof Date` and so satisfies a `datetime` slot — a value
+    // that renders as nothing and compares as neither. Go refuses the same
+    // shift outright, so this does too.
+    if (!Number.isFinite(shifted) || Math.abs(shifted) > MAX_INSTANT_MS) {
+      throw badArgument('dt.add', 'amount', String(amount))
+    }
+    return new Date(shifted)
   },
 
   /** Whole units, truncated toward zero — never rounded, in either language. */
