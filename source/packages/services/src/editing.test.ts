@@ -782,6 +782,71 @@ describe('autosave', () => {
     })
   })
 
+  it('flush() waits out a write already open, rather than resolving having written nothing', async () => {
+    /*
+     * `write()` refuses to overlap, so a flush that returned early would hand
+     * the caller a resolved promise, a cancelled timer and nothing written —
+     * and flush's one caller is an unmount or a page about to close, which
+     * then takes the open write's reschedule down with it. The edit is gone,
+     * reported saved.
+     */
+    let release: (() => void) | undefined
+    const host = recorder()
+    host.port.saveDraft = async (_token, yaml) => {
+      if (!release)
+        await new Promise<void>((resolve) => {
+          release = resolve
+        })
+      host.writes.push(yaml)
+    }
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 500 })
+    store.open()
+    await settle()
+
+    store.apply(removeStep('s1'))
+    await vi.advanceTimersByTimeAsync(500)
+    store.apply(removeStep('s4'))
+
+    const flushed = store.flush()
+    release?.()
+    await flushed
+    store.dispose()
+
+    expect(host.writes).toHaveLength(2)
+    expect(host.writes[1]).not.toContain('id: s1')
+    expect(host.writes[1]).not.toContain('id: s4')
+  })
+
+  it('reopens into a working autosave even if a Host never answered the last write', async () => {
+    // A `saveDraft` that never settles would otherwise leave the in-flight
+    // marker set for the life of the store: every later write returns at the
+    // overlap guard, autosave is dead for good, and the panel sits at
+    // `pending` with nothing reporting why.
+    const host = recorder()
+    host.port.saveDraft = async (_token, yaml) => {
+      if (host.writes.length === 0 && !hung) {
+        hung = true
+        return new Promise<void>(() => {})
+      }
+      host.writes.push(yaml)
+    }
+    let hung = false
+
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 500 })
+    store.open()
+    await settle()
+    store.apply(removeStep('s1'))
+    await vi.advanceTimersByTimeAsync(500)
+    expect(host.writes).toHaveLength(0)
+
+    store.reopen()
+    await settle()
+    store.apply(removeStep('s4'))
+    await vi.advanceTimersByTimeAsync(500)
+
+    expect(host.writes).toHaveLength(1)
+  })
+
   it('never has two writes open at once, whatever the Host takes to answer', async () => {
     /*
      * Two overlapping saveDraft calls can land in either order, and a Host that

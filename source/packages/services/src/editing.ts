@@ -210,7 +210,7 @@ export function createEditingStore(
   let savedText = ''
 
   /**
-   * True while a write is open.
+   * The write currently open, or null.
    *
    * Two overlapping `saveDraft` calls can land in either order, and a Host that
    * applies the older one last is left holding text the user has already moved
@@ -218,8 +218,13 @@ export function createEditingStore(
    * slow Host and a fast typist is all it needs. A write that finds another in
    * flight returns; the one that is running reschedules on completion if the
    * document has moved on, so nothing is dropped by waiting.
+   *
+   * Held as the promise rather than a flag so `flush()` can WAIT for it. A
+   * flush that returned early would resolve having written nothing, which is
+   * the opposite of what its one caller — an unmount, a page about to close —
+   * is asking for.
    */
-  let writing = false
+  let inFlight: Promise<unknown> | null = null
 
   const notify = () => {
     // Copied: a listener may unsubscribe while being notified — React does
@@ -285,7 +290,7 @@ export function createEditingStore(
     // means telling the user their claim is gone and offering to reopen, which
     // is the toolbar's screen to render.
     if (save.state === 'halted') return
-    if (writing) return
+    if (inFlight) return
 
     const mine = generation
     const attempted = document.toString()
@@ -295,15 +300,18 @@ export function createEditingStore(
     }
 
     setSave(SAVING)
-    writing = true
+    const attempt = port.saveDraft(token, attempted)
+    // Swallowed here only so an awaiting `flush()` is never handed a rejection
+    // that this function is already handling below.
+    inFlight = attempt.catch(() => {})
     try {
-      await port.saveDraft(token, attempted)
+      await attempt
     } catch (cause) {
-      writing = false
+      inFlight = null
       if (mine === generation) halt(cause)
       return
     }
-    writing = false
+    inFlight = null
     if (mine !== generation || disposed) return
 
     savedText = attempted
@@ -401,6 +409,14 @@ export function createEditingStore(
     future = []
     save = SAVED
     savedText = ''
+    // Abandoned along with everything else this generation held. A Host whose
+    // `saveDraft` never settles — a fetch with no timeout is all it takes —
+    // would otherwise leave this set for the life of the store, and every
+    // write after it would return at the guard above: autosave dead for good,
+    // the panel stuck on `pending`, and reopening no help at all. The
+    // abandoned call belongs to a token this session no longer holds, so
+    // whatever it eventually does is the Host's business.
+    inFlight = null
 
     if (state.status !== 'opening') publishState(OPENING)
 
@@ -528,7 +544,15 @@ export function createEditingStore(
       travel(future, history)
     },
 
-    flush() {
+    async flush() {
+      cancelSave()
+      // Wait out a write already open rather than returning as though this one
+      // had happened. `write()` refuses to overlap, so without this the caller
+      // gets a resolved promise, a cancelled timer and nothing written — and
+      // if it goes on to dispose the store, the open write's reschedule dies
+      // with it and the edit is gone.
+      const open = inFlight
+      if (open) await open
       cancelSave()
       return write()
     },

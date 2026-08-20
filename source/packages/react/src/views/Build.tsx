@@ -143,7 +143,14 @@ export function Build({ className, ...rest }: BuildProps) {
                 // instead of appending — or name a Step removed in the
                 // meantime, which every command refuses, so the click would do
                 // nothing at all and say nothing about why.
-                setPending(null)
+                //
+                // A click on the tab ALREADY open is not navigating away.
+                // <TabbedPanel> reports every click, including that one, and
+                // clicking "Library" while looking at the Library is what
+                // anyone does to focus it — losing the pending point there
+                // would be the same silent misplacement, arrived at by
+                // touching nothing.
+                if (next !== tab) setPending(null)
                 setTab(next)
               }}
             />

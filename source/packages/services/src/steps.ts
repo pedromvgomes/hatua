@@ -190,6 +190,11 @@ const asSeq = (value: unknown): Seq | undefined =>
  * which is the model the rest of the file assumes.
  */
 const liftLeadingComment = (seq: Seq) => {
+  // Block sequences only. A flow list keeps its comment at the list level
+  // whatever happens to its items, so moving one onto an item there would
+  // change what the comment is about — and re-anchoring it forces the list to
+  // break across lines, rewriting formatting Hatua does not own (ADR-0001).
+  if (seq.flow) return
   const first = seq.items[0] as { commentBefore?: string } | undefined
   if (!first || seq.commentBefore === undefined) return
   first.commentBefore =
@@ -200,6 +205,7 @@ const liftLeadingComment = (seq: Seq) => {
 }
 
 const lowerLeadingComment = (seq: Seq) => {
+  if (seq.flow) return
   const first = seq.items[0] as { commentBefore?: string } | undefined
   if (!first || first.commentBefore === undefined) return
   seq.commentBefore = first.commentBefore

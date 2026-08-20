@@ -222,6 +222,20 @@ describe('Build wires the Library to the Flow tab', () => {
     await waitFor(() => expect(rowNames()).toEqual(['First', 'Second', 'Send email']))
   })
 
+  it('keeps the pending point when the open tab is clicked again', async () => {
+    // <TabbedPanel> reports every click, including one on the tab already
+    // open — which is what anyone does to focus it. Treating that as
+    // navigating away loses the insertion point by touching nothing.
+    wired()
+    await screen.findByText('First')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Insert a Step after First' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Library' }))
+    fireEvent.click(await screen.findByRole('button', { name: /Send email/ }))
+
+    await waitFor(() => expect(rowNames()).toEqual(['First', 'Send email', 'Second']))
+  })
+
   it('forgets the pending point once it has been used', async () => {
     wired()
     await screen.findByText('First')

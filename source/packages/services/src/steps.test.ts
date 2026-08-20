@@ -200,6 +200,28 @@ describe('formatting the user chose', () => {
     expect(doc.toString()).toContain('        steps:\n          - id: s3')
   })
 
+  it('leaves a comment on a flow-style list at the list level', () => {
+    // A flow list keeps its comment at the list level whatever happens to its
+    // items. Re-anchoring one onto an item changes what it is about, and
+    // forces the list to break across lines.
+    const doc = parse(
+      'id: w\nname: n\nversion: 1\nstatus: draft\nsteps:\n  # note\n  [{ id: s1, use: a }, { id: s2, use: b }]\n',
+    )
+    addStep({ use: 'c' }, { index: 0 }).apply(doc)
+
+    const text = doc.toString()
+    expect(text).toContain('# note')
+    expect(text.indexOf('# note')).toBeLessThan(text.indexOf('['))
+  })
+
+  it('keeps a flow list’s comment when its only Step is removed', () => {
+    const doc = parse(
+      'id: w\nname: n\nversion: 1\nstatus: draft\nsteps:\n  # note\n  [{ id: s1, use: a }]\n',
+    )
+    removeStep('s1').apply(doc)
+    expect(doc.toString()).toContain('# note')
+  })
+
   it('leaves a flow-style list the user filled in alone', () => {
     // Hatua does not own the file's formatting (ADR-0001). An empty `[]` is not
     // a formatting choice about content there is none of; a populated one is.

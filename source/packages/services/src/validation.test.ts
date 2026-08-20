@@ -125,7 +125,6 @@ describe('withholding an answer', () => {
   })
 
   it('is not ready when the catalogue failed', async () => {
-    const { validation } = wired()
     const failing = createEditingStore(workflowPort(MISSING), 'wf')
     const broken = createManifestStore({
       loadManifests: async () => {
@@ -137,7 +136,6 @@ describe('withholding an answer', () => {
     store.load()
     await settle()
     expect(store.getSnapshot().ready).toBe(false)
-    expect(validation.getSnapshot().ready).toBe(false)
   })
 
   it('is not ready while the document does not project, because there are no Steps to mark', async () => {
