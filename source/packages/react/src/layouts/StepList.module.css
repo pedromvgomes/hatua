@@ -1,7 +1,19 @@
 @layer hatua {
+  /*
+   * A grid with one sized row, not a bare flex column.
+   *
+   * `overflow-y: auto` on the body only does anything once the body has a
+   * height to overflow, and in a flex column with no `flex` on the child that
+   * height is the CONTENT's — so the list grew straight past the panel instead
+   * of scrolling inside it, and <TabbedPanel>'s `overflow: hidden` clipped it
+   * over whatever sat below. Adding a Step is what made it long enough to
+   * notice. `minmax(0, 1fr)` is the same shape `Library` uses, and the `0`
+   * minimum is the load-bearing half: a plain `1fr` floors at min-content and
+   * overflows again.
+   */
   .stepList {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
     block-size: 100%;
     min-block-size: 0;
     background: var(--hatua-surface-card);
@@ -69,19 +81,24 @@
     display: block;
   }
 
-  /* The insert point: a full-width line that only shows itself under a drag,
-     with a `+` sitting on it. 16px so a dense list stays dense. */
+  /*
+   * The insert point: a full-width line that only shows itself under a drag,
+   * with a `+` sitting on it. 16px so a dense list stays dense — and the button
+   * is 20px, which is the design's intent and the reason both children are
+   * taken out of flow. Laid out inline they made the row 20px tall and pushed
+   * every Step down; absolutely positioned, the circle overhangs its 16px row
+   * on purpose and sits ON the rows either side rather than between them.
+   */
   .gap {
     position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: center;
     block-size: 16px;
   }
 
   .gapLine {
     position: absolute;
     inset-inline: 0;
+    inset-block-start: 50%;
+    translate: 0 -50%;
     block-size: 2px;
     border-radius: 1px;
     background: transparent;
@@ -92,7 +109,13 @@
   }
 
   .insert {
-    position: relative;
+    position: absolute;
+    inset-inline-start: 50%;
+    inset-block-start: 50%;
+    translate: -50% -50%;
+    /* Above the rows it overhangs, or the circle is painted under the next
+       Step's background and only half of it is clickable. */
+    z-index: 1;
     display: grid;
     place-items: center;
     inline-size: 20px;
@@ -236,10 +259,13 @@
 
   .branches,
   .loop {
+    display: block;
     margin: 0;
     /* The design's `depth × 14px`, expressed as one step per level of nesting
-       rather than as a computed inline style. */
-    padding: 0 0 0 14px;
+       rather than as a computed inline style. Logical, so a right-to-left Host
+       indents from the right. */
+    padding: 0;
+    padding-inline-start: 14px;
     list-style: none;
   }
 
@@ -281,17 +307,52 @@
     color: var(--hatua-text-muted);
   }
 
-  .loop {
+  /*
+   * The empty state of a list, which is the same element as its only insert
+   * point. The design's 42px dashed box — and unlike `.gap` it is always
+   * visible, because a Branch with nothing in it has to look like somewhere a
+   * Step goes rather than like a rendering failure.
+   */
+  .emptyGap {
+    position: relative;
     display: block;
+    margin: 2px 0 6px;
   }
 
-  .empty {
-    margin: 2px 0 6px;
-    padding: 12px;
+  .emptyInsert,
+  .emptyNote {
+    display: grid;
+    place-items: center;
+    inline-size: 100%;
+    min-block-size: 42px;
+    padding: 8px;
     border: 1px dashed var(--hatua-border-strong);
     border-radius: var(--hatua-radius-md);
+    background: none;
     color: var(--hatua-text-muted);
+    font: inherit;
     font-size: 0.75rem;
     text-align: center;
+  }
+
+  .emptyInsert {
+    cursor: pointer;
+  }
+
+  .emptyInsert:hover {
+    border-color: var(--hatua-border-accent);
+    color: var(--hatua-text-accent);
+    background: var(--hatua-accent-wash);
+  }
+
+  .emptyInsert:focus-visible {
+    outline: 2px solid var(--hatua-focus-ring);
+    outline-offset: 2px;
+  }
+
+  .emptyOver .emptyInsert,
+  .emptyOver .emptyNote {
+    border-color: var(--hatua-border-accent);
+    background: var(--hatua-accent-wash);
   }
 }

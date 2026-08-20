@@ -119,6 +119,15 @@ export function createLocalWorkflowStore(options: LocalWorkflowStoreOptions = {}
 
   const keyFor = (workflowId: string) => `${namespace}:${workflowId}`
 
+  /**
+   * What is stored, or an empty history when nothing is.
+   *
+   * It used to return a seeded Draft here, which made every read look like a
+   * workflow that already had one — so the very first `openDraft` reported
+   * `resumed: true` and told the user it had picked up somebody else's work.
+   * "Nothing is stored" and "a Draft exists" are different facts and only
+   * `openDraft` gets to turn the first into the second.
+   */
   const read = (workflowId: string): Stored => {
     const raw = localStorage.getItem(keyFor(workflowId))
     if (raw) {
@@ -129,7 +138,7 @@ export function createLocalWorkflowStore(options: LocalWorkflowStoreOptions = {}
         // answer than an editor that will not open.
       }
     }
-    return { versions: [{ version: 1, status: 'draft', updatedAt: now(), yaml: seed }] }
+    return { versions: [] }
   }
 
   const write = (workflowId: string, stored: Stored) =>
@@ -188,8 +197,13 @@ export function createLocalWorkflowStore(options: LocalWorkflowStoreOptions = {}
       // Claiming here also REVOKES whatever claim was live: the previous
       // holder's token stops matching, so its next write is refused and its
       // editor halts. See the takeover note at the top of this file.
+      //
+      // Random, not a timestamp. `Date.now()` gave two tabs opened in the same
+      // millisecond the SAME token — and a token that collides is not a claim
+      // at all: the displaced session goes on writing because its token still
+      // matches, which is the one thing this whole mechanism exists to stop.
       const displaced = stored.claim
-      const token = `edit_${draft.version}_${Date.now().toString(36)}`
+      const token = `edit_${draft.version}_${crypto.randomUUID()}`
       const lease = leaseFor(token)
       stored.claim = { token, expiresAt: lease.expiresAt }
       write(workflowId, stored)

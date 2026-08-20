@@ -169,7 +169,11 @@ export const Flat: Story = { parameters: wired(serving(SIMPLE)) }
  */
 export const DeepTree: Story = { parameters: wired(serving(DEEP)) }
 
-/** With a handler, every insert point becomes a `+`. Without one, none does. */
+/**
+ * With a handler, every insert point becomes a `+` — and an empty Branch
+ * becomes the control that fills it rather than a label describing a drop
+ * nothing on this screen can perform.
+ */
 export const Insertable: Story = {
   parameters: wired(serving(DEEP)),
   args: {
@@ -183,8 +187,18 @@ export const Selected: Story = {
   args: { defaultSelectedId: 's3' },
 }
 
-/** A workflow a user has started and not filled in. Not a fault. */
+/**
+ * A workflow a user has started and not filled in. Not a fault — and with no
+ * `onInsert` it is a drop target rather than a control, because moving an
+ * existing Step in needs no catalogue while adding a new one does.
+ */
 export const NoSteps: Story = { parameters: wired(serving(EMPTY)) }
+
+/** The same, given somewhere to send the insert point. */
+export const NoStepsInsertable: Story = {
+  parameters: wired(serving(EMPTY)),
+  args: { onInsert: (at) => console.info('insert at', at) },
+}
 
 /**
  * Parsed, held, and not a Workflow Definition. `toJSON()` throws here, so there

@@ -78,6 +78,8 @@ function recorder(
   options: {
     yaml?: string
     resumed?: boolean
+    /** Thrown from a NON-async openDraft, i.e. before any promise exists. */
+    throwSynchronously?: unknown
     lease?: Lease
     rejectSave?: Error
     rejectRenew?: Error
@@ -95,17 +97,26 @@ function recorder(
     port: undefined as unknown as WorkflowStore,
   }
 
+  const opened = async (): Promise<DraftSession> => {
+    if (options.throwOnOpen) throw options.throwOnOpen
+    if (options.rejectOpen) return Promise.reject(options.rejectOpen)
+    return {
+      token,
+      lease: options.lease ?? leaseFor(30),
+      yaml: options.yaml ?? SOURCE,
+      resumed: options.resumed ?? false,
+    }
+  }
+
   state.port = {
-    async openDraft(): Promise<DraftSession> {
+    // Deliberately NOT `async`. A port method is a plain method on the Host's
+    // object and nothing obliges it to return a promise at all, so a fake whose
+    // every method is `async` cannot reach the one path that exists for the
+    // Host whose isn't. See the synchronous-throw test below.
+    openDraft(): Promise<DraftSession> {
       state.opens++
-      if (options.throwOnOpen) throw options.throwOnOpen
-      if (options.rejectOpen) return Promise.reject(options.rejectOpen)
-      return {
-        token,
-        lease: options.lease ?? leaseFor(30),
-        yaml: options.yaml ?? SOURCE,
-        resumed: options.resumed ?? false,
-      }
+      if (options.throwSynchronously) throw options.throwSynchronously
+      return opened()
     },
     async saveDraft(_token: EditToken, yaml: string) {
       if (options.rejectSave) throw options.rejectSave
@@ -214,11 +225,23 @@ describe('opening a draft', () => {
     })
   })
 
+  it('survives a Host whose openDraft rejects with something that is not an Error', async () => {
+    const host = recorder({ rejectOpen: 'the endpoint said no' })
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+    expect(store.getSnapshot()).toMatchObject({
+      status: 'failed',
+      error: { message: 'the endpoint said no' },
+    })
+  })
+
   it('survives a Host whose openDraft throws synchronously', async () => {
-    // Nothing obliges a port method to be `async`. One that throws on a bad
-    // base URL would otherwise throw out of open(), which a region calls inside
-    // an effect — taking the React tree down instead of rendering a failure.
-    const host = recorder({ throwOnOpen: 'no base url configured' })
+    // Nothing obliges a port method to be `async`, and this fake's is not. One
+    // that throws on a bad base URL before returning any promise at all would
+    // otherwise throw straight out of open(), which a region calls inside an
+    // effect — taking the React tree down instead of rendering a failure.
+    const host = recorder({ throwSynchronously: 'no base url configured' })
     const store = createEditingStore(host.port, 'wf_morning')
     expect(() => store.open()).not.toThrow()
     await settle()
@@ -642,6 +665,20 @@ describe('autosave', () => {
 
     expect(host.writes).toHaveLength(2)
     expect(host.writes[1]).toBe(SOURCE)
+  })
+
+  it('skips the write when an undo has put the document back where the Host has it', async () => {
+    // The edit and its undo both scheduled a save; by the time the timer fires
+    // the text is what was last accepted. Writing it would be a round trip to
+    // say nothing, and reporting `pending` afterwards would be a lie.
+    const { host, store } = await open()
+    store.apply(removeStep('s1'))
+    await vi.advanceTimersByTimeAsync(200)
+    store.undo()
+
+    await vi.advanceTimersByTimeAsync(500)
+    expect(host.writes).toHaveLength(0)
+    expect(ready(store).save).toEqual({ state: 'saved' })
   })
 
   it('does not write when nothing changed', async () => {

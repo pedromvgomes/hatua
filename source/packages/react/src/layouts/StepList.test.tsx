@@ -177,9 +177,26 @@ describe('StepList', () => {
     expect(screen.getByText(/core\.for_each · 1 step$/)).toBeDefined()
   })
 
-  it('offers a Branch with no Steps somewhere to drop one', async () => {
+  it('offers a Branch with no Steps somewhere to put one', async () => {
+    // One element, not two. This used to render the Branch's insert point AND a
+    // separate "Drop a Component here" box below it — of which the visible one
+    // did nothing and the working one was invisible until hover. It also named
+    // the wrong thing: the Library's cards are not draggable and sit behind
+    // another tab, so there is no Component to drop here.
     mount(host())
-    expect(await screen.findByText('Drop a Component here')).toBeDefined()
+    expect(await screen.findByText('Drop a Step here')).toBeDefined()
+    expect(screen.queryByText(/Drop a Component/)).toBeNull()
+  })
+
+  it('turns the empty Branch into the control that fills it, when there is a handler', async () => {
+    mount(host(), { onInsert: () => {} })
+    await screen.findByText('Fetch mail')
+
+    expect(
+      screen.getByRole('button', { name: 'Add the first Step to the “Otherwise” branch' }),
+    ).toBeDefined()
+    // ...and then it is a control rather than a label.
+    expect(screen.queryByText('Drop a Step here')).toBeNull()
   })
 
   it('reports a failed open, with a way back', async () => {
@@ -210,8 +227,20 @@ describe('StepList', () => {
   })
 
   it('renders an empty workflow as a state, not a fault', async () => {
+    // No special case for it any more: a sequence of nothing renders exactly
+    // one insert point, and that insert point knows how to be an empty state.
     mount(host('id: wf\nname: n\nversion: 1\nstatus: draft\nsteps: []\n'))
-    expect(await screen.findByText(/No Steps yet/)).toBeDefined()
+    expect(await screen.findByText('Drop a Step here')).toBeDefined()
+  })
+
+  it('lets an empty workflow be filled from its own insert point', async () => {
+    const onInsert = vi.fn()
+    mount(host('id: wf\nname: n\nversion: 1\nstatus: draft\nsteps: []\n'), { onInsert })
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Add the first Step to the workflow' }),
+    )
+    expect(onInsert).toHaveBeenCalledWith({ index: 0 })
   })
 })
 
@@ -279,7 +308,7 @@ describe('edits go through the store as commands', () => {
 
     expect(screen.queryByText('Ping the channel')).toBeNull()
     // The Branch is still there, now empty and saying so.
-    expect(screen.getAllByText('Drop a Component here')).toHaveLength(2)
+    expect(screen.getAllByText('Drop a Step here')).toHaveLength(2)
   })
 
   it('hands an insert point out rather than guessing at a Component', async () => {
@@ -373,6 +402,111 @@ describe('edits go through the store as commands', () => {
     fireEvent.drop(target, { dataTransfer })
 
     await waitFor(() => expect(rowNames().at(-1)).toBe('Fetch mail'))
+  })
+})
+
+describe('dragging', () => {
+  const dataTransfer = () => ({
+    effectAllowed: '',
+    dropEffect: '',
+    setData: vi.fn(),
+    getData: vi.fn(),
+  })
+
+  const drag = (from: HTMLElement, onto: HTMLElement) => {
+    const transfer = dataTransfer()
+    fireEvent.dragStart(from, { dataTransfer: transfer })
+    fireEvent.dragOver(onto, { dataTransfer: transfer })
+    fireEvent.drop(onto, { dataTransfer: transfer })
+  }
+
+  const gapNamed = (name: string) =>
+    screen.getByRole('button', { name }).closest('li') as HTMLElement
+
+  it('moves a Step nested inside a loop', async () => {
+    /*
+     * Regression, and the same shape as the Alt+Arrow one. `onDragStart`
+     * bubbles from the dragged row's <li> up through every container's, so the
+     * LAST handler to run won: `dragging` held the loop's id rather than the
+     * Step's, and dropping into that loop's own list was refused as a move into
+     * itself. Nothing moved and nothing said why. Root-level rows have no
+     * ancestor <li>, so only nested drags were affected.
+     */
+    const source = host(
+      `id: wf
+name: n
+version: 1
+status: draft
+steps:
+  - id: s1
+    use: core.for_each
+    name: "Each message"
+    steps:
+      - id: s2
+        use: email.send
+        name: "Send email"
+      - id: s3
+        use: email.send
+        name: "Send digest"
+`,
+    )
+    mount(source, { onInsert: () => {} })
+    await screen.findByText('Send digest')
+
+    drag(rowFor('Send digest'), gapNamed('Insert a Step at the start of the “Each message” loop'))
+
+    await waitFor(() => expect(rowNames()).toEqual(['Each message', 'Send digest', 'Send email']))
+  })
+
+  it('moves a Step nested inside a Branch', async () => {
+    const source = host()
+    mount(source, { onInsert: () => {} })
+    await screen.findByText('Ping the channel')
+
+    drag(rowFor('Ping the channel'), gapNamed('Insert a Step at the start of the workflow'))
+    await waitFor(() => expect(rowNames()[0]).toBe('Ping the channel'))
+  })
+
+  it('does nothing when the drop lands with no drag in progress', async () => {
+    const source = host()
+    mount(source, { onInsert: () => {} })
+    await screen.findByText('Fetch mail')
+
+    const transfer = dataTransfer()
+    fireEvent.drop(gapNamed('Insert a Step at the start of the workflow'), {
+      dataTransfer: transfer,
+    })
+
+    await act(() => Promise.resolve())
+    expect(rowNames()[0]).toBe('Fetch mail')
+    expect(source.writes).toHaveLength(0)
+  })
+
+  it('clears the drag when it is abandoned rather than dropped', async () => {
+    const source = host()
+    mount(source, { onInsert: () => {} })
+    await screen.findByText('Fetch mail')
+
+    const row = rowFor('Fetch mail')
+    fireEvent.dragStart(row, { dataTransfer: dataTransfer() })
+    fireEvent.dragEnd(row)
+
+    // With the drag cleared, a later drop is inert.
+    fireEvent.drop(gapNamed('Insert a Step after Archive each'), { dataTransfer: dataTransfer() })
+    await act(() => Promise.resolve())
+    expect(rowNames()[0]).toBe('Fetch mail')
+  })
+
+  it('stops lighting up an insert point once the pointer leaves it', async () => {
+    const source = host()
+    mount(source, { onInsert: () => {} })
+    await screen.findByText('Fetch mail')
+
+    const gap = gapNamed('Insert a Step at the start of the workflow')
+    fireEvent.dragStart(rowFor('Fetch mail'), { dataTransfer: dataTransfer() })
+    fireEvent.dragOver(gap, { dataTransfer: dataTransfer() })
+    fireEvent.dragLeave(gap)
+    expect(gap.className).not.toMatch(/gapOver/)
   })
 })
 

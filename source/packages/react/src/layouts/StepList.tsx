@@ -233,40 +233,25 @@ export function StepList({
           ) : null}
 
           {workflow && definition ? (
-            definition.steps.length === 0 ? (
-              <ul className={styles.sequence}>
-                <Gap
-                  at={{ index: 0 }}
-                  label="Insert a Step at the start of the workflow"
-                  onInsert={onInsert}
-                  dragging={dragging}
-                  onDrop={move}
-                />
-                {/* <li>, because <Gap> renders one and an orphaned list item
-                    is both invalid markup and an insert control the
-                    accessibility tree has nowhere to put. */}
-                <li className={styles.note}>
-                  No Steps yet. Add one from the Library, or use the <b>+</b> above.
-                </li>
-              </ul>
-            ) : (
-              <Sequence
-                steps={definition.steps}
-                scope="the workflow"
-                at={{ index: 0 }}
-                selectedId={selectedId}
-                collapsed={collapsed}
-                dragging={dragging}
-                onSelect={select}
-                onToggle={toggle}
-                onRemove={remove}
-                onInsert={onInsert}
-                onDropStep={move}
-                onDragStart={setDragging}
-                onDragEnd={() => setDragging(null)}
-                onNudge={nudge}
-              />
-            )
+            // No special case for the empty workflow: a <Sequence> of nothing
+            // renders exactly one insert point, and that insert point already
+            // knows how to be an empty state.
+            <Sequence
+              steps={definition.steps}
+              scope="the workflow"
+              at={{ index: 0 }}
+              selectedId={selectedId}
+              collapsed={collapsed}
+              dragging={dragging}
+              onSelect={select}
+              onToggle={toggle}
+              onRemove={remove}
+              onInsert={onInsert}
+              onDropStep={move}
+              onDragStart={setDragging}
+              onDragEnd={() => setDragging(null)}
+              onNudge={nudge}
+            />
           ) : null}
         </div>
       </section>
@@ -313,7 +298,15 @@ function Sequence({ steps, scope, at, ...handlers }: SequenceProps) {
     <ul className={styles.sequence}>
       <Gap
         at={{ ...at, index: 0 }}
-        label={`Insert a Step at the start of ${scope}`}
+        label={
+          steps.length === 0
+            ? `Add the first Step to ${scope}`
+            : `Insert a Step at the start of ${scope}`
+        }
+        // An empty list has exactly one insert point, and it is the only thing
+        // in it — so it stops being a 16px sliver that appears on hover and
+        // becomes the branch's empty state.
+        empty={steps.length === 0}
         onInsert={onInsert}
         dragging={dragging}
         onDrop={onDropStep}
@@ -328,6 +321,14 @@ function Sequence({ steps, scope, at, ...handlers }: SequenceProps) {
               className={styles.item}
               draggable
               onDragStart={(event) => {
+                // A container's <li> WRAPS its children's, so this fires again
+                // at every enclosing level and the last one to run wins:
+                // dragging a Step inside a loop left `dragging` holding the
+                // LOOP's id, and dropping it into that loop's own list was then
+                // refused as a move into itself. Nothing happened, and nothing
+                // said why. Root-level rows have no ancestor <li>, which is
+                // exactly why only nested drags were broken.
+                event.stopPropagation()
                 event.dataTransfer.effectAllowed = 'move'
                 // Set for the platform's sake — a drag with no data is a no-op
                 // in some browsers — while the id we actually read is held in
@@ -336,7 +337,10 @@ function Sequence({ steps, scope, at, ...handlers }: SequenceProps) {
                 event.dataTransfer.setData('text/plain', step.id)
                 handlers.onDragStart(step.id)
               }}
-              onDragEnd={handlers.onDragEnd}
+              onDragEnd={(event) => {
+                event.stopPropagation()
+                handlers.onDragEnd()
+              }}
               onKeyDown={(event) => handlers.onNudge(event, step, here, steps.length)}
             >
               <Row
@@ -364,7 +368,6 @@ function Sequence({ steps, scope, at, ...handlers }: SequenceProps) {
                         scope={`the “${branch.label}” branch`}
                         at={{ parentId: step.id, branchIndex, index: 0 }}
                       />
-                      {branch.steps.length === 0 ? <EmptyBranch /> : null}
                     </li>
                   ))}
                 </ul>
@@ -408,6 +411,7 @@ function Sequence({ steps, scope, at, ...handlers }: SequenceProps) {
 function Gap({
   at,
   label,
+  empty = false,
   onInsert,
   dragging,
   onDrop,
@@ -419,6 +423,19 @@ function Gap({
    * the panel top to bottom would hear the same sentence at each of them.
    */
   label: string
+  /**
+   * This gap is the only one in its list, because the list is empty — so it
+   * draws as the design's dashed box rather than as a sliver between two rows.
+   *
+   * One element, not two. An empty Branch used to render this gap AND a
+   * separate "Drop a Component here" box under it: two affordances for one
+   * place, of which the visible one did nothing and the working one was
+   * invisible until hover. It also promised something the screen cannot do —
+   * the Library's cards are not draggable and sit behind another tab, so there
+   * is no Component to drop. What CAN be dropped here is an existing Step from
+   * the tree, which is what the copy now says.
+   */
+  empty?: boolean
   onInsert?: (at: InsertPoint) => void
   dragging: string | null
   onDrop: (id: string, to: InsertPoint) => void
@@ -428,7 +445,10 @@ function Gap({
 
   return (
     <li
-      className={cx(styles.gap, over && active && styles.gapOver)}
+      className={cx(
+        empty ? styles.emptyGap : styles.gap,
+        over && active && (empty ? styles.emptyOver : styles.gapOver),
+      )}
       onDragOver={(event) => {
         if (!active) return
         event.preventDefault()
@@ -443,17 +463,22 @@ function Gap({
         onDrop(dragging, at)
       }}
     >
-      <span className={styles.gapLine} />
+      {empty ? null : <span className={styles.gapLine} />}
       {onInsert ? (
         <button
           type="button"
-          className={styles.insert}
+          className={empty ? styles.emptyInsert : styles.insert}
           aria-label={label}
           onClick={() => onInsert(at)}
         >
-          +
+          {empty ? '+ Add a Step' : '+'}
         </button>
-      ) : null}
+      ) : (
+        // No handler, so nothing here can add a Step — but the drop target is
+        // still live, because moving an existing Step into an empty Branch
+        // needs no catalogue at all.
+        empty && <span className={styles.emptyNote}>Drop a Step here</span>
+      )}
     </li>
   )
 }
@@ -526,8 +551,6 @@ function BranchHeader({ branch, keyword }: { branch: Branch; keyword: string }) 
     </p>
   )
 }
-
-const EmptyBranch = () => <p className={styles.empty}>Drop a Component here</p>
 
 /** The display name, falling back to the id — which is what a Step always has. */
 const nameOf = (step: Step) => step.name || step.id
