@@ -44,6 +44,7 @@ const CATALOGUE = indexManifests([
     ],
   }),
   manifest({ use: 'flag', fields: [{ k: 'on', label: 'On', kind: 'bool', req: true }] }),
+  manifest({ use: 'headers', fields: [{ k: 'rows', label: 'Rows', kind: 'map', req: true }] }),
   manifest({ use: 'core.fork' }),
   manifest({ use: 'core.for_each' }),
 ])
@@ -112,6 +113,30 @@ describe('missing required fields', () => {
         CATALOGUE,
       ).map((d) => d.fieldKey),
     ).toEqual(['at'])
+  })
+
+  it('treats an empty list as unfilled, because a map field with no entries says nothing', () => {
+    expect(
+      missingRequiredFields(
+        workflow([{ id: 's1', use: 'headers', with: { rows: [] } }]),
+        CATALOGUE,
+      ).map((d) => d.fieldKey),
+    ).toEqual(['rows'])
+
+    expect(
+      missingRequiredFields(
+        workflow([
+          { id: 's1', use: 'headers', with: { rows: [{ key: 'a', value: 'b', type: 'text' }] } },
+        ]),
+        CATALOGUE,
+      ),
+    ).toEqual([])
+  })
+
+  it('hides a `when` field whose gating key is not set at all', () => {
+    // `with: {}` means `mode` is absent rather than wrong. The field it gates
+    // is not on screen, so it is not missing.
+    expect(missingRequiredFields(workflow([{ id: 's1', use: 'notify' }]), CATALOGUE)).toEqual([])
   })
 
   it('reaches Steps nested in Branches and loops', () => {

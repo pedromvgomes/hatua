@@ -608,6 +608,37 @@ describe('undo and redo', () => {
     expect(ready(store).redoLabel).toBeNull()
   })
 
+  it('records nothing for a command that succeeds and changes nothing', async () => {
+    // Dropping a Step onto the insert point directly above where it already
+    // sits. The command finds its target and throws nothing — it simply has no
+    // work to do — so there must be nothing to undo either.
+    const { store } = await open()
+    store.apply(moveStep('s1', { index: 0 }))
+
+    expect(ready(store).text).toBe(SOURCE)
+    expect(ready(store).undoLabel).toBeNull()
+  })
+
+  it('bounds the history, so a long session cannot grow without limit', async () => {
+    // Every entry is a copy of the document's text, which is the whole cost of
+    // undoing by restoring text rather than replaying an inverse.
+    const { store } = await open()
+
+    // 101 edits against a 100-deep stack: the first is pushed out.
+    for (let n = 0; n < 101; n++) {
+      store.apply(addStep({ use: `step.${n}` }, { index: 0 }))
+    }
+    expect(ready(store).undoLabel).toBe('Add step.100')
+
+    for (let n = 0; n < 100; n++) store.undo()
+    expect(ready(store).undoLabel).toBeNull()
+
+    // Walked all the way back and still one edit from where it started,
+    // because the oldest revision was dropped rather than the stack growing.
+    expect(ready(store).text).not.toBe(SOURCE)
+    expect(ready(store).definition?.steps).toHaveLength(4)
+  })
+
   it('does nothing on an empty stack', async () => {
     const { store } = await open()
     expect(() => {
