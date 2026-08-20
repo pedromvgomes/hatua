@@ -164,30 +164,82 @@ function mintId(document: WorkflowDocument): string {
   }
 }
 
+interface Seq {
+  items: unknown[]
+  flow?: boolean
+  commentBefore?: string
+}
+
+const asSeq = (value: unknown): Seq | undefined =>
+  value && typeof value === 'object' && 'items' in value && Array.isArray((value as Seq).items)
+    ? (value as Seq)
+    : undefined
+
+/**
+ * A comment above the FIRST item of a block sequence is anchored to the
+ * sequence, not to the item — every other item carries its own `commentBefore`.
+ *
+ * Left alone, that makes the comment describe a position rather than a Step:
+ * remove the first Step and its comment stays behind to label whatever moves
+ * up; move it and the comment does not go with it. The user wrote "# retry the
+ * flaky one" above a Step, and it ends up above a different one, in a file that
+ * lives in their repository.
+ *
+ * So it is lifted onto the item before any splice and lowered back onto the
+ * sequence afterwards. Between those two calls every comment belongs to a node,
+ * which is the model the rest of the file assumes.
+ */
+const liftLeadingComment = (seq: Seq) => {
+  const first = seq.items[0] as { commentBefore?: string } | undefined
+  if (!first || seq.commentBefore === undefined) return
+  first.commentBefore =
+    first.commentBefore === undefined
+      ? seq.commentBefore
+      : `${seq.commentBefore}\n${first.commentBefore}`
+  seq.commentBefore = undefined
+}
+
+const lowerLeadingComment = (seq: Seq) => {
+  const first = seq.items[0] as { commentBefore?: string } | undefined
+  if (!first || first.commentBefore === undefined) return
+  seq.commentBefore = first.commentBefore
+  first.commentBefore = undefined
+}
+
 /**
  * Splice a node into the sequence at `listPath`, creating the sequence when the
  * document has none — an empty Branch has no `steps:` key at all until the
  * first Step lands in it.
  */
 function insertNode(document: WorkflowDocument, listPath: Path, index: number, node: unknown) {
-  const seq = document.ast.getIn(listPath, true)
+  const seq = asSeq(document.ast.getIn(listPath, true))
 
-  if (!seq || typeof seq !== 'object' || !('items' in seq) || !Array.isArray(seq.items)) {
+  if (!seq) {
     document.ast.setIn(listPath, [node])
     return
   }
 
-  const items = seq.items as unknown[]
-  items.splice(Math.max(0, Math.min(index, items.length)), 0, node)
+  // `steps: []` is flow style, and splicing into it keeps flow style — so the
+  // first Step added to an empty Branch re-serialises the whole subtree onto
+  // one line as `[ { id: s3, use: email.send } ]`, beside siblings written in
+  // block. Only an EMPTY sequence is converted: a list the user wrote in flow
+  // style with items in it is a formatting choice, and Hatua does not own the
+  // file's formatting (ADR-0001).
+  if (seq.items.length === 0) seq.flow = false
+
+  liftLeadingComment(seq)
+  seq.items.splice(Math.max(0, Math.min(index, seq.items.length)), 0, node)
+  lowerLeadingComment(seq)
 }
 
 /** Remove the node at `listPath[index]` and hand it back, formatting intact. */
 function detachNode(document: WorkflowDocument, listPath: Path, index: number): unknown {
-  const seq = document.ast.getIn(listPath, true)
-  if (!seq || typeof seq !== 'object' || !('items' in seq) || !Array.isArray(seq.items)) {
-    throw new Error(`No step sequence at ${listPath.join('.')}`)
-  }
-  const [node] = (seq.items as unknown[]).splice(index, 1)
+  const seq = asSeq(document.ast.getIn(listPath, true))
+  if (!seq) throw new Error(`No step sequence at ${listPath.join('.')}`)
+
+  liftLeadingComment(seq)
+  const [node] = seq.items.splice(index, 1)
+  lowerLeadingComment(seq)
   return node
 }
 

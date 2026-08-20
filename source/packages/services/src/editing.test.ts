@@ -751,6 +751,47 @@ describe('autosave', () => {
     })
   })
 
+  it('never has two writes open at once, whatever the Host takes to answer', async () => {
+    /*
+     * Two overlapping saveDraft calls can land in either order, and a Host that
+     * applies the older one last is left holding text the user has moved past.
+     * Reachable whenever a write takes longer than the autosave delay.
+     */
+    let open = 0
+    let peak = 0
+    const releases: (() => void)[] = []
+    const host = recorder()
+    host.port.saveDraft = async (_token, yaml) => {
+      open++
+      peak = Math.max(peak, open)
+      await new Promise<void>((resolve) => releases.push(resolve))
+      open--
+      host.writes.push(yaml)
+    }
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 500 })
+    store.open()
+    await settle()
+
+    store.apply(removeStep('s1'))
+    await vi.advanceTimersByTimeAsync(500)
+    store.apply(removeStep('s4'))
+    await vi.advanceTimersByTimeAsync(500)
+
+    expect(peak).toBe(1)
+
+    // The write that was open reschedules on completion, so the later edit is
+    // not dropped by having waited.
+    releases.shift()?.()
+    await settle()
+    await vi.advanceTimersByTimeAsync(500)
+    releases.shift()?.()
+    await settle()
+
+    expect(peak).toBe(1)
+    expect(host.writes).toHaveLength(2)
+    expect(host.writes[1]).not.toContain('id: s4')
+  })
+
   it('reschedules rather than reporting saved when the user typed during the write', async () => {
     // Otherwise the last few edits are reported written when they are not,
     // which is the one autosave failure a user cannot see coming.

@@ -202,6 +202,26 @@ describe('Build wires the Library to the Flow tab', () => {
     expect(text.indexOf('use: a')).toBeLessThan(text.indexOf('use: email.send'))
   })
 
+  it('forgets the pending point when the user navigates away instead of picking', async () => {
+    // Kept, it would silently govern where the next Component lands — or name a
+    // Step removed in the meantime, which every command refuses, so the click
+    // would do nothing and say nothing about why.
+    wired()
+    await screen.findByText('First')
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Insert a Step at the start of the workflow' }),
+    )
+    expect(screen.getByRole('tab', { selected: true }).textContent).toBe('Library')
+
+    // Thought better of it.
+    fireEvent.click(screen.getByRole('tab', { name: 'Flow' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Library' }))
+    fireEvent.click(await screen.findByRole('button', { name: /Send email/ }))
+
+    await waitFor(() => expect(rowNames()).toEqual(['First', 'Second', 'Send email']))
+  })
+
   it('forgets the pending point once it has been used', async () => {
     wired()
     await screen.findByText('First')

@@ -137,7 +137,15 @@ export function Build({ className, ...rest }: BuildProps) {
                 { id: 'data', label: 'Data', content: <Data /> },
               ]}
               tabId={tab}
-              onTabChange={setTab}
+              onTabChange={(next) => {
+                // Navigating away by hand abandons the insertion point. Kept,
+                // it would silently govern where the NEXT Component lands
+                // instead of appending — or name a Step removed in the
+                // meantime, which every command refuses, so the click would do
+                // nothing at all and say nothing about why.
+                setPending(null)
+                setTab(next)
+              }}
             />
           </div>
           <div className={styles.map}>

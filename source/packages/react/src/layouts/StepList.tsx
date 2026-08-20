@@ -175,6 +175,13 @@ export function StepList({
     count: number,
   ) => {
     if (!event.altKey) return
+
+    // Only this row's own controls. A nested list's insert points are DOM
+    // descendants of their container's <li>, so the innermost handler an
+    // Alt+Arrow from a `+` inside a loop reaches is the LOOP's — and stopping
+    // propagation cannot help, because there is no nearer handler to stop it
+    // at. Pressing it there moved the loop rather than doing nothing.
+    if ((event.target as HTMLElement).closest('li') !== event.currentTarget) return
     const delta = event.key === 'ArrowUp' ? -1 : event.key === 'ArrowDown' ? 1 : 0
     if (delta === 0) return
 

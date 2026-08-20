@@ -89,7 +89,9 @@ const theme = createTheme({ accent: 'oklch(0.63 0.115 195)' })
 
 /**
  * The Host's storage, and the ways it can behave. localStorage really persists,
- * so a reload resumes the same Draft and a second tab is refused the lease.
+ * so a reload resumes the same Draft — and a second tab takes the claim, which
+ * halts the first on its next write. See src/workflow-store.ts on why takeover
+ * rather than refusal.
  */
 const WORKFLOW_STORES = {
   local: () => createLocalWorkflowStore(),

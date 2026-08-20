@@ -209,6 +209,18 @@ export function createEditingStore(
   /** The text last accepted by the Host, so a write can tell whether it is still current. */
   let savedText = ''
 
+  /**
+   * True while a write is open.
+   *
+   * Two overlapping `saveDraft` calls can land in either order, and a Host that
+   * applies the older one last is left holding text the user has already moved
+   * past. Reachable whenever a write takes longer than the autosave delay — a
+   * slow Host and a fast typist is all it needs. A write that finds another in
+   * flight returns; the one that is running reschedules on completion if the
+   * document has moved on, so nothing is dropped by waiting.
+   */
+  let writing = false
+
   const notify = () => {
     // Copied: a listener may unsubscribe while being notified — React does
     // exactly that when a subscribed component unmounts during a render this
@@ -273,6 +285,7 @@ export function createEditingStore(
     // means telling the user their claim is gone and offering to reopen, which
     // is the toolbar's screen to render.
     if (save.state === 'halted') return
+    if (writing) return
 
     const mine = generation
     const attempted = document.toString()
@@ -282,12 +295,15 @@ export function createEditingStore(
     }
 
     setSave(SAVING)
+    writing = true
     try {
       await port.saveDraft(token, attempted)
     } catch (cause) {
+      writing = false
       if (mine === generation) halt(cause)
       return
     }
+    writing = false
     if (mine !== generation || disposed) return
 
     savedText = attempted

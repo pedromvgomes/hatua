@@ -185,3 +185,74 @@ describe('labels', () => {
     expect(moveStep('s1', { index: 0 }).label).toBe('Move s1')
   })
 })
+
+describe('formatting the user chose', () => {
+  it('writes block style into an empty `steps: []`, like every sibling', () => {
+    // Splicing into a flow-style sequence keeps flow style, so the first Step
+    // added to an empty Branch would re-serialise the whole subtree onto one
+    // line beside siblings written in block.
+    const doc = parse(
+      'id: w\nname: n\nversion: 1\nstatus: draft\nsteps:\n  - id: s1\n    use: core.fork\n    branches:\n      - label: A\n        steps:\n          - id: s2\n            use: a\n      - label: Otherwise\n        steps: []\n',
+    )
+    addStep({ use: 'email.send' }, { parentId: 's1', branchIndex: 1, index: 0 }).apply(doc)
+
+    expect(doc.toString()).not.toContain('[')
+    expect(doc.toString()).toContain('        steps:\n          - id: s3')
+  })
+
+  it('leaves a flow-style list the user filled in alone', () => {
+    // Hatua does not own the file's formatting (ADR-0001). An empty `[]` is not
+    // a formatting choice about content there is none of; a populated one is.
+    const doc = parse('id: w\nname: n\nversion: 1\nstatus: draft\nsteps: [{ id: s1, use: a }]\n')
+    addStep({ use: 'b' }, { index: 1 }).apply(doc)
+    expect(doc.toString()).toContain('[')
+  })
+})
+
+describe('a comment stays with the Step it describes', () => {
+  /*
+   * A comment above the FIRST item of a block sequence is anchored to the
+   * sequence rather than the item, so a splice at index 0 leaves it behind to
+   * label whatever moves up. The user wrote it about a Step, in a file that
+   * lives in their repository.
+   */
+  const COMMENTED =
+    'id: w\nname: n\nversion: 1\nstatus: draft\nsteps:\n  # about s1\n  - id: s1\n    use: a\n  # about s2\n  - id: s2\n    use: b\n'
+
+  it('takes the first Step’s comment with it when it moves', () => {
+    const doc = parse(COMMENTED)
+    moveStep('s1', { index: 2 }).apply(doc)
+
+    const text = doc.toString()
+    expect(text.indexOf('# about s2')).toBeLessThan(text.indexOf('id: s2'))
+    expect(text.indexOf('id: s2')).toBeLessThan(text.indexOf('# about s1'))
+    expect(text.indexOf('# about s1')).toBeLessThan(text.indexOf('id: s1'))
+  })
+
+  it('takes it away when the first Step is removed', () => {
+    const doc = parse(COMMENTED)
+    removeStep('s1').apply(doc)
+
+    const text = doc.toString()
+    expect(text).not.toContain('# about s1')
+    expect(text.indexOf('# about s2')).toBeLessThan(text.indexOf('id: s2'))
+  })
+
+  it('leaves it on its own Step when another is inserted above', () => {
+    const doc = parse(COMMENTED)
+    addStep({ use: 'new' }, { index: 0 }).apply(doc)
+
+    const text = doc.toString()
+    expect(text.indexOf('use: new')).toBeLessThan(text.indexOf('# about s1'))
+    expect(text.indexOf('# about s1')).toBeLessThan(text.indexOf('id: s1'))
+  })
+
+  it('keeps every other Step’s comment where it was', () => {
+    const doc = parse(COMMENTED)
+    moveStep('s2', { index: 0 }).apply(doc)
+
+    const text = doc.toString()
+    expect(text.indexOf('# about s2')).toBeLessThan(text.indexOf('id: s2'))
+    expect(text.indexOf('# about s1')).toBeLessThan(text.indexOf('id: s1'))
+  })
+})

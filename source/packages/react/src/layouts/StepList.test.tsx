@@ -385,6 +385,26 @@ describe('edits go through the store as commands', () => {
     expect(source.writes).toHaveLength(0)
   })
 
+  it('ignores Alt+Arrow pressed on a nested insert point', async () => {
+    // A nested list's `+` buttons are DOM descendants of their container's
+    // <li>, so the innermost handler such a keypress reaches is the CONTAINER's
+    // — and stopping propagation cannot help, because there is no nearer
+    // handler to stop it at. It moved the loop instead of doing nothing.
+    const source = host()
+    mount(source, { onInsert: () => {} })
+    await screen.findByText('Archive')
+
+    const before = rowNames()
+    fireEvent.keyDown(
+      screen.getByRole('button', { name: 'Insert a Step at the start of the “Archive each” loop' }),
+      { key: 'ArrowUp', altKey: true },
+    )
+
+    await act(() => Promise.resolve())
+    expect(rowNames()).toEqual(before)
+    expect(source.writes).toHaveLength(0)
+  })
+
   it('ignores an arrow without Alt, which is how a list is read rather than reordered', async () => {
     mount(host())
     await screen.findByText('Fetch mail')
