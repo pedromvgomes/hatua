@@ -42,6 +42,9 @@ importers:
         specifier: ^19.2.0
         version: 19.2.8(react@19.2.8)
     devDependencies:
+      '@hatua/sdk':
+        specifier: workspace:*
+        version: link:../../sdk/js
       '@types/react':
         specifier: ^19.2.2
         version: 19.2.18

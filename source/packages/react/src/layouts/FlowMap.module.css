@@ -4,6 +4,6 @@
     block-size: 100%;
     min-block-size: 0;
     overflow: auto;
-    background: var(--surface-sunken);
+    background: var(--hatua-surface-sunken);
   }
 }

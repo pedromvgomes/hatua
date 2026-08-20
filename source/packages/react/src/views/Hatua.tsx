@@ -1,5 +1,5 @@
 import type { Theme } from '../theme/createTheme'
-import { type ColorMode, HatuaProvider } from '../theme/HatuaProvider'
+import { type ColorMode, HatuaProvider, type HostPorts } from '../theme/HatuaProvider'
 import { Build } from './Build'
 
 /**
@@ -23,11 +23,18 @@ export interface HatuaProps {
   theme?: Theme
   /** Omit to follow the Host's colour mode. */
   colorMode?: ColorMode
+  /**
+   * The Host's implementations of the ports Hatua reads. The default embedding
+   * still writes one element and nothing else — but a designer that showed the
+   * Host's own Components without being told where they live would have had to
+   * invent them, and Hatua invents none.
+   */
+  ports?: HostPorts
 }
 
-export function Hatua({ theme, colorMode }: HatuaProps) {
+export function Hatua({ theme, colorMode, ports }: HatuaProps) {
   return (
-    <HatuaProvider theme={theme} colorMode={colorMode}>
+    <HatuaProvider theme={theme} colorMode={colorMode} ports={ports}>
       <Build />
     </HatuaProvider>
   )

@@ -5,9 +5,9 @@
     width: 34px;
     height: 20px;
     padding: 0;
-    border: 1px solid var(--border-strong);
+    border: 1px solid var(--hatua-border-strong);
     border-radius: 999px;
-    background: var(--surface-sunken);
+    background: var(--hatua-surface-sunken);
     cursor: pointer;
     transition:
       background-color 120ms ease,
@@ -28,7 +28,7 @@
   }
 
   .toggle:focus-visible {
-    outline: 2px solid var(--focus-ring);
+    outline: 2px solid var(--hatua-focus-ring);
     outline-offset: 2px;
   }
 
@@ -38,8 +38,8 @@
   }
 
   .toggle[aria-checked="true"] {
-    background: var(--accent);
-    border-color: var(--accent);
+    background: var(--hatua-accent);
+    border-color: var(--hatua-accent);
   }
 
   .thumb {
@@ -49,20 +49,20 @@
     width: 14px;
     height: 14px;
     border-radius: 50%;
-    background: var(--surface-card);
+    background: var(--hatua-surface-card);
     transition: transform 120ms ease;
   }
 
   .toggle[aria-checked="true"] .thumb {
     transform: translateX(14px);
-    background: var(--text-on-accent);
+    background: var(--hatua-text-on-accent);
   }
 
   .field {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    color: var(--text-primary);
+    color: var(--hatua-text-primary);
     font-size: 0.875rem;
   }
 

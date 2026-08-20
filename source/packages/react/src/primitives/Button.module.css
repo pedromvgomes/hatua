@@ -12,7 +12,7 @@
     justify-content: center;
     gap: 6px;
     border: 1px solid transparent;
-    border-radius: var(--radius-md);
+    border-radius: var(--hatua-radius-md);
     font: inherit;
     font-weight: 500;
     line-height: 1;
@@ -25,7 +25,7 @@
   }
 
   .button:focus-visible {
-    outline: 2px solid var(--focus-ring);
+    outline: 2px solid var(--hatua-focus-ring);
     outline-offset: 2px;
   }
 
@@ -49,49 +49,49 @@
 
   /* --- variants --- */
   .primary {
-    background: var(--accent);
-    color: var(--text-on-accent);
+    background: var(--hatua-accent);
+    color: var(--hatua-text-on-accent);
   }
 
   .primary:hover:not(:disabled) {
-    background: var(--accent-hover);
+    background: var(--hatua-accent-hover);
   }
 
   .primary:active:not(:disabled) {
-    background: var(--accent-press);
+    background: var(--hatua-accent-press);
   }
 
   .secondary {
-    background: var(--surface-card);
-    color: var(--text-primary);
-    border-color: var(--border-strong);
+    background: var(--hatua-surface-card);
+    color: var(--hatua-text-primary);
+    border-color: var(--hatua-border-strong);
   }
 
   .secondary:hover:not(:disabled) {
-    background: var(--surface-sunken);
-    border-color: var(--border-accent);
+    background: var(--hatua-surface-sunken);
+    border-color: var(--hatua-border-accent);
   }
 
   .ghost {
     background: transparent;
-    color: var(--text-secondary);
+    color: var(--hatua-text-secondary);
   }
 
   .ghost:hover:not(:disabled) {
-    background: var(--accent-wash);
-    color: var(--text-accent);
+    background: var(--hatua-accent-wash);
+    color: var(--hatua-text-accent);
   }
 
   .danger {
-    background: var(--status-error);
-    color: var(--text-on-accent);
+    background: var(--hatua-status-error);
+    color: var(--hatua-text-on-accent);
   }
 
   .danger:hover:not(:disabled) {
-    background: oklch(from var(--status-error) calc(l - 0.06) c h);
+    background: oklch(from var(--hatua-status-error) calc(l - 0.06) c h);
   }
 
   .danger:active:not(:disabled) {
-    background: oklch(from var(--status-error) calc(l - 0.12) c h);
+    background: oklch(from var(--hatua-status-error) calc(l - 0.12) c h);
   }
 }

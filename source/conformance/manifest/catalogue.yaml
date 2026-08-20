@@ -1,12 +1,17 @@
 # A Host serving many manifests at one URL. Both this and a bare single manifest
 # must parse, since one file per component suits authoring and a catalogue suits
 # serving.
+#
+# `icon` is a URL the Host serves, not a name from an icon set — Hatua ships no
+# set for a name to mean anything against. Root-relative here, because that is
+# what a Host serving its own assets writes; absolute URLs and `data:` URIs are
+# equally valid.
 components:
   - kind: component
     use: email.send
     name: Send email
     group: Email
-    icon: mail
+    icon: /icons/mail.svg
     blurb: Send a message through a connected mailbox.
     fields:
       - k: connection
@@ -27,7 +32,7 @@ components:
     use: email.received
     name: When mail arrives
     group: Email
-    icon: inbox
+    icon: /icons/inbox.svg
     blurb: Starts the workflow when a message arrives.
     fields:
       - k: connection
@@ -47,7 +52,7 @@ components:
     use: agent.act
     name: Run agent
     group: Intelligence
-    icon: zap
+    icon: /icons/zap.svg
     blurb: Ask a model to act on the workflow's data.
     fields:
       - k: connection

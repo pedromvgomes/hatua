@@ -13,7 +13,7 @@ bare for the class-name map, and with `?inline` for the text the component
 renders. Nothing imports a stylesheet, here or anywhere.
 
 Every colour comes from a semantic alias defined in `../styles/base.css` —
-`--surface-card`, `--text-muted`, `--border-subtle` — never from a `--hatua-*`
+`--hatua-surface-card`, `--hatua-text-muted`, `--hatua-border-subtle` — never from a `--hatua-*`
 seed and never from a literal. That is ADR-0002's rule, and
 `../styles/tokens.test.ts` is the lint that holds it up.
 

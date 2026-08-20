@@ -51,7 +51,27 @@ $defs:
         description: Library grouping. Free-form so Hosts can add their own sections.
       icon:
         type: string
-        description: Icon name from the design system's set.
+        minLength: 1
+        description: >-
+          URL of the component's icon, resolved and fetched by the browser: absolute
+          (`https://cdn.example.com/icons/mail.svg`), root-relative (`/icons/mail.svg`), or a
+          `data:` URI. The Host serves the artwork, the same way it serves the manifest.
+
+          It is a URL rather than a name because a name is only meaningful against a set, and Hatua
+          ships no icon set — a Host adding a component of its own would have nothing to name. An
+          earlier draft of this field said "icon name from the design system's set", which could
+          never resolve to a picture and left the library card drawing the component's initial.
+
+          Square artwork, please: it is rendered into a fixed box and letterboxed if it is not.
+          SVG is the obvious choice, and the file is fetched as an image — script inside an SVG
+          does not execute in that position.
+
+          Whether it reads on both a light and a dark surface is the Host's to get right, since the
+          Host owns the file and Hatua cannot recolour it. Should one URL prove not to be enough,
+          this can widen to accept a per-mode pair without breaking a manifest that names one.
+
+          Optional. A component with no icon is drawn with a neutral placeholder rather than a
+          guess, so artwork never blocks declaring a component.
       blurb:
         type: string
         description: One sentence, shown on the library card.

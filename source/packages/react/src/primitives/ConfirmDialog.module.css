@@ -8,18 +8,18 @@
     align-items: center;
     justify-content: center;
     padding: 24px;
-    background: var(--scrim);
+    background: var(--hatua-scrim);
   }
 
   .dialog {
     width: 100%;
     max-width: 420px;
     padding: 20px;
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-lg);
-    background: var(--surface-raised);
-    color: var(--text-primary);
-    box-shadow: 0 24px 60px var(--shadow-color);
+    border: 1px solid var(--hatua-border-subtle);
+    border-radius: var(--hatua-radius-lg);
+    background: var(--hatua-surface-raised);
+    color: var(--hatua-text-primary);
+    box-shadow: 0 24px 60px var(--hatua-shadow-color);
   }
 
   .title {
@@ -30,7 +30,7 @@
 
   .description {
     margin: 8px 0 0;
-    color: var(--text-secondary);
+    color: var(--hatua-text-secondary);
     font-size: 0.875rem;
     line-height: 1.5;
   }

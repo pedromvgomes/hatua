@@ -42,7 +42,9 @@ function Answerable(props: Omit<ConfirmDialogProps, 'open' | 'onConfirm' | 'onCa
         Open dialog
       </Button>
       {answer && (
-        <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>Answered: {answer}</p>
+        <p style={{ color: 'var(--hatua-text-secondary)', fontSize: '0.875rem' }}>
+          Answered: {answer}
+        </p>
       )}
       <ConfirmDialog
         {...props}

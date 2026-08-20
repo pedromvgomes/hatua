@@ -53,7 +53,7 @@ export const WithoutVisibleLabel: Story = {
   render: () => (
     <div style={{ display: 'grid', gap: 10, justifyItems: 'start', maxWidth: 280 }}>
       <AriaOnlyToggle />
-      <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.8125rem' }}>
+      <p style={{ margin: 0, color: 'var(--hatua-text-secondary)', fontSize: '0.8125rem' }}>
         Nothing is missing. This switch is named <code>aria-label="Run branches in parallel"</code>,
         which is announced but not drawn — inspect it, or listen to it.
       </p>

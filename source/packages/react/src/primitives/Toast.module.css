@@ -16,7 +16,7 @@
     /* One tone colour, read by both the stripe and the progress bar. Local to
        this file rather than an alias in base.css: nothing outside a toast has
        any use for it. */
-    --toast-tone: var(--border-strong);
+    --hatua-toast-tone: var(--hatua-border-strong);
 
     /* Anchors the progress bar below. */
     position: relative;
@@ -27,26 +27,26 @@
     padding: 10px 12px;
     /* Clips the progress bar to the rounded corners. */
     overflow: hidden;
-    border: 1px solid var(--border-subtle);
-    border-inline-start: 3px solid var(--toast-tone);
-    border-radius: var(--radius-md);
-    background: var(--surface-raised);
-    color: var(--text-primary);
+    border: 1px solid var(--hatua-border-subtle);
+    border-inline-start: 3px solid var(--hatua-toast-tone);
+    border-radius: var(--hatua-radius-md);
+    background: var(--hatua-surface-raised);
+    color: var(--hatua-text-primary);
     font-size: 0.875rem;
     line-height: 1.4;
-    box-shadow: 0 10px 30px var(--shadow-color);
+    box-shadow: 0 10px 30px var(--hatua-shadow-color);
   }
 
   .info {
-    --toast-tone: var(--accent);
+    --hatua-toast-tone: var(--hatua-accent);
   }
 
   .success {
-    --toast-tone: var(--status-ok);
+    --hatua-toast-tone: var(--hatua-status-ok);
   }
 
   .error {
-    --toast-tone: var(--status-error);
+    --hatua-toast-tone: var(--hatua-status-error);
   }
 
   .body {
@@ -62,21 +62,21 @@
     block-size: 24px;
     padding: 0;
     border: none;
-    border-radius: var(--radius-sm);
+    border-radius: var(--hatua-radius-sm);
     background: transparent;
-    color: var(--text-muted);
+    color: var(--hatua-text-muted);
     font: inherit;
     line-height: 1;
     cursor: pointer;
   }
 
   .dismiss:hover {
-    background: var(--surface-sunken);
-    color: var(--text-primary);
+    background: var(--hatua-surface-sunken);
+    color: var(--hatua-text-primary);
   }
 
   .dismiss:focus-visible {
-    outline: 2px solid var(--focus-ring);
+    outline: 2px solid var(--hatua-focus-ring);
     outline-offset: 1px;
   }
 
@@ -97,7 +97,7 @@
     inset-block-end: 0;
     inline-size: 100%;
     block-size: 2px;
-    background: var(--toast-tone);
+    background: var(--hatua-toast-tone);
     animation-name: deplete;
     animation-timing-function: linear;
     animation-fill-mode: forwards;

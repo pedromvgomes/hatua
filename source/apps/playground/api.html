@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hatua playground — API-backed</title>
+    <!--
+      The Host's own page reset, not Hatua's. ADR-0003 is about Hatua never
+      asking a Host to import a stylesheet; a Host still styles its own page,
+      and the default body margin would otherwise push <Hatua>'s box past the
+      viewport and give this harness a phantom scrollbar. The height chain is
+      the Host's job too: the designer fills the box it is given, and without
+      one it collapses to the height of its own text.
+    -->
+    <style>
+      html,
+      body,
+      #root {
+        margin: 0;
+        block-size: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/api.tsx"></script>
+  </body>
+</html>

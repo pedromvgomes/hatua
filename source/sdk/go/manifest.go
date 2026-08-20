@@ -30,10 +30,14 @@ const (
 // new step type to appear in the library, inspector, reference tree and
 // validation — no screen-level code follows.
 type Manifest struct {
-	Kind     ManifestKind `yaml:"kind"`
-	Use      string       `yaml:"use"`
-	Name     string       `yaml:"name"`
-	Group    string       `yaml:"group,omitempty"`
+	Kind  ManifestKind `yaml:"kind"`
+	Use   string       `yaml:"use"`
+	Name  string       `yaml:"name"`
+	Group string       `yaml:"group,omitempty"`
+	// Icon is a URL the browser fetches — absolute, root-relative or a data:
+	// URI — not a name from an icon set. Hatua ships no set, so a name would be
+	// meaningless for a Host declaring a component of its own; the Host serves
+	// the artwork the same way it serves the manifest.
 	Icon     string       `yaml:"icon,omitempty"`
 	Blurb    string       `yaml:"blurb,omitempty"`
 	Once     bool         `yaml:"once,omitempty"`

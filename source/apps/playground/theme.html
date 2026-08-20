@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hatua playground — themes &amp; isolation</title>
+    <!--
+      The Host's own page reset, not Hatua's. ADR-0003 is about Hatua never
+      asking a Host to import a stylesheet; a Host still styles its own page,
+      and the default body margin would otherwise push <Hatua>'s box past the
+      viewport and give this harness a phantom scrollbar. The height chain is
+      the Host's job too: the designer fills the box it is given, and without
+      one it collapses to the height of its own text.
+    -->
+    <style>
+      html,
+      body,
+      #root {
+        margin: 0;
+      }
+
+      /*
+       * The Host's OWN design tokens, in the Host's own names — the names
+       * Hatua's aliases used to carry. Declared on :root, so they inherit into
+       * everything on the page including Hatua's subtree. That is the point:
+       * if Hatua still named a property --accent, everything below would be
+       * drawing this pink.
+       */
+      :root {
+        --accent: #e0218a;
+        --accent-wash: #fff0f7;
+        --surface-card: #fffafd;
+        --surface-page: #fff5fa;
+        --text-primary: #4a0d2c;
+        --text-muted: #a85c82;
+        --border-subtle: #f3b9d6;
+        --radius-md: 999px;
+        --font-mono: "Courier New", monospace;
+      }
+
+      body {
+        background: var(--surface-page);
+        color: var(--text-primary);
+        font: 13px/1.6 system-ui, sans-serif;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/theme.tsx"></script>
+  </body>
+</html>

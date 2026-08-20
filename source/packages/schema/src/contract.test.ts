@@ -147,7 +147,7 @@ describe('componentManifest', () => {
     use: 'email.send',
     name: 'Send email',
     group: 'Email',
-    icon: 'mail',
+    icon: '/icons/mail.svg',
     blurb: 'Send a message through a connected mailbox.',
     fields: [
       { k: 'connection', label: 'Mailbox', kind: 'conn', conn_type: 'email', req: true },

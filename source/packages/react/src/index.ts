@@ -1,13 +1,24 @@
+/**
+ * The Host's surface.
+ *
+ * The port types are re-exported rather than left in @hatua/services: a Host
+ * implements them and never installs that package, so making it reach past
+ * @hatua/react for the type of the thing it is being asked to write would be a
+ * seam that exists only in our directory layout.
+ */
+export type { Manifest } from '@hatua/schema'
+export type { ManifestSource } from '@hatua/services'
 export type {
   DataProps,
   FlowMapProps,
   InspectorProps,
   LibraryProps,
   PanelTab,
+  StepListProps,
   TabbedPanelProps,
   TopBarProps,
 } from './layouts'
-export { Data, FlowMap, Inspector, Library, TabbedPanel, TopBar } from './layouts'
+export { Data, FlowMap, Inspector, Library, StepList, TabbedPanel, TopBar } from './layouts'
 export type {
   ButtonProps,
   ButtonSize,
@@ -22,8 +33,9 @@ export type {
 export { Button, ConfirmDialog, Input, Select, Toast, Toggle } from './primitives'
 export type { Theme, ThemeSeed } from './theme/createTheme'
 export { createTheme } from './theme/createTheme'
-export type { ColorMode, HatuaProviderProps } from './theme/HatuaProvider'
+export type { ColorMode, HatuaProviderProps, HostPorts } from './theme/HatuaProvider'
 export { HatuaProvider } from './theme/HatuaProvider'
 export type { BuildProps } from './views/Build'
 export { Build } from './views/Build'
+export type { HatuaProps } from './views/Hatua'
 export { Hatua } from './views/Hatua'

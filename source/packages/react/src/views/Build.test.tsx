@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import type { ComponentPropsWithRef } from 'react'
 import { describe, expect, it } from 'vitest'
 import { Build, type BuildProps } from './Build'
@@ -13,22 +13,41 @@ type Equals<A, B> =
  * arranges the regions and adds nothing a Host would have to reproduce.
  */
 describe('Build', () => {
-  it('arranges the toolbar, the tabs and the step editor', () => {
+  it('arranges the toolbar, the side panel, the canvas and the step editor', () => {
     render(<Build />)
     expect(screen.getByRole('region', { name: 'Toolbar' })).toBeDefined()
     expect(screen.getByRole('tablist')).toBeDefined()
+    expect(screen.getByRole('region', { name: 'Flow map' })).toBeDefined()
     expect(screen.getByRole('complementary', { name: 'Inspector' })).toBeDefined()
   })
 
-  it('offers exactly the three tabs, opening on the flow map', () => {
+  /*
+   * The regression this exists for: <FlowMap> was mounted as the "Flow" tab, so
+   * the canvas was on screen only while one of three tabs was open and never
+   * beside the panel it is edited from. The screen had no room for a canvas at
+   * all. It has a column of its own now, and it is not a tab.
+   */
+  it('gives the canvas a place of its own, outside the tab strip', () => {
+    render(<Build />)
+
+    const canvas = screen.getByRole('region', { name: 'Flow map' })
+    expect(screen.getByRole('tabpanel').contains(canvas)).toBe(false)
+
+    // Still there with a different tab open, which is the whole point.
+    fireEvent.click(screen.getByRole('tab', { name: 'Library' }))
+    expect(screen.getByRole('region', { name: 'Flow map' })).toBeDefined()
+  })
+
+  it('offers exactly the three tabs, opening on the step tree', () => {
     render(<Build />)
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
-      'Library',
       'Flow',
+      'Library',
       'Data',
     ])
     expect(screen.getByRole('tab', { selected: true }).textContent).toBe('Flow')
-    expect(screen.getByRole('region', { name: 'Flow' })).toBeDefined()
+    // The Flow TAB is the tree as a list; the map is the column beside it.
+    expect(screen.getByRole('region', { name: 'Steps' })).toBeDefined()
   })
 
   it('mounts only the open tab, so the other two cost nothing until asked for', () => {

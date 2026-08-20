@@ -1,0 +1,10 @@
+@layer hatua {
+  .stepList {
+    display: flex;
+    flex-direction: column;
+    block-size: 100%;
+    min-block-size: 0;
+    overflow-y: auto;
+    background: var(--hatua-surface-card);
+  }
+}
