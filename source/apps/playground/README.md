@@ -9,6 +9,7 @@ them are the point.
 | `index.html` → `src/main.tsx` | `<Hatua>`, and nothing else | Compiled in, at build time |
 | `host.html` → `src/host.tsx` | The regions, arranged by the Host | Compiled in, at build time |
 | `api.html` → `src/api.tsx` | `<Hatua>`, and nothing else | Fetched at run time |
+| `theme.html` → `src/theme.tsx` | Three `<Hatua>`s and a `<HatuaProvider>` | Compiled in |
 
 Three entries, not three routes. A route would share one bundle with everything
 the app can reach, which would put `<Hatua>` into the Host-authored page's
@@ -57,6 +58,21 @@ is one method returning a promise, so "an array I already have" and "whatever
 this endpoint says" are the same shape — and the Library's loading, failed and
 empty states, which look like defensive programming when every source resolves
 instantly, are what `api.html` goes through on every load.
+
+**Whether Hatua stays out of the Host's way** — `theme.html`, which is the only
+page here that declares design tokens of its own. It sets `--accent`,
+`--surface-card`, `--radius-md`, `--text-primary` and friends on `:root` — the
+names Hatua's aliases used to carry — and paints its own chrome from them.
+Custom properties inherit downward, so those names reach *into* Hatua's subtree;
+every property Hatua writes is `--hatua-*`, so nothing collides in either
+direction. The page also runs three themes at once from three `createTheme()`
+calls, and mounts Host markup *inside* a `<HatuaProvider>` — the case the
+prefixing exists for, since that markup is in Hatua's subtree and still reads
+its own tokens.
+
+This is the one claim that cannot be made in a unit test: jsdom does not resolve
+`var()` through a cascade. Break the namespacing and this page goes pink from
+the top down.
 
 ## The fixtures, and what is faked
 

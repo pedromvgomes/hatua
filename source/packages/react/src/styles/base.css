@@ -7,6 +7,13 @@
  *
  * Components may reference ONLY the semantic aliases below, never the ramps.
  * That rule is what makes theming work; it is enforced by lint, not discipline.
+ *
+ * Every name here is --hatua-*, and that is not tidiness. Custom properties
+ * inherit downward, so these could never leak out onto a Host's page — but in
+ * the parts embedding a Host mounts its own markup INSIDE this subtree, and an
+ * unprefixed --accent or --radius-md would quietly shadow the Host's own. Seeds
+ * are --hatua-seed-* so the lint can still tell a seed from an alias derived
+ * off it.
  */
 @layer hatua {
   /*
@@ -35,53 +42,53 @@
   }
 
   .hatua-root {
-    /* --- derived accent ramp, from the --hatua-accent seed --- */
-    --accent: var(--hatua-accent);
+    /* --- derived accent ramp, from the --hatua-seed-accent seed --- */
+    --hatua-accent: var(--hatua-seed-accent);
     /* On light surfaces, interaction goes darker. */
-    --accent-hover: oklch(from var(--hatua-accent) calc(l - 0.09) c h);
-    --accent-press: oklch(from var(--hatua-accent) calc(l - 0.18) c h);
-    --accent-wash: oklch(from var(--hatua-accent) 0.965 calc(c * 0.16) h);
+    --hatua-accent-hover: oklch(from var(--hatua-seed-accent) calc(l - 0.09) c h);
+    --hatua-accent-press: oklch(from var(--hatua-seed-accent) calc(l - 0.18) c h);
+    --hatua-accent-wash: oklch(from var(--hatua-seed-accent) 0.965 calc(c * 0.16) h);
 
-    /* --- derived neutral ramp, from the --hatua-ink seed --- */
-    --text-primary: var(--hatua-ink);
-    --text-secondary: oklch(from var(--hatua-ink) calc(l + 0.22) calc(c * 0.7) h);
-    --text-muted: oklch(from var(--hatua-ink) calc(l + 0.35) calc(c * 0.55) h);
-    --text-accent: var(--accent-press);
-    --text-on-accent: #fff;
+    /* --- derived neutral ramp, from the --hatua-seed-ink seed --- */
+    --hatua-text-primary: var(--hatua-seed-ink);
+    --hatua-text-secondary: oklch(from var(--hatua-seed-ink) calc(l + 0.22) calc(c * 0.7) h);
+    --hatua-text-muted: oklch(from var(--hatua-seed-ink) calc(l + 0.35) calc(c * 0.55) h);
+    --hatua-text-accent: var(--hatua-accent-press);
+    --hatua-text-on-accent: #fff;
 
-    --surface-page: var(--hatua-surface);
-    --surface-card: #fff;
-    --surface-sunken: oklch(from var(--hatua-surface) calc(l - 0.03) c h);
-    --surface-raised: #fff;
+    --hatua-surface-page: var(--hatua-seed-surface);
+    --hatua-surface-card: #fff;
+    --hatua-surface-sunken: oklch(from var(--hatua-seed-surface) calc(l - 0.03) c h);
+    --hatua-surface-raised: #fff;
 
-    --border-subtle: oklch(from var(--hatua-ink) calc(l + 0.62) calc(c * 0.35) h);
-    --border-strong: oklch(from var(--hatua-ink) calc(l + 0.52) calc(c * 0.4) h);
-    --border-accent: var(--accent);
+    --hatua-border-subtle: oklch(from var(--hatua-seed-ink) calc(l + 0.62) calc(c * 0.35) h);
+    --hatua-border-strong: oklch(from var(--hatua-seed-ink) calc(l + 0.52) calc(c * 0.4) h);
+    --hatua-border-accent: var(--hatua-accent);
 
-    --status-ok: oklch(0.58 0.12 150);
-    --status-warn: oklch(0.75 0.135 75);
-    --status-error: oklch(0.56 0.17 25);
-    --status-error-wash: oklch(0.96 0.025 25);
+    --hatua-status-ok: oklch(0.58 0.12 150);
+    --hatua-status-warn: oklch(0.75 0.135 75);
+    --hatua-status-error: oklch(0.56 0.17 25);
+    --hatua-status-error-wash: oklch(0.96 0.025 25);
 
-    --focus-ring: oklch(from var(--accent) l c h / 0.45);
+    --hatua-focus-ring: oklch(from var(--hatua-accent) l c h / 0.45);
 
     /*
      * Overlay depth. Both are ink-on-surface in either mode, which is why they
-     * cannot be derived from --text-primary: that inverts with the mode, so a
+     * cannot be derived from --hatua-text-primary: that inverts with the mode, so a
      * shadow drawn from it becomes a halo on dark and a scrim becomes a veil
      * that lightens what it is meant to recede.
      */
-    --shadow-color: oklch(from var(--hatua-ink) l c h / 0.22);
-    --scrim: oklch(from var(--hatua-ink) calc(l * 0.6) c h / 0.55);
+    --hatua-shadow-color: oklch(from var(--hatua-seed-ink) l c h / 0.22);
+    --hatua-scrim: oklch(from var(--hatua-seed-ink) calc(l * 0.6) c h / 0.55);
 
     /* The mono face, aliased so a component can read it: seeds are off limits
        above this file, and `mono` is a field kind the manifest declares — the
        Library's code spans are only the first thing to need it. */
-    --font-mono: var(--hatua-font-mono);
+    --hatua-font-mono: var(--hatua-seed-font-mono);
 
-    --radius-sm: calc(var(--hatua-radius) * 0.6);
-    --radius-md: var(--hatua-radius);
-    --radius-lg: calc(var(--hatua-radius) * 1.4);
+    --hatua-radius-sm: calc(var(--hatua-seed-radius) * 0.6);
+    --hatua-radius-md: var(--hatua-seed-radius);
+    --hatua-radius-lg: calc(var(--hatua-seed-radius) * 1.4);
 
     /* Anchors the portal container below; without it overlays resolve against
        whatever the Host happens to have positioned. */
@@ -93,50 +100,50 @@
        content rather than a collapsed one. */
     block-size: 100%;
 
-    font-family: var(--hatua-font);
-    color: var(--text-primary);
-    background: var(--surface-page);
+    font-family: var(--hatua-seed-font);
+    color: var(--hatua-text-primary);
+    background: var(--hatua-surface-page);
   }
 
   /*
    * Dark palette. Declared once and applied from three places below, because
    * CSS has no way to share a declaration block.
    *
-   * Note every accent step is redefined, not just --accent. They derive from
-   * the seed, so leaving --accent-hover/--accent-press on their light-mode
+   * Note every accent step is redefined, not just --hatua-accent. They derive from
+   * the seed, so leaving --hatua-accent-hover/--hatua-accent-press on their light-mode
    * formula would send interaction states DARKER against a dark surface —
-   * an inverted affordance — and --text-accent (which aliases --accent-press)
+   * an inverted affordance — and --hatua-text-accent (which aliases --hatua-accent-press)
    * would render near-black on #101526.
    */
   .hatua-root[data-hatua-mode="dark"],
   :root[data-theme="dark"] .hatua-root:not([data-hatua-mode="light"]) {
-    --text-primary: #e9ecf5;
-    --text-secondary: #a7b0c8;
-    --text-muted: #7c86a3;
-    --surface-page: #101526;
-    --surface-card: #181f33;
-    --surface-sunken: #141a2b;
-    --surface-raised: #1e263c;
-    --border-subtle: #28314b;
-    --border-strong: #3a4568;
+    --hatua-text-primary: #e9ecf5;
+    --hatua-text-secondary: #a7b0c8;
+    --hatua-text-muted: #7c86a3;
+    --hatua-surface-page: #101526;
+    --hatua-surface-card: #181f33;
+    --hatua-surface-sunken: #141a2b;
+    --hatua-surface-raised: #1e263c;
+    --hatua-border-subtle: #28314b;
+    --hatua-border-strong: #3a4568;
 
-    --accent: oklch(from var(--hatua-accent) calc(l + 0.05) calc(c * 0.96) h);
+    --hatua-accent: oklch(from var(--hatua-seed-accent) calc(l + 0.05) calc(c * 0.96) h);
     /* Interaction lifts on dark, the mirror of the light ramp. */
-    --accent-hover: oklch(from var(--hatua-accent) calc(l + 0.11) calc(c * 0.91) h);
-    --accent-press: oklch(from var(--hatua-accent) calc(l + 0.16) calc(c * 0.78) h);
-    --accent-wash: oklch(from var(--hatua-accent) 0.3 calc(c * 0.48) h);
-    --text-accent: oklch(from var(--hatua-accent) calc(l + 0.09) calc(c * 0.91) h);
-    --focus-ring: oklch(from var(--accent) l c h / 0.5);
+    --hatua-accent-hover: oklch(from var(--hatua-seed-accent) calc(l + 0.11) calc(c * 0.91) h);
+    --hatua-accent-press: oklch(from var(--hatua-seed-accent) calc(l + 0.16) calc(c * 0.78) h);
+    --hatua-accent-wash: oklch(from var(--hatua-seed-accent) 0.3 calc(c * 0.48) h);
+    --hatua-text-accent: oklch(from var(--hatua-seed-accent) calc(l + 0.09) calc(c * 0.91) h);
+    --hatua-focus-ring: oklch(from var(--hatua-accent) l c h / 0.5);
 
-    /* The wash is a background for --text-primary to sit on, so it has to
+    /* The wash is a background for --hatua-text-primary to sit on, so it has to
        invert with the surfaces. Leaving the light value here puts near-white
        text on a near-white field — the first component to read it, Input's
        invalid state, is unreadable in dark mode without this. */
-    --status-error-wash: oklch(0.28 0.06 25);
+    --hatua-status-error-wash: oklch(0.28 0.06 25);
 
     /* Near-black in both, so depth still reads as depth. */
-    --shadow-color: oklch(0.02 0 0 / 0.55);
-    --scrim: oklch(0.02 0 0 / 0.65);
+    --hatua-shadow-color: oklch(0.02 0 0 / 0.55);
+    --hatua-scrim: oklch(0.02 0 0 / 0.65);
   }
 
   /*
@@ -147,25 +154,25 @@
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]):not([data-theme="dark"])
       .hatua-root:not([data-hatua-mode="light"]):not([data-hatua-mode="dark"]) {
-      --text-primary: #e9ecf5;
-      --text-secondary: #a7b0c8;
-      --text-muted: #7c86a3;
-      --surface-page: #101526;
-      --surface-card: #181f33;
-      --surface-sunken: #141a2b;
-      --surface-raised: #1e263c;
-      --border-subtle: #28314b;
-      --border-strong: #3a4568;
+      --hatua-text-primary: #e9ecf5;
+      --hatua-text-secondary: #a7b0c8;
+      --hatua-text-muted: #7c86a3;
+      --hatua-surface-page: #101526;
+      --hatua-surface-card: #181f33;
+      --hatua-surface-sunken: #141a2b;
+      --hatua-surface-raised: #1e263c;
+      --hatua-border-subtle: #28314b;
+      --hatua-border-strong: #3a4568;
 
-      --accent: oklch(from var(--hatua-accent) calc(l + 0.05) calc(c * 0.96) h);
-      --accent-hover: oklch(from var(--hatua-accent) calc(l + 0.11) calc(c * 0.91) h);
-      --accent-press: oklch(from var(--hatua-accent) calc(l + 0.16) calc(c * 0.78) h);
-      --accent-wash: oklch(from var(--hatua-accent) 0.3 calc(c * 0.48) h);
-      --text-accent: oklch(from var(--hatua-accent) calc(l + 0.09) calc(c * 0.91) h);
-      --focus-ring: oklch(from var(--accent) l c h / 0.5);
-      --status-error-wash: oklch(0.28 0.06 25);
-      --shadow-color: oklch(0.02 0 0 / 0.55);
-      --scrim: oklch(0.02 0 0 / 0.65);
+      --hatua-accent: oklch(from var(--hatua-seed-accent) calc(l + 0.05) calc(c * 0.96) h);
+      --hatua-accent-hover: oklch(from var(--hatua-seed-accent) calc(l + 0.11) calc(c * 0.91) h);
+      --hatua-accent-press: oklch(from var(--hatua-seed-accent) calc(l + 0.16) calc(c * 0.78) h);
+      --hatua-accent-wash: oklch(from var(--hatua-seed-accent) 0.3 calc(c * 0.48) h);
+      --hatua-text-accent: oklch(from var(--hatua-seed-accent) calc(l + 0.09) calc(c * 0.91) h);
+      --hatua-focus-ring: oklch(from var(--hatua-accent) l c h / 0.5);
+      --hatua-status-error-wash: oklch(0.28 0.06 25);
+      --hatua-shadow-color: oklch(0.02 0 0 / 0.55);
+      --hatua-scrim: oklch(0.02 0 0 / 0.65);
     }
   }
 

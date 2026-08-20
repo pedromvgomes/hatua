@@ -44,7 +44,7 @@ describe('HatuaProvider', () => {
       </HatuaProvider>,
     )
     const root = container.querySelector('.hatua-root') as HTMLElement
-    expect(root.style.getPropertyValue('--hatua-accent')).toBe('oklch(0.63 0.115 195)')
+    expect(root.style.getPropertyValue('--hatua-seed-accent')).toBe('oklch(0.63 0.115 195)')
   })
 
   it('does not pin a colour mode unless asked, so the Host is inherited', () => {

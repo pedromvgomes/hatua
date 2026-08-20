@@ -23,7 +23,7 @@
     min-inline-size: 1240px;
     block-size: 100%;
     min-block-size: 0;
-    background: var(--surface-page);
+    background: var(--hatua-surface-page);
   }
 
   .bar {
@@ -41,7 +41,7 @@
     grid-area: side;
     min-inline-size: 0;
     min-block-size: 0;
-    border-inline-end: 1px solid var(--border-subtle);
+    border-inline-end: 1px solid var(--hatua-border-subtle);
   }
 
   .map {
@@ -54,6 +54,6 @@
     grid-area: aside;
     min-inline-size: 0;
     min-block-size: 0;
-    border-inline-start: 1px solid var(--border-subtle);
+    border-inline-start: 1px solid var(--hatua-border-subtle);
   }
 }

@@ -100,7 +100,7 @@ Never recolour a different riser, never add a fourth, never change the offsets.
 | Accent (riser 3) | `#2AA0AF` — `oklch(0.63 0.115 195)` | `#37B3C2` — `oklch(0.68 0.11 195)` |
 
 Hex values are given so the SVGs stand alone; in app code use the design-system tokens
-(`--text-primary`, `--accent`) instead.
+(`--hatua-text-primary`, `--hatua-accent`) instead.
 
 ## Rules
 

@@ -5,15 +5,15 @@
     gap: 12px;
     padding: 0 14px;
     min-block-size: 56px;
-    background: var(--surface-raised);
-    border-block-end: 1px solid var(--border-subtle);
+    background: var(--hatua-surface-raised);
+    border-block-end: 1px solid var(--hatua-border-subtle);
   }
 
   .title {
     margin: 0;
     font-size: 0.9375rem;
     font-weight: 600;
-    color: var(--text-primary);
+    color: var(--hatua-text-primary);
     white-space: nowrap;
   }
 }

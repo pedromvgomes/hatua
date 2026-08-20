@@ -37,7 +37,7 @@ describe('Hatua', () => {
   it('passes a theme through as custom properties', () => {
     const { container } = render(<Hatua theme={createTheme({ accent: 'oklch(0.7 0.1 30)' })} />)
     const root = container.querySelector('.hatua-root') as HTMLElement
-    expect(root.style.getPropertyValue('--hatua-accent')).toBe('oklch(0.7 0.1 30)')
+    expect(root.style.getPropertyValue('--hatua-seed-accent')).toBe('oklch(0.7 0.1 30)')
   })
 
   it('follows the Host colour mode unless one is pinned', () => {

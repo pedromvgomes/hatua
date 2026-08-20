@@ -6,15 +6,15 @@
     grid-template-rows: auto minmax(0, 1fr);
     block-size: 100%;
     min-block-size: 0;
-    background: var(--surface-card);
+    background: var(--hatua-surface-card);
   }
 
   .filter {
     display: grid;
     gap: 4px;
     padding: 12px;
-    border-block-end: 1px solid var(--border-subtle);
-    background: var(--surface-raised);
+    border-block-end: 1px solid var(--hatua-border-subtle);
+    background: var(--hatua-surface-raised);
   }
 
   .filterLabel {
@@ -22,7 +22,7 @@
     font-weight: 600;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    color: var(--text-muted);
+    color: var(--hatua-text-muted);
   }
 
   .body {
@@ -36,16 +36,16 @@
   .note {
     margin: 0;
     padding: 16px;
-    color: var(--text-muted);
+    color: var(--hatua-text-muted);
     font-size: 0.8125rem;
     line-height: 1.5;
     text-wrap: pretty;
   }
 
   .code {
-    font-family: var(--font-mono);
+    font-family: var(--hatua-font-mono);
     font-size: 0.75rem;
-    color: var(--text-secondary);
+    color: var(--hatua-text-secondary);
     overflow-wrap: anywhere;
   }
 
@@ -55,16 +55,16 @@
     gap: 8px;
     margin: 12px;
     padding: 12px;
-    border: 1px solid var(--status-error);
-    border-radius: var(--radius-md);
-    background: var(--status-error-wash);
+    border: 1px solid var(--hatua-status-error);
+    border-radius: var(--hatua-radius-md);
+    background: var(--hatua-status-error-wash);
   }
 
   .failureText {
     margin: 0;
     font-size: 0.8125rem;
     line-height: 1.5;
-    color: var(--text-primary);
+    color: var(--hatua-text-primary);
     text-wrap: pretty;
   }
 
@@ -79,7 +79,7 @@
     font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: var(--text-secondary);
+    color: var(--hatua-text-secondary);
   }
 
   /* Why a Trigger is not a Component, said once per section rather than on
@@ -89,7 +89,7 @@
     padding: 2px 12px 4px;
     font-size: 0.75rem;
     line-height: 1.4;
-    color: var(--text-muted);
+    color: var(--hatua-text-muted);
     text-wrap: pretty;
   }
 
@@ -102,7 +102,7 @@
     padding: 6px 12px 2px;
     font-size: 0.75rem;
     font-weight: 600;
-    color: var(--text-muted);
+    color: var(--hatua-text-muted);
   }
 
   .cards {
@@ -121,11 +121,11 @@
     gap: 10px;
     padding: 8px;
     border: 1px solid transparent;
-    border-radius: var(--radius-md);
+    border-radius: var(--hatua-radius-md);
     background: transparent;
     font: inherit;
     text-align: start;
-    color: var(--text-primary);
+    color: var(--hatua-text-primary);
   }
 
   /* Only the card that does something looks like it does. */
@@ -134,12 +134,12 @@
   }
 
   .actionable:hover {
-    border-color: var(--border-subtle);
-    background: var(--accent-wash);
+    border-color: var(--hatua-border-subtle);
+    background: var(--hatua-accent-wash);
   }
 
   .actionable:focus-visible {
-    outline: 2px solid var(--focus-ring);
+    outline: 2px solid var(--hatua-focus-ring);
     outline-offset: -2px;
   }
 
@@ -150,10 +150,10 @@
     place-items: center;
     inline-size: 26px;
     block-size: 26px;
-    border-radius: var(--radius-sm);
-    background: var(--surface-sunken);
-    border: 1px solid var(--border-subtle);
-    color: var(--text-muted);
+    border-radius: var(--hatua-radius-sm);
+    background: var(--hatua-surface-sunken);
+    border: 1px solid var(--hatua-border-subtle);
+    color: var(--hatua-text-muted);
   }
 
   .image {
@@ -187,7 +187,7 @@
   .blurb {
     font-size: 0.75rem;
     line-height: 1.4;
-    color: var(--text-muted);
+    color: var(--hatua-text-muted);
     text-wrap: pretty;
   }
 }

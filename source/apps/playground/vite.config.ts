@@ -173,7 +173,7 @@ const noStylesheet = (): Plugin => ({
 // Packages resolve to source, so editing @hatua/model hot-reloads here with no
 // build step (ADR-0004 — this is why project references would get in the way).
 //
-// Three entries, not three routes. A route shares one bundle with everything
+// Four entries, not four routes. A route shares one bundle with everything
 // else the app can reach, which would put <Hatua> into the Host-authored page's
 // JavaScript whether or not that page uses it. Separate entries give separate
 // bundles, so `ls dist/assets` answers what each way of embedding costs — the
@@ -191,6 +191,7 @@ export default defineConfig({
         main: fileURLToPath(new URL('index.html', import.meta.url)),
         host: fileURLToPath(new URL('host.html', import.meta.url)),
         api: fileURLToPath(new URL('api.html', import.meta.url)),
+        theme: fileURLToPath(new URL('theme.html', import.meta.url)),
       },
     },
   },

@@ -15,13 +15,21 @@ import { HatuaProvider, type HostPorts } from '../src/theme/HatuaProvider'
  * from the light one without anything failing.
  *
  * A story that needs a Host port declares one as `parameters.ports` and this
- * decorator hands it to the provider. It is set here rather than by the story
+ * decorator hands it to the provider; one that needs to mount the provider
+ * itself declares `parameters.provider = false` and is handed the frame bare. It is set here rather than by the story
  * mounting its own provider, because a nested provider would mean the two
  * colour panels shared one root and the region under review no longer sat where
  * a real embedding puts it.
  */
 const bothColourModes: Decorator = (Story, context) => {
   const ports = context.parameters.ports as HostPorts | undefined
+
+  // A story ABOUT the provider cannot be rendered inside one it does not
+  // control — it needs to mount its own, with its own themes and its own modes,
+  // and often more than one at a time. `parameters: { provider: false }` hands
+  // it the frame bare. See theme/theming.stories.tsx.
+  if (context.parameters.provider === false) return <Story />
+
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', minHeight: '100vh' }}>
       <HatuaProvider colorMode="light" ports={ports}>

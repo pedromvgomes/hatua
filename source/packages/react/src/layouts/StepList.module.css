@@ -5,6 +5,6 @@
     block-size: 100%;
     min-block-size: 0;
     overflow-y: auto;
-    background: var(--surface-card);
+    background: var(--hatua-surface-card);
   }
 }

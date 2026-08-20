@@ -16,16 +16,38 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-const TEXT = ['--text-primary', '--text-secondary', '--text-muted', '--text-accent']
-const SURFACES = ['--surface-page', '--surface-card', '--surface-sunken', '--surface-raised']
-const BORDERS = ['--border-subtle', '--border-strong', '--border-accent']
-const ACCENTS = ['--accent', '--accent-hover', '--accent-press', '--accent-wash']
-const STATUS = ['--status-ok', '--status-warn', '--status-error', '--status-error-wash']
-const RADII = ['--radius-sm', '--radius-md', '--radius-lg']
+const TEXT = [
+  '--hatua-text-primary',
+  '--hatua-text-secondary',
+  '--hatua-text-muted',
+  '--hatua-text-accent',
+]
+const SURFACES = [
+  '--hatua-surface-page',
+  '--hatua-surface-card',
+  '--hatua-surface-sunken',
+  '--hatua-surface-raised',
+]
+const BORDERS = ['--hatua-border-subtle', '--hatua-border-strong', '--hatua-border-accent']
+const ACCENTS = [
+  '--hatua-accent',
+  '--hatua-accent-hover',
+  '--hatua-accent-press',
+  '--hatua-accent-wash',
+]
+const STATUS = [
+  '--hatua-status-ok',
+  '--hatua-status-warn',
+  '--hatua-status-error',
+  '--hatua-status-error-wash',
+]
+const RADII = ['--hatua-radius-sm', '--hatua-radius-md', '--hatua-radius-lg']
 
 const Group = ({ name, children }: { name: string; children: ReactNode }) => (
   <section style={{ marginBottom: 24 }}>
-    <h3 style={{ margin: '0 0 8px', fontSize: '0.75rem', color: 'var(--text-muted)' }}>{name}</h3>
+    <h3 style={{ margin: '0 0 8px', fontSize: '0.75rem', color: 'var(--hatua-text-muted)' }}>
+      {name}
+    </h3>
     <div style={{ display: 'grid', gap: 6 }}>{children}</div>
   </section>
 )
@@ -33,7 +55,7 @@ const Group = ({ name, children }: { name: string; children: ReactNode }) => (
 const Swatch = ({ alias, children }: { alias: string; children?: ReactNode }) => (
   <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '0.75rem' }}>
     {children}
-    <code style={{ color: 'var(--text-secondary)' }}>{alias}</code>
+    <code style={{ color: 'var(--hatua-text-secondary)' }}>{alias}</code>
   </div>
 )
 
@@ -43,8 +65,8 @@ const Chip = ({ style }: { style: CSSProperties }) => (
       width: 40,
       height: 24,
       flex: 'none',
-      borderRadius: 'var(--radius-sm)',
-      border: '1px solid var(--border-subtle)',
+      borderRadius: 'var(--hatua-radius-sm)',
+      border: '1px solid var(--hatua-border-subtle)',
       ...style,
     }}
   />
@@ -91,27 +113,32 @@ export const Foundations: Story = {
       <Group name="radius">
         {RADII.map((alias) => (
           <Swatch key={alias} alias={alias}>
-            <Chip style={{ background: 'var(--surface-sunken)', borderRadius: `var(${alias})` }} />
+            <Chip
+              style={{ background: 'var(--hatua-surface-sunken)', borderRadius: `var(${alias})` }}
+            />
           </Swatch>
         ))}
       </Group>
       <Group name="depth">
-        <Swatch alias="--shadow-color">
+        <Swatch alias="--hatua-shadow-color">
           <Chip
             style={{
-              background: 'var(--surface-card)',
-              boxShadow: '0 6px 16px var(--shadow-color)',
+              background: 'var(--hatua-surface-card)',
+              boxShadow: '0 6px 16px var(--hatua-shadow-color)',
             }}
           />
         </Swatch>
-        <Swatch alias="--scrim">
-          <Chip style={{ background: 'var(--scrim)' }} />
+        <Swatch alias="--hatua-scrim">
+          <Chip style={{ background: 'var(--hatua-scrim)' }} />
         </Swatch>
       </Group>
       <Group name="focus">
-        <Swatch alias="--focus-ring">
+        <Swatch alias="--hatua-focus-ring">
           <Chip
-            style={{ background: 'var(--surface-card)', boxShadow: '0 0 0 3px var(--focus-ring)' }}
+            style={{
+              background: 'var(--hatua-surface-card)',
+              boxShadow: '0 0 0 3px var(--hatua-focus-ring)',
+            }}
           />
         </Swatch>
       </Group>

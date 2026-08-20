@@ -119,7 +119,9 @@ const meta = {
   component: Library,
   decorators: [
     (Story) => (
-      <div style={{ blockSize: 420, inlineSize: 300, border: '1px solid var(--border-subtle)' }}>
+      <div
+        style={{ blockSize: 420, inlineSize: 300, border: '1px solid var(--hatua-border-subtle)' }}
+      >
         <Story />
       </div>
     ),

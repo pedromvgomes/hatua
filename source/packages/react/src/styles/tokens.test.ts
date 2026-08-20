@@ -7,8 +7,8 @@ import { describe, expect, it } from 'vitest'
 /**
  * The lint ADR-0002 says exists.
  *
- * ADR-0002: "Components may only reference semantic aliases (--surface-card,
- * --text-muted, --border-subtle), never base ramps... enforced by lint rather
+ * ADR-0002: "Components may only reference semantic aliases (--hatua-surface-card,
+ * --hatua-text-muted, --hatua-border-subtle), never base ramps... enforced by lint rather
  * than left to discipline." Biome lints CSS but has no rule that can express
  * "this custom property, not that one", so the enforcement is this test.
  *
@@ -17,13 +17,14 @@ import { describe, expect, it } from 'vitest'
  * byte for byte — so the two are the same text for this question, and reading
  * source keeps the check runnable without a build.
  *
- * Three rules, one per way the contract can break:
+ * Four rules, one per way the contract can break:
  *
- *  1. no seeds — a component reading --hatua-accent bypasses the derivation,
+ *  1. no seeds — a component reading --hatua-seed-accent bypasses the derivation,
  *     so it would ignore dark mode and every host override of a derived step;
  *  2. no literals — a hard-coded colour cannot be themed at all;
- *  3. no undefined aliases — var(--text-subtle) is not a compile error in CSS,
- *     it silently resolves to nothing, which is how a typo ships.
+ *  3. no undefined aliases — var(--hatua-text-subtle) is not a compile error in
+ *     CSS, it silently resolves to nothing, which is how a typo ships;
+ *  4. everything is --hatua-* — see below.
  */
 
 // fileURLToPath is given a string, not a URL object: the jsdom environment
@@ -55,6 +56,17 @@ const cssFiles = sources.filter((f) => f.path.endsWith('.css') && f.path !== BAS
 // This file is excluded from its own scan: it quotes both the alias names and
 // the literals it forbids, so it would be its only finding.
 const SELF = 'src/styles/tokens.test.ts'
+
+/**
+ * The one file that writes a Host's tokens on purpose.
+ *
+ * theming.stories.tsx sets `--accent`, `--surface-card` and friends on a frame
+ * and mounts Hatua inside it, precisely to show that Hatua no longer shadows
+ * them. Those names are the Host's; a rule that forbade them would forbid the
+ * demonstration. Exempted by name rather than by pattern so a second file
+ * cannot join it quietly.
+ */
+const HOST_TOKENS = 'src/theme/theming.stories.tsx'
 const componentFiles = sources.filter((f) => /\.tsx?$/.test(f.path) && f.path !== SELF)
 
 const definitionsIn = (text: string) =>
@@ -91,23 +103,31 @@ const quotedAliases = (text: string) =>
 const COLOUR_LITERAL =
   /#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch)\(|\boklch\(\s*(?!from\b)|\bcolor\(\s*(?!from\b)|(?<![\w-])(?:white|black|red|green|blue|grey|gray|silver|navy|teal|orange|yellow|purple)(?![\w-])/g
 
+/**
+ * Seeds are `--hatua-seed-*`; everything else Hatua names is `--hatua-*`. The
+ * split exists because rule 1 has to be able to tell a seed from a derived
+ * alias, and both now live under the same prefix.
+ */
+const PREFIX = '--hatua-'
+const SEED_PREFIX = '--hatua-seed-'
+
 describe('token discipline (ADR-0002)', () => {
   it('has an alias vocabulary to check against', () => {
     // Guards the whole suite: were the regex above to stop matching base.css,
     // rule 3 would pass vacuously and rules 1 and 2 would still look green.
     expect(definedAliases.size).toBeGreaterThan(20)
-    expect(definedAliases).toContain('--surface-card')
+    expect(definedAliases).toContain('--hatua-surface-card')
   })
 
-  it.each(cssFiles)('$path uses no --hatua-* seed', ({ text }) => {
-    expect(referencedAliases(text).filter((a) => a.startsWith('--hatua-'))).toEqual([])
+  it.each(cssFiles)('$path uses no --hatua-seed-* seed', ({ text }) => {
+    expect(referencedAliases(text).filter((a) => a.startsWith(SEED_PREFIX))).toEqual([])
   })
 
   it.each(cssFiles)('$path uses no colour literal', ({ text }) => {
     expect(text.match(COLOUR_LITERAL) ?? []).toEqual([])
   })
 
-  // A component may also define a property of its own — Toast's --toast-tone,
+  // A component may also define a property of its own — Toast's --hatua-toast-tone,
   // read by both its stripe and its progress bar — so the file's own
   // definitions count. That does not weaken the rule the check exists for:
   // a typo still names something nobody defines, and a local definition
@@ -134,7 +154,7 @@ describe('token discipline (ADR-0002)', () => {
    *
    * Tests are exempt and stories are not, which is the whole point of the
    * split: a test NAMES a property to assert something about it — that
-   * <Hatua theme> really does write the --hatua-accent seed — while a story
+   * <Hatua theme> really does write the --hatua-seed-accent seed — while a story
    * READS one to paint with, and tokens.stories.tsx reads every alias there is
    * from arrays of exactly these strings. theme/ stays exempt for the reason it
    * always was: createTheme writes the seeds.
@@ -145,6 +165,59 @@ describe('token discipline (ADR-0002)', () => {
     const known = definitionsIn(text)
     const unknown = quotedAliases(text).filter((a) => !definedAliases.has(a) && !known.has(a))
     expect(unknown).toEqual([])
+  })
+})
+
+/**
+ * Every custom property Hatua defines or reads is `--hatua-*`.
+ *
+ * This is what makes "Hatua cannot collide with a Host's CSS" a fact rather than
+ * a convention, and it is a stronger claim than it first looks. Custom
+ * properties inherit downward only, so unprefixed names could never have leaked
+ * OUT of `.hatua-root` onto a Host's page — that was never the risk. The risk is
+ * the other direction and it is real: in the parts embedding a Host mounts its
+ * own markup INSIDE <HatuaProvider> (apps/playground/src/host.tsx does), and a
+ * Host wrapper in there reading `var(--accent)` for its own design system used
+ * to silently receive ours.
+ *
+ * The names were unprefixed because they matched the Tumika design system's
+ * exactly. That is a coincidence of which handoff we were given, not a property
+ * of Hatua — the next design system would not match, and a library embeddable in
+ * any Host cannot spend its collision budget on one of them.
+ *
+ * Component-local properties count too: Toast's --hatua-toast-tone is not a
+ * theme alias, but it is still a name Hatua writes into a Host's document.
+ */
+describe('every custom property is namespaced', () => {
+  const named = (text: string) => [
+    ...definitionsIn(text),
+    ...referencedAliases(text),
+    ...quotedAliases(text),
+  ]
+
+  it.each(
+    sources.filter(
+      (f) => f.path !== SELF && f.path !== HOST_TOKENS && !/\.test\.tsx?$/.test(f.path),
+    ),
+  )('$path defines and reads only --hatua-* properties', ({ text }) => {
+    expect(named(text).filter((a) => !a.startsWith(PREFIX))).toEqual([])
+  })
+
+  it('exempts only the file that demonstrates the rule, and only while it does', () => {
+    // An exemption nobody checks is an exemption that quietly becomes a hole.
+    const story = sources.find((f) => f.path === HOST_TOKENS)
+    expect(story, HOST_TOKENS).toBeDefined()
+    const hostNames = referencedAliases(story?.text ?? '').filter((a) => !a.startsWith(PREFIX))
+    expect(hostNames).toContain('--accent')
+    expect(hostNames).toContain('--surface-card')
+    expect(story?.text).toContain('HatuaProvider')
+  })
+
+  it('keeps seeds distinguishable from the aliases derived off them', () => {
+    // Rule 1 is only enforceable while this holds.
+    const seeds = [...definedAliases].filter((a) => a.startsWith(SEED_PREFIX))
+    expect(seeds.length).toBe(0)
+    expect(definitionsIn(sources.find((f) => f.path === BASE)?.text ?? '').size).toBeGreaterThan(20)
   })
 })
 

@@ -4,15 +4,15 @@
     grid-template-rows: auto minmax(0, 1fr);
     block-size: 100%;
     min-block-size: 0;
-    background: var(--surface-page);
+    background: var(--hatua-surface-page);
   }
 
   .tabs {
     display: flex;
     gap: 2px;
     padding: 0 8px;
-    background: var(--surface-raised);
-    border-block-end: 1px solid var(--border-subtle);
+    background: var(--hatua-surface-raised);
+    border-block-end: 1px solid var(--hatua-border-subtle);
   }
 
   .tab {
@@ -23,23 +23,23 @@
     font: inherit;
     font-size: 0.8125rem;
     font-weight: 500;
-    color: var(--text-secondary);
+    color: var(--hatua-text-secondary);
     padding: 8px 12px;
     cursor: pointer;
   }
 
   .tab:hover {
-    color: var(--text-accent);
+    color: var(--hatua-text-accent);
   }
 
   .tab:focus-visible {
-    outline: 2px solid var(--focus-ring);
+    outline: 2px solid var(--hatua-focus-ring);
     outline-offset: -2px;
   }
 
   .selected {
-    color: var(--text-accent);
-    border-block-end-color: var(--border-accent);
+    color: var(--hatua-text-accent);
+    border-block-end-color: var(--hatua-border-accent);
   }
 
   .body {
@@ -50,7 +50,7 @@
   /* The panel is a tab stop (see TabbedPanel.tsx), so it must show where focus
      landed. Inset, because the panel is flush against the strip above it. */
   .body:focus-visible {
-    outline: 2px solid var(--focus-ring);
+    outline: 2px solid var(--hatua-focus-ring);
     outline-offset: -2px;
   }
 }

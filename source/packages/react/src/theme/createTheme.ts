@@ -38,11 +38,11 @@ const DEFAULT_SEED = {
 export function createTheme(seed: ThemeSeed = {}): Theme {
   const s = { ...DEFAULT_SEED, ...seed }
   return Object.freeze({
-    '--hatua-accent': s.accent,
-    '--hatua-ink': s.ink,
-    '--hatua-surface': s.surface,
-    '--hatua-radius': `${s.radius}px`,
-    '--hatua-font': s.fontFamily,
-    '--hatua-font-mono': s.fontFamilyMono,
+    '--hatua-seed-accent': s.accent,
+    '--hatua-seed-ink': s.ink,
+    '--hatua-seed-surface': s.surface,
+    '--hatua-seed-radius': `${s.radius}px`,
+    '--hatua-seed-font': s.fontFamily,
+    '--hatua-seed-font-mono': s.fontFamilyMono,
   })
 }
