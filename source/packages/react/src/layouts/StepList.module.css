@@ -267,6 +267,23 @@
     padding: 0;
     padding-inline-start: 14px;
     list-style: none;
+
+    /*
+     * An indent guide, and the space that stops two insert points colliding.
+     *
+     * Every `+` is 20px centred in a 16px row, so it overhangs 2px top and
+     * bottom — deliberate against a 46px Step row, and a 4px OVERLAP where a
+     * nested list's trailing gap is immediately followed by the parent's next
+     * one. That happens at the end of every Branch and every loop: two circles
+     * at two different indents, jammed together, which reads as a rendering
+     * fault rather than as two different places to insert.
+     *
+     * The rule is the other half of the same fix. Nothing on screen said where
+     * a nested list ENDED, so the change of indent was the only clue that the
+     * two `+`s meant different things — and a 14px step is not much of a clue.
+     */
+    border-inline-start: 1px solid var(--hatua-border-subtle);
+    padding-block-end: 8px;
   }
 
   .branch {
