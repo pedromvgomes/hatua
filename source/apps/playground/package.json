@@ -8,7 +8,9 @@
   "scripts": {
     "dev": "vite --configLoader runner",
     "build": "vite build --configLoader runner",
-    "typecheck": "tsc --noEmit"
+    "preview": "vite preview --configLoader runner",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
     "@hatua/react": "workspace:*",

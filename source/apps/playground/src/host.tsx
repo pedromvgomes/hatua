@@ -59,7 +59,8 @@ import { SOURCES, type SourceName } from './catalogue'
  * cannot show. A catalogue that always resolves instantly makes loading,
  * failure and emptiness look theoretical; they are not — they are what a Host
  * fetching manifests over a network gets — so this page lets you pick one and
- * look at it.
+ * look at it. The sources here are fakes, chosen so each state can be held
+ * still and looked at; /api.html runs the same states against a real request.
  */
 const theme = createTheme({ accent: 'oklch(0.63 0.115 195)' })
 
@@ -93,7 +94,8 @@ function HostPage() {
       >
         <p style={{ margin: 0 }}>
           Host-authored embedding — the Inspector on the left, the toolbar at the bottom, and no
-          Data tab at all. Compare with <a href="/index.html">the default embedding</a>.
+          Data tab at all. Compare with <a href="/index.html">the default embedding</a> and{' '}
+          <a href="/api.html">the API-backed one</a>.
         </p>
         <fieldset style={{ display: 'flex', gap: 10, border: 0, margin: 0, padding: 0 }}>
           <legend style={{ float: 'left', padding: 0, marginInlineEnd: 10 }}>
