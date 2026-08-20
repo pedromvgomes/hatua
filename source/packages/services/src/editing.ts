@@ -300,6 +300,21 @@ export function createEditingStore(
 
   const schedule = () => {
     if (disposed || save.state === 'halted') return
+
+    // The session ended — published, released or discarded — and the token went
+    // with it. The document is still here and still editable, but there is
+    // nothing left to write it to, and saying so beats leaving the edit sitting
+    // at `pending` for ever with nobody reporting that it goes nowhere.
+    if (!token) {
+      setSave({
+        state: 'halted',
+        error: new Error(
+          'This editing session has ended. Open the workflow again to keep editing it.',
+        ),
+      })
+      return
+    }
+
     cancelSave()
     setSave(PENDING)
     saveTimer = setTimeout(() => {

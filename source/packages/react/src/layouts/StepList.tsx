@@ -158,9 +158,19 @@ export function StepList({
     const delta = event.key === 'ArrowUp' ? -1 : event.key === 'ArrowDown' ? 1 : 0
     if (delta === 0) return
 
+    // Stopped here, before anything else is decided.
+    //
+    // A container Step's <li> WRAPS its children's, so this handler is bound at
+    // every level the event bubbles through: one Alt+Arrow on a Step inside a
+    // loop moved that Step and then moved the loop, two document mutations and
+    // two undo entries from one keypress. `preventDefault` does not stop that —
+    // only propagation does. It also has to happen on the clamped no-op, or a
+    // Step already at the end of its list silently moves its parent instead.
+    event.stopPropagation()
+    event.preventDefault()
+
     const target = at.index + delta
     if (target < 0 || target > count - 1) return
-    event.preventDefault()
     // +1 on the way down, because `moveStep` reads its index against the list
     // as it stands BEFORE the Step is lifted out of it.
     store?.apply(moveStep(step.id, { ...at, index: delta > 0 ? target + 1 : target }))
@@ -224,7 +234,7 @@ export function StepList({
 
           {workflow && definition ? (
             definition.steps.length === 0 ? (
-              <div className={styles.sequence}>
+              <ul className={styles.sequence}>
                 <Gap
                   at={{ index: 0 }}
                   label="Insert a Step at the start of the workflow"
@@ -232,10 +242,13 @@ export function StepList({
                   dragging={dragging}
                   onDrop={move}
                 />
-                <p className={styles.note}>
+                {/* <li>, because <Gap> renders one and an orphaned list item
+                    is both invalid markup and an insert control the
+                    accessibility tree has nowhere to put. */}
+                <li className={styles.note}>
                   No Steps yet. Add one from the Library, or use the <b>+</b> above.
-                </p>
-              </div>
+                </li>
+              </ul>
             ) : (
               <Sequence
                 steps={definition.steps}

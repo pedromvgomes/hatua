@@ -390,6 +390,57 @@ describe('commands', () => {
     expect(fork?.branches?.[0]?.steps).toEqual([])
   })
 
+  it('moves a Step INTO a container that sits after it in the same list', async () => {
+    /*
+     * Regression. `moveStep` used to resolve the destination path before
+     * detaching the node, and detaching shifts every sibling after it down one
+     * — so `steps.1.branches.0.steps` became `steps.0.branches.0.steps` and the
+     * old path pointed at nothing. `insertNode` then took its "the sequence
+     * does not exist yet" branch and setIn a whole new root Step into being:
+     * the document stopped validating, and the dragged Step was inside a node
+     * nobody wrote. One drag onto an insert point inside a Fork reached it.
+     */
+    const { store } = await open()
+    store.apply(moveStep('s1', { parentId: 's2', branchIndex: 1, index: 0 }))
+
+    const snapshot = ready(store)
+    expect(snapshot.invalid).toBeNull()
+
+    const steps = snapshot.definition?.steps ?? []
+    expect(steps.map((step) => step.id)).toEqual(['s2', 's4'])
+
+    const fork = steps.find((step) => step.id === 's2')
+    expect(fork?.branches?.[1]?.steps.map((step) => step.id)).toEqual(['s1'])
+    // No fabricated node anywhere.
+    expect(snapshot.text).not.toContain('- branches:')
+  })
+
+  it('moves a Step out of a loop that sits after it once the list has closed up', async () => {
+    const { store } = await open()
+    store.apply(moveStep('s1', { parentId: 's4', index: 0 }))
+
+    const snapshot = ready(store)
+    expect(snapshot.invalid).toBeNull()
+    const loop = snapshot.definition?.steps.find((step) => step.id === 's4')
+    expect(loop?.steps?.map((step) => step.id)).toEqual(['s1', 's5'])
+  })
+
+  it('addresses the right Step when the list holds a hole a user left mid-edit', async () => {
+    // A bare `-` is a null item, and `steps:` is allowed to hold one while
+    // someone is typing. Compacting it out of the walk renumbered every index
+    // after it, so this used to delete s1 and leave s2 alone.
+    const host = recorder({
+      yaml: 'id: w\nname: n\nversion: 1\nstatus: draft\nsteps:\n  -\n  - id: s1\n    use: a\n  - id: s2\n    use: b\n',
+    })
+    const store = createEditingStore(host.port, 'w')
+    store.open()
+    await settle()
+
+    store.apply(removeStep('s2'))
+    expect(ready(store).text).toContain('id: s1')
+    expect(ready(store).text).not.toContain('id: s2')
+  })
+
   it('refuses to move a container inside itself', async () => {
     // Otherwise the subtree is detached and spliced into a sequence that lives
     // inside the detached node: the Step and everything under it disappear from
@@ -801,6 +852,19 @@ describe('ending the session', () => {
       await vi.advanceTimersByTimeAsync(10_000)
       expect(host.writes).toHaveLength(0)
     }
+  })
+
+  it('says the session ended rather than leaving an edit pending for ever', async () => {
+    // The save state used to sit at `pending` indefinitely: schedule() fired,
+    // write() bailed on the missing token, and nothing ever reported that the
+    // edit was going nowhere. Silent, and indistinguishable from "about to be
+    // written".
+    const { store } = await open()
+    await store.release()
+    store.apply(removeStep('s1'))
+
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
+    expect((ready(store).save as { error: Error }).error.message).toMatch(/session has ended/)
   })
 
   it('writes nothing more once the session ended, even if the document is edited again', async () => {

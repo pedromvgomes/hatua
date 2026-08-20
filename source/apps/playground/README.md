@@ -109,6 +109,12 @@ or return nothing, chosen so each state can be held still and looked at.
 `api.html` runs the same states against a real request, including a checkbox
 that points the source at a URL the endpoint answers 404 for.
 
+Opening any two of these pages at once shows the lease working: the second takes
+the claim and the first halts on its next autosave. It is a takeover rather than
+a refusal, and `src/workflow-store.ts` says why — a page with no way to release
+its claim on unload would lock itself out for a full lease every time you
+reloaded it.
+
 `host.tsx` does the same for storage, and one of its options is there to be
 awkward: a `WorkflowStore` that **refuses every write**. ADR-0005 says a
 rejected write halts autosave and keeps the in-memory document rather than

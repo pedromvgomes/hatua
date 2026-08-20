@@ -34,9 +34,20 @@ import type {
  *    tab — so exclusivity that depended solely on a client calling home would
  *    eventually wedge a workflow nobody could edit. It expires here.
  *
+ * Two tabs on the same machine are enough to watch it work, and what you see is
+ * a **takeover**, not a refusal: the second tab claims the workflow and the
+ * first one halts on its next autosave with "another session holds the edit".
+ * That is deliberate, and it is the more useful half of ADR-0005 to be able to
+ * look at — the rejected-write path, on screen, without anyone having to break
+ * anything. Refusing the second tab instead would be defensible in a real Host,
+ * but a page with no way to release its claim on unload would then lock itself
+ * out for the length of a lease every time you reloaded it.
+ *
+ * A real Host picks between those two on its own terms; the shape of the port
+ * is the same either way, which is the only thing Hatua can see.
+ *
  * What is faked: nothing about the contract, only its scale. One browser, one
- * origin, no concurrent users. Two tabs on the same machine are enough to watch
- * the second one get refused, which is the whole point of a lease.
+ * origin, no server.
  */
 
 /** The workflow every page starts from, written the way a person writes one. */
@@ -173,10 +184,21 @@ export function createLocalWorkflowStore(options: LocalWorkflowStoreOptions = {}
       // Minted by storage, which is the only place it can be minted from — a
       // Hatua-generated token would let two clients pick different ones with
       // this store unable to say which holds the claim.
+      //
+      // Claiming here also REVOKES whatever claim was live: the previous
+      // holder's token stops matching, so its next write is refused and its
+      // editor halts. See the takeover note at the top of this file.
+      const displaced = stored.claim
       const token = `edit_${draft.version}_${Date.now().toString(36)}`
       const lease = leaseFor(token)
       stored.claim = { token, expiresAt: lease.expiresAt }
       write(workflowId, stored)
+
+      if (displaced && Date.parse(displaced.expiresAt) > Date.now()) {
+        console.info(
+          '[playground] took over a live claim; the other session will halt on its next save',
+        )
+      }
 
       return { token: token as EditToken, lease, yaml: draft.yaml, resumed }
     },

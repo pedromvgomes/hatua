@@ -105,9 +105,23 @@ const rowNames = () =>
     .filter((button) => !button.hasAttribute('aria-label'))
     .map((button) => button.firstElementChild?.textContent)
 
-/** The row's `<li>`, which is what carries `draggable` and the keyboard handler. */
-const rowFor = (name: string) =>
-  screen.getByRole('button', { name: new RegExp(`^${name}`) }).closest('li') as HTMLElement
+/**
+ * The row's `<li>`, which is what carries `draggable` and the keyboard handler.
+ *
+ * Matched on the name the row SHOWS rather than on its accessible name, which
+ * is the name and the meta line run together — and a prefix match on that
+ * cannot tell "Archive" from "Archive each".
+ */
+const rowFor = (name: string) => {
+  const identity = screen
+    .getAllByRole('button')
+    .find(
+      (button) =>
+        !button.hasAttribute('aria-label') && button.firstElementChild?.textContent === name,
+    )
+  if (!identity) throw new Error(`no Step row named "${name}"`)
+  return identity.closest('li') as HTMLElement
+}
 
 describe('StepList', () => {
   it('says so when the Host wired no storage, rather than showing an empty workflow', () => {
@@ -296,6 +310,33 @@ describe('edits go through the store as commands', () => {
     fireEvent.keyDown(rowFor('Fetch mail'), { key: 'ArrowDown', altKey: true })
 
     await waitFor(() => expect(rowNames()[0]).toBe('How urgent?'))
+  })
+
+  it('moves one Step per keypress, not one per level of nesting', async () => {
+    /*
+     * Regression. A container's <li> wraps its children's, so the keydown
+     * bubbled and this handler ran again at every enclosing level: one
+     * Alt+ArrowDown on a Step inside a loop moved that Step AND moved the loop
+     * past its next sibling — two mutations and two undo entries from one
+     * keypress. Only stopPropagation stops it; preventDefault does not.
+     */
+    const source = host()
+    mount(source)
+    await screen.findByText('Archive')
+
+    fireEvent.keyDown(rowFor('Archive'), { key: 'ArrowUp', altKey: true })
+
+    // "Archive" is alone in the loop, so the move is a no-op — and the loop
+    // itself must not have moved in its place.
+    await act(() => Promise.resolve())
+    expect(rowNames()).toEqual([
+      'Fetch mail',
+      'How urgent?',
+      'Ping the channel',
+      'Archive each',
+      'Archive',
+    ])
+    expect(source.writes).toHaveLength(0)
   })
 
   it('ignores an arrow without Alt, which is how a list is read rather than reordered', async () => {

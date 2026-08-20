@@ -78,6 +78,10 @@ import { createLocalWorkflowStore } from './workflow-store'
  * test that only counts one attempt. Remove a Step against it and the panel
  * says saving stopped while the tree keeps every edit.
  *
+ * Opening this page twice does the same thing without any option being set: the
+ * second tab takes the claim and the first halts on its next write. See
+ * src/workflow-store.ts on why takeover rather than refusal.
+ *
  * The source switcher below is the half of the Library that the default entry
  * cannot show. A catalogue that always resolves instantly makes loading,
  * failure and emptiness look theoretical; they are not — they are what a Host

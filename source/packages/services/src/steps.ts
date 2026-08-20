@@ -82,17 +82,26 @@ const asObject = (document: WorkflowDocument): Record<string, unknown> => {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
 }
 
-const asSteps = (value: unknown): Record<string, unknown>[] =>
-  Array.isArray(value) ? value.filter((item) => item && typeof item === 'object') : []
-
-/** Depth-first, parents before children, over the loose projection. */
+/**
+ * Depth-first, parents before children, over the loose projection.
+ *
+ * Non-object entries are SKIPPED, never compacted away. A `steps:` list can
+ * legitimately hold a bare `-` — that is a null item, and it is exactly what a
+ * user halfway through typing in Text Mode has — and the index yielded here is
+ * used verbatim against the AST sequence by `detachNode` and `insertNode`.
+ * Filtering the list first renumbered everything after the hole, so removing a
+ * Step deleted its neighbour instead. Skip in place; the index must stay the
+ * index the document has.
+ */
 function* walk(
   steps: unknown,
   base: Path,
 ): Generator<{ step: Record<string, unknown>; listPath: Path; index: number }> {
-  const list = asSteps(steps)
+  const list = Array.isArray(steps) ? steps : []
   for (let index = 0; index < list.length; index++) {
-    const step = list[index] as Record<string, unknown>
+    const entry = list[index]
+    if (!entry || typeof entry !== 'object') continue
+    const step = entry as Record<string, unknown>
     yield { step, listPath: base, index }
 
     const branches = Array.isArray(step.branches) ? step.branches : []
@@ -237,33 +246,64 @@ export function moveStep(id: string, to: InsertPoint): EditCommand {
       const found = locate(document, id)
       if (!found) throw new Error(`No Step with id "${id}"`)
 
-      const targetPath = listPathOf(document, to)
+      // Resolved twice, against the tree before the move and against the tree
+      // after it, because a YAML path is only valid for the tree that produced
+      // it.
+      //
+      // This one is the reason: detaching a Step shifts every sibling after it
+      // down one, and if the destination is INSIDE one of those siblings then
+      // its path — `steps.2.branches.0.steps`, say — now points at
+      // `steps.1.…`. `insertNode` looked there, found nothing, and fell through
+      // to its "the sequence does not exist yet" branch, which `setIn` a whole
+      // new root Step into being. The document stopped validating and the
+      // dragged Step ended up inside a fabricated node. Reachable by dragging
+      // any Step onto an insert point inside a Fork or loop that sits after it.
+      const targetBefore = listPathOf(document, to)
 
       // A container cannot be moved into itself: the subtree would be detached
       // and then spliced into a sequence that is inside the detached node, so
       // the Step and everything under it would vanish from the document while
       // still holding a reference to itself. The projection would simply be
       // missing them, with no error anywhere.
+      //
+      // Checked before the detach, which is also what makes the second
+      // resolution below safe: the destination is not inside what we lifted
+      // out, so it is still in the tree afterwards.
       const ownPath = [...found.listPath, found.index]
       if (
-        targetPath.length > ownPath.length &&
-        samePath(targetPath.slice(0, ownPath.length), ownPath)
+        targetBefore.length > ownPath.length &&
+        samePath(targetBefore.slice(0, ownPath.length), ownPath)
       ) {
         throw new Error(`Cannot move Step "${id}" inside itself`)
       }
 
       const node = detachNode(document, found.listPath, found.index)
+      const targetPath = listPathOf(document, to)
 
-      // Detaching shifts everything after it down one, so a move further along
-      // the SAME list overshoots by one without this. Moving s1 to index 3 of a
-      // four-step list means "after s4", and the list is three long by the time
-      // it is spliced back in.
+      // The same shift, one list up. A move further along the SAME list
+      // overshoots by one without this: moving s1 to index 3 of a four-step
+      // list means "after s4", and the list is three long by the time the node
+      // is spliced back in. Compared against the pre-detach path, because that
+      // is the tree `to.index` was expressed against.
       const index =
-        samePath(found.listPath, targetPath) && to.index > found.index ? to.index - 1 : to.index
+        samePath(found.listPath, targetBefore) && to.index > found.index ? to.index - 1 : to.index
 
       insertNode(document, targetPath, index, node)
     },
   }
+}
+
+/**
+ * How many Steps the root sequence holds, whether or not the document is a
+ * valid Workflow Definition.
+ *
+ * `definition?.steps.length ?? 0` cannot tell "no Steps" from "does not
+ * project", and a caller appending at that index would prepend instead. This
+ * reads the same loose projection every command reads.
+ */
+export const rootStepCount = (document: WorkflowDocument): number => {
+  const steps = asObject(document).steps
+  return Array.isArray(steps) ? steps.length : 0
 }
 
 /**

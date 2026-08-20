@@ -1,4 +1,4 @@
-import { addStep, type InsertPoint } from '@hatua/services'
+import { addStep, type InsertPoint, rootStepCount } from '@hatua/services'
 import { type ComponentPropsWithRef, useState } from 'react'
 import { Data } from '../layouts/Data'
 import { FlowMap } from '../layouts/FlowMap'
@@ -78,7 +78,11 @@ export function Build({ className, ...rest }: BuildProps) {
    */
   const appendPoint = (): InsertPoint => {
     const state = store?.getSnapshot()
-    return { index: state?.status === 'ready' ? (state.workflow.definition?.steps.length ?? 0) : 0 }
+    // Counted off the document rather than off `definition`, which is null
+    // while the document does not project — and `?.steps.length ?? 0` cannot
+    // tell that apart from an empty workflow, so picking a Component against a
+    // half-written file used to PREPEND.
+    return { index: state?.status === 'ready' ? rootStepCount(state.workflow.document) : 0 }
   }
 
   return (
