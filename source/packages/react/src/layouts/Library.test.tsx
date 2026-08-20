@@ -231,6 +231,35 @@ describe('Library', () => {
     expect(screen.getByRole('searchbox')).toBeDefined()
   })
 
+  it('does not report an empty query as a failed search', async () => {
+    // Reachable without anyone typing: an array whose entries carry no `kind`
+    // this region renders — a `components:` catalogue is one array away — files
+    // into no section, and the panel used to say `Nothing matches “”.`
+    mount(<Library />, {
+      loadManifests: async () => [{ components: [] }, { components: [] }] as unknown as Manifest[],
+    })
+
+    expect(await screen.findByText(/nothing in it is a Component or a Trigger/i)).toBeDefined()
+    expect(screen.queryByText(/nothing matches/i)).toBeNull()
+  })
+
+  it('keeps one live region mounted, so a change to it is a change worth announcing', async () => {
+    // A <p role="status"> inserted together with its text is a new node, not an
+    // update to a watched one, and is frequently announced by nothing.
+    const host = pending()
+    mount(<Library />, host.source)
+
+    const live = screen.getByRole('status')
+    expect(live.textContent).toBe('Loading components…')
+
+    host.resolve(CATALOGUE)
+    await screen.findByText('Send email')
+
+    // Same element, emptied — not removed.
+    expect(screen.getByRole('status')).toBe(live)
+    expect(live.textContent).toBe('')
+  })
+
   it('starts filtered when told to', async () => {
     mount(<Library defaultQuery="agent" />, { loadManifests: async () => CATALOGUE })
 

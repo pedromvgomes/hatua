@@ -179,10 +179,11 @@ const noStylesheet = (): Plugin => ({
 // bundles, so `ls dist/assets` answers what each way of embedding costs — the
 // claim ADR-0003 makes about paying only for what you render.
 //
-// The third entry, api.html, varies a different axis: index and host bake the
-// catalogue in at build time, api fetches it at run time. Keeping all three
-// means the difference is visible in the output rather than asserted in a
-// comment — the fixture data is in two of the three bundles and not the third.
+// api.html varies a different axis from the rest: every other page bakes the
+// catalogue in at build time, and it fetches at run time. Keeping them side by
+// side means the difference is visible in the output rather than asserted in a
+// comment — the chunk holding the fixture data is loaded by index, host and
+// theme, and by api never.
 export default defineConfig({
   plugins: [react(), manifestFixtures(), manifestApi(), noStylesheet()],
   build: {

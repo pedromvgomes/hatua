@@ -67,6 +67,31 @@ const SELF = 'src/styles/tokens.test.ts'
  * cannot join it quietly.
  */
 const HOST_TOKENS = 'src/theme/theming.stories.tsx'
+
+/**
+ * The files that may name a seed, listed rather than matched by directory.
+ *
+ * `createTheme` WRITES the seeds and `HatuaProvider` applies what it returns, so
+ * both name `--hatua-seed-*` legitimately. This used to be `startsWith('src/
+ * theme/')`, which quietly covered the whole directory — and the moment a story
+ * landed in it, theming.stories.tsx sat outside both alias-existence rules. A
+ * typo'd `var(--hatua-text-primry)` in it would resolve to nothing and ship.
+ */
+const SEED_AUTHORS = new Set(['src/theme/createTheme.ts', 'src/theme/HatuaProvider.tsx'])
+
+/**
+ * The names a file references that nothing defines.
+ *
+ * For every file but one, that is the whole rule. HOST_TOKENS writes a HOST's
+ * tokens on purpose, so its unprefixed names are its subject rather than a
+ * mistake — but a `--hatua-*` name it gets wrong is still a typo that resolves
+ * to nothing, so the exemption is scoped to the properties it is about instead
+ * of excusing the file.
+ */
+const unknownNames = (path: string, names: string[], known: Set<string>) =>
+  names
+    .filter((a) => !definedAliases.has(a) && !known.has(a))
+    .filter((a) => path !== HOST_TOKENS || a.startsWith(PREFIX))
 const componentFiles = sources.filter((f) => /\.tsx?$/.test(f.path) && f.path !== SELF)
 
 const definitionsIn = (text: string) =>
@@ -139,13 +164,12 @@ describe('token discipline (ADR-0002)', () => {
   })
 
   // Inline styles are the other way a colour reaches the DOM, and the CSS rules
-  // above cannot see them. theme/ is exempt: createTheme WRITES the seeds and
-  // HatuaProvider applies them, which is the whole point of that layer.
-  it.each(componentFiles.filter((f) => !f.path.startsWith('src/theme/')))(
+  // above cannot see them. Only the two files that author seeds are exempt —
+  // see SEED_AUTHORS.
+  it.each(componentFiles.filter((f) => !SEED_AUTHORS.has(f.path)))(
     '$path reads only aliases base.css defines',
-    ({ text }) => {
-      const unknown = referencedAliases(text).filter((a) => !definedAliases.has(a))
-      expect(unknown).toEqual([])
+    ({ path, text }) => {
+      expect(unknownNames(path, referencedAliases(text), new Set())).toEqual([])
     },
   )
 
@@ -156,16 +180,15 @@ describe('token discipline (ADR-0002)', () => {
    * split: a test NAMES a property to assert something about it — that
    * <Hatua theme> really does write the --hatua-seed-accent seed — while a story
    * READS one to paint with, and tokens.stories.tsx reads every alias there is
-   * from arrays of exactly these strings. theme/ stays exempt for the reason it
-   * always was: createTheme writes the seeds.
+   * from arrays of exactly these strings. The two seed authors stay exempt for
+   * the reason they always were; the directory around them no longer is.
    */
-  it.each(
-    componentFiles.filter((f) => !f.path.startsWith('src/theme/') && !/\.test\.tsx?$/.test(f.path)),
-  )('$path names only aliases base.css defines', ({ text }) => {
-    const known = definitionsIn(text)
-    const unknown = quotedAliases(text).filter((a) => !definedAliases.has(a) && !known.has(a))
-    expect(unknown).toEqual([])
-  })
+  it.each(componentFiles.filter((f) => !SEED_AUTHORS.has(f.path) && !/\.test\.tsx?$/.test(f.path)))(
+    '$path names only aliases base.css defines',
+    ({ path, text }) => {
+      expect(unknownNames(path, quotedAliases(text), definitionsIn(text))).toEqual([])
+    },
+  )
 })
 
 /**

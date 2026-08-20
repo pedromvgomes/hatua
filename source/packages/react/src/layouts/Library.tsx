@@ -72,6 +72,18 @@ export function Library({ onSelect, defaultQuery = '', className, ...rest }: Lib
   const sections = useMemo(() => sectionsOf(manifests, query), [manifests, query])
   const matched = sections.reduce((n, section) => n + section.count, 0)
 
+  const searching = query.trim() !== ''
+  const populated = state.status === 'ready' && manifests.length > 0
+  /** Loaded, holds something, and none of it is a kind this region can render. */
+  const unrenderable = populated && matched === 0 && !searching
+
+  const liveMessage =
+    state.status === 'loading'
+      ? 'Loading components…'
+      : populated && matched === 0 && searching
+        ? `Nothing matches “${query}”.`
+        : ''
+
   return (
     <>
       <style href="hatua-library" precedence="hatua">
@@ -103,14 +115,20 @@ export function Library({ onSelect, defaultQuery = '', className, ...rest }: Lib
             </p>
           ) : null}
 
-          {/* role=status, not a spinner: the panel is a live region, so a
-              screen reader hears the catalogue arrive rather than being left
-              on a heading that never changes. */}
-          {state.status === 'loading' ? (
-            <p className={styles.note} role="status">
-              Loading components…
-            </p>
-          ) : null}
+          {/*
+            One live region, mounted for the life of the panel, whatever it
+            currently has to say.
+
+            Rendered conditionally it announced nothing much of the time: a live
+            region generally has to EXIST before its content changes for the
+            change to be announced, so a <p role="status"> inserted together
+            with "Loading components…" is a new node rather than an update to a
+            watched one. Mounted always and written into, "the catalogue
+            arrived" is a change a screen reader is actually watching for.
+          */}
+          <p className={cx(styles.note, !liveMessage && styles.silent)} role="status">
+            {liveMessage}
+          </p>
 
           {state.status === 'failed' ? (
             <div className={styles.failure} role="alert">
@@ -133,9 +151,17 @@ export function Library({ onSelect, defaultQuery = '', className, ...rest }: Lib
             </p>
           ) : null}
 
-          {state.status === 'ready' && manifests.length > 0 && matched === 0 ? (
-            <p className={styles.note} role="status">
-              Nothing matches “{query}”.
+          {/*
+            "Nothing matched" is not the same as "nothing here is renderable".
+            A Host that resolves an array of things with no `kind` we know —
+            a `components:` catalogue is one array away from exactly that —
+            filters to nothing with an EMPTY query, and this used to render the
+            literal `Nothing matches “”.`
+          */}
+          {unrenderable ? (
+            <p className={styles.note}>
+              The catalogue loaded, but nothing in it is a Component or a Trigger. A manifest
+              declares which with <code className={styles.code}>kind</code>.
             </p>
           ) : null}
 

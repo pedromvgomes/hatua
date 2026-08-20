@@ -83,6 +83,27 @@ describe('createManifestStore', () => {
     expect(store.getSnapshot()).toEqual({ status: 'ready', manifests: [] })
   })
 
+  /*
+   * A type is a promise the Host makes; an endpoint can break it. ports.ts
+   * warns by name about the `components:` catalogue, and it is the shape half
+   * of conformance/manifest is written in — so a Host serving a manifest file
+   * straight down the wire resolves an object here. The Library reached
+   * `.filter` on it during render, and a TypeError thrown from render takes
+   * down the Host's tree.
+   */
+  it('refuses a resolved value that is not an array, rather than passing it on', async () => {
+    const store = createManifestStore({
+      loadManifests: async () =>
+        ({ components: [manifest('email.send')] }) as unknown as Manifest[],
+    })
+    store.load()
+    await settle()
+
+    const state = store.getSnapshot()
+    expect(state.status).toBe('failed')
+    expect(state.status === 'failed' && state.error.message).toContain('flat array')
+  })
+
   it('reports a rejection as an Error, whatever was thrown', async () => {
     const store = createManifestStore({
       loadManifests: async () => {

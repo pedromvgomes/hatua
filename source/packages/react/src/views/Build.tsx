@@ -35,6 +35,16 @@ export type BuildProps = ComponentPropsWithRef<'div'>
  * The wrappers below carry the grid placement rather than the regions carrying
  * it themselves. A region that positioned itself would only be movable into a
  * container shaped like this one, which is the opposite of the claim.
+ *
+ * `className` and the rest of the props land on the OUTER element, which is the
+ * horizontal scroller rather than the grid. That is the usual meaning of
+ * spreading props onto a root, and it is worth stating because the root moved:
+ * a `style={{ gridTemplateColumns: … }}` handed to <Build> now styles the
+ * scroller and changes no column. Nothing here will tell you — BuildProps is a
+ * <div>'s props either way. It is also not a regression to fix: <Build> takes no
+ * slot props for the same reason it should take no layout overrides, and a Host
+ * that wants different columns imports the regions and writes its own grid,
+ * which is strictly more capable. See views/README.
  */
 export function Build({ className, ...rest }: BuildProps) {
   return (

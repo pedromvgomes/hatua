@@ -28,9 +28,9 @@ import { createApiManifestSource } from './api-source'
  *     base URL and no auth, so a port that took one would be Hatua guessing at
  *     an HTTP client every Host already has.
  *  3. **The manifests are not in this bundle.** `grep` dist/assets for
- *     `email.send`: main and host carry the catalogue as data, api does not.
- *     That is the difference between build time and run time, in the output
- *     rather than in a comment.
+ *     `email.send` and it turns up one chunk — the one index.html, host.html
+ *     and theme.html all load, and this page does not. That is the difference
+ *     between build time and run time, in the output rather than in a comment.
  *  4. **The endpoint is a stand-in.** There is no backend here — it is a
  *     dev-server middleware, and a static file in a built playground. See
  *     vite.config.ts. The delay in the source is a stand-in too: a file on the

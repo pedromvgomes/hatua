@@ -48,6 +48,35 @@ export interface ManifestStore extends Store<ManifestState> {
 const asError = (cause: unknown): Error =>
   cause instanceof Error ? cause : new Error(String(cause))
 
+/**
+ * What a Host resolved, checked before anyone renders it.
+ *
+ * The rejection path already normalises anything a Host throws, down to a bare
+ * string; the resolve path used to publish whatever arrived. That asymmetry had
+ * a consequence: `ManifestSource.loadManifests` is typed `Promise<Manifest[]>`,
+ * but a type is a promise the Host makes and an endpoint can break it. Serving
+ * the `components:` catalogue — the shape ports.ts warns about by name, and the
+ * shape half the fixtures in conformance/manifest are written in — resolves an
+ * object, and the Library reached `.filter` on it during render. A TypeError
+ * thrown from render takes down the Host's tree; a `failed` state is a sentence
+ * in a panel with a Retry button next to it.
+ *
+ * Only the outer shape is checked. Validating each manifest against the schema
+ * would put zod in every consumer's bundle to re-check what the Host's own
+ * publish step already validated, and would turn one malformed entry into an
+ * empty Library rather than a mostly-working one.
+ */
+const received = (manifests: Manifest[]): ManifestState =>
+  Array.isArray(manifests)
+    ? { status: 'ready', manifests }
+    : {
+        status: 'failed',
+        error: new Error(
+          'loadManifests() must resolve a flat array of manifests. Use loadManifests() from ' +
+            '@hatua/sdk, which flattens a `components:` catalogue into one.',
+        ),
+      }
+
 const LOADING: ManifestState = { status: 'loading' }
 
 export function createManifestStore(source: ManifestSource): ManifestStore {
@@ -95,7 +124,7 @@ export function createManifestStore(source: ManifestSource): ManifestStore {
     // that skipped it.
     try {
       source.loadManifests().then(
-        (manifests) => settle({ status: 'ready', manifests }),
+        (manifests) => settle(received(manifests)),
         (cause) => settle({ status: 'failed', error: asError(cause) }),
       )
     } catch (cause) {

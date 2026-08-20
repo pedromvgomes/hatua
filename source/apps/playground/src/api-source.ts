@@ -50,11 +50,25 @@ export function createApiManifestSource(
         throw new Error(`${url} responded ${response.status} ${response.statusText}`.trim())
       }
 
+      let body: unknown
       try {
-        return (await response.json()) as Manifest[]
+        body = await response.json()
       } catch {
         throw new Error(`${url} did not return JSON.`)
       }
+
+      // The cast is the last place a promise can be broken quietly. A 200 whose
+      // body is an object — the `components:` catalogue, most likely, since that
+      // is a legal way to write a manifest FILE — would otherwise be handed to
+      // Hatua as a Manifest[] it is not. Failing here keeps it on the Host's
+      // side of the seam, which is where this file says such things belong.
+      if (!Array.isArray(body)) {
+        throw new Error(
+          `${url} returned ${body === null ? 'null' : typeof body}, not an array of manifests. ` +
+            'A `components:` catalogue has to be flattened before it is served.',
+        )
+      }
+      return body as Manifest[]
     },
   }
 }

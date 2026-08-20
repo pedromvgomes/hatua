@@ -19,7 +19,7 @@ now, which pages carry a catalogue:
 
 ```
 $ grep -l email.send dist/assets/*.js
-dist/assets/catalogue-*.js      # loaded by index.html and host.html, not api.html
+dist/assets/catalogue-*.js   # index.html, host.html and theme.html — not api.html
 ```
 
 Both greps are about which chunks a *page* pulls in. The entry chunks named

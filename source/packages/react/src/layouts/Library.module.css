@@ -42,6 +42,15 @@
     text-wrap: pretty;
   }
 
+  /* The live region stays mounted with nothing to say; it must not take up a
+     line of the panel while it is quiet. `display: none` would defeat the point
+     — a hidden region is not observed — so it collapses instead. */
+  .silent {
+    padding: 0;
+    block-size: 0;
+    overflow: hidden;
+  }
+
   .code {
     font-family: var(--hatua-font-mono);
     font-size: 0.75rem;
