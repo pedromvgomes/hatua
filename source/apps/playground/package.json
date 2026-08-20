@@ -10,7 +10,8 @@
     "build": "vite build --configLoader runner",
     "preview": "vite preview --configLoader runner",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --config vitest.config.ts"
+    "test": "vitest run --config vitest.config.ts",
+    "test:coverage": "vitest run --config vitest.config.ts --coverage --coverage.reporter=text-summary --coverage.reporter=json-summary --coverage.reporter=lcovonly"
   },
   "dependencies": {
     "@hatua/react": "workspace:*",
