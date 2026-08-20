@@ -530,9 +530,27 @@ function Row({
 
   return (
     <div className={cx(styles.row, selected && styles.selected, dragging && styles.lifted)}>
-      {/* Decoration: the whole row is draggable, and the grip says so without
-          being a second control to tab through. */}
-      <span className={styles.grip} aria-hidden="true" />
+      {/*
+        The drag grip. Decoration, not a control: the whole row is draggable, so
+        this says so without being a second thing to tab through.
+
+        Dots rather than a bar, which is the design's `more-horizontal` rotated
+        90°. A solid stripe down the edge of a row reads as status — a severity
+        or a state — and this row already carries a real status marker. The dots
+        mean "grab me" and nothing else.
+      */}
+      <svg
+        className={styles.grip}
+        viewBox="0 0 4 16"
+        width="4"
+        height="16"
+        focusable="false"
+        aria-hidden="true"
+      >
+        <circle cx="2" cy="4" r="1" />
+        <circle cx="2" cy="8" r="1" />
+        <circle cx="2" cy="12" r="1" />
+      </svg>
 
       <button
         type="button"

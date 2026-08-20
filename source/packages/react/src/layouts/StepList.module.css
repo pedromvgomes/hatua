@@ -182,11 +182,14 @@
   }
 
   .grip {
+    flex: none;
     inline-size: 4px;
     block-size: 16px;
-    border-radius: 2px;
-    background: var(--hatua-border-strong);
-    flex: none;
+    fill: var(--hatua-border-strong);
+  }
+
+  .row:hover .grip {
+    fill: var(--hatua-text-muted);
   }
 
   .identity {

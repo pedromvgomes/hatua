@@ -105,6 +105,17 @@ const mount = (source: Host, props: Parameters<typeof StepList>[0] = {}, manifes
     </HatuaProvider>,
   )
 
+/**
+ * Long enough for the autosave debounce plus contention.
+ *
+ * Autosave waits 800ms of quiet before it writes, and `waitFor` defaults to a
+ * 1000ms timeout — 200ms of headroom, which a machine running the whole
+ * monorepo's suites in parallel does not reliably have. The debounce is the
+ * behaviour under test, so the wait has to outlast it by a margin rather than
+ * race it.
+ */
+const AUTOSAVED = { timeout: 5000 }
+
 /** The Step rows, top to bottom, by the name each one shows. */
 const rowNames = () =>
   screen
@@ -293,7 +304,7 @@ describe('edits go through the store as commands', () => {
 
     // Nothing was clicked to save it. ADR-0005: editing autosaves, and the user
     // decides only Publish, Release and Discard.
-    await waitFor(() => expect(source.writes).toHaveLength(1))
+    await waitFor(() => expect(source.writes).toHaveLength(1), AUTOSAVED)
   })
 
   it('keeps the user’s comment through an edit, which is the round-trip promise', async () => {
@@ -302,7 +313,7 @@ describe('edits go through the store as commands', () => {
     await screen.findByText('Fetch mail')
     fireEvent.click(screen.getByRole('button', { name: 'Remove Fetch mail' }))
 
-    await waitFor(() => expect(source.writes).toHaveLength(1))
+    await waitFor(() => expect(source.writes).toHaveLength(1), AUTOSAVED)
     expect(source.writes[0]).toContain('# Kept, whatever the tree does to it.')
     expect(source.writes[0]).toContain('name: "Morning inbox triage"')
   })

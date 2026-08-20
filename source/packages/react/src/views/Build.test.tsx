@@ -195,7 +195,9 @@ describe('Build wires the Library to the Flow tab', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Library' }))
     fireEvent.click(await screen.findByRole('button', { name: /Send email/ }))
 
-    await waitFor(() => expect(writes).toHaveLength(1))
+    // Autosave waits 800ms of quiet and `waitFor` defaults to 1000ms, which is
+    // not enough headroom on a machine running every suite at once.
+    await waitFor(() => expect(writes).toHaveLength(1), { timeout: 5000 })
     const text = writes[0] as string
     expect(text.indexOf('use: a')).toBeLessThan(text.indexOf('use: email.send'))
   })

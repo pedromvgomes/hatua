@@ -58,31 +58,51 @@ name: "Morning inbox triage"
 version: 1
 status: draft
 
+connections:
+  - id: mailbox
+    ref: host_mailbox_1
+
+triggers:
+  - id: overnight
+    use: email.received
+    name: "When mail arrives"
+    with:
+      connection: mailbox
+
 steps:
   - id: s1
-    use: email.fetch
-    name: "Fetch overnight mail"
-    with:
-      folder: INBOX      # not Archive
+    use: agent.act
+    name: "Sort by urgency"
+    # The Model connection is deliberately left empty: the Flow tab marks a
+    # Step that is not filled in, and a workflow where nothing is wrong shows
+    # nothing to look at.
   - id: s2
     use: core.fork
     name: "How much came in?"
     branches:
       - label: A lot
-        when: "{{ s1.count > 10 }}"
+        when: "{{ s1.result }}"
         steps:
           - id: s3
-            use: agent.classify
-            name: "Sort by urgency"
+            use: email.send
+            name: "Warn the team"
+            with:
+              connection: mailbox
+              to: team@example.com      # not the whole company
       - label: Otherwise
         steps: []
   - id: s4
     use: core.for_each
     name: "Each message"
+    with:
+      items: "{{ overnight.message }}"
     steps:
       - id: s5
         use: email.send
         name: "Send the digest"
+        with:
+          connection: mailbox
+          to: me@example.com
 `
 
 interface Stored {
