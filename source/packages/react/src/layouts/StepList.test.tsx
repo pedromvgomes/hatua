@@ -581,27 +581,41 @@ describe('marking a Step that is not filled in', () => {
     { kind: 'component', use: 'core.for_each', name: 'Loop', fields: [], outputs: [] },
   ]
 
+  /** The problem reports, which are text rather than the coloured edge. */
+  const reports = () =>
+    screen
+      .queryAllByRole('status')
+      .map((mark) => mark.textContent ?? '')
+      .filter((text) => text.includes('problem'))
+
   it('marks the Step whose required field is empty, and only that one', async () => {
     mount(host(), {}, CATALOGUE)
     await screen.findByText('Fetch mail')
 
-    const marks = await screen.findAllByRole('status')
-    const labelled = marks.map((m) => m.getAttribute('aria-label')).filter(Boolean) as string[]
-    expect(labelled.some((l) => l.startsWith('Fetch mail:'))).toBe(true)
-    expect(labelled.some((l) => l.startsWith('Ping the channel:'))).toBe(false)
+    await waitFor(() => expect(reports().length).toBeGreaterThan(0))
+    expect(reports().some((text) => text.startsWith('Fetch mail:'))).toBe(true)
+    expect(reports().some((text) => text.startsWith('Ping the channel:'))).toBe(false)
   })
 
   it('says what is wrong in words, not in colour alone', async () => {
-    // A 7px dot is invisible to a screen reader and to anyone who cannot
-    // distinguish the hue, so the reason is carried as text.
+    // The marker itself is a coloured edge, which a screen reader cannot see
+    // and neither can anyone who does not distinguish the hue.
     mount(host(), {}, CATALOGUE)
     await screen.findByText('Fetch mail')
 
-    const mark = (await screen.findAllByRole('status')).find((m) =>
-      m.getAttribute('aria-label')?.startsWith('Fetch mail:'),
-    )
-    expect(mark?.getAttribute('aria-label')).toContain('1 problem')
-    expect(mark?.getAttribute('aria-label')).toContain('Folder is required.')
+    await waitFor(() => expect(reports().length).toBeGreaterThan(0))
+    const report = reports().find((text) => text.startsWith('Fetch mail:')) as string
+    expect(report).toContain('1 problem')
+    expect(report).toContain('Folder is required.')
+  })
+
+  it('explains itself to a pointer too, from anywhere on the row', async () => {
+    // A 3px edge is not something to ask anyone to hover.
+    mount(host(), {}, CATALOGUE)
+    await screen.findByText('Fetch mail')
+
+    const row = rowFor('Fetch mail').querySelector('[title]') as HTMLElement
+    await waitFor(() => expect(row.getAttribute('title')).toContain('Folder is required.'))
   })
 
   it('marks a fork with only one Branch', async () => {
@@ -609,10 +623,8 @@ describe('marking a Step that is not filled in', () => {
     mount(host(yaml), {}, CATALOGUE)
     await screen.findByText('Only one')
 
-    const mark = (await screen.findAllByRole('status')).find((m) =>
-      m.getAttribute('aria-label')?.startsWith('Only one:'),
-    )
-    expect(mark?.getAttribute('aria-label')).toContain('at least two branches')
+    await waitFor(() => expect(reports().length).toBeGreaterThan(0))
+    expect(reports()[0]).toContain('at least two branches')
   })
 
   it('marks nothing at all until the catalogue has arrived', async () => {
@@ -620,17 +632,13 @@ describe('marking a Step that is not filled in', () => {
     // before then would flash a marker on every row of a good workflow.
     mount(host(), {}, undefined)
     await screen.findByText('Fetch mail')
-
-    const marks = screen.queryAllByRole('status').filter((m) => m.hasAttribute('aria-label'))
-    expect(marks).toHaveLength(0)
+    expect(reports()).toHaveLength(0)
   })
 
   it('marks nothing once the Step is filled in', async () => {
     const yaml = `id: wf\nname: n\nversion: 1\nstatus: draft\nsteps:\n  - id: s1\n    use: email.fetch\n    name: "Done"\n    with:\n      folder: INBOX\n`
     mount(host(yaml), {}, CATALOGUE)
     await screen.findByText('Done')
-
-    const marks = screen.queryAllByRole('status').filter((m) => m.hasAttribute('aria-label'))
-    expect(marks).toHaveLength(0)
+    expect(reports()).toHaveLength(0)
   })
 })

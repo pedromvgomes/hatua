@@ -152,6 +152,7 @@
   }
 
   .row {
+    position: relative;
     display: flex;
     align-items: center;
     gap: 6px;
@@ -231,23 +232,56 @@
   }
 
   /*
-   * The design's 7px error dot. A hit area around it, because the dot itself is
-   * far too small to hover for the title that explains it — and hovering is how
-   * a sighted mouse user reads what a screen reader gets from the label.
+   * Reachable by a screen reader, absent from the layout.
+   *
+   * `display: none` and `visibility: hidden` both remove it from the
+   * accessibility tree as well, which is the one thing it is here for.
    */
-  .problems {
-    display: grid;
-    place-items: center;
-    flex: none;
-    inline-size: 18px;
-    block-size: 22px;
+  .offscreen {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 
-  .dot {
-    inline-size: 7px;
-    block-size: 7px;
-    border-radius: 999px;
-    background: var(--hatua-status-error);
+  /*
+   * A Step that is not filled in, marked on the row's inline end.
+   *
+   * Every row shares that edge however deeply it is nested — only the leading
+   * edge moves with the indent — so the marks line up into a column that can be
+   * scanned in one pass.
+   *
+   * Inside the row rather than replacing its border. An absolutely positioned
+   * child is placed against the PADDING box, so `inset: 1px` leaves exactly one
+   * pixel of card between the mark and the row's own edge, and the row keeps
+   * the border it had. That matters beyond the look: `.selected` colours all
+   * four borders, and a mark that lived in the border would have to fight it on
+   * this edge instead of showing alongside it.
+   *
+   * It follows the row's corners, because a straight bar beside a rounded card
+   * reads as something laid on top of it rather than part of it. Drawn as a
+   * complete ring inset by a pixel, then clipped to its inline end: what
+   * survives is the edge and the start of each curve, bending inward exactly as
+   * the card does.
+   *
+   * Every measurement comes off `--hatua-radius-md`, because that radius is a
+   * seed a Host sets — `apps/playground/theme.html` runs 2px and 16px side by
+   * side, and a hardcoded curve would match the default theme and no other.
+   * `max()` keeps the inner radius from going negative when a Host asks for
+   * square corners, where this degrades to a plain edge.
+   */
+  .invalid::after {
+    content: "";
+    position: absolute;
+    inset: 1px;
+    border: 3px solid var(--hatua-status-error);
+    border-radius: max(0px, calc(var(--hatua-radius-md) - 1px));
+    clip-path: inset(0 0 0 calc(100% - (var(--hatua-radius-md) - 1px)));
+    pointer-events: none;
   }
 
   .chevron,
@@ -268,10 +302,23 @@
     cursor: pointer;
   }
 
-  .chevron:hover,
-  .remove:hover {
+  .chevron:hover {
     background: var(--hatua-surface-raised);
     color: var(--hatua-text-primary);
+  }
+
+  /* Destructive, and it says so on approach rather than after the click. */
+  .remove:hover {
+    background: var(--hatua-status-error-wash);
+    color: var(--hatua-status-error);
+  }
+
+  .icon {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.3;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
 
   .chevron:focus-visible,

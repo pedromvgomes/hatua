@@ -528,8 +528,22 @@ function Row({
 }) {
   const container = Boolean(step.branches?.length || step.steps)
 
+  // Hovering anywhere on the row explains the marker, rather than asking anyone
+  // to find a 3px edge with a pointer.
+  const summary = problems?.length
+    ? problems.map((problem) => problem.message).join(' ')
+    : undefined
+
   return (
-    <div className={cx(styles.row, selected && styles.selected, dragging && styles.lifted)}>
+    <div
+      className={cx(
+        styles.row,
+        selected && styles.selected,
+        dragging && styles.lifted,
+        summary && styles.invalid,
+      )}
+      title={summary}
+    >
       {/*
         The drag grip. Decoration, not a control: the whole row is draggable, so
         this says so without being a second thing to tab through.
@@ -563,7 +577,6 @@ function Row({
       </button>
 
       {problems?.length ? <Problems problems={problems} name={nameOf(step)} /> : null}
-
       {container ? (
         <button
           type="button"
@@ -582,20 +595,43 @@ function Row({
         aria-label={`Remove ${nameOf(step)}`}
         onClick={() => onRemove(step.id)}
       >
-        ×
+        {/*
+          A bin, not a cross. `×` is the glyph for dismissing a thing — closing
+          a panel, clearing a filter — and this deletes a Step out of the
+          document. The two are worth telling apart before the click, not after.
+
+          Drawn rather than set in type: the only bin in a text font is an emoji,
+          which renders at a size and colour the row does not control.
+        */}
+        <svg
+          className={styles.icon}
+          viewBox="0 0 16 16"
+          width="14"
+          height="14"
+          focusable="false"
+          aria-hidden="true"
+        >
+          <path d="M3 4.5h10M6.5 4.5V3.2a.7.7 0 0 1 .7-.7h1.6a.7.7 0 0 1 .7.7v1.3" />
+          <path d="M4.4 4.5l.6 8a1 1 0 0 0 1 .9h4a1 1 0 0 0 1-.9l.6-8" />
+          <path d="M6.8 7v3.6M9.2 7v3.6" />
+        </svg>
       </button>
     </div>
   )
 }
 
 /**
- * The design's 7px error dot, and a sentence for everyone it does not reach.
+ * The reasons, in words, for everyone the coloured edge does not reach.
  *
- * Colour alone is not an indicator: it is invisible to a screen reader and to
- * anyone who cannot distinguish the hue, and this dot is 7px — the hardest case
- * there is. So the marker carries the count and the reasons as text, which also
- * makes it useful to a mouse user hovering it rather than a decoration they
- * have to guess at.
+ * The marker itself is a stripe down the row's inline end: the rows all share
+ * that edge however deeply they are nested, so the marks line up into a column
+ * that can be scanned in one pass, which a dot sitting inside the row never
+ * does.
+ *
+ * A stripe is colour alone, though — invisible to a screen reader and to anyone
+ * who cannot distinguish the hue — so this carries the count and the reasons as
+ * text. It is not rendered visually; the row's `title` says the same thing to a
+ * pointer.
  *
  * `role="status"` rather than `alert`: an unfilled field is the normal state of
  * a Step someone just added, and interrupting a screen reader for it every time
@@ -607,8 +643,8 @@ function Problems({ problems, name }: { problems: Diagnostic[]; name: string }) 
   const label = `${name}: ${problems.length === 1 ? '1 problem' : `${problems.length} problems`}. ${summary}`
 
   return (
-    <span className={styles.problems} role="status" aria-label={label} title={summary}>
-      <span className={styles.dot} aria-hidden="true" />
+    <span className={styles.offscreen} role="status">
+      {label}
     </span>
   )
 }
