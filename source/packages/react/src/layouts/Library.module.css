@@ -143,6 +143,8 @@
     outline-offset: -2px;
   }
 
+  /* The coin: a fixed square every card shares, so a row's height never depends
+     on how the Host proportioned its artwork. */
   .icon {
     display: grid;
     place-items: center;
@@ -151,9 +153,23 @@
     border-radius: var(--radius-sm);
     background: var(--surface-sunken);
     border: 1px solid var(--border-subtle);
-    color: var(--text-secondary);
-    font-size: 0.75rem;
-    font-weight: 600;
+    color: var(--text-muted);
+  }
+
+  .image {
+    inline-size: 18px;
+    block-size: 18px;
+    object-fit: contain;
+  }
+
+  /* Drawn when the manifest declares no icon, or the URL fails to load. */
+  .placeholder {
+    inline-size: 14px;
+    block-size: 14px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.25;
+    opacity: 0.55;
   }
 
   .text {

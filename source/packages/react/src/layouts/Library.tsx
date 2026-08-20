@@ -164,6 +164,56 @@ export function Library({ onSelect, defaultQuery = '', className, ...rest }: Lib
 }
 
 /**
+ * The component's icon, as the Host serves it.
+ *
+ * `icon` is a URL, not a name. Hatua ships no icon set and should not: a name
+ * is only meaningful against a set, and a Host declaring a component of its own
+ * would have nothing to name — which is how this field spent a release
+ * resolving to nothing and the card drawing the component's initial instead. A
+ * letter is not an icon; it carries no more than the name already beside it.
+ *
+ * Into a fixed box, `object-fit: contain`, so a Host's artwork cannot decide
+ * the row height however it is proportioned.
+ *
+ * `referrerPolicy` because the URL may be a third party's CDN and the Host's
+ * own URL can carry a workflow id. `alt=""` because the name is right there:
+ * this is decoration, and announcing it twice helps nobody.
+ */
+function ComponentIcon({ manifest }: { manifest: Manifest }) {
+  const [broken, setBroken] = useState(false)
+
+  // A URL that 404s is the Host's to fix, and until it does the card still has
+  // to draw something square. The placeholder is deliberately neutral rather
+  // than a guess at what the icon would have been.
+  if (!manifest.icon || broken) {
+    return (
+      <span className={styles.icon} aria-hidden="true">
+        <svg className={styles.placeholder} viewBox="0 0 16 16" focusable="false">
+          <title>No icon</title>
+          <rect x="2.5" y="2.5" width="11" height="11" rx="3" />
+        </svg>
+      </span>
+    )
+  }
+
+  return (
+    <span className={styles.icon}>
+      <img
+        className={styles.image}
+        src={manifest.icon}
+        alt=""
+        width={18}
+        height={18}
+        loading="lazy"
+        decoding="async"
+        referrerPolicy="no-referrer"
+        onError={() => setBroken(true)}
+      />
+    </span>
+  )
+}
+
+/**
  * A card is a button only when something happens on click. A control that does
  * nothing still takes a tab stop, still says "button" to a screen reader and
  * still invites a click — so the Host that mounts <Library /> to browse a
@@ -172,15 +222,7 @@ export function Library({ onSelect, defaultQuery = '', className, ...rest }: Lib
 function Card({ manifest, onSelect }: { manifest: Manifest; onSelect?: (m: Manifest) => void }) {
   const body = (
     <>
-      {/* The design system's icon set is not in this package yet. `icon` still
-          reaches the DOM, as the attribute a glyph will be chosen by, so
-          swapping in real icons is a change to this element and to nothing
-          else. What is drawn meanwhile is the component's initial rather than
-          the icon name's: a monogram beside "Run agent" reads as a placeholder,
-          while a "Z" from `icon: zap` reads as a riddle. */}
-      <span className={styles.icon} data-icon={manifest.icon} aria-hidden="true">
-        {manifest.name.slice(0, 1).toUpperCase()}
-      </span>
+      <ComponentIcon manifest={manifest} />
       <span className={styles.text}>
         <span className={styles.name}>{manifest.name}</span>
         {manifest.blurb ? <span className={styles.blurb}>{manifest.blurb}</span> : null}

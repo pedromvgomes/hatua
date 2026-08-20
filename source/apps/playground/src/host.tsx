@@ -5,6 +5,7 @@ import {
   Inspector,
   Library,
   type Manifest,
+  StepList,
   TabbedPanel,
   TopBar,
 } from '@hatua/react'
@@ -41,7 +42,9 @@ import { SOURCES, type SourceName } from './catalogue'
  *     and a shell that quietly needs all five is a shell every Host has to
  *     accept whole.
  *  3. **The tab strip owns nothing.** <TabbedPanel> is handed two regions and
- *     renders two tabs. It has no third child to lose.
+ *     renders two tabs. It has no third child to lose — and it never holds the
+ *     canvas: <FlowMap> gets a column here, as it does in <Build>, because a
+ *     canvas mounted as a tab is a canvas the screen has no room for.
  *  4. **The regions take no data props.** <Library /> is still written exactly
  *     as it was before it rendered anything — the catalogue reaches it through
  *     the provider's ports. Had the manifests arrived as a prop, this line
@@ -126,7 +129,7 @@ function HostPage() {
           style={{
             blockSize: '100%',
             display: 'grid',
-            gridTemplateColumns: 'minmax(200px, 260px) minmax(0, 1fr)',
+            gridTemplateColumns: 'minmax(200px, 260px) minmax(240px, 320px) minmax(0, 1fr)',
             gridTemplateRows: 'minmax(0, 1fr) auto',
           }}
         >
@@ -141,9 +144,12 @@ function HostPage() {
                   label: 'Library',
                   content: <Library onSelect={setLastSelected} />,
                 },
-                { id: 'flow', label: 'Flow', content: <FlowMap /> },
+                { id: 'flow', label: 'Flow', content: <StepList /> },
               ]}
             />
+          </div>
+          <div style={{ gridColumn: 3, gridRow: 1, minWidth: 0 }}>
+            <FlowMap />
           </div>
           <div style={{ gridColumn: '1 / -1', gridRow: 2 }}>
             <TopBar />

@@ -18,7 +18,7 @@ const CATALOGUE: Manifest[] = [
     use: 'email.send',
     name: 'Send email',
     group: 'Email',
-    icon: 'mail',
+    icon: '/icons/mail.svg',
     blurb: 'Send a message through a connected mailbox.',
   }),
   component({
@@ -26,14 +26,14 @@ const CATALOGUE: Manifest[] = [
     name: 'When mail arrives',
     kind: 'trigger',
     group: 'Email',
-    icon: 'inbox',
+    icon: '/icons/inbox.svg',
     blurb: 'Starts the workflow when a message arrives.',
   }),
   component({
     use: 'agent.act',
     name: 'Run agent',
     group: 'Intelligence',
-    icon: 'zap',
+    icon: '/icons/zap.svg',
     blurb: "Ask a model to act on the workflow's data.",
   }),
   component({ use: 'core.wait', name: 'Wait' }),
@@ -149,14 +149,48 @@ describe('Library', () => {
     expect(screen.queryByRole('heading', { name: 'Triggers' })).toBeNull()
   })
 
-  it('renders name, blurb and icon', async () => {
-    mount(<Library />, { loadManifests: async () => [CATALOGUE[0] as Manifest] })
+  it('renders name, blurb and the icon the Host serves', async () => {
+    const { container } = mount(<Library />, {
+      loadManifests: async () => [CATALOGUE[0] as Manifest],
+    })
 
     expect(await screen.findByText('Send email')).toBeDefined()
     expect(screen.getByText('Send a message through a connected mailbox.')).toBeDefined()
-    // The glyph set is not in the package yet; what matters is that `icon`
-    // survives to the DOM so swapping in real icons touches one element.
-    expect(document.querySelector('[data-icon="mail"]')).not.toBeNull()
+
+    // `icon` is a URL, so it has to reach an <img src>. It used to be treated as
+    // a name from an icon set Hatua does not ship, which could never resolve to
+    // a picture — the card drew the component's initial instead.
+    const image = container.querySelector('img') as HTMLImageElement
+    expect(image.getAttribute('src')).toBe('/icons/mail.svg')
+    // Decorative: the name is right beside it, and announcing it twice helps
+    // nobody.
+    expect(image.getAttribute('alt')).toBe('')
+  })
+
+  it('draws a neutral placeholder when a manifest declares no icon', async () => {
+    // Artwork must never block declaring a component, and a guessed-at glyph is
+    // worse than an honest blank — it carries no more than the name beside it.
+    const { container } = mount(<Library />, {
+      loadManifests: async () => [component({ use: 'core.wait', name: 'Wait' })],
+    })
+
+    await screen.findByText('Wait')
+    expect(container.querySelector('img')).toBeNull()
+    expect(container.querySelector('svg')).not.toBeNull()
+  })
+
+  it('falls back to the placeholder when the icon URL fails to load', async () => {
+    // A 404 is the Host's to fix; until it does, the card still owes the row a
+    // square of the right size.
+    const { container } = mount(<Library />, {
+      loadManifests: async () => [CATALOGUE[0] as Manifest],
+    })
+
+    await screen.findByText('Send email')
+    fireEvent.error(container.querySelector('img') as HTMLImageElement)
+
+    expect(container.querySelector('img')).toBeNull()
+    expect(container.querySelector('svg')).not.toBeNull()
   })
 
   it('filters as the user types, across every kind at once', async () => {

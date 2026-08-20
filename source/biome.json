@@ -6,7 +6,7 @@
     "root": ".."
   },
   "files": {
-    "includes": ["**", "!**/dist", "!**/.turbo", "!**/coverage"]
+    "includes": ["**", "!**/dist", "!**/.turbo", "!**/coverage", "!**/public"]
   },
   "formatter": {
     "enabled": true,

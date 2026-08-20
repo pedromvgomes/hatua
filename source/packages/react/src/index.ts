@@ -14,10 +14,11 @@ export type {
   InspectorProps,
   LibraryProps,
   PanelTab,
+  StepListProps,
   TabbedPanelProps,
   TopBarProps,
 } from './layouts'
-export { Data, FlowMap, Inspector, Library, TabbedPanel, TopBar } from './layouts'
+export { Data, FlowMap, Inspector, Library, StepList, TabbedPanel, TopBar } from './layouts'
 export type {
   ButtonProps,
   ButtonSize,

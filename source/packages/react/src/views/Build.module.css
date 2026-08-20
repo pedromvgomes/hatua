@@ -1,11 +1,26 @@
 @layer hatua {
+  /*
+   * Column widths, the top bar's height and the horizontal floor all come from
+   * the design handoff. The floor is the load-bearing one: below it the whole
+   * screen scrolls sideways rather than collapsing, because three columns that
+   * each shrink to nothing produce a canvas too narrow to lay a node out in and
+   * an inspector too narrow to hold a field.
+   */
+  .scroller {
+    block-size: 100%;
+    /* The designer is one screen, not a page: the columns scroll, this does not. */
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
   .build {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
+    grid-template-columns: 304px minmax(0, 1fr) 404px;
     grid-template-rows: auto minmax(0, 1fr);
     grid-template-areas:
-      "bar bar"
-      "work aside";
+      "bar bar bar"
+      "side map aside";
+    min-inline-size: 1240px;
     block-size: 100%;
     min-block-size: 0;
     background: var(--surface-page);
@@ -16,8 +31,21 @@
     min-inline-size: 0;
   }
 
-  .work {
-    grid-area: work;
+  /*
+   * The dividers live here rather than on the regions. A region that drew its
+   * own edge would only sit correctly in a container shaped like this one —
+   * apps/playground/src/host.tsx puts the Inspector on the LEFT, where a
+   * border-inline-start is a line down the middle of nothing.
+   */
+  .side {
+    grid-area: side;
+    min-inline-size: 0;
+    min-block-size: 0;
+    border-inline-end: 1px solid var(--border-subtle);
+  }
+
+  .map {
+    grid-area: map;
     min-inline-size: 0;
     min-block-size: 0;
   }
@@ -26,5 +54,6 @@
     grid-area: aside;
     min-inline-size: 0;
     min-block-size: 0;
+    border-inline-start: 1px solid var(--border-subtle);
   }
 }

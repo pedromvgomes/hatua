@@ -4,6 +4,7 @@ import { Data } from './Data'
 import { FlowMap } from './FlowMap'
 import { Inspector } from './Inspector'
 import { Library } from './Library'
+import { StepList } from './StepList'
 import { TabbedPanel } from './TabbedPanel'
 import { TopBar } from './TopBar'
 
@@ -27,10 +28,20 @@ const REGIONS = [
     href: 'hatua-library',
   },
   {
+    name: 'StepList',
+    element: <StepList />,
+    role: 'region',
+    label: 'Steps',
+    href: 'hatua-step-list',
+  },
+  {
+    // "Flow map", not "Flow": the tab labelled Flow is <StepList>, and two
+    // landmarks answering to one name is how the canvas ended up mounted as a
+    // tab with nowhere on the screen of its own.
     name: 'FlowMap',
     element: <FlowMap />,
     role: 'region',
-    label: 'Flow',
+    label: 'Flow map',
     href: 'hatua-flow-map',
   },
   { name: 'Data', element: <Data />, role: 'region', label: 'Data', href: 'hatua-data' },

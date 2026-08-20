@@ -9,6 +9,24 @@
  * That rule is what makes theming work; it is enforced by lint, not discipline.
  */
 @layer hatua {
+  /*
+   * Border-box, everywhere inside Hatua.
+   *
+   * Scoped to the subtree rather than declared on `*`, because Hatua is a guest:
+   * a library that re-boxes a Host's whole page is a library nobody can embed.
+   * Inside its own root it is not optional — every component that pairs
+   * `inline-size: 100%` with padding and a border (the Library's cards, Input,
+   * Button) otherwise overflows its column by exactly the padding, which is
+   * invisible until the column is a fixed width and then shows up as a
+   * horizontal scrollbar under a 304px panel.
+   */
+  .hatua-root,
+  .hatua-root *,
+  .hatua-root *::before,
+  .hatua-root *::after {
+    box-sizing: border-box;
+  }
+
   .hatua-root {
     /* --- derived accent ramp, from the --hatua-accent seed --- */
     --accent: var(--hatua-accent);
