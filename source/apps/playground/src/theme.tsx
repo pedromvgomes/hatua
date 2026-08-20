@@ -17,11 +17,11 @@ import { createMemoryWorkflowStore } from './workflow-store'
  *     styled per-instance and no stylesheet was swapped (ADR-0002).
  *  2. **Hatua does not touch the Host's own tokens.** theme.html declares
  *     `--accent`, `--surface-card`, `--radius-md`, `--text-primary` and friends
- *     on `:root`, in the Host's own names — which are exactly the names Hatua's
- *     aliases used to carry — and paints this page's chrome from them. Custom
- *     properties inherit downward, so those names reach *into* Hatua's subtree.
- *     Every one of Hatua's is `--hatua-*` now, so nothing collides in either
- *     direction: the chrome stays pink, and the designers stay themselves.
+ *     on `:root`, in the Host's own unprefixed names, and paints this page's
+ *     chrome from them. Custom properties inherit downward, so those names
+ *     reach *into* Hatua's subtree. Every one of Hatua's is `--hatua-*`, so
+ *     nothing collides in either direction: the chrome stays pink, and the
+ *     designers stay themselves.
  *
  * The second is the one worth having a page for. It is invisible in a unit test
  * — jsdom does not resolve `var()` through a cascade — and invisible in the

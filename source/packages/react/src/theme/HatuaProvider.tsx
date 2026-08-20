@@ -1,9 +1,11 @@
 import {
   createEditingStore,
   createManifestStore,
+  createValidationStore,
   type EditingStore,
   type ManifestSource,
   type ManifestStore,
+  type ValidationStore,
   type WorkflowStore,
 } from '@hatua/services'
 import { createContext, type ReactNode, use, useEffect, useMemo, useState } from 'react'
@@ -23,12 +25,11 @@ import { createTheme, type Theme } from './createTheme'
  *     render unthemed;
  *  4. carries the Host's ports, and wires each one to the store that reads it.
  *
- * The fourth is new, and it is what turns this from a theme provider into the
- * composition root. It had to be: <Library /> takes no props in either
- * embedding — apps/playground/src/host.tsx mounts it bare and
- * layouts/regions.test.tsx mounts every region bare — so a `manifests` prop
- * would break the promise those two exist to keep. The provider is the only
- * seam both paths already share.
+ * The fourth is what makes this the composition root rather than a theme
+ * provider. <Library /> takes no props in either embedding —
+ * apps/playground/src/host.tsx mounts it bare and layouts/regions.test.tsx
+ * mounts every region bare — so a `manifests` prop would break the promise
+ * those two exist to keep. The provider is the only seam both paths share.
  *
  * Only the ports something renders today are here. The rest of ports.ts —
  * ExecutionSource, the connection ports — stays out until the PR that has a
@@ -71,6 +72,13 @@ const ManifestStoreContext = createContext<ManifestStore | null>(null)
 const EditingStoreContext = createContext<EditingStore | null>(null)
 
 /**
+ * Null unless BOTH a workflow and a catalogue are wired, because validation is
+ * a question about one read against the other: a Step is missing a required
+ * field only relative to the manifest that declares the field required.
+ */
+const ValidationStoreContext = createContext<ValidationStore | null>(null)
+
+/**
  * The element overlays should portal into. Null until the provider has mounted,
  * so callers must handle that — render nothing rather than falling back to
  * document.body, which would land outside the themed subtree.
@@ -87,6 +95,14 @@ export const useManifestStore = () => use(ManifestStoreContext)
  * fixes, and only the second is the store's to report.
  */
 export const useEditingStore = () => use(EditingStoreContext)
+
+/**
+ * What is wrong with each Step, or null when there is no workflow or no
+ * catalogue to check it against. A region renders the absence as no markers at
+ * all rather than as "everything is fine" — an unchecked workflow and a valid
+ * one must not look the same.
+ */
+export const useValidationStore = () => use(ValidationStoreContext)
 
 export interface HatuaProviderProps {
   theme?: Theme
@@ -144,6 +160,14 @@ export function HatuaProvider({
   // keep running would leave a workflow claimed by a session that is gone.
   useEffect(() => () => editingStore?.dispose(), [editingStore])
 
+  // Pure derivation over the two stores above, so it holds nothing of its own
+  // and needs no disposal — see createValidationStore.
+  const validationStore = useMemo(
+    () =>
+      editingStore && manifestStore ? createValidationStore(editingStore, manifestStore) : null,
+    [editingStore, manifestStore],
+  )
+
   return (
     <>
       <style href="hatua-base" precedence="hatua-base">
@@ -152,10 +176,12 @@ export function HatuaProvider({
       <div className="hatua-root" style={theme ?? createTheme()} data-hatua-mode={colorMode}>
         <ManifestStoreContext value={manifestStore}>
           <EditingStoreContext value={editingStore}>
-            <PortalContext value={portalHost}>
-              {children}
-              <div className="hatua-portals" ref={setPortalHost} />
-            </PortalContext>
+            <ValidationStoreContext value={validationStore}>
+              <PortalContext value={portalHost}>
+                {children}
+                <div className="hatua-portals" ref={setPortalHost} />
+              </PortalContext>
+            </ValidationStoreContext>
           </EditingStoreContext>
         </ManifestStoreContext>
       </div>

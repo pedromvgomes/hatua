@@ -19,9 +19,9 @@ describe('Hatua', () => {
   })
 
   it('takes no children, so there is no third way to embed', () => {
-    // The type says so and this says so at runtime: passing children used to be
-    // the only thing <Hatua> could do, and a Host still holding that habit
-    // should see its markup ignored rather than half-composed with the screen.
+    // The type says so and this says so at runtime: a Host that passes children
+    // anyway should see its markup ignored rather than half-composed with the
+    // screen.
     // The compiler is the real guard: an unused @ts-expect-error is an error,
     // so restoring a children prop breaks this line rather than passing it.
     // @ts-expect-error children is not part of HatuaProps any more.

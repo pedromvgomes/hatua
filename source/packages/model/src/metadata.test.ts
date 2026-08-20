@@ -81,8 +81,9 @@ describe('pivot', () => {
 })
 
 describe('pivot correctness', () => {
-  // Regression: pivot ignored descriptors entirely and summed any key literally
-  // named `tokens`, so its rows failed to add up to the total beside them.
+  // Summing any key literally named `tokens`, rather than the ones a
+  // descriptor declares, makes the rows fail to add up to the total beside
+  // them.
   it('ignores an undeclared key of the same name', () => {
     const withStray: WorkflowExecution = {
       ...RUN,

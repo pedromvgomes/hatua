@@ -28,11 +28,10 @@ $ grep -l 'Send email' dist/assets/*.js
 dist/assets/catalogue-*.js   # index.html, host.html and theme.html — not api.html
 ```
 
-Grep for a manifest's **display name**, not for a verb. `email.send` used to be
-the marker and stopped working the moment the playground gained a seed workflow:
-a Workflow Definition names the same verbs the catalogue declares, so the string
-now lives in the workflow store's chunk too. `Send email` is the manifest's
-`name`, which nothing but a Component Manifest has.
+Grep for a manifest's **display name**, not for a verb. A verb is no good as a
+marker: a Workflow Definition names the same verbs its catalogue declares, so
+`email.send` is in the workflow store's chunk as well. `Send email` is the
+manifest's `name`, which nothing but a Component Manifest has.
 
 Both greps are about which chunks a *page* pulls in. The entry chunks named
 `main`, `host` and `api` are now thin: everything shared sits in `client-*.js`
@@ -73,8 +72,8 @@ instantly, are what `api.html` goes through on every load.
 
 **Whether Hatua stays out of the Host's way** — `theme.html`, which is the only
 page here that declares design tokens of its own. It sets `--accent`,
-`--surface-card`, `--radius-md`, `--text-primary` and friends on `:root` — the
-names Hatua's aliases used to carry — and paints its own chrome from them.
+`--surface-card`, `--radius-md`, `--text-primary` and friends on `:root` — its
+own unprefixed names — and paints its own chrome from them.
 Custom properties inherit downward, so those names reach *into* Hatua's subtree;
 every property Hatua writes is `--hatua-*`, so nothing collides in either
 direction. The page also runs three themes at once from three `createTheme()`

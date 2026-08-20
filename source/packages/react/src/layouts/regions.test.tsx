@@ -140,7 +140,8 @@ describe('TabbedPanel', () => {
     const opened = screen.getByRole('tab', { name: 'Flow' })
     expect(document.activeElement).toBe(opened)
 
-    // The reflex that used to undo the move.
+    // Without focus following selection, this click lands on the old tab and
+    // snaps the selection straight back.
     fireEvent.click(document.activeElement as HTMLElement)
     expect(screen.getByRole('tab', { selected: true }).textContent).toBe('Flow')
   })

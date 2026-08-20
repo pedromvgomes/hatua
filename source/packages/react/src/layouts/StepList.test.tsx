@@ -1,3 +1,4 @@
+import type { Manifest } from '@hatua/schema'
 import type {
   Cursor,
   DraftSession,
@@ -91,9 +92,15 @@ function host(yaml = SOURCE, overrides: Partial<WorkflowStore> = {}): Host {
   }
 }
 
-const mount = (source: Host, props: Parameters<typeof StepList>[0] = {}) =>
+const mount = (source: Host, props: Parameters<typeof StepList>[0] = {}, manifests?: Manifest[]) =>
   render(
-    <HatuaProvider ports={{ workflows: source.port }} workflowId="wf_morning">
+    <HatuaProvider
+      ports={{
+        workflows: source.port,
+        ...(manifests ? { manifests: { loadManifests: async () => manifests } } : {}),
+      }}
+      workflowId="wf_morning"
+    >
       <StepList {...props} />
     </HatuaProvider>,
   )
@@ -178,11 +185,10 @@ describe('StepList', () => {
   })
 
   it('offers a Branch with no Steps somewhere to put one', async () => {
-    // One element, not two. This used to render the Branch's insert point AND a
-    // separate "Drop a Component here" box below it — of which the visible one
-    // did nothing and the working one was invisible until hover. It also named
-    // the wrong thing: the Library's cards are not draggable and sit behind
-    // another tab, so there is no Component to drop here.
+    // One element, not two: an empty list's insert point IS its empty state.
+    // It says Step rather than Component because the Library's cards are not
+    // draggable and sit behind another tab — no Component can be dropped
+    // here.
     mount(host())
     expect(await screen.findByText('Drop a Step here')).toBeDefined()
     expect(screen.queryByText(/Drop a Component/)).toBeNull()
@@ -343,11 +349,11 @@ describe('edits go through the store as commands', () => {
 
   it('moves one Step per keypress, not one per level of nesting', async () => {
     /*
-     * Regression. A container's <li> wraps its children's, so the keydown
-     * bubbled and this handler ran again at every enclosing level: one
-     * Alt+ArrowDown on a Step inside a loop moved that Step AND moved the loop
+     * A container's <li> wraps its children's, so without stopPropagation the
+     * keydown bubbles and the handler runs again at every enclosing level: one
+     * Alt+ArrowDown on a Step inside a loop moves that Step AND moves the loop
      * past its next sibling — two mutations and two undo entries from one
-     * keypress. Only stopPropagation stops it; preventDefault does not.
+     * keypress. preventDefault does not stop it.
      */
     const source = host()
     mount(source)
@@ -425,12 +431,12 @@ describe('dragging', () => {
 
   it('moves a Step nested inside a loop', async () => {
     /*
-     * Regression, and the same shape as the Alt+Arrow one. `onDragStart`
-     * bubbles from the dragged row's <li> up through every container's, so the
-     * LAST handler to run won: `dragging` held the loop's id rather than the
-     * Step's, and dropping into that loop's own list was refused as a move into
-     * itself. Nothing moved and nothing said why. Root-level rows have no
-     * ancestor <li>, so only nested drags were affected.
+     * The same shape as the Alt+Arrow case. `onDragStart` bubbles from the
+     * dragged row's <li> up through every container's, and the last handler to
+     * run wins — so without stopPropagation `dragging` holds the loop's id
+     * rather than the Step's, and dropping into that loop's own list is refused
+     * as a move into itself: nothing moves and nothing says why. Root-level
+     * rows have no ancestor <li>, so only nested drags are affected.
      */
     const source = host(
       `id: wf
@@ -546,5 +552,74 @@ describe('landmarks', () => {
     const top = within(region).getAllByRole('list')[0] as HTMLElement
     const rows = [...top.children].filter((child) => child.querySelector('button'))
     expect(rows.length).toBeGreaterThanOrEqual(3)
+  })
+})
+
+describe('marking a Step that is not filled in', () => {
+  const CATALOGUE: Manifest[] = [
+    {
+      kind: 'component',
+      use: 'email.fetch',
+      name: 'Fetch',
+      fields: [{ k: 'folder', label: 'Folder', kind: 'text', req: true }],
+      outputs: [],
+    },
+    { kind: 'component', use: 'chat.post', name: 'Post', fields: [], outputs: [] },
+    { kind: 'component', use: 'email.archive', name: 'Archive', fields: [], outputs: [] },
+    { kind: 'component', use: 'core.fork', name: 'Fork', fields: [], outputs: [] },
+    { kind: 'component', use: 'core.for_each', name: 'Loop', fields: [], outputs: [] },
+  ]
+
+  it('marks the Step whose required field is empty, and only that one', async () => {
+    mount(host(), {}, CATALOGUE)
+    await screen.findByText('Fetch mail')
+
+    const marks = await screen.findAllByRole('status')
+    const labelled = marks.map((m) => m.getAttribute('aria-label')).filter(Boolean) as string[]
+    expect(labelled.some((l) => l.startsWith('Fetch mail:'))).toBe(true)
+    expect(labelled.some((l) => l.startsWith('Ping the channel:'))).toBe(false)
+  })
+
+  it('says what is wrong in words, not in colour alone', async () => {
+    // A 7px dot is invisible to a screen reader and to anyone who cannot
+    // distinguish the hue, so the reason is carried as text.
+    mount(host(), {}, CATALOGUE)
+    await screen.findByText('Fetch mail')
+
+    const mark = (await screen.findAllByRole('status')).find((m) =>
+      m.getAttribute('aria-label')?.startsWith('Fetch mail:'),
+    )
+    expect(mark?.getAttribute('aria-label')).toContain('1 problem')
+    expect(mark?.getAttribute('aria-label')).toContain('Folder is required.')
+  })
+
+  it('marks a fork with only one Branch', async () => {
+    const yaml = `id: wf\nname: n\nversion: 1\nstatus: draft\nsteps:\n  - id: s1\n    use: core.fork\n    name: "Only one"\n    branches:\n      - label: L\n        steps: []\n`
+    mount(host(yaml), {}, CATALOGUE)
+    await screen.findByText('Only one')
+
+    const mark = (await screen.findAllByRole('status')).find((m) =>
+      m.getAttribute('aria-label')?.startsWith('Only one:'),
+    )
+    expect(mark?.getAttribute('aria-label')).toContain('at least two branches')
+  })
+
+  it('marks nothing at all until the catalogue has arrived', async () => {
+    // Every Step is an unknown component until the manifests land, so painting
+    // before then would flash a marker on every row of a good workflow.
+    mount(host(), {}, undefined)
+    await screen.findByText('Fetch mail')
+
+    const marks = screen.queryAllByRole('status').filter((m) => m.hasAttribute('aria-label'))
+    expect(marks).toHaveLength(0)
+  })
+
+  it('marks nothing once the Step is filled in', async () => {
+    const yaml = `id: wf\nname: n\nversion: 1\nstatus: draft\nsteps:\n  - id: s1\n    use: email.fetch\n    name: "Done"\n    with:\n      folder: INBOX\n`
+    mount(host(yaml), {}, CATALOGUE)
+    await screen.findByText('Done')
+
+    const marks = screen.queryAllByRole('status').filter((m) => m.hasAttribute('aria-label'))
+    expect(marks).toHaveLength(0)
   })
 })

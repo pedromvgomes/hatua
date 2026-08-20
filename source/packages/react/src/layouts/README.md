@@ -69,39 +69,32 @@ is the proof: it mounts the Flow tab with no `onInsert` at all, and the region
 simply renders no insert controls — while removing and reordering still work,
 because neither needs a catalogue.
 
-## Two vocabularies, reconciled
+## What each region is
 
-This file used to name the regions `TopBar, StepList, FlowMap, Inspector,
-RunDrawer`, which predates the three-tab plan. Where that list stands now:
+| Region | What it is |
+| --- | --- |
+| `TopBar` | The toolbar. |
+| `StepList` | The tree as a dense, ordered list, and the region behind the **Flow** tab. |
+| `FlowMap` | The canvas: the same tree as a map of nodes and connectors, filling the middle column. Not a tab. |
+| `Inspector` | The step editor. |
+| `Library`, `Data` | The other two tabs. |
 
-| Was | Now | Why |
-| --- | --- | --- |
-| `TopBar` | `TopBar` | Unchanged: the toolbar. |
-| `StepList` | `StepList` | The tree as a dense, ordered list, and the region behind the **Flow** tab. |
-| `FlowMap` | `FlowMap` | The canvas: the same tree as a map of nodes and connectors, filling the middle column. Not a tab. |
-| `Inspector` | `Inspector` | The step editor. |
-| `RunDrawer` | *moved* | It belongs to `views/Runs`, not to `Build`. A **Workflow Execution** is read-only history; nothing in the designer edits one. |
-| — | `Library`, `Data` | The other two tabs. |
+A run drawer belongs to `views/Runs`, not to `Build`. A **Workflow Execution**
+is read-only history; nothing in the designer edits one.
 
-### The correction
+### The list and the map are both on screen
 
-An earlier version of this table retired `StepList`, reasoning that "the tree is
-the map now, and the three tabs are Library, Flow and Data — there is no fourth
-panel for it to be." Both halves were wrong, and the second followed from the
-first: the tree and the map are on screen **together**, the tree in the side
-panel and the map filling the middle, so no fourth panel was ever needed —
-`StepList` is what the **Flow** tab holds, and `FlowMap` had been put there in
-its place.
+They are not redundant, and neither replaces the other. The list is scannable at
+a glance in a long workflow, is where a Step is dragged from, and makes the
+insert points unambiguous; the map shows structure — branches, joins, what runs
+in parallel — which no list does well. The tree sits in the side panel behind
+the **Flow** tab and the map fills the middle, so no fourth panel is needed for
+either.
 
-That swap is what left the designer with nowhere to put a canvas. Mounted as one
-of three tabs, the map was visible only while that tab was open and never beside
-the panel it is edited from — and a canvas you have to leave the library to look
-at is not a canvas.
-
-The list and the map are not redundant. The list is scannable at a glance in a
-long workflow, is where a Step is dragged from, and makes the insert points
-unambiguous; the map shows structure — branches, joins, what runs in parallel —
-which no list does well.
+Mounting the canvas as one of the three tabs is the arrangement to avoid: it
+would be visible only while that tab was open and never beside the panel it is
+edited from, and a canvas you have to leave the library to look at is not a
+canvas.
 
 ### Names and labels
 
@@ -123,5 +116,5 @@ general API to, and this is not one.
 No region draws its own divider. `Build` puts the borders on the wrappers that
 place them, because a region that drew its own edge would only sit correctly in
 a container shaped like this one — `apps/playground/src/host.tsx` puts the
-Inspector on the *left*, where the `border-inline-start` it used to carry was a
+Inspector on the *left*, where a `border-inline-start` of its own would be a
 line down the middle of nothing.

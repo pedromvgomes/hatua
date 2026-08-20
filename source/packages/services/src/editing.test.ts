@@ -415,13 +415,13 @@ describe('commands', () => {
 
   it('moves a Step INTO a container that sits after it in the same list', async () => {
     /*
-     * Regression. `moveStep` used to resolve the destination path before
-     * detaching the node, and detaching shifts every sibling after it down one
-     * — so `steps.1.branches.0.steps` became `steps.0.branches.0.steps` and the
-     * old path pointed at nothing. `insertNode` then took its "the sequence
-     * does not exist yet" branch and setIn a whole new root Step into being:
-     * the document stopped validating, and the dragged Step was inside a node
-     * nobody wrote. One drag onto an insert point inside a Fork reached it.
+     * Detaching a Step shifts every sibling after it down one, so a
+     * destination inside one of those siblings moves too:
+     * `steps.1.branches.0.steps` becomes `steps.0.branches.0.steps`. A path
+     * resolved before the detach points at nothing afterwards, `insertNode`
+     * takes its "the sequence does not exist yet" branch, and `setIn`
+     * fabricates a whole new root Step — the document stops validating and the
+     * dragged Step lands inside a node nobody wrote.
      */
     const { store } = await open()
     store.apply(moveStep('s1', { parentId: 's2', branchIndex: 1, index: 0 }))
@@ -450,8 +450,9 @@ describe('commands', () => {
 
   it('addresses the right Step when the list holds a hole a user left mid-edit', async () => {
     // A bare `-` is a null item, and `steps:` is allowed to hold one while
-    // someone is typing. Compacting it out of the walk renumbered every index
-    // after it, so this used to delete s1 and leave s2 alone.
+    // someone is typing. The walk's indices go straight to the AST sequence, so
+    // compacting the hole out renumbers everything after it and the wrong Step
+    // is deleted.
     const host = recorder({
       yaml: 'id: w\nname: n\nversion: 1\nstatus: draft\nsteps:\n  -\n  - id: s1\n    use: a\n  - id: s2\n    use: b\n',
     })
@@ -892,10 +893,9 @@ describe('ending the session', () => {
   })
 
   it('says the session ended rather than leaving an edit pending for ever', async () => {
-    // The save state used to sit at `pending` indefinitely: schedule() fired,
-    // write() bailed on the missing token, and nothing ever reported that the
-    // edit was going nowhere. Silent, and indistinguishable from "about to be
-    // written".
+    // Without this the state would sit at `pending` for ever: schedule() fires,
+    // write() bails on the missing token, and nothing reports that the edit is
+    // going nowhere — indistinguishable from "about to be written".
     const { store } = await open()
     await store.release()
     store.apply(removeStep('s1'))

@@ -80,8 +80,8 @@ export function Build({ className, ...rest }: BuildProps) {
     const state = store?.getSnapshot()
     // Counted off the document rather than off `definition`, which is null
     // while the document does not project — and `?.steps.length ?? 0` cannot
-    // tell that apart from an empty workflow, so picking a Component against a
-    // half-written file used to PREPEND.
+    // tell that apart from an empty workflow, so a half-written file would
+    // append at index 0, which is the front.
     return { index: state?.status === 'ready' ? rootStepCount(state.workflow.document) : 0 }
   }
 

@@ -6,9 +6,10 @@
  * the builder draw it as a pill the user can retarget. `{{ s2.count }}` is a
  * Reference; `{{ s2.count + 1 }}` is the same language and is not.
  *
- * This replaces the regex `@hatua/schema` used to carry. A regex is a *second*
- * definition of what a Reference is, and two definitions of one thing disagree
- * eventually — that one matched `{{ a + b }}` and called it a reference.
+ * Answered from the parsed shape rather than by a regex. A pattern would be a
+ * second definition of what a Reference is, and two definitions of one thing
+ * disagree eventually — one loose enough to match `{{ s2.count }}` also matches
+ * `{{ a + b }}` and calls it a reference.
  */
 import type { Expression, TemplateNode } from './ast.js'
 import { tryParseTemplate } from './parse.js'

@@ -133,7 +133,7 @@ export const TwoInstancesAtOnce: Story = {
  * The Host's own CSS, untouched.
  *
  * The frame below sets `--accent`, `--surface-card`, `--radius-md` and
- * `--text-primary` — the names Hatua's aliases used to carry — and styles its
+ * `--text-primary` — unprefixed names of its own — and styles its
  * own chrome from them. Hatua is mounted *inside* it, which is the case that
  * matters: custom properties inherit downward, so an unprefixed Hatua alias
  * would have shadowed the Host's for everything in this subtree, and a Host

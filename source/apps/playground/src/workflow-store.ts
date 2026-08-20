@@ -122,11 +122,11 @@ export function createLocalWorkflowStore(options: LocalWorkflowStoreOptions = {}
   /**
    * What is stored, or an empty history when nothing is.
    *
-   * It used to return a seeded Draft here, which made every read look like a
-   * workflow that already had one — so the very first `openDraft` reported
-   * `resumed: true` and told the user it had picked up somebody else's work.
-   * "Nothing is stored" and "a Draft exists" are different facts and only
-   * `openDraft` gets to turn the first into the second.
+   * "Nothing is stored" and "a Draft exists" are different facts, and only
+   * `openDraft` turns the first into the second. Seeding a Draft here instead
+   * would make every read look like a workflow that already had one, so the
+   * first open would report `resumed: true` and claim it had picked up
+   * somebody else's work.
    */
   const read = (workflowId: string): Stored => {
     const raw = localStorage.getItem(keyFor(workflowId))

@@ -46,9 +46,10 @@ describe('yaml layer fidelity', () => {
 })
 
 describe('edits', () => {
-  // Regression: toString() previously keyed off a `dirty` flag nothing ever
-  // set, so it always replayed the CST and silently discarded every AST edit.
-  // HostPorts.save() takes this text, so edits were reported saved and lost.
+  // toString() detects edits by comparing serialisations, not by a `dirty`
+  // flag a caller has to remember to set. A flag nobody sets means the CST is
+  // replayed and every AST edit is silently discarded — and since this text is
+  // what gets saved, the edits are reported written and lost.
   it('reflects an AST edit in the serialised output', () => {
     const doc = parseWorkflow(SOURCE)
     doc.ast.setIn(['steps', 0, 'name'], 'Kick off')
@@ -88,16 +89,14 @@ describe('validation', () => {
 
 describe('multi-document sources', () => {
   /*
-   * The bug this closes: `parseWorkflow` composed the FIRST document and
-   * stringified the WHOLE CST as `original`, so an untouched two-document file
-   * round-tripped byte for byte — and the first mutation swapped `original` for
-   * a serialisation of document one alone, silently dropping document two. It
-   * was invisible while nothing edited a document.
-   *
    * Rejected at parse rather than kept and re-serialised: a Workflow Definition
    * is one mapping, the Host stores one blob per version, and there is nothing
-   * for a second document to be. Failing where the caller still holds the text
-   * beats losing half of it at the first edit.
+   * for a second document to be.
+   *
+   * Composing only the first document while stringifying the whole CST is the
+   * trap this avoids — such a file round-trips byte for byte untouched, and
+   * then the first mutation drops everything after document one. Failing where
+   * the caller still holds the text beats losing half of it at the first edit.
    */
   const TWO = `id: wf_a\nname: A\nversion: 1\nstatus: draft\nsteps: []\n---\nid: wf_b\nname: B\nversion: 1\nstatus: draft\nsteps: []\n`
 

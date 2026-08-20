@@ -227,6 +227,26 @@
     color: var(--hatua-text-muted);
   }
 
+  /*
+   * The design's 7px error dot. A hit area around it, because the dot itself is
+   * far too small to hover for the title that explains it — and hovering is how
+   * a sighted mouse user reads what a screen reader gets from the label.
+   */
+  .problems {
+    display: grid;
+    place-items: center;
+    flex: none;
+    inline-size: 18px;
+    block-size: 22px;
+  }
+
+  .dot {
+    inline-size: 7px;
+    block-size: 7px;
+    border-radius: 999px;
+    background: var(--hatua-status-error);
+  }
+
   .chevron,
   .remove {
     display: grid;

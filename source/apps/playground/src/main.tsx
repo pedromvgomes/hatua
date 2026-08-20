@@ -26,11 +26,10 @@ import { createLocalWorkflowStore } from './workflow-store'
  * the same designer as this one with the manifests fetched at run time, which
  * is the shape a real Host has.
  *
- * There is no <Scaffold> around it any more, and nothing passed as children.
- * <Hatua> renders <Build>; children would have been a third way to embed
- * sitting between the two we promise, so they are gone. The primitives this
- * file used to lay out by hand are documented in the Storybook, which is where
- * a component library's parts belong.
+ * Nothing is passed as children. <Hatua> renders <Build>; children would be a
+ * third way to embed sitting between the two we promise. The primitives are
+ * documented in the Storybook, which is where a component library's parts
+ * belong.
  *
  * The other entries are host.tsx at /host.html — the same designer assembled by
  * the Host itself, which never imports <Hatua> — and api.tsx at /api.html.

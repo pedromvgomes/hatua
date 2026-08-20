@@ -21,8 +21,8 @@ export interface LibraryProps extends Omit<ComponentPropsWithRef<'section'>, 'on
    * with no handler there is nothing a card can do, so the cards render as
    * cards rather than as buttons that swallow a click.
    *
-   * Props out, not document state. Adding the Step is the editing store's job
-   * (PR 4) and reaching for it here would mean guessing at its shape.
+   * Props out, not document state. Adding the Step is the editing store's job,
+   * and reaching for it here would tie the catalogue to the tree.
    */
   onSelect?: (manifest: Manifest) => void
   /** What the filter box starts with. Uncontrolled, like TabbedPanel's defaultTabId. */
@@ -155,8 +155,8 @@ export function Library({ onSelect, defaultQuery = '', className, ...rest }: Lib
             "Nothing matched" is not the same as "nothing here is renderable".
             A Host that resolves an array of things with no `kind` we know —
             a `components:` catalogue is one array away from exactly that —
-            filters to nothing with an EMPTY query, and this used to render the
-            literal `Nothing matches “”.`
+            filters to nothing with an EMPTY query, which would otherwise
+            render the literal `Nothing matches “”.`
           */}
           {unrenderable ? (
             <p className={styles.note}>

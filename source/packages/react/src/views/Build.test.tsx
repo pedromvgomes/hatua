@@ -188,7 +188,7 @@ describe('Build wires the Library to the Flow tab', () => {
 
   it('appends to a document that does not project, rather than prepending to it', async () => {
     // `definition?.steps.length ?? 0` answers 0 for "does not project" and for
-    // "no Steps" alike, so this used to put the Component at the front.
+    // "no Steps" alike, which would put the Component at the front.
     const { writes } = wired('name: half written\nsteps:\n  - use: a\n  - use: b\n')
     await screen.findByText(/not a valid Workflow Definition yet/)
 

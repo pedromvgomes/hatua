@@ -1,5 +1,12 @@
+import type { Diagnostic } from '@hatua/model'
 import type { Branch, Step } from '@hatua/schema'
-import { type EditingState, type InsertPoint, moveStep, removeStep } from '@hatua/services'
+import {
+  type EditingState,
+  type InsertPoint,
+  moveStep,
+  removeStep,
+  type ValidationState,
+} from '@hatua/services'
 import {
   type ComponentPropsWithRef,
   Fragment,
@@ -10,7 +17,7 @@ import {
 } from 'react'
 import { Button } from '../primitives/Button'
 import { cx } from '../primitives/classNames'
-import { useEditingStore } from '../theme/HatuaProvider'
+import { useEditingStore, useValidationStore } from '../theme/HatuaProvider'
 import styles from './StepList.module.css'
 import css from './StepList.module.css?inline'
 
@@ -18,22 +25,15 @@ import css from './StepList.module.css?inline'
  * The Flow tab: the Workflow Definition's Steps as a tree, depth-first, with
  * the Branch headers and the insert points between them.
  *
- * This region was retired in PR 2 and is back, because retiring it was a
- * mistake. `layouts/README.md` reasoned that "the tree is the map now, and the
- * three tabs are Library, Flow and Data — there is no fourth panel for it to
- * be." Both halves are wrong: the design has the tree *and* the map on screen
- * together, the tree in the 304px side panel and the map filling the middle,
- * and it is the tree that lives behind the **Flow** tab. So the fourth panel
- * was never needed — the side panel is where this always belonged, and it was
- * <FlowMap> that had been put in the tab strip in its place.
+ * A list, not a map. The tree and the map are on screen together — this in the
+ * 304px side panel, <FlowMap> filling the middle — and they are not redundant:
+ * the list is dense, ordered and scannable at a glance in a long workflow, and
+ * it is where a Step is dragged from and where the insert points are
+ * unambiguous. The map shows structure, which no list does well.
  *
- * The consequence of that swap is what forced this: with the canvas mounted as
- * a tab, the screen had nowhere to *put* a canvas. It was visible only while
- * the Flow tab was open, and never beside the panel it is edited from.
- *
- * A list, not a map. The two show the same tree and are not redundant: the list
- * is dense, ordered and scannable at a glance in a long workflow, and it is
- * where a Step is dragged from and where the insert points are unambiguous.
+ * The **Flow** tab holds this, not the canvas. A canvas mounted as one of three
+ * tabs is visible only while that tab is open and never beside the panel it is
+ * edited from, which is no canvas at all.
  *
  * ## Where the document comes from
  *
@@ -83,6 +83,9 @@ const OPENING = { status: 'opening' } as const
 // whenever `subscribe` changes identity, and re-renders forever if `getSnapshot`
 // returns a fresh object each call.
 const subscribeToNothing = () => () => {}
+const NO_PROBLEMS: ReadonlyMap<string, Diagnostic[]> = new Map()
+const UNCHECKED: ValidationState = { byStep: NO_PROBLEMS, all: [], ready: false }
+const readUnchecked = (): ValidationState => UNCHECKED
 const readUnconfigured = (): ListState => UNCONFIGURED
 const readOpening = (): ListState => OPENING
 
@@ -94,6 +97,7 @@ export function StepList({
   ...rest
 }: StepListProps) {
   const store = useEditingStore()
+  const validation = useValidationStore()
   const [selectedId, setSelectedId] = useState<string | undefined>(defaultSelectedId)
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set())
   const [dragging, setDragging] = useState<string | null>(null)
@@ -101,8 +105,13 @@ export function StepList({
   // The one side effect: tell the store somebody is reading. It is idempotent,
   // so every region that mounts may call it and only the first opens the Draft.
   useEffect(() => {
-    store?.open()
-  }, [store])
+    // `load()` opens the Draft AND asks for the catalogue, because validation
+    // needs both. A Host mounting this region and no Library would otherwise
+    // never fetch a manifest, and every Step would sit unchecked with nothing
+    // saying why.
+    if (validation) validation.load()
+    else store?.open()
+  }, [store, validation])
 
   const state = useSyncExternalStore<ListState>(
     store ? store.subscribe : subscribeToNothing,
@@ -115,6 +124,17 @@ export function StepList({
 
   const workflow = state.status === 'ready' ? state.workflow : null
   const definition = workflow?.definition ?? null
+
+  const checks = useSyncExternalStore<ValidationState>(
+    validation ? validation.subscribe : subscribeToNothing,
+    validation ? validation.getSnapshot : readUnchecked,
+    readUnchecked,
+  )
+  // Absent, not empty. "Not checked yet" and "checked and fine" must not look
+  // the same: every Step is an unknown component until the manifests land, so
+  // painting `byStep` before `ready` would flash a marker on every row of a
+  // perfectly good workflow on each load.
+  const problems = checks.ready ? checks.byStep : NO_PROBLEMS
 
   const select = (id: string) => {
     setSelectedId(id)
@@ -241,6 +261,7 @@ export function StepList({
               scope="the workflow"
               at={{ index: 0 }}
               selectedId={selectedId}
+              problems={problems}
               collapsed={collapsed}
               dragging={dragging}
               onSelect={select}
@@ -270,6 +291,8 @@ interface SequenceProps {
   /** The insert point at index 0 of this list; every other one is derived from it. */
   at: Omit<InsertPoint, 'index'> & { index: number }
   selectedId: string | undefined
+  /** Diagnostics per Step id; a Step with none is absent. */
+  problems: ReadonlyMap<string, Diagnostic[]>
   collapsed: ReadonlySet<string>
   dragging: string | null
   onSelect: (id: string) => void
@@ -292,7 +315,7 @@ interface SequenceProps {
  * inside branches, and there is no way to say otherwise outside `role="tree"`.
  */
 function Sequence({ steps, scope, at, ...handlers }: SequenceProps) {
-  const { selectedId, collapsed, dragging, onInsert, onDropStep } = handlers
+  const { selectedId, problems, collapsed, dragging, onInsert, onDropStep } = handlers
 
   return (
     <ul className={styles.sequence}>
@@ -345,6 +368,7 @@ function Sequence({ steps, scope, at, ...handlers }: SequenceProps) {
             >
               <Row
                 step={step}
+                problems={problems.get(step.id)}
                 selected={selectedId === step.id}
                 expanded={open}
                 dragging={dragging === step.id}
@@ -427,13 +451,13 @@ function Gap({
    * This gap is the only one in its list, because the list is empty — so it
    * draws as the design's dashed box rather than as a sliver between two rows.
    *
-   * One element, not two. An empty Branch used to render this gap AND a
-   * separate "Drop a Component here" box under it: two affordances for one
-   * place, of which the visible one did nothing and the working one was
-   * invisible until hover. It also promised something the screen cannot do —
-   * the Library's cards are not draggable and sit behind another tab, so there
-   * is no Component to drop. What CAN be dropped here is an existing Step from
-   * the tree, which is what the copy now says.
+   * One element, not two: an empty list's insert point IS its empty state. A
+   * hover-revealed gap plus a static box would be two affordances for one
+   * place, of which only one works.
+   *
+   * It says Step rather than Component deliberately. The Library's cards are
+   * not draggable and sit behind another tab, so no Component can be dropped
+   * here; what can is an existing Step from the tree.
    */
   empty?: boolean
   onInsert?: (at: InsertPoint) => void
@@ -485,6 +509,7 @@ function Gap({
 
 function Row({
   step,
+  problems,
   selected,
   expanded,
   dragging,
@@ -493,6 +518,7 @@ function Row({
   onRemove,
 }: {
   step: Step
+  problems?: Diagnostic[]
   selected: boolean
   expanded: boolean
   dragging: boolean
@@ -518,6 +544,8 @@ function Row({
         <span className={styles.meta}>{metaFor(step)}</span>
       </button>
 
+      {problems?.length ? <Problems problems={problems} name={nameOf(step)} /> : null}
+
       {container ? (
         <button
           type="button"
@@ -539,6 +567,31 @@ function Row({
         ×
       </button>
     </div>
+  )
+}
+
+/**
+ * The design's 7px error dot, and a sentence for everyone it does not reach.
+ *
+ * Colour alone is not an indicator: it is invisible to a screen reader and to
+ * anyone who cannot distinguish the hue, and this dot is 7px — the hardest case
+ * there is. So the marker carries the count and the reasons as text, which also
+ * makes it useful to a mouse user hovering it rather than a decoration they
+ * have to guess at.
+ *
+ * `role="status"` rather than `alert`: an unfilled field is the normal state of
+ * a Step someone just added, and interrupting a screen reader for it every time
+ * would make the builder unusable. ADR-0009 draws the same line — this blocks
+ * Publish, never editing.
+ */
+function Problems({ problems, name }: { problems: Diagnostic[]; name: string }) {
+  const summary = problems.map((problem) => problem.message).join(' ')
+  const label = `${name}: ${problems.length === 1 ? '1 problem' : `${problems.length} problems`}. ${summary}`
+
+  return (
+    <span className={styles.problems} role="status" aria-label={label} title={summary}>
+      <span className={styles.dot} aria-hidden="true" />
+    </span>
   )
 }
 

@@ -211,8 +211,9 @@ function member(
 ): Walk {
   // A list has no members — its *elements* do, which is what a manifest's `of:`
   // describes. Reading one straight off the list is the likeliest authoring
-  // mistake in the language (the forgotten `[]`), and it used to type-check
-  // clean against the element's fields and then miss at run time.
+  // mistake in the language (the forgotten `[]`), and without this it
+  // type-checks clean against the element's fields and then misses at run
+  // time.
   if (!target.projected && target.node.type === 'list') {
     found.push(diagnostic('EXPR_OPERAND_TYPE', at, { op: '.', expected: 'object', actual: 'list' }))
     return { kind: 'broken' }

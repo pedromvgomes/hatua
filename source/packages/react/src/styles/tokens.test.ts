@@ -61,7 +61,7 @@ const SELF = 'src/styles/tokens.test.ts'
  * The one file that writes a Host's tokens on purpose.
  *
  * theming.stories.tsx sets `--accent`, `--surface-card` and friends on a frame
- * and mounts Hatua inside it, precisely to show that Hatua no longer shadows
+ * and mounts Hatua inside it, precisely to show that Hatua does not shadow
  * them. Those names are the Host's; a rule that forbade them would forbid the
  * demonstration. Exempted by name rather than by pattern so a second file
  * cannot join it quietly.
@@ -72,10 +72,11 @@ const HOST_TOKENS = 'src/theme/theming.stories.tsx'
  * The files that may name a seed, listed rather than matched by directory.
  *
  * `createTheme` WRITES the seeds and `HatuaProvider` applies what it returns, so
- * both name `--hatua-seed-*` legitimately. This used to be `startsWith('src/
- * theme/')`, which quietly covered the whole directory — and the moment a story
- * landed in it, theming.stories.tsx sat outside both alias-existence rules. A
- * typo'd `var(--hatua-text-primry)` in it would resolve to nothing and ship.
+ * both name `--hatua-seed-*` legitimately. Named individually rather than by
+ * directory: `startsWith('src/theme/')` would cover every file that lands
+ * there, so a story in that directory would sit outside both alias-existence
+ * rules and a typo'd `var(--hatua-text-primry)` in it would resolve to nothing
+ * and ship.
  */
 const SEED_AUTHORS = new Set(['src/theme/createTheme.ts', 'src/theme/HatuaProvider.tsx'])
 
@@ -180,8 +181,8 @@ describe('token discipline (ADR-0002)', () => {
    * split: a test NAMES a property to assert something about it — that
    * <Hatua theme> really does write the --hatua-seed-accent seed — while a story
    * READS one to paint with, and tokens.stories.tsx reads every alias there is
-   * from arrays of exactly these strings. The two seed authors stay exempt for
-   * the reason they always were; the directory around them no longer is.
+   * from arrays of exactly these strings. The two seed authors are exempt by
+   * name; the directory around them is not.
    */
   it.each(componentFiles.filter((f) => !SEED_AUTHORS.has(f.path) && !/\.test\.tsx?$/.test(f.path)))(
     '$path names only aliases base.css defines',

@@ -1,12 +1,12 @@
 /**
  * What a mappable field is, and the one built-in name.
  *
- * There used to be a `REFERENCE_PATTERN` regex here, and it was a *second*
- * definition of what a Reference is. Two definitions of one thing disagree
- * eventually, and that one already did: it matched `{{ a + b }}` and called the
- * whole thing a reference path.
+ * There is deliberately no `REFERENCE_PATTERN` regex here. A regex would be a
+ * second definition of what a Reference is, and two definitions of one thing
+ * disagree eventually — a pattern loose enough to match `{{ s2.count }}` also
+ * matches `{{ a + b }}` and calls the whole thing a reference path.
  *
- * A Reference is now an AST shape — `isReference()` in `@hatua/expressions` —
+ * A Reference is an AST shape — `isReference()` in `@hatua/expressions` —
  * and this file keeps only what the schema layer genuinely owns.
  */
 
