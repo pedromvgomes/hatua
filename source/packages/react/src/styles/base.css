@@ -10,15 +10,22 @@
  */
 @layer hatua {
   /*
-   * Border-box, everywhere inside Hatua.
+   * Border-box, everywhere inside the provider's subtree.
    *
-   * Scoped to the subtree rather than declared on `*`, because Hatua is a guest:
-   * a library that re-boxes a Host's whole page is a library nobody can embed.
-   * Inside its own root it is not optional — every component that pairs
+   * Not optional for Hatua's own components: every one that pairs
    * `inline-size: 100%` with padding and a border (the Library's cards, Input,
-   * Button) otherwise overflows its column by exactly the padding, which is
-   * invisible until the column is a fixed width and then shows up as a
-   * horizontal scrollbar under a 304px panel.
+   * Button) otherwise overflows its column by exactly the padding — invisible
+   * while columns are fluid, a horizontal scrollbar under a 304px panel the
+   * moment one is not.
+   *
+   * Scoped to `.hatua-root` rather than declared on `*`, because a library that
+   * re-boxes a Host's whole page is a library nobody can embed. Be precise
+   * about what that does and does not promise: in the parts embedding a Host
+   * mounts its OWN wrappers inside <HatuaProvider> (apps/playground/src/host.tsx
+   * is one), and those are re-boxed too. It is a default, not an override — the
+   * rule is inside @layer hatua, so any box-sizing the Host declares itself
+   * wins regardless of order — but a Host sizing a wrapper in there and relying
+   * on content-box has to say so.
    */
   .hatua-root,
   .hatua-root *,

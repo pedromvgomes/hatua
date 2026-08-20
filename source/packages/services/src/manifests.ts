@@ -75,14 +75,32 @@ export function createManifestStore(source: ManifestSource): ManifestStore {
     // getSnapshot a new object for no change, which is the one thing
     // useSyncExternalStore cannot tolerate.
     if (state.status !== 'loading') publish(LOADING)
-    source.loadManifests().then(
-      (manifests) => {
-        if (mine === generation) publish({ status: 'ready', manifests })
-      },
-      (cause) => {
-        if (mine === generation) publish({ status: 'failed', error: asError(cause) })
-      },
-    )
+
+    const settle = (next: ManifestState) => {
+      if (mine === generation) publish(next)
+    }
+
+    // The try/catch is not redundant with the rejection handler. `.then` only
+    // sees a rejected promise, and `loadManifests` is a plain method on a
+    // Host's object — nothing obliges it to be `async`. One that throws
+    // synchronously (a TypeError reading an unconfigured base URL, say) would
+    // otherwise throw straight back out of `load()`, which the region calls
+    // inside an effect and the Retry button calls from a click handler: the
+    // React tree comes down instead of the panel rendering the failed state,
+    // and the store is left in `loading` with `started` already true, so
+    // nothing will ever retry it.
+    //
+    // Everything else here goes out of its way to normalise whatever a Host
+    // throws, down to a bare string. This is the same promise for the one path
+    // that skipped it.
+    try {
+      source.loadManifests().then(
+        (manifests) => settle({ status: 'ready', manifests }),
+        (cause) => settle({ status: 'failed', error: asError(cause) }),
+      )
+    } catch (cause) {
+      settle({ status: 'failed', error: asError(cause) })
+    }
   }
 
   return {

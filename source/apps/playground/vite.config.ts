@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { loadManifests } from '@hatua/sdk'
 import react from '@vitejs/plugin-react-swc'
+import type { Connect } from 'vite'
 import { defineConfig, type Plugin } from 'vite'
 
 /**
@@ -79,32 +80,48 @@ const manifestFixtures = (): Plugin => {
  */
 const MANIFEST_ENDPOINT = '/api/manifests.json'
 
+/**
+ * Claims the whole /api/ namespace, not just the one path, so anything else
+ * under it answers 404 instead of falling through to Vite's HTML page. An API
+ * that returns 200-and-a-web-page for a URL it does not have is what turns "the
+ * endpoint is missing" into "Unexpected token <" three frames later, and
+ * /api.html has a checkbox pointing at exactly such a URL.
+ *
+ * Matched by hand rather than mounted with `use('/api', …)`: connect treats a
+ * dot as a path boundary, so that route would also swallow /api.html — the page
+ * itself.
+ */
+const apiMiddleware = (): Connect.NextHandleFunction => (request, response, next) => {
+  const path = (request.url ?? '').split('?')[0]
+  if (!path?.startsWith('/api/')) return next()
+
+  response.setHeader('content-type', 'application/json')
+  if (path !== MANIFEST_ENDPOINT) {
+    response.statusCode = 404
+    response.end(JSON.stringify({ error: `No such endpoint: ${path}` }))
+    return
+  }
+  // Re-read per request rather than closed over, so editing the corpus shows up
+  // on the next load without restarting the dev server.
+  response.end(JSON.stringify(readFixture('catalogue')))
+}
+
 const manifestApi = (): Plugin => ({
   name: 'hatua:manifest-api',
-  configureServer(server) {
-    // Claims the whole /api/ namespace, not just the one path, so anything else
-    // under it answers 404 instead of falling through to Vite's HTML page. An
-    // API that returns 200-and-a-web-page for a URL it does not have is what
-    // turns "the endpoint is missing" into "Unexpected token <" three frames
-    // later, and /api.html has a checkbox pointing at exactly such a URL.
-    //
-    // Matched by hand rather than mounted with `use('/api', …)`: connect treats
-    // a dot as a path boundary, so that route would also swallow /api.html —
-    // the page itself.
-    server.middlewares.use((request, response, next) => {
-      const path = (request.url ?? '').split('?')[0]
-      if (!path?.startsWith('/api/')) return next()
-
-      response.setHeader('content-type', 'application/json')
-      if (path !== MANIFEST_ENDPOINT) {
-        response.statusCode = 404
-        response.end(JSON.stringify({ error: `No such endpoint: ${path}` }))
-        return
-      }
-      // Re-read per request rather than closed over, so editing the corpus
-      // shows up on the next load without restarting the dev server.
-      response.end(JSON.stringify(readFixture('catalogue')))
-    })
+  configureServer: (server) => {
+    server.middlewares.use(apiMiddleware())
+  },
+  /*
+   * Preview needs the same middleware, and needs it for the same reason.
+   * `configureServer` is a dev-only hook, so without this the built harness —
+   * the one README.md calls "the built output, endpoint included" — served
+   * dist/api/manifests.json correctly and answered every OTHER /api/ path with
+   * 200 and index.html. The checkbox on /api.html then exercised the
+   * did-not-return-JSON branch instead of the status-code branch, which is the
+   * precise failure the comment above says this plugin exists to prevent.
+   */
+  configurePreviewServer: (server) => {
+    server.middlewares.use(apiMiddleware())
   },
   generateBundle() {
     // The built playground has no dev server, so the endpoint becomes a file at

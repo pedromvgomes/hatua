@@ -97,6 +97,49 @@ describe('createManifestStore', () => {
     expect(state.status === 'failed' && state.error.message).toBe('offline')
   })
 
+  /*
+   * `.then` sees a rejected promise and nothing else. A Host's `loadManifests`
+   * is a plain method, so one that is not `async` and throws would otherwise
+   * throw back out of `load()` — which React calls inside an effect and the
+   * Retry button calls from a click handler — bringing the tree down and
+   * leaving the store in `loading` with `started` already true.
+   */
+  it('survives a source that throws synchronously instead of rejecting', async () => {
+    const store = createManifestStore({
+      loadManifests: (): Promise<Manifest[]> => {
+        throw new TypeError('Cannot read properties of undefined (reading baseUrl)')
+      },
+    })
+
+    expect(() => store.load()).not.toThrow()
+    await settle()
+
+    const state = store.getSnapshot()
+    expect(state.status).toBe('failed')
+    expect(state.status === 'failed' && state.error.message).toContain('baseUrl')
+  })
+
+  it('recovers from a synchronous throw when the Host fixes it and retries', async () => {
+    // The half that matters: `started` must not strand the store, and reload
+    // must not throw out of the click handler that called it.
+    let configured = false
+    const store = createManifestStore({
+      loadManifests: (): Promise<Manifest[]> => {
+        if (!configured) throw new TypeError('not configured')
+        return Promise.resolve([manifest('email.send')])
+      },
+    })
+
+    store.load()
+    await settle()
+    expect(store.getSnapshot().status).toBe('failed')
+
+    configured = true
+    expect(() => store.reload()).not.toThrow()
+    await settle()
+    expect(store.getSnapshot()).toEqual({ status: 'ready', manifests: [manifest('email.send')] })
+  })
+
   it('returns to loading on reload, and recovers', async () => {
     let attempt = 0
     const store = createManifestStore({

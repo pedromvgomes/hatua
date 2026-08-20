@@ -17,7 +17,9 @@ to nothing in Hatua.
 
 ## Not linted
 
-`biome.json` excludes `**/public` from its file set. Biome lints a standalone
+`biome.json` excludes `apps/playground/public` from its file set — this
+directory by name, not every `public/` in the repo, so a future source directory
+that happens to be called `public` is not dropped from linting in silence. Biome lints a standalone
 `.svg` with its JSX accessibility rules and asks for a `<title>` — but an icon
 here is fetched through `<img alt="">`, where the accessible name belongs on the
 `<img>` and a title inside the file would only produce a tooltip. These are

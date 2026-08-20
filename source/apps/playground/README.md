@@ -21,14 +21,30 @@ $ grep -l email.send dist/assets/*.js
 dist/assets/catalogue-*.js      # loaded by index.html and host.html, not api.html
 ```
 
+Both greps are about which chunks a *page* pulls in. The entry chunks named
+`main`, `host` and `api` are now thin: everything shared sits in `client-*.js`
+(React), `Hatua-*.js` (the container) and `catalogue-*.js` (the baked-in
+fixtures), and which of those a page loads is the whole answer.
+
 ## The two axes
 
 **How the designer is assembled** — `index` against `host`. One writes `<Hatua>`;
 the other imports the regions and mounts `<HatuaProvider>` around its own
 layout, puts the Inspector on the left and the toolbar at the bottom, and leaves
 the Data tab out entirely. `host.tsx` never imports `<Hatua>` or `<Build>`, and
-the built chunks are the evidence: grep them for `hatua-build` and `hatua-data`
-and only `main`'s has them.
+the built output is the evidence — `hatua-build` and `hatua-data`, the style
+hrefs of the container and of the omitted region, live in one chunk that
+`host.html` never asks for:
+
+```
+$ grep -l hatua-build dist/assets/*.js
+dist/assets/Hatua-*.js
+$ grep -c 'Hatua-' dist/host.html
+0
+```
+
+Per page, not per entry chunk: `<Hatua>` is shared by `index` and `api`, so
+Rollup hoists it out of both entry chunks into one of its own.
 
 **When the Component Manifests arrive** — `index` against `api`. Those two pages
 render the identical designer; the only difference is that one has its catalogue

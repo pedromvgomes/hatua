@@ -9,5 +9,8 @@ import { defineConfig } from 'vitest/config'
  * apart: the app's config builds pages, this one runs the Host's unit tests.
  */
 export default defineConfig({
-  test: { include: ['src/**/*.test.ts'] },
+  // Both extensions: the Host's testable surface includes api.tsx and host.tsx,
+  // and a pattern that matched only .ts would skip a future .test.tsx in
+  // silence — the suite would report green rather than "no test files found".
+  test: { include: ['src/**/*.test.{ts,tsx}'] },
 })

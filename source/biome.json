@@ -6,7 +6,7 @@
     "root": ".."
   },
   "files": {
-    "includes": ["**", "!**/dist", "!**/.turbo", "!**/coverage", "!**/public"]
+    "includes": ["**", "!**/dist", "!**/.turbo", "!**/coverage", "!apps/playground/public"]
   },
   "formatter": {
     "enabled": true,

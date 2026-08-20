@@ -180,16 +180,34 @@ export function Library({ onSelect, defaultQuery = '', className, ...rest }: Lib
  * this is decoration, and announcing it twice helps nobody.
  */
 function ComponentIcon({ manifest }: { manifest: Manifest }) {
-  const [broken, setBroken] = useState(false)
+  // The URL that failed, not a boolean, so the flag cannot outlive the URL it
+  // was about. Cards are reconciled by `use`: were a catalogue ever to arrive
+  // with a fixed icon on the same component, a bare `broken` flag would survive
+  // the fix and keep drawing the placeholder for the life of the mount.
+  //
+  // No path reaches that today — every reload publishes `loading` first, which
+  // empties the list and unmounts these cards, so the state resets on its own.
+  // Written this way regardless: it costs a comparison, and it stops being
+  // load-bearing on a store detail this component cannot see.
+  const [failedUrl, setFailedUrl] = useState<string | null>(null)
+  const broken = failedUrl !== null && failedUrl === manifest.icon
 
   // A URL that 404s is the Host's to fix, and until it does the card still has
   // to draw something square. The placeholder is deliberately neutral rather
   // than a guess at what the icon would have been.
   if (!manifest.icon || broken) {
     return (
-      <span className={styles.icon} aria-hidden="true">
-        <svg className={styles.placeholder} viewBox="0 0 16 16" focusable="false">
-          <title>No icon</title>
+      <span className={styles.icon}>
+        {/* No <title>: this is decoration inside an aria-hidden element, so a
+            title would be announced to nobody and rendered as a hover tooltip
+            to everybody — the same reason the Host's own icon files carry
+            none. */}
+        <svg
+          className={styles.placeholder}
+          viewBox="0 0 16 16"
+          focusable="false"
+          aria-hidden="true"
+        >
           <rect x="2.5" y="2.5" width="11" height="11" rx="3" />
         </svg>
       </span>
@@ -207,7 +225,7 @@ function ComponentIcon({ manifest }: { manifest: Manifest }) {
         loading="lazy"
         decoding="async"
         referrerPolicy="no-referrer"
-        onError={() => setBroken(true)}
+        onError={() => setFailedUrl(manifest.icon ?? null)}
       />
     </span>
   )

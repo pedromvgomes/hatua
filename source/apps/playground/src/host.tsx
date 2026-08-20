@@ -21,17 +21,28 @@ import { SOURCES, type SourceName } from './catalogue'
  * exported individually for Hosts that want their own layout" — and a promise
  * about what a Host does NOT have to pull in can only be checked by a bundle
  * that does not pull it in. A bundler cannot include what nobody imports, so
- * the evidence is dist/assets/host-*.js sitting next to dist/assets/main-*.js
- * with no `Build` in it: grep the two for `hatua-build` and `hatua-data` — the
- * style hrefs of the container and of the region this page leaves out — and
- * only main's chunk has them.
+ * the evidence is what this page's chunks do not contain. `hatua-build` and
+ * `hatua-data` — the style hrefs of the container and of the region this page
+ * leaves out — appear in exactly one chunk, and host.html never asks for it:
+ *
+ *     $ grep -l hatua-build dist/assets/*.js
+ *     dist/assets/Hatua-*.js
+ *     $ grep -c 'Hatua-' dist/host.html
+ *     0
+ *
+ * Read it per PAGE, not per entry chunk. An earlier version of this comment
+ * said "only main's chunk has them", which was true of a two-entry build and
+ * stopped being true the moment api.html arrived: <Hatua> is now shared between
+ * index and api, so Rollup hoisted it — and the container's strings with it —
+ * into a chunk of its own. The entry chunk named `main` holds neither string
+ * today, so following that instruction proved the opposite of the claim.
  *
  * That is the durable half of the measurement, and it is now the whole of it.
  * PR 2 could also point at host-*.js being the smaller file (1.29 kB against
- * main's 1.87 kB); this page's own chrome has since overtaken that (2.07 kB
- * against 1.93 kB), because the source switcher below is a Host feature and
- * every byte of it is the Host's. Comparing entry chunks was only ever a proxy
- * for what they contain, and what they contain is checkable directly.
+ * main's 1.87 kB); this page's own chrome has since overtaken that, because the
+ * source switcher below is a Host feature and every byte of it is the Host's.
+ * Comparing entry chunks was only ever a proxy for what they contain, and what
+ * they contain is checkable directly.
  *
  * What it proves, beyond that the parts exist:
  *
