@@ -847,6 +847,78 @@ describe('autosave', () => {
     expect(host.writes).toHaveLength(1)
   })
 
+  it('ignores a write abandoned by a reopen, however late the Host answers it', async () => {
+    /*
+     * Reopening starts a fresh queue so a hung write cannot wedge autosave for
+     * good — which means the abandoned write is no longer ordered against the
+     * new session's. Its answer has to be inert: it belongs to a generation
+     * that is over, and letting it report anything would overwrite what the
+     * live session knows.
+     */
+    const gates: (() => void)[] = []
+    const host = recorder()
+    host.port.saveDraft = async (_token, yaml) => {
+      if (gates.length === 0) {
+        await new Promise<void>((resolve) => gates.push(resolve))
+        host.writes.push(`stale:${yaml.length}`)
+        return
+      }
+      host.writes.push(yaml)
+    }
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 500 })
+    store.open()
+    await settle()
+
+    store.apply(removeStep('s1'))
+    await vi.advanceTimersByTimeAsync(500)
+
+    store.reopen()
+    await settle()
+    store.apply(removeStep('s4'))
+    await vi.advanceTimersByTimeAsync(500)
+    expect(ready(store).save).toEqual({ state: 'saved' })
+
+    // The abandoned write finally answers.
+    gates[0]?.()
+    await settle()
+
+    expect(ready(store).save).toEqual({ state: 'saved' })
+    expect(host.writes.filter((w) => !w.startsWith('stale:'))).toHaveLength(1)
+  })
+
+  it('resolves a second concurrent flush only once its own write has been answered', async () => {
+    // Both flushes wait on the same open write. Whichever resumes first starts
+    // the next one — and a flush that merely returned at that point would
+    // resolve with the write still open and the caller free to dispose out
+    // from under it.
+    let release: (() => void) | undefined
+    const host = recorder()
+    host.port.saveDraft = async (_token, yaml) => {
+      if (!release)
+        await new Promise<void>((resolve) => {
+          release = resolve
+        })
+      host.writes.push(yaml)
+    }
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 500 })
+    store.open()
+    await settle()
+
+    store.apply(removeStep('s1'))
+    await vi.advanceTimersByTimeAsync(500)
+    store.apply(removeStep('s4'))
+
+    const first = store.flush()
+    const second = store.flush()
+    release?.()
+    await Promise.all([first, second])
+
+    // Everything the user did is with the Host by the time both resolve.
+    expect(host.writes.at(-1)).not.toContain('id: s1')
+    expect(host.writes.at(-1)).not.toContain('id: s4')
+    expect(ready(store).save).toEqual({ state: 'saved' })
+  })
+
   it('never has two writes open at once, whatever the Host takes to answer', async () => {
     /*
      * Two overlapping saveDraft calls can land in either order, and a Host that

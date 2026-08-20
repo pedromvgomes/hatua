@@ -210,21 +210,33 @@ export function createEditingStore(
   let savedText = ''
 
   /**
-   * The write currently open, or null.
+   * Writes happen one at a time, in the order they were asked for.
    *
    * Two overlapping `saveDraft` calls can land in either order, and a Host that
    * applies the older one last is left holding text the user has already moved
-   * past. Reachable whenever a write takes longer than the autosave delay — a
-   * slow Host and a fast typist is all it needs. A write that finds another in
-   * flight returns; the one that is running reschedules on completion if the
-   * document has moved on, so nothing is dropped by waiting.
+   * past. A slow Host and a fast typist is all that takes.
    *
-   * Held as the promise rather than a flag so `flush()` can WAIT for it. A
-   * flush that returned early would resolve having written nothing, which is
-   * the opposite of what its one caller — an unmount, a page about to close —
-   * is asking for.
+   * A queue rather than a "is one open?" flag, because every question a caller
+   * asks about a write is really a question about ORDER, and a flag answers
+   * none of them: which write owns the flag, whether the one you are waiting
+   * for is the one that just finished, whether a write left over from a
+   * previous generation may clear it. Chaining sidesteps all three — a write
+   * waits its turn, and `flush()` is just another turn, so it resolves when its
+   * OWN write has been answered rather than when somebody else's has.
+   *
+   * What a queued write is not is stale: it reads the document when it runs, so
+   * a burst of edits collapses into one write plus a few that find nothing to
+   * do.
+   *
+   * A Host that never answers stalls the queue, and `flush()` with it. That is
+   * the honest answer to "tell me when this is written" when it is not written
+   * and never will be. `openDraft` starts a FRESH queue, so reopening restores
+   * autosave — but a flush already waiting is waiting on the Host, and only the
+   * Host can end that. The cost of the reset is that a write abandoned mid-air
+   * no longer orders against the new session's; the generation check below is
+   * what makes its eventual answer harmless.
    */
-  let inFlight: Promise<unknown> | null = null
+  let queue: Promise<unknown> = Promise.resolve()
 
   const notify = () => {
     // Copied: a listener may unsubscribe while being notified — React does
@@ -282,15 +294,20 @@ export function createEditingStore(
     setSave({ state: 'halted', error: asError(cause) })
   }
 
-  const write = async () => {
-    saveTimer = undefined
+  /**
+   * One write, when its turn comes.
+   *
+   * Everything it reads — the document, the token, the generation — is read at
+   * that point rather than when it was queued, so waiting never makes a write
+   * stale, only unnecessary.
+   */
+  const attempt = async () => {
     if (disposed || !document || !token) return
     // Halted stays halted until something clears it. Nothing does yet, and that
     // is the decision rather than an omission: recovering from a rejected write
     // means telling the user their claim is gone and offering to reopen, which
     // is the toolbar's screen to render.
     if (save.state === 'halted') return
-    if (inFlight) return
 
     const mine = generation
     const attempted = document.toString()
@@ -300,18 +317,12 @@ export function createEditingStore(
     }
 
     setSave(SAVING)
-    const attempt = port.saveDraft(token, attempted)
-    // Swallowed here only so an awaiting `flush()` is never handed a rejection
-    // that this function is already handling below.
-    inFlight = attempt.catch(() => {})
     try {
-      await attempt
+      await port.saveDraft(token, attempted)
     } catch (cause) {
-      inFlight = null
       if (mine === generation) halt(cause)
       return
     }
-    inFlight = null
     if (mine !== generation || disposed) return
 
     savedText = attempted
@@ -320,6 +331,15 @@ export function createEditingStore(
     // would tell them their last few edits were written when they were not.
     if (document.toString() === attempted) setSave(SAVED)
     else schedule()
+  }
+
+  /** Take a place in the queue, and hand back a promise for that turn alone. */
+  const write = (): Promise<void> => {
+    saveTimer = undefined
+    // Both arms, so one write's failure cannot stop every write after it.
+    const mine = queue.then(attempt, attempt)
+    queue = mine
+    return mine
   }
 
   const schedule = () => {
@@ -416,7 +436,7 @@ export function createEditingStore(
     // the panel stuck on `pending`, and reopening no help at all. The
     // abandoned call belongs to a token this session no longer holds, so
     // whatever it eventually does is the Host's business.
-    inFlight = null
+    queue = Promise.resolve()
 
     if (state.status !== 'opening') publishState(OPENING)
 
@@ -491,6 +511,10 @@ export function createEditingStore(
     leaseTimer = undefined
     generation++
     token = null
+    // Nothing queued behind a write belongs to this session any more, and a
+    // Host that never answered the last one must not hold a later flush open
+    // for the life of the page.
+    queue = Promise.resolve()
   }
 
   return {
@@ -544,16 +568,12 @@ export function createEditingStore(
       travel(future, history)
     },
 
-    async flush() {
+    flush() {
       cancelSave()
-      // Wait out a write already open rather than returning as though this one
-      // had happened. `write()` refuses to overlap, so without this the caller
-      // gets a resolved promise, a cancelled timer and nothing written — and
-      // if it goes on to dispose the store, the open write's reschedule dies
-      // with it and the edit is gone.
-      const open = inFlight
-      if (open) await open
-      cancelSave()
+      // Just another turn in the queue: it waits out whatever is already open
+      // and then writes, and the promise it returns is for its own write rather
+      // than for somebody else's. Two callers flushing at once each get their
+      // own turn, and the second finds nothing left to write.
       return write()
     },
 
