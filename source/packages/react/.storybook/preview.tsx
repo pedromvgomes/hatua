@@ -14,8 +14,9 @@ import { HatuaProvider, type HostPorts } from '../src/theme/HatuaProvider'
  * looks at, and the dark palette is a separate declaration block that can drift
  * from the light one without anything failing.
  *
- * A story that needs a Host port declares one as `parameters.ports` and this
- * decorator hands it to the provider; one that needs to mount the provider
+ * A story that needs a Host port declares one as `parameters.ports` — with
+ * `parameters.workflowId` beside it when the port is a WorkflowStore — and this
+ * decorator hands them to the provider; one that needs to mount the provider
  * itself declares `parameters.provider = false` and is handed the frame bare. It is set here rather than by the story
  * mounting its own provider, because a nested provider would mean the two
  * colour panels shared one root and the region under review no longer sat where
@@ -23,6 +24,9 @@ import { HatuaProvider, type HostPorts } from '../src/theme/HatuaProvider'
  */
 const bothColourModes: Decorator = (Story, context) => {
   const ports = context.parameters.ports as HostPorts | undefined
+  // Paired with `ports.workflows`: the port addresses a workflow by id, so a
+  // story that wires one has to say which. See layouts/StepList.stories.tsx.
+  const workflowId = context.parameters.workflowId as string | undefined
 
   // A story ABOUT the provider cannot be rendered inside one it does not
   // control — it needs to mount its own, with its own themes and its own modes,
@@ -32,12 +36,12 @@ const bothColourModes: Decorator = (Story, context) => {
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', minHeight: '100vh' }}>
-      <HatuaProvider colorMode="light" ports={ports}>
+      <HatuaProvider colorMode="light" ports={ports} workflowId={workflowId}>
         <div style={{ padding: 24 }}>
           <Story />
         </div>
       </HatuaProvider>
-      <HatuaProvider colorMode="dark" ports={ports}>
+      <HatuaProvider colorMode="dark" ports={ports} workflowId={workflowId}>
         <div style={{ padding: 24 }}>
           <Story />
         </div>

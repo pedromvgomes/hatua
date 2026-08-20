@@ -24,11 +24,23 @@ and puts them wherever it likes. `apps/playground/src/host.tsx` is that Host,
 and `layouts/regions.test.tsx` mounts every region outside `<Build>` so the
 container cannot quietly become required.
 
-**Rule:** these are the components that may call `@hatua/services`. `Library` is
-the first that does: it subscribes to the manifest store through
-`useSyncExternalStore` and holds nothing but the text in its filter box. The
-editing store arrives later; `TabbedPanel` still owns only which tab is open,
-which is chrome state and not in the Workflow Definition.
+**Rule:** these are the components that may call `@hatua/services`. `Library`
+was the first: it subscribes to the manifest store through `useSyncExternalStore`
+and holds nothing but the text in its filter box. `StepList` is the second, and
+it subscribes to the editing store the same way — the parsed **Workflow
+Definition** in, a tree out, and every structural change back through the store
+as a command against the document (ADR-0001).
+
+`TabbedPanel` still owns no data. It gained a controlled `tabId`, which is a
+different thing: the tab that is open is still chrome, and lifting it into a
+caller is what lets `views/Build` open the Library when an insert point is
+chosen in the Flow tab. None of it reaches the document.
+
+`views/Build` reaches `@hatua/services` as well, for exactly one thing: the
+`addStep` command it applies when the Library and the Flow tab are wired
+together. It reads nothing — it does not subscribe to the store, because a
+re-render of the whole screen on every keystroke is the opposite of why the
+store is external.
 
 `HatuaProvider` reaches `@hatua/services` too, and is the one component outside
 this tier that may. It is not a region — it is the composition root, and what it
@@ -44,10 +56,18 @@ it, so a required data prop would break both. Everything a region reads arrives
 through `<HatuaProvider>` — the Host's ports go in, and the stores that read
 them come out.
 
-What regions still send *out* is props. `Library` takes an optional `onSelect`;
-it does not add the Step itself, because adding one needs the editing store. A
-region that emits an event stays mountable alone; a region that requires a
-handler does not, so every such prop is optional.
+What regions still send *out* is props. `Library` takes an optional `onSelect`
+and `StepList` an optional `onInsert`; neither adds the Step. That is not a
+missing feature — it is the only place the two halves can meet. `StepList` knows
+where a Step would go and nothing about the catalogue; `Library` knows the
+Components and nothing about the tree. Something above both has to introduce
+them, and `views/Build` is that something.
+
+A region that emits an event stays mountable alone; a region that requires a
+handler does not, so every such prop is optional. `apps/playground/src/host.tsx`
+is the proof: it mounts the Flow tab with no `onInsert` at all, and the region
+simply renders no insert controls — while removing and reordering still work,
+because neither needs a catalogue.
 
 ## Two vocabularies, reconciled
 

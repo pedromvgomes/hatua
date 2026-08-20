@@ -14,6 +14,18 @@ export interface TabbedPanelProps extends Omit<ComponentPropsWithRef<'div'>, 'ch
   tabs: PanelTab[]
   /** Which tab opens first. Defaults to the first one given. */
   defaultTabId?: string
+  /**
+   * Which tab is open, when the caller wants to say. Pass it and this becomes
+   * controlled — `onTabChange` is then the only thing that opens another tab.
+   *
+   * Added because one screen genuinely needs it: clicking an insert point in
+   * the Flow tab has to open the Library with that point pending, and the two
+   * regions are siblings inside this panel with no other way to reach each
+   * other. Uncontrolled is still the default, because that is what every other
+   * caller wants and what `regions.test.tsx` mounts.
+   */
+  tabId?: string
+  onTabChange?: (tabId: string) => void
 }
 
 /**
@@ -26,12 +38,29 @@ export interface TabbedPanelProps extends Omit<ComponentPropsWithRef<'div'>, 'ch
  * it asked for. Regions in, chrome around them, nothing else.
  *
  * The only state here is which tab is showing. That is chrome state, not
- * editing state: it is not in the Workflow Definition, nothing outside this
- * component can observe it, and the editing store (PR 4) has no opinion on it.
+ * editing state: it is not in the Workflow Definition and the editing store has
+ * no opinion on it — which is exactly why `tabId` can lift it out into a caller
+ * without any of it reaching the document.
  */
-export function TabbedPanel({ tabs, defaultTabId, className, ...rest }: TabbedPanelProps) {
+export function TabbedPanel({
+  tabs,
+  defaultTabId,
+  tabId,
+  onTabChange,
+  className,
+  ...rest
+}: TabbedPanelProps) {
   const base = useId()
-  const [selectedId, setSelectedId] = useState(defaultTabId)
+  const [ownId, setOwnId] = useState(defaultTabId)
+  const selectedId = tabId ?? ownId
+
+  const open = (next: string) => {
+    // The internal state is kept in step even while controlled, so a caller
+    // that stops passing `tabId` does not snap the panel back to whatever was
+    // open before it started.
+    setOwnId(next)
+    onTabChange?.(next)
+  }
 
   // Resolved rather than stored: a `tabs` array that changes — a Host swapping
   // what it mounts — must not leave this pointing at a tab that is gone.
@@ -41,7 +70,7 @@ export function TabbedPanel({ tabs, defaultTabId, className, ...rest }: TabbedPa
     const from = tabs.findIndex((tab) => tab.id === active?.id)
     const next = tabs[(from + delta + tabs.length) % tabs.length]
     if (!next) return
-    setSelectedId(next.id)
+    open(next.id)
     // Focus follows selection, or the roving tabindex desynchronises: the old
     // button keeps DOM focus while being re-rendered with tabIndex={-1}, so the
     // next Enter fires ITS onClick and the selection snaps back. A screen
@@ -84,7 +113,7 @@ export function TabbedPanel({ tabs, defaultTabId, className, ...rest }: TabbedPa
                 // open tab, then the arrow keys move within it.
                 tabIndex={selected ? 0 : -1}
                 className={cx(styles.tab, selected && styles.selected)}
-                onClick={() => setSelectedId(tab.id)}
+                onClick={() => open(tab.id)}
               >
                 {tab.label}
               </button>

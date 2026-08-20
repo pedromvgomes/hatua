@@ -9,9 +9,10 @@ import {
   TabbedPanel,
   TopBar,
 } from '@hatua/react'
-import { StrictMode, useState } from 'react'
+import { StrictMode, useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { SOURCES, type SourceName } from './catalogue'
+import { createLocalWorkflowStore } from './workflow-store'
 
 /**
  * The Host-authored embedding, served at /host.html.
@@ -69,6 +70,14 @@ import { SOURCES, type SourceName } from './catalogue'
  * embed — there is still nothing here to configure that <Hatua> would not
  * configure identically.
  *
+ * The workflow switcher does the same job for the editing store, and one of
+ * its options is deliberately awkward: a store that refuses every write. That
+ * is what proves ADR-0005's "a rejected write halts autosave and keeps the
+ * in-memory document rather than retrying or discarding" — the halting is
+ * invisible in a store that always says yes, and a spin is invisible in a unit
+ * test that only counts one attempt. Remove a Step against it and the panel
+ * says saving stopped while the tree keeps every edit.
+ *
  * The source switcher below is the half of the Library that the default entry
  * cannot show. A catalogue that always resolves instantly makes loading,
  * failure and emptiness look theoretical; they are not — they are what a Host
@@ -77,6 +86,26 @@ import { SOURCES, type SourceName } from './catalogue'
  * still and looked at; /api.html runs the same states against a real request.
  */
 const theme = createTheme({ accent: 'oklch(0.63 0.115 195)' })
+
+/**
+ * The Host's storage, and the ways it can behave. localStorage really persists,
+ * so a reload resumes the same Draft and a second tab is refused the lease.
+ */
+const WORKFLOW_STORES = {
+  local: () => createLocalWorkflowStore(),
+  slow: () => createLocalWorkflowStore({ delayMs: 1400 }),
+  rejecting: () => createLocalWorkflowStore({ rejectWrites: true }),
+  unreachable: () => createLocalWorkflowStore({ failToOpen: true }),
+} as const
+
+type StoreName = keyof typeof WORKFLOW_STORES
+
+const STORE_LABELS: Record<StoreName, string> = {
+  local: 'localStorage',
+  slow: 'Slow (1.4s)',
+  rejecting: 'Refuses every write',
+  unreachable: 'Cannot be reached',
+}
 
 const SOURCE_LABELS: Record<SourceName, string> = {
   ready: 'Resolves at once',
@@ -87,7 +116,14 @@ const SOURCE_LABELS: Record<SourceName, string> = {
 
 function HostPage() {
   const [sourceName, setSourceName] = useState<SourceName>('ready')
+  const [storeName, setStoreName] = useState<StoreName>('local')
   const [lastSelected, setLastSelected] = useState<Manifest | null>(null)
+
+  // Memoised on the name, because <HatuaProvider> keys its editing store on the
+  // port it is handed: a Host that rebuilt one every render would look exactly
+  // like one that swapped it, and a swap reopens the Draft — which means a new
+  // lease on every keystroke.
+  const workflows = useMemo(() => WORKFLOW_STORES[storeName](), [storeName])
 
   return (
     <div style={{ blockSize: '100vh', display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)' }}>
@@ -133,9 +169,29 @@ function HostPage() {
               with the manifest is the Host's business — here, print it. */}
           {lastSelected ? `Last selected: ${lastSelected.use}` : 'Nothing selected yet.'}
         </p>
+        <fieldset style={{ display: 'flex', gap: 10, border: 0, margin: 0, padding: 0 }}>
+          <legend style={{ float: 'left', padding: 0, marginInlineEnd: 10 }}>
+            Workflow storage:
+          </legend>
+          {(Object.keys(WORKFLOW_STORES) as StoreName[]).map((name) => (
+            <label key={name} style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+              <input
+                type="radio"
+                name="store"
+                checked={storeName === name}
+                onChange={() => setStoreName(name)}
+              />
+              {STORE_LABELS[name]}
+            </label>
+          ))}
+        </fieldset>
       </div>
 
-      <HatuaProvider theme={theme} ports={{ manifests: SOURCES[sourceName] }}>
+      <HatuaProvider
+        theme={theme}
+        ports={{ manifests: SOURCES[sourceName], workflows }}
+        workflowId="wf_morning"
+      >
         <div
           style={{
             blockSize: '100%',
@@ -155,7 +211,17 @@ function HostPage() {
                   label: 'Library',
                   content: <Library onSelect={setLastSelected} />,
                 },
-                { id: 'flow', label: 'Flow', content: <StepList /> },
+                {
+                  id: 'flow',
+                  label: 'Flow',
+                  // No onInsert here, and that is the point of this page: the
+                  // regions emit, and what a Host does with what they emit is
+                  // the Host's business. <Build> is the one that introduces the
+                  // Library and the Flow tab to each other; this page prints
+                  // the selection instead and still edits, because removing and
+                  // reordering need no catalogue.
+                  content: <StepList onSelect={(id) => console.info('selected', id)} />,
+                },
               ]}
             />
           </div>

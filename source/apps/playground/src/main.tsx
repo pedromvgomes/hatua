@@ -2,6 +2,7 @@ import { Hatua } from '@hatua/react'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { SOURCES } from './catalogue'
+import { createLocalWorkflowStore } from './workflow-store'
 
 // The Host imports no CSS — Hatua renders its own stylesheet (ADR-0003).
 
@@ -10,11 +11,13 @@ import { SOURCES } from './catalogue'
  * provider and the designer screen, so everything visible below arrived from
  * one element and one import.
  *
- * It now passes one thing: `ports`. That is not a third way to embed — it is
- * the Host answering the only question Hatua cannot answer for itself. Hatua
+ * It passes `ports` and a `workflowId`. That is not a third way to embed — it
+ * is the Host answering the two questions Hatua cannot answer for itself. Hatua
  * never invents a Component, so a designer with no ManifestSource has an empty
- * Library by definition, and the alternative to a prop here is Hatua shipping a
- * catalogue of its own, which is the thing CONTEXT.md says it does not do.
+ * Library by definition; and it has no storage at all, so a designer with no
+ * WorkflowStore has nothing to edit. The alternative to these props is Hatua
+ * shipping a catalogue and a database of its own, which is exactly what
+ * CONTEXT.md says it does not do.
  *
  * This entry takes the happy path deliberately, and takes it at build time: its
  * catalogue is compiled into the bundle, so the Library renders on the first
@@ -34,9 +37,15 @@ import { SOURCES } from './catalogue'
  * Keeping them apart is what makes ADR-0003's claim measurable: the per-entry
  * bundles in dist/ show what each way of embedding actually costs, and which of
  * them carries the catalogue.
+ *
+ * `workflows` sits at module scope so the port is referentially stable:
+ * <HatuaProvider> keys its editing store on the port it is handed, and a store
+ * rebuilt every render would reopen the Draft — a new lease per render.
  */
+const workflows = createLocalWorkflowStore()
+
 createRoot(document.getElementById('root') as HTMLElement).render(
   <StrictMode>
-    <Hatua ports={{ manifests: SOURCES.ready }} />
+    <Hatua ports={{ manifests: SOURCES.ready, workflows }} workflowId="wf_morning" />
   </StrictMode>,
 )

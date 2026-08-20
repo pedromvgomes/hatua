@@ -1,4 +1,5 @@
-import type { ComponentPropsWithRef } from 'react'
+import { addStep, type InsertPoint } from '@hatua/services'
+import { type ComponentPropsWithRef, useState } from 'react'
 import { Data } from '../layouts/Data'
 import { FlowMap } from '../layouts/FlowMap'
 import { Inspector } from '../layouts/Inspector'
@@ -7,6 +8,7 @@ import { StepList } from '../layouts/StepList'
 import { TabbedPanel } from '../layouts/TabbedPanel'
 import { TopBar } from '../layouts/TopBar'
 import { cx } from '../primitives/classNames'
+import { useEditingStore } from '../theme/HatuaProvider'
 import styles from './Build.module.css'
 import css from './Build.module.css?inline'
 
@@ -47,6 +49,38 @@ export type BuildProps = ComponentPropsWithRef<'div'>
  * which is strictly more capable. See views/README.
  */
 export function Build({ className, ...rest }: BuildProps) {
+  const store = useEditingStore()
+
+  /*
+   * The one thing this view does beyond placing regions: it introduces the two
+   * halves of "add a Step" to each other.
+   *
+   * Neither region can do it alone, and neither should. <StepList> knows where
+   * a Step would go and nothing about the catalogue; <Library> knows the
+   * Components and nothing about the tree. Both emit rather than reach — props
+   * out, the rule layouts/README states — so something has to be above both,
+   * and the composition root is where that belongs.
+   *
+   * The pending point is chrome, held here and never in the document, the same
+   * line drawn around which tab is open. Appending is the fallback: a Component
+   * picked with no insert point pending goes at the end of the workflow, which
+   * is what "add this" means when nowhere was named.
+   */
+  const [tab, setTab] = useState('flow')
+  const [pending, setPending] = useState<InsertPoint | null>(null)
+
+  /**
+   * Read at click time, not at render time. <Build> deliberately does not
+   * subscribe to the editing store — it places regions, and a re-render of the
+   * whole screen on every keystroke would be the opposite of why the store is
+   * external — so a length captured during render would be whatever it was when
+   * this last happened to render.
+   */
+  const appendPoint = (): InsertPoint => {
+    const state = store?.getSnapshot()
+    return { index: state?.status === 'ready' ? (state.workflow.definition?.steps.length ?? 0) : 0 }
+  }
+
   return (
     <>
       <style href="hatua-build" precedence="hatua">
@@ -64,11 +98,42 @@ export function Build({ className, ...rest }: BuildProps) {
               // it is <FlowMap>, which is not a tab and never was. See
               // layouts/README.
               tabs={[
-                { id: 'flow', label: 'Flow', content: <StepList /> },
-                { id: 'library', label: 'Library', content: <Library /> },
+                {
+                  id: 'flow',
+                  label: 'Flow',
+                  content: (
+                    <StepList
+                      onInsert={(at) => {
+                        setPending(at)
+                        // The design: "Clicking it opens the Library with that
+                        // insertion point pending."
+                        setTab('library')
+                      }}
+                    />
+                  ),
+                },
+                {
+                  id: 'library',
+                  label: 'Library',
+                  content: (
+                    <Library
+                      onSelect={(manifest) => {
+                        store?.apply(
+                          addStep(
+                            { use: manifest.use, name: manifest.name },
+                            pending ?? appendPoint(),
+                          ),
+                        )
+                        setPending(null)
+                        setTab('flow')
+                      }}
+                    />
+                  ),
+                },
                 { id: 'data', label: 'Data', content: <Data /> },
               ]}
-              defaultTabId="flow"
+              tabId={tab}
+              onTabChange={setTab}
             />
           </div>
           <div className={styles.map}>

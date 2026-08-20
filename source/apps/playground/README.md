@@ -11,6 +11,12 @@ them are the point.
 | `api.html` → `src/api.tsx` | `<Hatua>`, and nothing else | Fetched at run time |
 | `theme.html` → `src/theme.tsx` | Three `<Hatua>`s and a `<HatuaProvider>` | Compiled in |
 
+Every page also implements a `WorkflowStore`, because Hatua has no storage and
+no idea where a Workflow Definition lives. `src/workflow-store.ts` is that Host
+code: localStorage for the three that persist, and an in-memory one per instance
+for `theme.html`, which runs three designers at once and should not have them
+fighting over one lease.
+
 Three entries, not three routes. A route would share one bundle with everything
 the app can reach, which would put `<Hatua>` into the Host-authored page's
 JavaScript whether that page used it or not. Separate entries give separate
@@ -18,9 +24,15 @@ bundles, so `ls dist/assets` answers what each way of embedding costs — and,
 now, which pages carry a catalogue:
 
 ```
-$ grep -l email.send dist/assets/*.js
+$ grep -l 'Send email' dist/assets/*.js
 dist/assets/catalogue-*.js   # index.html, host.html and theme.html — not api.html
 ```
+
+Grep for a manifest's **display name**, not for a verb. `email.send` used to be
+the marker and stopped working the moment the playground gained a seed workflow:
+a Workflow Definition names the same verbs the catalogue declares, so the string
+now lives in the workflow store's chunk too. `Send email` is the manifest's
+`name`, which nothing but a Component Manifest has.
 
 Both greps are about which chunks a *page* pulls in. The entry chunks named
 `main`, `host` and `api` are now thin: everything shared sits in `client-*.js`
@@ -96,6 +108,14 @@ Two things here are stand-ins, and both say so where they are written:
 or return nothing, chosen so each state can be held still and looked at.
 `api.html` runs the same states against a real request, including a checkbox
 that points the source at a URL the endpoint answers 404 for.
+
+`host.tsx` does the same for storage, and one of its options is there to be
+awkward: a `WorkflowStore` that **refuses every write**. ADR-0005 says a
+rejected write halts autosave and keeps the in-memory document rather than
+retrying or discarding it, and neither half of that is visible against a store
+that always says yes. Remove a Step against the refusing one and the Flow tab
+says saving stopped while the tree keeps every edit — still undoable, still
+editable.
 
 ## Scripts
 

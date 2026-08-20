@@ -85,3 +85,39 @@ describe('validation', () => {
     expect(parseWorkflow(broken).toString()).toBe(broken)
   })
 })
+
+describe('multi-document sources', () => {
+  /*
+   * The bug this closes: `parseWorkflow` composed the FIRST document and
+   * stringified the WHOLE CST as `original`, so an untouched two-document file
+   * round-tripped byte for byte — and the first mutation swapped `original` for
+   * a serialisation of document one alone, silently dropping document two. It
+   * was invisible while nothing edited a document.
+   *
+   * Rejected at parse rather than kept and re-serialised: a Workflow Definition
+   * is one mapping, the Host stores one blob per version, and there is nothing
+   * for a second document to be. Failing where the caller still holds the text
+   * beats losing half of it at the first edit.
+   */
+  const TWO = `id: wf_a\nname: A\nversion: 1\nstatus: draft\nsteps: []\n---\nid: wf_b\nname: B\nversion: 1\nstatus: draft\nsteps: []\n`
+
+  it('refuses a source holding more than one YAML document', () => {
+    expect(() => parseWorkflow(TWO)).toThrow(/single YAML document; this source holds 2/)
+  })
+
+  it('says how to proceed, because the caller still has the text', () => {
+    expect(() => parseWorkflow(TWO)).toThrow(/Split the file/)
+  })
+
+  it('still accepts a lone document that opens with an explicit `---`', () => {
+    // The marker is not what makes a file multi-document, and a Host whose
+    // exporter always writes one would otherwise have been locked out.
+    const source = `---\nid: wf_a\nname: A\nversion: 1\nstatus: draft\nsteps: []\n`
+    expect(parseWorkflow(source).toString()).toBe(source)
+  })
+
+  it('still accepts a trailing document-end marker', () => {
+    const source = `id: wf_a\nname: A\nversion: 1\nstatus: draft\nsteps: []\n...\n`
+    expect(parseWorkflow(source).toString()).toBe(source)
+  })
+})

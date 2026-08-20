@@ -7,7 +7,9 @@
  * renderer, and dragging a node does not re-render the step list.
  */
 
+export * from './editing'
 export * from './manifests'
 export * from './paging'
 export * from './ports'
+export * from './steps'
 export * from './store'

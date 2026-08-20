@@ -6,8 +6,18 @@
  * @hatua/react for the type of the thing it is being asked to write would be a
  * seam that exists only in our directory layout.
  */
-export type { Manifest } from '@hatua/schema'
-export type { ManifestSource } from '@hatua/services'
+export type { Manifest, Step, WorkflowDefinition } from '@hatua/schema'
+export type {
+  Cursor,
+  DraftSession,
+  EditToken,
+  InsertPoint,
+  Lease,
+  ManifestSource,
+  PublishedVersion,
+  VersionSummary,
+  WorkflowStore,
+} from '@hatua/services'
 export type {
   DataProps,
   FlowMapProps,

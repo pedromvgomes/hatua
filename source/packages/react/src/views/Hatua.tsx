@@ -30,11 +30,18 @@ export interface HatuaProps {
    * invent them, and Hatua invents none.
    */
   ports?: HostPorts
+  /**
+   * Which Workflow Definition to open, as the Host's `WorkflowStore` addresses
+   * it. Hatua has no storage and no idea where a workflow lives, so this and
+   * `ports.workflows` are the whole of that seam — omit either and the designer
+   * says it has nothing to edit rather than inventing something.
+   */
+  workflowId?: string
 }
 
-export function Hatua({ theme, colorMode, ports }: HatuaProps) {
+export function Hatua({ theme, colorMode, ports, workflowId }: HatuaProps) {
   return (
-    <HatuaProvider theme={theme} colorMode={colorMode} ports={ports}>
+    <HatuaProvider theme={theme} colorMode={colorMode} ports={ports} workflowId={workflowId}>
       <Build />
     </HatuaProvider>
   )

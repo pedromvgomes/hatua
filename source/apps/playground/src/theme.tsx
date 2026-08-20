@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { SOURCES } from './catalogue'
+import { createMemoryWorkflowStore } from './workflow-store'
 
 // The Host imports no CSS — Hatua renders its own stylesheet (ADR-0003).
 
@@ -32,6 +33,10 @@ const THEMES = [
     name: "Hatua's own",
     note: 'No theme prop at all — the defaults.',
     theme: undefined,
+    // One store each, not one shared between the three. They would otherwise
+    // be three sessions editing one document with one claim between them,
+    // which is a page about leases rather than about themes.
+    workflows: createMemoryWorkflowStore(),
   },
   {
     name: 'A Host with a warm brand',
@@ -43,11 +48,13 @@ const THEMES = [
       radius: 2,
       fontFamily: 'Georgia, "Times New Roman", serif',
     }),
+    workflows: createMemoryWorkflowStore(),
   },
   {
     name: 'A Host with a cool one',
     note: 'The same components again. Nothing here is styled per instance.',
     theme: createTheme({ accent: 'oklch(0.52 0.21 295)', ink: '#1b1f3b', radius: 16 }),
+    workflows: createMemoryWorkflowStore(),
   },
 ]
 
@@ -105,9 +112,13 @@ function ThemePage() {
         <a href="/api.html">API-backed</a>
       </p>
 
-      {THEMES.map(({ name, note, theme }) => (
+      {THEMES.map(({ name, note, theme, workflows }) => (
         <Frame key={name} title={name} note={note}>
-          <Hatua theme={theme} ports={{ manifests: SOURCES.ready }} />
+          <Hatua
+            theme={theme}
+            ports={{ manifests: SOURCES.ready, workflows }}
+            workflowId="wf_theme"
+          />
         </Frame>
       ))}
 
