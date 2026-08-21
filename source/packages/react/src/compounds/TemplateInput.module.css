@@ -128,6 +128,29 @@
     box-decoration-break: clone;
   }
 
+  /*
+   * A Reference at rest, drawn as what it names rather than as how it is
+   * spelled.
+   *
+   * Only while the field is unfocused, and that is the whole licence for it:
+   * with no caret to keep aligned the mirror is free to be a different width
+   * from the `<input>` behind it, which is exactly what showing a label instead
+   * of a path requires. Focus puts the characters back, so the text is still
+   * the editing surface whenever anyone is editing.
+   *
+   * Real padding here, for the same reason — nothing is standing in for a
+   * glyph, so nothing has to be cancelled.
+   */
+  .chip {
+    padding: 2px 7px;
+    border-radius: var(--hatua-radius-sm);
+    background: var(--hatua-accent-wash);
+    box-shadow: inset 0 0 0 1px var(--hatua-border-accent);
+    color: var(--hatua-text-accent);
+    white-space: nowrap;
+    box-decoration-break: clone;
+  }
+
   /* A `{{` with no `}}` after it: the ordinary state of a Template halfway
      through being typed, so it is underlined rather than filled. */
   .broken {

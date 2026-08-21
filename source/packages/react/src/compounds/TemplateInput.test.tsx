@@ -212,3 +212,46 @@ describe('TemplateInput', () => {
     })
   })
 })
+
+describe('at rest', () => {
+  // By the CSS Module's stable prefix rather than a full attribute selector,
+  // which biome's secret scanner reads as a high-entropy string.
+  const chips = () =>
+    [...document.querySelectorAll('span')]
+      .filter((span) => span.className.startsWith('_chip'))
+      .map((span) => span.textContent)
+
+  /*
+   * With no caret to keep aligned the mirror is free to be a different width
+   * from the input behind it, which is exactly what showing a label instead of
+   * a path requires.
+   */
+  it('draws a whole-value Reference as what it names', () => {
+    mount({ value: '{{ s2.count }}' })
+    expect(chips()).toEqual(['Fetch emails count'])
+  })
+
+  it('draws a Reference inside a sentence the same way', () => {
+    mount({ value: 'Inbox digest · {{ s2.count }} messages' })
+    expect(chips()).toEqual(['Fetch emails count'])
+  })
+
+  /* A Reference is a shape, not a syntax: the moment something is computed
+     there is no single target to name. */
+  it('leaves an expression that computes something as its own characters', () => {
+    mount({ value: '{{ s2.count + 1 }}' })
+    expect(chips()).toEqual([])
+  })
+
+  /* The path is what the checker names and what has to be edited. */
+  it('leaves a stale Reference showing its path', () => {
+    mount({ value: '{{ s9.gone }}' })
+    expect(chips()).toEqual([])
+  })
+
+  it('puts the characters back on focus, so the text is the editing surface', () => {
+    const { field } = mount({ value: '{{ s2.count }}' })
+    fireEvent.focus(field)
+    expect(chips()).toEqual([])
+  })
+})

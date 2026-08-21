@@ -1,4 +1,9 @@
-import { CORE_FUNCTIONS, type FunctionSpec, type ValueType } from '@hatua/expressions'
+import {
+  CORE_FUNCTIONS,
+  type FunctionSpec,
+  referencePath,
+  type ValueType,
+} from '@hatua/expressions'
 import type { ScopeEntry } from '@hatua/model'
 import {
   type KeyboardEvent as ReactKeyboardEvent,
@@ -10,7 +15,7 @@ import {
 } from 'react'
 import { cx } from '../primitives/classNames'
 import { CompletionList, rowId } from './CompletionList'
-import { type Candidate, completionsAt, ghostFor } from './candidates'
+import { type Candidate, completionsAt, ghostFor, labelOf } from './candidates'
 import { ExpressionPicker } from './ExpressionPicker'
 import {
   caretContext,
@@ -22,7 +27,7 @@ import {
 } from './insertion'
 import styles from './TemplateInput.module.css'
 import css from './TemplateInput.module.css?inline'
-import { templateShape } from './templateSpans'
+import { type HoleSpan, templateShape } from './templateSpans'
 
 /**
  * The Template input: one widget for every site that holds a Template.
@@ -125,6 +130,7 @@ export function TemplateInput({
   const [active, setActive] = useState(0)
   const [at, setAt] = useState({ left: 0, top: 0 })
   const [anchor, setAnchor] = useState({ left: 0, top: 0, bottom: 0 })
+  const [focused, setFocused] = useState(false)
   const pending = useRef<number | null>(null)
 
   // Set during render rather than in an effect: an effect paints the stale
@@ -289,7 +295,17 @@ export function TemplateInput({
             can be painted where they actually sit.
           */}
           <div className={styles.mirror} ref={mirror} aria-hidden="true">
-            {paint(draft, shape, caret, ghost, caretMark)}
+            {paint({
+              value: draft,
+              shape,
+              caret,
+              ghost,
+              mark: caretMark,
+              // At rest there is no caret to keep aligned, so a hole that names
+              // one value may be drawn as what it is rather than as how it is
+              // spelled. See `chipOf`.
+              chip: focused ? null : (path) => labelOf(path, scope),
+            })}
             {/* A trailing newline collapses in a block box, so the mirror comes
                 up one line short of the textarea it is behind. */}
             {'​'}
@@ -316,7 +332,11 @@ export function TemplateInput({
             onKeyUp={(event) => track(event.currentTarget)}
             onClick={(event) => track(event.currentTarget)}
             onKeyDown={onKeyDown}
-            onBlur={(event) => commit(event.currentTarget.value)}
+            onFocus={() => setFocused(true)}
+            onBlur={(event) => {
+              setFocused(false)
+              commit(event.currentTarget.value)
+            }}
             onScroll={(event) => {
               // The mirror has to follow, or the highlight slides off the text
               // the moment the value is longer than the box.
@@ -404,6 +424,26 @@ interface Piece {
   text: string
   start: number
   className?: string
+  /** Set when this hole is drawn as a chip instead of as its own characters. */
+  chip?: string
+}
+
+/**
+ * What a hole is called when the field is at rest, or nothing.
+ *
+ * Two conditions, and both are the parser's to answer. The hole has to be a
+ * **Reference** — `isReference()` reads the parsed shape, because a Reference
+ * is a shape and not a syntax, and `{{ s2.count + 1 }}` names no single target
+ * to put on a chip. And the path it names has to still be in scope, so a
+ * Reference that has gone stale keeps showing the path the checker will name.
+ */
+function chipOf(
+  hole: HoleSpan,
+  chip: ((path: string) => string | null) | null,
+): string | undefined {
+  if (!chip || !hole.expr) return undefined
+  const path = referencePath(hole.expr)
+  return (path && chip(path)) || undefined
 }
 
 /**
@@ -421,13 +461,22 @@ interface Piece {
  * pieces completes `{{ ru }}` as `{{ ru }}n` — outside the hole it belongs to,
  * after the closing braces, in the place the eye least expects it.
  */
-function paint(
-  value: string,
-  shape: ReturnType<typeof templateShape>,
-  caret: number,
-  ghost: string,
-  mark: React.RefObject<HTMLSpanElement | null>,
-) {
+function paint({
+  value,
+  shape,
+  caret,
+  ghost,
+  mark,
+  chip,
+}: {
+  value: string
+  shape: ReturnType<typeof templateShape>
+  caret: number
+  ghost: string
+  mark: React.RefObject<HTMLSpanElement | null>
+  /** What to call a Reference at rest, or null while the field has focus. */
+  chip: ((path: string) => string | null) | null
+}) {
   const pieces: Piece[] = []
   let at = 0
 
@@ -437,6 +486,7 @@ function paint(
       text: value.slice(hole.start, hole.end),
       start: hole.start,
       className: hole === shape.unclosed ? styles.broken : styles.hole,
+      chip: chipOf(hole, chip),
     })
     at = hole.end
   }
@@ -451,6 +501,14 @@ function paint(
   return pieces
     .filter((piece) => piece.text !== '' || piece === seat.piece)
     .map((piece) => {
+      if (piece.chip) {
+        return (
+          <span key={piece.start} className={styles.chip}>
+            {piece.chip}
+          </span>
+        )
+      }
+
       const cut = piece === seat.piece ? caret - piece.start : -1
       if (cut < 0) {
         return (

@@ -160,7 +160,7 @@ function childrenOf(
     return [
       {
         path: `${path}[]`,
-        label: 'Each item',
+        label: 'each',
         type: 'list',
         origin,
         children: childrenOf(`${path}[]`, type, origin, true),
@@ -309,4 +309,40 @@ export function ghostFor(prefix: string, candidates: readonly Candidate[]): stri
   }
 
   return common.slice(typed.length)
+}
+
+/**
+ * What a Reference is called, in the words the person reading it would use.
+ *
+ * `s2.count` is "Fetch emails count": the Step's own name, then the way down to
+ * the value. Grouping prefixes are dropped, because `run`, `var` and `triggers`
+ * are how a Template spells a root and not what anyone calls it — `run.tenant`
+ * reads as "Tenant", not "Run context Tenant".
+ *
+ * Null when the path names nothing in scope. A Reference that has gone stale —
+ * a renamed variable, a removed Step — must keep showing the path it actually
+ * holds, because the path is what the checker will name and what has to be
+ * edited; a chip reading "Fetch emails count" over a Step that no longer exists
+ * would hide the one fact worth seeing.
+ */
+export function labelOf(path: string, scope: readonly ScopeEntry[]): string | null {
+  const chain = chainTo(referenceTree(scope), path)
+  if (!chain) return null
+
+  const named = chain.filter((node) => !isGroup(node)).map((node) => node.label)
+  return named.length > 0 ? named.join(' ') : null
+}
+
+/** A grouping prefix yields nothing on its own, which is what `unknown` marks it as. */
+const isGroup = (node: RefNode) => node.type === 'unknown' && node.children !== null
+
+function chainTo(nodes: readonly RefNode[], path: string): RefNode[] | null {
+  for (const node of nodes) {
+    if (node.path === path) return [node]
+    if (path.startsWith(`${node.path}.`) || path.startsWith(`${node.path}[`)) {
+      const rest = chainTo(node.children ?? [], path)
+      if (rest) return [node, ...rest]
+    }
+  }
+  return null
 }

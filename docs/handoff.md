@@ -239,6 +239,15 @@ The text is the editing surface. `{{ … }}` is highlighted in place — `--acce
 `--border-accent`, `--text-accent` — and an unclosed hole takes a wavy `--status-error` underline. It
 is never replaced by a widget you cannot type through.
 
+**At rest, a whole Reference is drawn as what it names.** Unfocused there is no caret to keep
+aligned, so the mirror painting the highlight is free to be a different width from the field behind
+it — which is precisely what showing `Fetch emails count` in place of `{{ s2.count }}` requires.
+Focus puts every character back, braces and all, so the sentence above holds wherever it means
+anything. Two conditions, both the parser's to answer: the hole is a **Reference** (`isReference()`
+reads the parsed shape, and `{{ s2.count + 1 }}` names no single target), and the path is still in
+scope — a stale one keeps showing the path, because that is what the checker names and what has to
+be edited.
+
 ### Four ways in, one set of candidates
 
 | Trigger | What opens |

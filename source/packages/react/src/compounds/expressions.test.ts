@@ -1,6 +1,6 @@
 import type { ScopeEntry } from '@hatua/model'
 import { describe, expect, it } from 'vitest'
-import { completionsAt, ghostFor, referenceTree } from './candidates'
+import { completionsAt, ghostFor, labelOf, referenceTree } from './candidates'
 import {
   caretContext,
   dragPayload,
@@ -47,22 +47,32 @@ describe('where the holes are', () => {
    * segmentation inside the shared grammar precisely so no hand-written scanner
    * sits in front of the parser.
    */
+  /** Only the spans; each also carries the hole's parsed expression. */
+  const spans = (source: string) =>
+    templateShape(source).holes.map(({ start, end }) => ({ start, end }))
+
   it('finds a whole-value hole', () => {
-    expect(templateShape('{{ s2.count }}').holes).toEqual([{ start: 0, end: 14 }])
+    expect(spans('{{ s2.count }}')).toEqual([{ start: 0, end: 14 }])
   })
 
   it('finds every hole in mixed text, and the text between them', () => {
-    expect(templateShape('Hi {{ a }} and {{ b }}!').holes).toEqual([
+    expect(spans('Hi {{ a }} and {{ b }}!')).toEqual([
       { start: 3, end: 10 },
       { start: 15, end: 22 },
     ])
   })
 
   it('finds two holes with nothing between them', () => {
-    expect(templateShape('{{a}}{{b}}').holes).toEqual([
+    expect(spans('{{a}}{{b}}')).toEqual([
       { start: 0, end: 5 },
       { start: 5, end: 10 },
     ])
+  })
+
+  /* Carried so a caller can ask whether the hole is a Reference — a question
+     about the parsed shape, which is the only thing that answers it. */
+  it('carries what each hole parsed to', () => {
+    expect(templateShape('{{ s2.count }}').holes[0]?.expr?.kind).toBe('Member')
   })
 
   /*
@@ -71,7 +81,7 @@ describe('where the holes are', () => {
    * parser about it.
    */
   it("treats {{ '{{' }} as one hole, because that is what it is", () => {
-    expect(templateShape("a {{ '{{' }} b").holes).toEqual([{ start: 2, end: 12 }])
+    expect(spans("a {{ '{{' }} b")).toEqual([{ start: 2, end: 12 }])
   })
 
   it('reports a `{{` with no `}}` as the unclosed tail, not as a parse failure', () => {
@@ -279,5 +289,31 @@ describe('completing inside a call', () => {
   /* `.`, `[` and `]` continue a path; a projection is one prefix, not four. */
   it('keeps a projection whole', () => {
     expect(caretContext('{{ s2.messages[].su }}', 19).prefix).toBe('s2.messages[].su')
+  })
+})
+
+describe('what a Reference is called at rest', () => {
+  it('reads as the Step and the way down to the value', () => {
+    expect(labelOf('s2.count', SCOPE)).toBe('Fetch emails count')
+  })
+
+  /* `run`, `var` and `triggers` are how a Template spells a root, not what
+     anyone calls it. */
+  it('drops the grouping prefix', () => {
+    expect(labelOf('run.tenant', SCOPE)).toBe('Tenant')
+    expect(labelOf('var.digest_to', SCOPE)).toBe('digest_to')
+  })
+
+  it('names a projection as each of its elements', () => {
+    expect(labelOf('s2.messages[].subject', SCOPE)).toBe('Fetch emails messages each subject')
+  })
+
+  /*
+   * A stale Reference keeps showing its path: the path is what the checker
+   * names and what has to be edited, and a friendly label over a Step that no
+   * longer exists hides the one fact worth seeing.
+   */
+  it('refuses to name a path that is no longer in scope', () => {
+    expect(labelOf('s9.gone', SCOPE)).toBeNull()
   })
 })

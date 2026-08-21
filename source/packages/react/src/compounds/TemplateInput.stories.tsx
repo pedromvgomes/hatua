@@ -151,9 +151,35 @@ export const WholeValueReference: Story = {
   args: { value: '{{ var.digest_to }}', expectedType: 'text' },
 }
 
-/** Highlighted in place, and never replaced by a widget you cannot type through. */
+/**
+ * At rest, a Reference is drawn as what it names. There is no caret to keep
+ * aligned, so the mirror is free to be a different width from the input behind
+ * it — which is exactly what showing a label instead of a path requires.
+ */
 export const MixedText: Story = {
   args: { value: 'Inbox digest · {{ s2.count }} messages for {{ run.id }}', expectedType: 'text' },
+}
+
+/**
+ * The same value with the field focused: the characters come back, braces and
+ * all, because the text is the editing surface whenever anyone is editing.
+ */
+export const MixedTextWhileEditing: Story = {
+  args: {
+    value: 'Inbox digest · {{ s2.count }} messages for {{ run.id }}',
+    expectedType: 'text',
+    route: 'caret',
+    caret: 20,
+  },
+}
+
+/**
+ * A Reference is a shape and not a syntax, so the moment something is computed
+ * there is no single target to put on a chip — and a Reference that has gone
+ * stale keeps showing the path the checker will name.
+ */
+export const NotEveryHoleIsAChip: Story = {
+  args: { value: '{{ s2.count + 1 }} · {{ s9.gone }}', expectedType: 'text' },
 }
 
 /** The ordinary state of a Template halfway through being typed. */

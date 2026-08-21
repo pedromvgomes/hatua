@@ -1,4 +1,9 @@
-import { type Segment, type TemplateNode, tryParseTemplate } from '@hatua/expressions'
+import {
+  type Expression,
+  type Segment,
+  type TemplateNode,
+  tryParseTemplate,
+} from '@hatua/expressions'
 
 /**
  * Where each `{{ … }}` sits in the text, so the input can paint it in place.
@@ -27,6 +32,15 @@ export interface HoleSpan {
   start: number
   /** Exclusive, and past the closing `}}` — except on the unclosed tail. */
   end: number
+  /**
+   * What the hole holds, when it parsed.
+   *
+   * Carried so a caller can ask `@hatua/expressions` whether the hole is a
+   * Reference — a question about the parsed *shape*, which is the only thing
+   * that answers it. A Reference is what may be drawn as a chip; an expression
+   * that computes something names no target to put on one.
+   */
+  expr?: Expression
 }
 
 export interface TemplateShape {
@@ -66,6 +80,8 @@ export function templateShape(source: string): TemplateShape {
   return {
     holes: spans,
     // Clamped to the real end of the text, since the closing braces are ours.
+    // No `expr`: what the repair parsed is not what is written, so nothing
+    // about the tail's shape is settled until it is closed for real.
     unclosed: tail ? { start: tail.start, end: source.length } : null,
     parses: false,
   }
@@ -99,7 +115,7 @@ function spansOf(segments: readonly Segment[], text: string): HoleSpan[] {
     const segment = segments[i] as Segment
     const start =
       segment.kind === 'Text' ? end - segment.value.length : text.lastIndexOf('{{', segment.at)
-    if (segment.kind === 'Hole') holes.unshift({ start, end })
+    if (segment.kind === 'Hole') holes.unshift({ start, end, expr: segment.expr })
     end = start
   }
 
