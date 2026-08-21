@@ -144,8 +144,17 @@ function placement(anchor: { left: number; top: number; bottom: number }) {
 
   return {
     style: flip ? { left, bottom: height - anchor.top + 6 } : { left, top: anchor.bottom + 6 },
-    // Less the head and the padding, which sit outside the scrolling body.
-    maxHeight: Math.max(140, Math.min(360, (flip ? above : below) - 72)),
+    /*
+     * The room that exists, less the head and the padding outside the scrolling
+     * body — and a ceiling only so a browsable panel does not become the height
+     * of a tall screen.
+     *
+     * The ceiling is generous on purpose. Set close to what the panel usually
+     * holds, it turns "the content happens to be a pixel over" into a
+     * full-height scrollbar with nothing behind it, which reads as broken
+     * rather than as full.
+     */
+    maxHeight: Math.max(160, Math.min(560, (flip ? above : below) - 72)),
   }
 }
 

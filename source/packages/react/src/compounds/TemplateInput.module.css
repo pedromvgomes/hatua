@@ -13,6 +13,11 @@
   .box {
     position: relative;
     display: grid;
+    /*
+     * Centred, so the one line of a single-line field sits on the field's
+     * middle rather than at the top of whatever `min-block-size` leaves over.
+     */
+    align-content: center;
     min-block-size: 40px;
     padding: 8px 44px 8px 10px;
     border: 1px solid var(--hatua-border-strong);
@@ -44,10 +49,11 @@
     border: 0;
     font-family: var(--hatua-font-mono);
     font-size: 0.8125rem;
-    line-height: 1.45;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     letter-spacing: 0;
+    /* Roomy enough for a hole drawn as a pill not to touch the line above it. */
+    line-height: 1.7;
   }
 
   .mirror {
@@ -65,6 +71,24 @@
     color: transparent;
     caret-color: var(--hatua-text-primary);
     outline: none;
+    /*
+     * One line box exactly, rather than the intrinsic height a browser gives an
+     * `<input>` from its font.
+     *
+     * The two share a grid cell, so the taller sets the row — and an input a
+     * couple of pixels taller than the mirror's line box makes the half-leading
+     * above the text differ from the half-leading below it. A hole's fill is
+     * the font's content area, which is centred in the LINE-HEIGHT box and not
+     * in that row, so the pill came out two pixels above the middle of the
+     * field. Matching them makes it exact, and exact for whatever mono face a
+     * Host themes in rather than only for this one.
+     */
+    block-size: 1lh;
+  }
+
+  /* A textarea is many line boxes, and `rows` is what says how many. */
+  .field.tall {
+    block-size: auto;
   }
 
   .field::placeholder {
@@ -75,13 +99,33 @@
     background: var(--hatua-focus-ring);
   }
 
-  /* A hole, highlighted in place — never replaced by a widget you cannot type
-     through. */
+  /*
+   * A hole, drawn as a pill and highlighted in place — never replaced by a
+   * widget you cannot type through.
+   *
+   * The inline padding is cancelled by an equal negative margin, and that is
+   * the whole trick: the pill is painted a few pixels wider than its text
+   * while every glyph after it stays exactly where the `<input>` behind puts
+   * it. Real padding would slide the mirror off the text it stands in for, and
+   * the caret would then sit a few pixels from where it appears to be.
+   *
+   * Block padding needs no cancelling — inline padding does not affect a line
+   * box — so it simply grows the fill towards the height of the line.
+   */
   .hole {
+    padding: 2px 3px;
+    margin: 0 -3px;
     background: var(--hatua-accent-wash);
     box-shadow: inset 0 0 0 1px var(--hatua-border-accent);
+    /*
+     * The small radius, not the medium one. A pill this short takes the medium
+     * radius as very nearly half its height, and the end caps then read as a
+     * `(` and a `)` sitting either side of the `{{` and `}}` already there.
+     */
     border-radius: var(--hatua-radius-sm);
     color: var(--hatua-text-accent);
+    /* A hole that wraps is two halves of one pill, not one pill cut in half. */
+    box-decoration-break: clone;
   }
 
   /* A `{{` with no `}}` after it: the ordinary state of a Template halfway

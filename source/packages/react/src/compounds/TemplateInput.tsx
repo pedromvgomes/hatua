@@ -289,8 +289,7 @@ export function TemplateInput({
             can be painted where they actually sit.
           */}
           <div className={styles.mirror} ref={mirror} aria-hidden="true">
-            {paint(draft, shape, caret, caretMark)}
-            {ghost ? <span className={styles.ghost}>{ghost}</span> : null}
+            {paint(draft, shape, caret, ghost, caretMark)}
             {/* A trailing newline collapses in a block box, so the mirror comes
                 up one line short of the textarea it is behind. */}
             {'​'}
@@ -401,55 +400,98 @@ export function TemplateInput({
  * Measuring a caret inside an `<input>` has no API; measuring a span in a box
  * with the same font, padding and wrapping does, and the mirror already exists.
  */
+interface Piece {
+  text: string
+  start: number
+  className?: string
+}
+
+/**
+ * The value, split into text and holes, with a zero-width marker where the
+ * caret is and the ghost text beside it.
+ *
+ * The marker is what the completion list and the picker are anchored to.
+ * Measuring a caret inside an `<input>` has no API; measuring a span in a box
+ * with the same font, padding and wrapping does, and the mirror already exists.
+ *
+ * **The marker and the ghost go INSIDE the piece they fall in**, which is the
+ * whole reason this is a function rather than three `map`s. A hole is drawn as
+ * one pill; splitting it into two sibling spans to seat the caret between them
+ * draws two pills with a seam down the middle, and a ghost appended after the
+ * pieces completes `{{ ru }}` as `{{ ru }}n` — outside the hole it belongs to,
+ * after the closing braces, in the place the eye least expects it.
+ */
 function paint(
   value: string,
   shape: ReturnType<typeof templateShape>,
   caret: number,
+  ghost: string,
   mark: React.RefObject<HTMLSpanElement | null>,
 ) {
-  const holes = [...shape.holes, ...(shape.unclosed ? [shape.unclosed] : [])]
-  const pieces: React.ReactNode[] = []
+  const pieces: Piece[] = []
   let at = 0
 
-  const push = (text: string, from: number, className?: string) => {
-    if (text === '') return
-    // The caret may fall inside this piece, in which case it is split around
-    // the marker rather than approximated to the nearest boundary.
-    const cut = caret - from
-    if (cut > 0 && cut < text.length) {
-      pieces.push(
-        <span key={`${from}a`} className={className}>
-          {text.slice(0, cut)}
-        </span>,
-        <span key={`${from}m`} className={styles.caret} ref={mark} />,
-        <span key={`${from}b`} className={className}>
-          {text.slice(cut)}
-        </span>,
-      )
-      return
-    }
-    if (cut === 0) pieces.push(<span key={`${from}m`} className={styles.caret} ref={mark} />)
-    pieces.push(
-      <span key={from} className={className}>
-        {text}
-      </span>,
-    )
-    if (cut === text.length)
-      pieces.push(<span key={`${from}e`} className={styles.caret} ref={mark} />)
-  }
-
-  for (const hole of holes) {
-    push(value.slice(at, hole.start), at)
-    push(
-      value.slice(hole.start, hole.end),
-      hole.start,
-      hole === shape.unclosed ? styles.broken : styles.hole,
-    )
+  for (const hole of [...shape.holes, ...(shape.unclosed ? [shape.unclosed] : [])]) {
+    pieces.push({ text: value.slice(at, hole.start), start: at })
+    pieces.push({
+      text: value.slice(hole.start, hole.end),
+      start: hole.start,
+      className: hole === shape.unclosed ? styles.broken : styles.hole,
+    })
     at = hole.end
   }
-  push(value.slice(at), at)
+  pieces.push({ text: value.slice(at), start: at })
+
+  // By identity, not by offset: an empty text piece and the hole that follows
+  // it both start at the same offset, so comparing offsets seats a marker in
+  // both — and the one inside the hole splits its inline box, which draws the
+  // pill's end cap adrift of the pill.
+  const seat = seatOf(pieces, caret)
 
   return pieces
+    .filter((piece) => piece.text !== '' || piece === seat.piece)
+    .map((piece) => {
+      const cut = piece === seat.piece ? caret - piece.start : -1
+      if (cut < 0) {
+        return (
+          <span key={piece.start} className={piece.className}>
+            {piece.text}
+          </span>
+        )
+      }
+      return (
+        <span key={piece.start} className={piece.className}>
+          {piece.text.slice(0, cut)}
+          <span className={styles.caret} ref={mark} />
+          {ghost ? <span className={styles.ghost}>{ghost}</span> : null}
+          {piece.text.slice(cut)}
+        </span>
+      )
+    })
+}
+
+/**
+ * Which piece the caret sits in.
+ *
+ * A caret on the boundary between two pieces belongs to exactly one of them, or
+ * two markers are rendered and the ref keeps whichever React wrote last.
+ * Strictly-inside wins first, so a caret in the middle of a hole seats the
+ * ghost inside the pill; failing that the earliest piece that ends there takes
+ * it, which is where the caret visually is.
+ */
+function seatOf(pieces: readonly Piece[], caret: number): { piece: Piece | null } {
+  const inside = pieces.find(
+    (piece) => caret > piece.start && caret < piece.start + piece.text.length,
+  )
+  if (inside) return { piece: inside }
+
+  // Nothing contains it strictly, so it is on a boundary. The earliest piece
+  // that ends there takes it, which is where the caret visually is.
+  return {
+    piece:
+      pieces.find((piece) => caret >= piece.start && caret <= piece.start + piece.text.length) ??
+      null,
+  }
 }
 
 /**

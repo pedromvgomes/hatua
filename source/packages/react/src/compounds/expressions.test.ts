@@ -250,3 +250,34 @@ describe('the reference tree', () => {
     expect(referenceTree(SCOPE).find((node) => node.path === 'run')?.label).toBe('Run context')
   })
 })
+
+describe('completing inside a call', () => {
+  /*
+   * An Expression is a whole language, and a path is only ever the innermost
+   * part of one. Measured from the `{{`, this asks for the members of something
+   * called `dt.diff(dt`, which is nothing — so the list came up empty exactly
+   * where a nested call is being written.
+   */
+  it('completes the argument being typed, not the whole hole', () => {
+    const value = '{{ dt.diff(dt. }}'
+    const context = caretContext(value, 14)
+    expect(context.prefix).toBe('dt.')
+    expect(completionsAt(context.prefix, SCOPE).map((c) => c.label)).toContain('dt.now')
+  })
+
+  it('replaces only that argument when a row is accepted', () => {
+    const value = '{{ dt.diff(dt. }}'
+    const edit = insertCandidate(value, caretContext(value, 14), 14, 'dt.now(')
+    expect(edit.value).toBe('{{ dt.diff(dt.now( }}')
+  })
+
+  it('starts again after a comma, and after an operator', () => {
+    expect(caretContext('{{ dt.diff(a, s2.co }}', 19).prefix).toBe('s2.co')
+    expect(caretContext('{{ s2.count + s2.co }}', 19).prefix).toBe('s2.co')
+  })
+
+  /* `.`, `[` and `]` continue a path; a projection is one prefix, not four. */
+  it('keeps a projection whole', () => {
+    expect(caretContext('{{ s2.messages[].su }}', 19).prefix).toBe('s2.messages[].su')
+  })
+})

@@ -79,9 +79,29 @@ export function caretContext(value: string, caret: number): CaretContext {
   if (close !== -1 && close + 2 <= caret) return outside
 
   const hole = { start: open, end: close === -1 ? value.length : close + 2 }
-  const raw = value.slice(open + 2, caret)
-  const trimmed = raw.replace(/^\s+/, '')
-  return { hole, prefix: trimmed, prefixStart: open + 2 + (raw.length - trimmed.length) }
+  const written = value.slice(open + 2, caret)
+  const from = tokenStart(written)
+  return { hole, prefix: written.slice(from), prefixStart: open + 2 + from }
+}
+
+/**
+ * Where the thing being completed begins, inside the hole.
+ *
+ * Not the `{{`. An Expression is a whole language, and a path is only ever the
+ * innermost part of one: `dt.diff(dt.` is a call whose first argument is
+ * halfway through being named, and measuring the prefix from the `{{` asks for
+ * the members of something called `dt.diff(dt`, which is nothing.
+ *
+ * So the prefix runs back to the last character that cannot continue a path or
+ * a call chain. `.`, `[` and `]` continue one — `s2.messages[].su` is a single
+ * prefix rather than four — while a paren, a comma, whitespace and every
+ * operator end it.
+ */
+function tokenStart(written: string): number {
+  for (let i = written.length - 1; i >= 0; i--) {
+    if (!/[A-Za-z0-9_.[\]]/.test(written[i] as string)) return i + 1
+  }
+  return 0
 }
 
 /**
