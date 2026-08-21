@@ -90,8 +90,35 @@ describe('where the holes are', () => {
     expect(shape.holes).toEqual([])
   })
 
-  it('reports text that closing the hole would not fix', () => {
-    expect(templateShape('{{ s2. + }}').parses).toBe(false)
+  /*
+   * `{{ var. }}` is a trailing dot, which no amount of closing makes into an
+   * expression — and it is a state every Template passes through while somebody
+   * edits one. Without the fallback the highlight disappears mid-edit and comes
+   * back a keystroke later, which reads as the field breaking rather than as
+   * the expression being unfinished.
+   */
+  it('still finds a hole in a Template that does not parse', () => {
+    const shape = templateShape('{{ var. }}')
+    expect(shape.parses).toBe(false)
+    expect(spans('{{ var. }}')).toEqual([{ start: 0, end: 10 }])
+    // Nothing downstream may mistake it for a Reference: it has no shape yet.
+    expect(shape.holes[0]?.expr).toBeUndefined()
+  })
+
+  it('still finds one in mixed text that does not parse', () => {
+    expect(spans('Hi {{ var. }} and {{ x. }}')).toEqual([
+      { start: 3, end: 13 },
+      { start: 18, end: 26 },
+    ])
+  })
+
+  /*
+   * The parser wins wherever it can answer, which is the whole reason the
+   * fallback is safe: when the text does not parse there is no meaning to be
+   * wrong about, and when it does, this is never reached.
+   */
+  it("keeps {{ '{{' }} as one hole, which a scan alone would get wrong", () => {
+    expect(spans("a {{ '{{' }} b")).toEqual([{ start: 2, end: 12 }])
   })
 })
 

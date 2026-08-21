@@ -131,6 +131,11 @@ export function TemplateInput({
   const [at, setAt] = useState({ left: 0, top: 0 })
   const [anchor, setAnchor] = useState({ left: 0, top: 0, bottom: 0 })
   const [focused, setFocused] = useState(false)
+  /**
+   * Escape means "not now", and it has to outlast the keystroke that follows.
+   * Cleared when the caret leaves the hole, or by asking for the list again.
+   */
+  const [dismissed, setDismissed] = useState(false)
   const pending = useRef<number | null>(null)
 
   // Set during render rather than in an effect: an effect paints the stale
@@ -216,6 +221,7 @@ export function TemplateInput({
       event.preventDefault()
       const inside = caretContext(draft, element.selectionStart ?? 0).hole !== null
       setCaret(element.selectionStart ?? 0)
+      setDismissed(false)
       setOpen(inside ? 'completion' : 'picker')
       setActive(0)
       return
@@ -247,6 +253,7 @@ export function TemplateInput({
     if (event.key === 'Escape') {
       if (open !== 'none') {
         event.preventDefault()
+        setDismissed(true)
         setOpen('none')
         return
       }
@@ -260,24 +267,40 @@ export function TemplateInput({
   const onChange = (element: HTMLInputElement | HTMLTextAreaElement) => {
     const next = element.value
     const to = element.selectionStart ?? next.length
-    setDraft(next)
-    setCaret(to)
 
-    // Completion follows TYPING. Opening on caret placement instead would bury
-    // the field under a popup every time someone clicked into a hole to fix a
-    // character.
+    // A `{{` is a hole and nothing else, so it is closed on the user's behalf
+    // with the caret left between. Left open, every completion accepted into it
+    // lands in text that does not parse — so the highlight stays off and the
+    // checker has nothing to say until two more characters are typed by hand.
     if (next.slice(Math.max(0, to - 2), to) === '{{') {
-      // Closed on the user's behalf, with the caret left between. A hole is the
-      // only thing `{{` can be, and leaving it open means every completion
-      // accepted into it lands in text that does not parse — so the highlight
-      // stays off and the checker has nothing to say until two more characters
-      // are typed by hand.
       write(spliceAt(next, to, to, '  }}', 1))
+      setDismissed(false)
       setOpen('completion')
       setActive(0)
       return
     }
-    if (open === 'completion' && caretContext(next, to).hole === null) setOpen('none')
+
+    setDraft(next)
+    setCaret(to)
+
+    /*
+     * **Completion follows typing, never caret placement.** Clicking into a
+     * hole to fix a character must not bury the field under a popup — but
+     * editing the characters IS typing, whichever key does it. Offering the
+     * list only on `{{` left someone who deleted their way back to `{{ var. }}`
+     * with no completion at all, in the one place they most obviously wanted
+     * some.
+     */
+    const inside = caretContext(next, to).hole !== null
+    if (!inside) {
+      setDismissed(false)
+      if (open === 'completion') setOpen('none')
+      return
+    }
+    if (!dismissed) {
+      setOpen('completion')
+      setActive(0)
+    }
   }
 
   const Field = multiline ? 'textarea' : 'input'

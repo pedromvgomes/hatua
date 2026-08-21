@@ -73,7 +73,7 @@ export function templateShape(source: string): TemplateShape {
     return { holes: spansOf(parsed.template.segments, source), unclosed: null, parses: true }
 
   const attempt = repair(source)
-  if (!attempt) return { holes: [], unclosed: null, parses: false }
+  if (!attempt) return scan(source)
 
   const spans = spansOf(attempt.template.segments, attempt.closed)
   const tail = spans.pop()
@@ -105,6 +105,42 @@ function repair(source: string): { template: TemplateNode; closed: string } | nu
     if (parsed.ok) return { template: parsed.template, closed }
   }
   return null
+}
+
+/**
+ * The delimiters, read straight off the text, for a Template that does not
+ * parse at all.
+ *
+ * The last resort, and only ever that: `{{ var. }}` is a trailing dot, which no
+ * amount of closing makes into an expression, and it is a state every Template
+ * passes through while somebody edits one. Without this the highlight
+ * disappears the moment a hole is mid-edit and comes back a keystroke later,
+ * which reads as the field breaking rather than as the expression being
+ * unfinished.
+ *
+ * It is safe *here* for the reason it is not safe anywhere the parse can answer:
+ * when the text does not parse there is no meaning to be wrong about. The
+ * parser still wins whenever it can, which is what keeps `{{ '{{' }}` drawn as
+ * the one hole it is rather than as two.
+ *
+ * No `expr`, so nothing downstream mistakes a scanned hole for a Reference.
+ */
+function scan(source: string): TemplateShape {
+  const holes: HoleSpan[] = []
+  let at = 0
+
+  while (at < source.length) {
+    const open = source.indexOf('{{', at)
+    if (open === -1) break
+    const close = source.indexOf('}}', open + 2)
+    if (close === -1) {
+      return { holes, unclosed: { start: open, end: source.length }, parses: false }
+    }
+    holes.push({ start: open, end: close + 2 })
+    at = close + 2
+  }
+
+  return { holes, unclosed: null, parses: false }
 }
 
 function spansOf(segments: readonly Segment[], text: string): HoleSpan[] {

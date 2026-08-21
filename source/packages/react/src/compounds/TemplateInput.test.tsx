@@ -115,6 +115,40 @@ describe('TemplateInput', () => {
     expect((field as HTMLInputElement).value).toBe('{{ s2.count }}')
   })
 
+  /*
+   * Completion follows typing, never caret placement — and editing the
+   * characters is typing, whichever key does it. Offering the list only on `{{`
+   * left someone who deleted their way back to `{{ var. }}` with no completion
+   * at all, in the one place they most obviously wanted some.
+   */
+  it('offers the list while a hole is being edited, not only when one is opened', () => {
+    const { field } = mount({ value: '{{ s2.count }}' })
+    const input = field as HTMLInputElement
+    fireEvent.focus(field)
+    fireEvent.change(field, {
+      target: { value: '{{ s2.coun }}', selectionStart: 10, selectionEnd: 10 },
+    })
+    expect(screen.getByRole('listbox')).toBeDefined()
+    expect(input.value).toBe('{{ s2.coun }}')
+  })
+
+  it('keeps it shut after Escape until the caret leaves the hole', () => {
+    const { field } = mount({ value: '{{ s2.count }}' })
+    fireEvent.focus(field)
+    fireEvent.change(field, {
+      target: { value: '{{ s2.coun }}', selectionStart: 10, selectionEnd: 10 },
+    })
+    fireEvent.keyDown(field, { key: 'Escape' })
+    fireEvent.change(field, {
+      target: { value: '{{ s2.cou }}', selectionStart: 9, selectionEnd: 9 },
+    })
+    expect(screen.queryByRole('listbox')).toBeNull()
+
+    // Asking again is what reopens it.
+    fireEvent.keyDown(field, { key: ' ', ctrlKey: true, target: { selectionStart: 9 } })
+    expect(screen.getByRole('listbox')).toBeDefined()
+  })
+
   it('dismisses on Escape without discarding what was typed', () => {
     const { field } = mount()
     type(field, '{{s2.')

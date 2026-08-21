@@ -19,7 +19,14 @@
      */
     align-content: center;
     min-block-size: 40px;
-    padding: 8px 44px 8px 10px;
+    /*
+     * Roomier on the leading edge than a plain text field needs, because the
+     * first thing in one of these is often a pill rather than a letter — and a
+     * pill is painted wider than its text, so at 10px its rounded cap sat on
+     * the field's own border. The padding applies to the mirror and the input
+     * alike, both being grid items in this box, so nothing slides apart.
+     */
+    padding: 8px 44px 8px 12px;
     border: 1px solid var(--hatua-border-strong);
     border-radius: var(--hatua-radius-md);
     background: var(--hatua-surface-card);
@@ -113,8 +120,8 @@
    * box — so it simply grows the fill towards the height of the line.
    */
   .hole {
-    padding: 2px 3px;
-    margin: 0 -3px;
+    padding: 2px 2px;
+    margin: 0 -2px;
     background: var(--hatua-accent-wash);
     box-shadow: inset 0 0 0 1px var(--hatua-border-accent);
     /*
@@ -142,7 +149,13 @@
    * glyph, so nothing has to be cancelled.
    */
   .chip {
-    padding: 2px 7px;
+    padding: 3px 8px;
+    /*
+     * A little air on each side, so a chip in a sentence is a thing sitting in
+     * the line rather than a word with a box drawn round it — and so one at the
+     * very start does not lean on the field's border.
+     */
+    margin: 0 2px;
     border-radius: var(--hatua-radius-sm);
     background: var(--hatua-accent-wash);
     box-shadow: inset 0 0 0 1px var(--hatua-border-accent);
