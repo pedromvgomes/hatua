@@ -14,9 +14,9 @@ function PortalProbe() {
 }
 
 describe('HatuaProvider', () => {
-  // Regression: the container was held in a ref and read during render, so it
-  // was null through the whole initial mount and never updated — refs schedule
-  // no re-render. Overlays mounted alongside their trigger saw null.
+  // State, not a ref. A ref read during render is null through the whole
+  // initial mount and never updates, because assigning to one schedules no
+  // re-render — so overlays mounted alongside their trigger would see null.
   it('exposes the portal container to consumers after mount', async () => {
     render(
       <HatuaProvider>

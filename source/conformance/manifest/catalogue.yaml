@@ -74,3 +74,27 @@ components:
         label: Model
         t: text
         role: dimension
+  - kind: component
+    use: core.fork
+    name: Branch
+    group: Built-in
+    icon: /icons/zap.svg
+    blurb: Take one path or several, on a condition.
+    fields: []
+    outputs: []
+  - kind: component
+    use: core.for_each
+    name: For each
+    group: Built-in
+    icon: /icons/zap.svg
+    blurb: Repeat the steps inside it once per item.
+    fields:
+      - k: items
+        label: Items
+        kind: ref
+        req: true
+        hint: The list to walk.
+    outputs:
+      - k: item
+        label: Item
+        t: object

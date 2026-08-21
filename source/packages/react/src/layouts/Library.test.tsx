@@ -157,9 +157,9 @@ describe('Library', () => {
     expect(await screen.findByText('Send email')).toBeDefined()
     expect(screen.getByText('Send a message through a connected mailbox.')).toBeDefined()
 
-    // `icon` is a URL, so it has to reach an <img src>. It used to be treated as
-    // a name from an icon set Hatua does not ship, which could never resolve to
-    // a picture — the card drew the component's initial instead.
+    // `icon` is a URL, so it has to reach an <img src>. Treating it as a name
+    // from an icon set would never resolve to a picture, because Hatua ships
+    // none.
     const image = container.querySelector('img') as HTMLImageElement
     expect(image.getAttribute('src')).toBe('/icons/mail.svg')
     // Decorative: the name is right beside it, and announcing it twice helps
@@ -234,7 +234,7 @@ describe('Library', () => {
   it('does not report an empty query as a failed search', async () => {
     // Reachable without anyone typing: an array whose entries carry no `kind`
     // this region renders — a `components:` catalogue is one array away — files
-    // into no section, and the panel used to say `Nothing matches “”.`
+    // into no section, which would otherwise read as `Nothing matches “”.`
     mount(<Library />, {
       loadManifests: async () => [{ components: [] }, { components: [] }] as unknown as Manifest[],
     })

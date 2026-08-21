@@ -20,12 +20,12 @@ export type MappableFieldKind = (typeof MAPPABLE_FIELD_KINDS)[number]
  * What each mappable field kind's value must produce.
  *
  * Keyed by `MappableFieldKind` rather than by `string`, so the compiler refuses
- * both a missing kind and an invented one. It used to be a loose record that
- * declared `bool`, `enum`, `secret` and `conn` — kinds `isMappable` rejects
- * before this is ever read, so those entries were unreachable — while omitting
- * `map`, which is mappable. That is the same "two definitions of one thing"
- * failure the reference regex was removed for, and this is what stops it
- * happening again silently.
+ * both a missing kind and an invented one. A loose `Record<string, ValueType>`
+ * accepts entries for `bool`, `enum`, `secret` and `conn` — kinds `isMappable`
+ * rejects before this is ever read, so they are unreachable — while silently
+ * tolerating the omission of `map`, which is mappable. That is the same "two
+ * definitions of one thing" failure a Reference regex would be, and the key
+ * type is what stops it.
  *
  * `mono` and `textarea` are text that renders differently. `ref` is `unknown` on
  * purpose: a ref field holds whatever it points at, and the check belongs at the

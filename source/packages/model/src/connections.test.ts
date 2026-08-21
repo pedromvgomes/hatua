@@ -54,8 +54,8 @@ describe('mismatchedConnections', () => {
 })
 
 describe('unresolvable connections', () => {
-  // Regression: a ref the Host no longer recognises produced no diagnostic,
-  // indistinguishable from a matching type.
+  // Silence for a ref the Host cannot recognise would be indistinguishable
+  // from a matching type.
   it('flags a ref the Host cannot resolve', () => {
     const gone = () => undefined
     const [issue] = mismatchedConnections(DOC, index, gone)

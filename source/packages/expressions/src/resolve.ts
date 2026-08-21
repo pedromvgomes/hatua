@@ -290,11 +290,12 @@ function root(name: string, context: EvaluationContext): Raw {
  * input, and an own-properties-only read makes it well defined: a plain object
  * does not *own* `constructor`, `prototype` or `__proto__`, so all three miss.
  *
- * There used to be a deny list here as well. It added no security — `hasOwn`
- * already refuses the inherited members — and it subtracted correctness,
- * because `JSON.parse('{"constructor":"Acme"}')` creates a genuine own property
- * that a Host's payload may well contain. Go has no prototype chain and so had
- * no deny list, which left the two runtimes disagreeing about ordinary data.
+ * Deliberately no deny list alongside it. One adds no security — `hasOwn`
+ * already refuses the inherited members — and subtracts correctness, because
+ * `JSON.parse('{"constructor":"Acme"}')` creates a genuine own property that a
+ * Host's payload may well contain. Go has no prototype chain and so needs no
+ * deny list; one here would leave the two runtimes disagreeing about ordinary
+ * data.
  */
 function read(target: Value, name: string): Raw {
   if (target === null) return null

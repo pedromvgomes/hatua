@@ -33,8 +33,8 @@ describe('drain', () => {
 })
 
 describe('drain safety bound', () => {
-  // Regression: hitting the limit returned normally, so a truncated list looked
-  // exactly like a complete one to the caller.
+  // Returning normally at the limit would make a truncated list look exactly
+  // like a complete one to the caller.
   it('throws rather than silently truncating', async () => {
     const endless = async (): Promise<Cursor<string>> => ({
       items: ['a', 'b', 'c'],

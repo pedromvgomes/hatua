@@ -46,9 +46,10 @@ describe('yaml layer fidelity', () => {
 })
 
 describe('edits', () => {
-  // Regression: toString() previously keyed off a `dirty` flag nothing ever
-  // set, so it always replayed the CST and silently discarded every AST edit.
-  // HostPorts.save() takes this text, so edits were reported saved and lost.
+  // toString() detects edits by comparing serialisations, not by a `dirty`
+  // flag a caller has to remember to set. A flag nobody sets means the CST is
+  // replayed and every AST edit is silently discarded — and since this text is
+  // what gets saved, the edits are reported written and lost.
   it('reflects an AST edit in the serialised output', () => {
     const doc = parseWorkflow(SOURCE)
     doc.ast.setIn(['steps', 0, 'name'], 'Kick off')
@@ -83,5 +84,39 @@ describe('validation', () => {
   it('still exposes the text of an invalid document, so Text Mode can fix it', () => {
     const broken = 'name: half written\n'
     expect(parseWorkflow(broken).toString()).toBe(broken)
+  })
+})
+
+describe('multi-document sources', () => {
+  /*
+   * Rejected at parse rather than kept and re-serialised: a Workflow Definition
+   * is one mapping, the Host stores one blob per version, and there is nothing
+   * for a second document to be.
+   *
+   * Composing only the first document while stringifying the whole CST is the
+   * trap this avoids — such a file round-trips byte for byte untouched, and
+   * then the first mutation drops everything after document one. Failing where
+   * the caller still holds the text beats losing half of it at the first edit.
+   */
+  const TWO = `id: wf_a\nname: A\nversion: 1\nstatus: draft\nsteps: []\n---\nid: wf_b\nname: B\nversion: 1\nstatus: draft\nsteps: []\n`
+
+  it('refuses a source holding more than one YAML document', () => {
+    expect(() => parseWorkflow(TWO)).toThrow(/single YAML document; this source holds 2/)
+  })
+
+  it('says how to proceed, because the caller still has the text', () => {
+    expect(() => parseWorkflow(TWO)).toThrow(/Split the file/)
+  })
+
+  it('still accepts a lone document that opens with an explicit `---`', () => {
+    // The marker is not what makes a file multi-document, and a Host whose
+    // exporter always writes one would otherwise have been locked out.
+    const source = `---\nid: wf_a\nname: A\nversion: 1\nstatus: draft\nsteps: []\n`
+    expect(parseWorkflow(source).toString()).toBe(source)
+  })
+
+  it('still accepts a trailing document-end marker', () => {
+    const source = `id: wf_a\nname: A\nversion: 1\nstatus: draft\nsteps: []\n...\n`
+    expect(parseWorkflow(source).toString()).toBe(source)
   })
 })

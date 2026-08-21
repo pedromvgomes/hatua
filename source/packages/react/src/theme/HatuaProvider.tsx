@@ -1,5 +1,14 @@
-import { createManifestStore, type ManifestSource, type ManifestStore } from '@hatua/services'
-import { createContext, type ReactNode, use, useMemo, useState } from 'react'
+import {
+  createEditingStore,
+  createManifestStore,
+  createValidationStore,
+  type EditingStore,
+  type ManifestSource,
+  type ManifestStore,
+  type ValidationStore,
+  type WorkflowStore,
+} from '@hatua/services'
+import { createContext, type ReactNode, use, useEffect, useMemo, useState } from 'react'
 import base from '../styles/base.css?inline'
 import { createTheme, type Theme } from './createTheme'
 
@@ -16,17 +25,16 @@ import { createTheme, type Theme } from './createTheme'
  *     render unthemed;
  *  4. carries the Host's ports, and wires each one to the store that reads it.
  *
- * The fourth is new, and it is what turns this from a theme provider into the
- * composition root. It had to be: <Library /> takes no props in either
- * embedding — apps/playground/src/host.tsx mounts it bare and
- * layouts/regions.test.tsx mounts every region bare — so a `manifests` prop
- * would break the promise those two exist to keep. The provider is the only
- * seam both paths already share.
+ * The fourth is what makes this the composition root rather than a theme
+ * provider. <Library /> takes no props in either embedding —
+ * apps/playground/src/host.tsx mounts it bare and layouts/regions.test.tsx
+ * mounts every region bare — so a `manifests` prop would break the promise
+ * those two exist to keep. The provider is the only seam both paths share.
  *
  * Only the ports something renders today are here. The rest of ports.ts —
- * WorkflowStore, ExecutionSource, the connection ports — stays out until the
- * PR that has a consumer for it, because a port with no reader is a shape
- * guessed at rather than one a screen forced.
+ * ExecutionSource, the connection ports — stays out until the PR that has a
+ * consumer for it, because a port with no reader is a shape guessed at rather
+ * than one a screen forced.
  */
 
 export type ColorMode = 'light' | 'dark'
@@ -40,6 +48,15 @@ export type ColorMode = 'light' | 'dark'
 export interface HostPorts {
   /** Where the Component Manifests come from. The Library reads this. */
   manifests?: ManifestSource
+  /**
+   * Where the Workflow Definitions live. Hatua has no storage, no server and no
+   * idea where a workflow is kept — this port is the whole of that seam, and
+   * without it the designer has nothing to edit and says so.
+   *
+   * Needs `workflowId` alongside it: the port addresses a workflow by id, and
+   * which workflow the Host wants open is the Host's to say.
+   */
+  workflows?: WorkflowStore
 }
 
 const PortalContext = createContext<HTMLElement | null>(null)
@@ -51,6 +68,16 @@ const PortalContext = createContext<HTMLElement | null>(null)
  */
 const ManifestStoreContext = createContext<ManifestStore | null>(null)
 
+/** Null when the Host wired no WorkflowStore, or wired one and named no workflow. */
+const EditingStoreContext = createContext<EditingStore | null>(null)
+
+/**
+ * Null unless BOTH a workflow and a catalogue are wired, because validation is
+ * a question about one read against the other: a Step is missing a required
+ * field only relative to the manifest that declares the field required.
+ */
+const ValidationStoreContext = createContext<ValidationStore | null>(null)
+
 /**
  * The element overlays should portal into. Null until the provider has mounted,
  * so callers must handle that — render nothing rather than falling back to
@@ -61,16 +88,45 @@ export const usePortalContainer = () => use(PortalContext)
 /** The Host's manifest catalogue, or null when no ManifestSource was supplied. */
 export const useManifestStore = () => use(ManifestStoreContext)
 
+/**
+ * The Draft being edited, or null when the Host supplied no WorkflowStore or no
+ * `workflowId`. Regions render that as their own state: "nothing is wired up"
+ * and "the document failed to open" are different problems with different
+ * fixes, and only the second is the store's to report.
+ */
+export const useEditingStore = () => use(EditingStoreContext)
+
+/**
+ * What is wrong with each Step, or null when there is no workflow or no
+ * catalogue to check it against. A region renders the absence as no markers at
+ * all rather than as "everything is fine" — an unchecked workflow and a valid
+ * one must not look the same.
+ */
+export const useValidationStore = () => use(ValidationStoreContext)
+
 export interface HatuaProviderProps {
   theme?: Theme
   /** Omit to follow the Host's colour mode; set to pin Hatua's own. */
   colorMode?: ColorMode
   /** The Host's implementations. Omit and every region that needs one says so. */
   ports?: HostPorts
+  /**
+   * Which Workflow Definition to open, as the Host's `WorkflowStore` addresses
+   * it. Omit and nothing is opened — which is what a Host embedding only the
+   * Library or the run viewer wants, and is also why the store below is lazy:
+   * `openDraft` claims the edit, so mounting must not take a lease.
+   */
+  workflowId?: string
   children: ReactNode
 }
 
-export function HatuaProvider({ theme, colorMode, ports, children }: HatuaProviderProps) {
+export function HatuaProvider({
+  theme,
+  colorMode,
+  ports,
+  workflowId,
+  children,
+}: HatuaProviderProps) {
   // State, not a ref: a ref read during render is null on the first pass and
   // assigning to it schedules no re-render, so consumers would keep seeing null
   // until some unrelated update happened to re-render the provider.
@@ -88,6 +144,30 @@ export function HatuaProvider({ theme, colorMode, ports, children }: HatuaProvid
     [manifestSource],
   )
 
+  // Keyed on the port and the id together, because either one changing means a
+  // different Draft. The same stability rule applies as above: a Host that
+  // rebuilds its WorkflowStore every render looks exactly like one that swapped
+  // it, and a swap has to reopen — which also releases nothing, so hold it at
+  // module scope or in a useMemo.
+  const workflowSource = ports?.workflows
+  const editingStore = useMemo(
+    () => (workflowSource && workflowId ? createEditingStore(workflowSource, workflowId) : null),
+    [workflowSource, workflowId],
+  )
+
+  // The manifest store holds one fetch and nothing else; this one holds a lease
+  // on the Host's storage and a timer renewing it, so letting a replaced store
+  // keep running would leave a workflow claimed by a session that is gone.
+  useEffect(() => () => editingStore?.dispose(), [editingStore])
+
+  // Pure derivation over the two stores above, so it holds nothing of its own
+  // and needs no disposal — see createValidationStore.
+  const validationStore = useMemo(
+    () =>
+      editingStore && manifestStore ? createValidationStore(editingStore, manifestStore) : null,
+    [editingStore, manifestStore],
+  )
+
   return (
     <>
       <style href="hatua-base" precedence="hatua-base">
@@ -95,10 +175,14 @@ export function HatuaProvider({ theme, colorMode, ports, children }: HatuaProvid
       </style>
       <div className="hatua-root" style={theme ?? createTheme()} data-hatua-mode={colorMode}>
         <ManifestStoreContext value={manifestStore}>
-          <PortalContext value={portalHost}>
-            {children}
-            <div className="hatua-portals" ref={setPortalHost} />
-          </PortalContext>
+          <EditingStoreContext value={editingStore}>
+            <ValidationStoreContext value={validationStore}>
+              <PortalContext value={portalHost}>
+                {children}
+                <div className="hatua-portals" ref={setPortalHost} />
+              </PortalContext>
+            </ValidationStoreContext>
+          </EditingStoreContext>
         </ManifestStoreContext>
       </div>
     </>

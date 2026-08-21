@@ -51,15 +51,14 @@ const asError = (cause: unknown): Error =>
 /**
  * What a Host resolved, checked before anyone renders it.
  *
- * The rejection path already normalises anything a Host throws, down to a bare
- * string; the resolve path used to publish whatever arrived. That asymmetry had
- * a consequence: `ManifestSource.loadManifests` is typed `Promise<Manifest[]>`,
- * but a type is a promise the Host makes and an endpoint can break it. Serving
- * the `components:` catalogue — the shape ports.ts warns about by name, and the
- * shape half the fixtures in conformance/manifest are written in — resolves an
- * object, and the Library reached `.filter` on it during render. A TypeError
- * thrown from render takes down the Host's tree; a `failed` state is a sentence
- * in a panel with a Retry button next to it.
+ * The rejection path normalises anything a Host throws, down to a bare string,
+ * and the resolve path has to be just as sceptical: `loadManifests` is typed
+ * `Promise<Manifest[]>`, but a type is a promise the Host makes and an endpoint
+ * can break it. Serving the `components:` catalogue — the shape ports.ts warns
+ * about by name, and the shape half the fixtures in conformance/manifest are
+ * written in — resolves an object, and the Library would reach `.filter` on it
+ * during render. A TypeError thrown from render takes down the Host's tree; a
+ * `failed` state is a sentence in a panel with a Retry button next to it.
  *
  * Only the outer shape is checked. Validating each manifest against the schema
  * would put zod in every consumer's bundle to re-check what the Host's own
@@ -119,9 +118,8 @@ export function createManifestStore(source: ManifestSource): ManifestStore {
     // and the store is left in `loading` with `started` already true, so
     // nothing will ever retry it.
     //
-    // Everything else here goes out of its way to normalise whatever a Host
-    // throws, down to a bare string. This is the same promise for the one path
-    // that skipped it.
+    // Everything here goes out of its way to normalise whatever a Host throws,
+    // down to a bare string; this path is no exception.
     try {
       source.loadManifests().then(
         (manifests) => settle(received(manifests)),

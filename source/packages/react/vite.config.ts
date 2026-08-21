@@ -76,7 +76,21 @@ export default defineConfig({
       // reported this package at 49% while every component in it was at 100%.
       // A coverage gate that can be satisfied by testing the stories is worse
       // than no gate.
-      exclude: [...coverageConfigDefaults.exclude, 'src/**/*.stories.tsx', 'src/setupTests.ts'],
+      //
+      // `storybook-static/` is the same mistake with the opposite sign, and it
+      // bites harder. The defaults drop `dist/` and `node_modules/` but know
+      // nothing about Storybook's output directory, so anyone who had run
+      // `storybook:build` before measuring added ~100k lines of bundled,
+      // minified JS to the denominator and reported this package at 1% — with
+      // every component in it still at 100%. It is gitignored, so it never
+      // shows up in a diff; the only sign is a coverage number that collapses
+      // for no reason anyone can point at in the source.
+      exclude: [
+        ...coverageConfigDefaults.exclude,
+        'src/**/*.stories.tsx',
+        'src/setupTests.ts',
+        'storybook-static/**',
+      ],
     },
   },
 })

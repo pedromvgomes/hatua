@@ -37,12 +37,38 @@ export interface WorkflowDocument {
 
 export function parseWorkflow(source: string): WorkflowDocument {
   const cst = [...new Parser().parse(source)]
-  const [ast] = [...new Composer({ keepSourceTokens: true }).compose(cst)]
+  const documents = [...new Composer({ keepSourceTokens: true }).compose(cst)]
+  const [ast] = documents
   if (!ast) throw new Error('No YAML document found in source')
 
+  // Rejected rather than carried. YAML lets one file hold several documents
+  // separated by `---`. Composing the first while stringifying the whole CST as
+  // `original` would make an untouched multi-document file round-trip whole and
+  // then lose everything after document one at the first edit — invisible right
+  // up until something edits a document.
+  //
+  // The alternative is to keep every document and re-serialise them all. We do
+  // not, because there is nothing for the extra documents to BE. A Workflow
+  // Definition is a mapping with `id`, `name`, `version`, `status` and `steps`
+  // (schemas/workflow-definition.schema.yaml); a second document in the same
+  // file is not a second workflow Hatua could show, edit or publish — the Host
+  // addresses one workflow by id and one version by number, and `saveDraft`
+  // takes one blob of YAML. Carrying bytes we can neither interpret nor render
+  // is how the divergence ADR-0001 exists to prevent gets in through the back
+  // door: the user would edit a file whose other half Hatua never showed them.
+  //
+  // So the seam says no, once, at parse — where the caller still has the text
+  // and can put it in Text Mode.
+  if (documents.length > 1) {
+    throw new Error(
+      `A Workflow Definition is a single YAML document; this source holds ${documents.length}. ` +
+        'Split the file, or edit it as text outside Hatua.',
+    )
+  }
+
   // Serialisation of the untouched AST. Comparing against it detects edits
-  // however they were made — no dirty flag for a future caller to forget to
-  // set, which is what previously made toString() silently discard edits.
+  // however they were made — no dirty flag for a caller to forget to set, which
+  // would make toString() silently discard them.
   const pristine = String(ast)
   const original = cst.map((t) => CST.stringify(t)).join('')
 

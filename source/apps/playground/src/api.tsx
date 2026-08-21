@@ -2,6 +2,7 @@ import { Hatua } from '@hatua/react'
 import { StrictMode, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createApiManifestSource } from './api-source'
+import { createLocalWorkflowStore } from './workflow-store'
 
 // The Host imports no CSS — Hatua renders its own stylesheet (ADR-0003).
 
@@ -28,9 +29,15 @@ import { createApiManifestSource } from './api-source'
  *     base URL and no auth, so a port that took one would be Hatua guessing at
  *     an HTTP client every Host already has.
  *  3. **The manifests are not in this bundle.** `grep` dist/assets for
- *     `email.send` and it turns up one chunk — the one index.html, host.html
+ *     `Send email` and it turns up one chunk — the one index.html, host.html
  *     and theme.html all load, and this page does not. That is the difference
  *     between build time and run time, in the output rather than in a comment.
+ *
+ *     Grep a manifest's display NAME, not a verb. `email.send` was the marker
+ *     until this playground gained a seed workflow, and a Workflow Definition
+ *     names the same verbs its catalogue declares — so the verb is now in the
+ *     workflow store's chunk, which this page does load. Only a manifest has a
+ *     `name`.
  *  4. **The endpoint is a stand-in.** There is no backend here — it is a
  *     dev-server middleware, and a static file in a built playground. See
  *     vite.config.ts. The delay in the source is a stand-in too: a file on the
@@ -49,6 +56,13 @@ const LIVE = createApiManifestSource('/api/manifests.json')
  * place it runs end to end.
  */
 const BROKEN = createApiManifestSource('/api/nothing-here.json')
+
+/**
+ * The workflow itself is not what this page is about — it is about when the
+ * manifests arrive — so storage is the same localStorage one every other entry
+ * uses, and the designer has something to edit.
+ */
+const WORKFLOWS = createLocalWorkflowStore()
 
 function ApiPage() {
   const [broken, setBroken] = useState(false)
@@ -82,7 +96,10 @@ function ApiPage() {
         </label>
       </div>
 
-      <Hatua ports={{ manifests: broken ? BROKEN : LIVE }} />
+      <Hatua
+        ports={{ manifests: broken ? BROKEN : LIVE, workflows: WORKFLOWS }}
+        workflowId="wf_morning"
+      />
     </div>
   )
 }

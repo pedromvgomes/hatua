@@ -51,8 +51,8 @@ describe('createApiManifestSource', () => {
 
   it('says so when a 200 is JSON but not an array', async () => {
     // The `components:` catalogue is a legal way to write a manifest file, so a
-    // Host serving one straight down the wire is a realistic mistake — and one
-    // that used to reach Hatua typed as something it was not.
+    // Host serving one straight down the wire is a realistic mistake — and
+    // unchecked it reaches Hatua typed as something it is not.
     const fetch = vi.fn(async () => new Response(JSON.stringify({ components: MANIFESTS })))
     const source = createApiManifestSource('/api/manifests.json', { delayMs: 0, fetch })
 
