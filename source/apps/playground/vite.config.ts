@@ -1,7 +1,7 @@
 /** biome-ignore-all lint/correctness/noNodejsModules: a Vite config runs in Node, not in the app it configures. */
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { loadManifests } from '@hatua/sdk'
+import { loadManifests, loadRunContext } from '@hatua/sdk'
 import react from '@vitejs/plugin-react-swc'
 import type { Connect } from 'vite'
 import { defineConfig, type Plugin } from 'vite'
@@ -29,6 +29,19 @@ const fixturePath = (name: string) =>
 const readFixture = (name: string) => loadManifests(readFileSync(fixturePath(name), 'utf8'))
 
 /**
+ * The Run Context declaration, appended to the same flat array.
+ *
+ * A separate fixture and a separate loader — `kind: context` is its own file,
+ * with keys instead of fields and outputs — concatenated here because
+ * `ManifestSource` returns one array whose entries carry `kind`. A Host doing
+ * this for real is doing exactly this: two documents it publishes, one response
+ * it serves.
+ */
+const readContext = () => [loadRunContext(readFileSync(fixturePath('run-context'), 'utf8'))]
+
+const readCatalogue = (name: string) => [...readFixture(name), ...readContext()]
+
+/**
  * Fixtures as data, baked into the bundle at build time. `index.html` and
  * `host.html` take this path: their catalogue is a constant, and the Library
  * renders on the first frame with no request behind it.
@@ -47,11 +60,15 @@ const manifestFixtures = (): Plugin => {
         // Watched, so editing the corpus hot-reloads the playground the same
         // way editing a package does (ADR-0004).
         this.addWatchFile(fixturePath(name))
-        return readFixture(name)
+        this.addWatchFile(fixturePath('run-context'))
+        return readCatalogue(name)
       }
       return [
         `export const CATALOGUE = ${JSON.stringify(read('catalogue'))}`,
-        `export const EMPTY = ${JSON.stringify(read('empty-catalogue'))}`,
+        // Declared nothing, not even a Run Context — which is what a fresh Host
+        // looks like, and is why the empty state has to be a legitimate answer
+        // rather than a failure.
+        `export const EMPTY = ${JSON.stringify(readFixture('empty-catalogue'))}`,
       ].join('\n')
     },
   }
@@ -103,7 +120,7 @@ const apiMiddleware = (): Connect.NextHandleFunction => (request, response, next
   }
   // Re-read per request rather than closed over, so editing the corpus shows up
   // on the next load without restarting the dev server.
-  response.end(JSON.stringify(readFixture('catalogue')))
+  response.end(JSON.stringify(readCatalogue('catalogue')))
 }
 
 const manifestApi = (): Plugin => ({
@@ -131,7 +148,7 @@ const manifestApi = (): Plugin => ({
     this.emitFile({
       type: 'asset',
       fileName: MANIFEST_ENDPOINT.replace(/^\//, ''),
-      source: JSON.stringify(readFixture('catalogue')),
+      source: JSON.stringify(readCatalogue('catalogue')),
     })
   },
 })

@@ -189,13 +189,31 @@ The Host declares the shape; Hatua never invents one. Same bargain as ADR-0007 (
 ADR-0010 (functions): a declared shape Hatua reads so the builder can offer and type-check it, and
 values the Host's runner supplies. Hatua still never executes.
 
-**Delivered as a third manifest kind** — `kind: context`, its own schema file, served through the
-existing `ManifestSource` alongside components and triggers. Its own *file*, not a third `kind:`
-inside the Component Manifest: `function-manifest.schema.yaml` explains why a conditional manifest
-shape would need the JSON-Schema-to-zod generator to grow `if`/`then`, which ADR-0006 keeps
-deliberately narrow. Its own *port* was the alternative and buys nothing — a second store, second
-loading and failure states, second wiring — for a payload that is a handful of typed keys, when
-`ManifestSource` already returns a flat array whose entries carry `kind`.
+**Delivered as a fourth manifest kind** — `kind: context`, its own schema file, served through the
+existing `ManifestSource` alongside components, triggers and functions. Settled in
+[ADR-0012](adr/0012-run-context-is-a-fourth-manifest-kind.md), which extends ADR-0010's argument
+rather than passing over it; the shape it settles on is
+
+```yaml
+kind: context
+keys:
+  - { k: id,     label: Run id, t: text,   description: Identifies this execution. }
+  - { k: tenant, label: Tenant, t: object, of: [{ k: name, label: Tenant name, t: text }] }
+```
+
+A key is `{k, label, t}` with `of` nesting the same way an output's does — the spelling the reference
+tree, the completion list and the type checker already read — plus `description`, the sentence the
+completion list shows under the focused row. No `use`, no `name` and no catalogue wrapper: there is
+exactly one Run Context per execution, so the file declares keys directly rather than naming a type
+someone instantiates.
+
+Its own *file*, not a fourth `kind:` inside the Component Manifest: a conditional manifest shape
+would need the JSON-Schema-to-zod generator to grow `if`/`then`, which ADR-0006 keeps deliberately
+narrow. Its own *port* was the alternative and buys nothing — a second store, second loading and
+failure states, second wiring — for a payload that is a handful of typed keys, when `ManifestSource`
+already returns a flat array whose entries carry `kind`. The port's element type widens to
+`ManifestEntry`, a union every arm of which carries a required literal `kind`; the hazard `ports.ts`
+names is an *undiscriminated container arm*, which this does not have.
 
 ---
 
@@ -335,6 +353,16 @@ A **left rail** on every row in the completion list and both picker tabs, neutra
   `border-radius` and bows into a bracket.
 - **Exact match only.** ADR-0009 forbids coercion outright — `1 == '1'` is false — so there is no
   assignability lattice to consult.
+- **It judges the hole, not the field.** A hole that is the whole value resolves to the field's
+  value and keeps the expression's own type, so the field's declared type is what it must produce. A
+  hole inside mixed text is concatenated into a sentence, so it has only to render — which is
+  `text`, and `match()` already spells that out as *any scalar fits*. This is what `validate` already
+  does: for a Template with more than one segment, `checkTemplate` infers each hole and then judges
+  *the template* as text, saying nothing about what any individual hole produces. Marking such a hole
+  against the field's type would withhold the rail from rows the checker is perfectly happy with, and
+  the rail's only signal is that a row fits **here**. It is not a loosening to nothing: a list or an
+  object in a sentence stays unmarked, which is ADR-0009's own line that softness "does not extend to
+  non-scalars".
 - **Nothing is ever marked wrong.** Neutral covers *does not fit* and *cannot be judged* alike, which
   keeps `unknown` from being painted red. ADR-0009's line — errors block Publish, never editing —
   applies to the picker too. It guides; it does not refuse.
@@ -407,7 +435,7 @@ positions.
 
 | Port | Serves |
 | --- | --- |
-| `ManifestSource` | Components, Triggers, and now Run Context declarations — one flat array, entries carry `kind` |
+| `ManifestSource` | Components, Triggers, and Run Context declarations — one flat array of `ManifestEntry`, every entry carrying `kind` |
 | `WorkflowStore` | The Draft, its lease, versions, publish/release/discard |
 
 Every field on `HostPorts` is optional and a region whose port is missing degrades rather than
@@ -460,12 +488,12 @@ Recorded here so the two documents cannot disagree quietly. ADR-0011 already lis
 
 ## Open
 
-- **The Run Context schema.** The shape of `kind: context` — a flat list of `{key, type, description}`
-  is the obvious reading, and it should be settled against a real Host's needs before it is written.
-- **Host-declared Functions** need a port. Deferred until the completion list ships and gives it a
-  reader.
-- **Mixed text and the type marking.** ADR-0009 keeps interpolation soft, so a scalar of any type
-  renders into mixed text. The marking currently judges against the field's declared type, which is
-  right for a whole-value Template and stricter than necessary for a hole inside a sentence.
+- **Host-declared Functions** need a port. The completion list ships reading `CORE_FUNCTIONS` and
+  `CORE_NAMESPACES`; a Host's own namespaces have no route in yet, and that is the PR that justifies
+  the port's shape.
 - **`Ctrl`+`Space`** conflicts with input-source switching for multilingual macOS users. `Ctrl`+`.` is
   the fallback if it bites.
+
+Two that were open here are now settled and recorded above: the **Run Context schema**, in
+[ADR-0012](adr/0012-run-context-is-a-fourth-manifest-kind.md) and under [Run Context](#run-context);
+and **mixed text and the type marking**, under [The type marking](#the-type-marking).

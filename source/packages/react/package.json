@@ -30,6 +30,7 @@
     "react-dom": "^19.2.0"
   },
   "dependencies": {
+    "@hatua/expressions": "workspace:*",
     "@hatua/layout": "workspace:*",
     "@hatua/model": "workspace:*",
     "@hatua/schema": "workspace:*",

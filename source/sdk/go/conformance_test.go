@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 // The Go half of the shared conformance corpus. packages/schema runs the same
@@ -79,7 +81,34 @@ func TestExecution(t *testing.T) {
 func TestManifest(t *testing.T) {
 	for _, path := range corpus(t, "manifest") {
 		t.Run(filepath.Base(path), func(t *testing.T) {
-			manifests, err := LoadManifests(read(t, path))
+			data := read(t, path)
+
+			// Which loader a fixture is held to comes from the fixture, because
+			// that is what a Host's reader does too: `kind` is the discriminant
+			// the flat array carries, and a Run Context is a different file
+			// with a different shape rather than a fourth branch of the
+			// Component Manifest.
+			var probe struct {
+				Kind string `yaml:"kind"`
+			}
+			_ = yaml.Unmarshal(data, &probe)
+			if probe.Kind == string(KindContext) {
+				context, err := LoadRunContext(data)
+				if err != nil {
+					t.Fatalf("expected %s to be accepted, got: %v", filepath.Base(path), err)
+				}
+				for _, key := range context.Keys {
+					// Labels are required on Run Context keys for the reason
+					// they are required on outputs: the reference tree shows
+					// them to users.
+					if key.Label == "" {
+						t.Fatalf("run context key %q has no label", key.K)
+					}
+				}
+				return
+			}
+
+			manifests, err := LoadManifests(data)
 			if err != nil {
 				t.Fatalf("expected %s to be accepted, got: %v", filepath.Base(path), err)
 			}

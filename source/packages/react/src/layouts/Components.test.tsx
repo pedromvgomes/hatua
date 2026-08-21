@@ -224,11 +224,11 @@ describe('Components', () => {
   })
 
   it('does not report an empty query as a failed search', async () => {
-    // Reachable without anyone typing: an array whose entries carry no `kind`
-    // this region renders — a `components:` catalogue is one array away — files
-    // into no section, which would otherwise read as `Nothing matches “”.`
+    // Reachable without anyone typing: an entry whose `kind` this region cannot
+    // render files into no section, which would otherwise read as
+    // `Nothing matches “”.`
     mount(<Components />, {
-      loadManifests: async () => [{ components: [] }, { components: [] }] as unknown as Manifest[],
+      loadManifests: async () => [{ kind: 'gadget', use: 'x', name: 'X' }] as unknown as Manifest[],
     })
 
     expect(await screen.findByText(/nothing in it is a Component/i)).toBeDefined()
@@ -266,6 +266,22 @@ describe('Components', () => {
     })
 
     expect(await screen.findByText(/nothing in it is a Component/i)).toBeDefined()
+  })
+
+  /*
+   * One array level off is a payload-shaped mistake, not an entry-shaped one,
+   * and the store rejects it: a Components tab that loads successfully and
+   * shows nothing reads as "this Host has declared nothing" and sends the
+   * integrator looking in the wrong place. Every other reader of the same array
+   * — the Triggers section, the checker, scope — gets the same answer for free.
+   */
+  it('reports a catalogue served one array too shallow as a failed load', async () => {
+    mount(<Components />, {
+      loadManifests: async () => [{ components: [] }] as unknown as Manifest[],
+    })
+
+    expect(await screen.findByText(/flat array of entries/i)).toBeDefined()
+    expect(screen.queryByText('No components are available yet.')).toBeNull()
   })
 
   it('names a component the Host left unnamed, rather than drawing a blank row', async () => {

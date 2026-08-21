@@ -54,6 +54,12 @@ type Context struct {
 	Triggers map[string]Value
 	// Vars holds workflow variables, addressed as `var.<key>`.
 	Vars map[string]Value
+	// Run holds the Host's ambient values for this execution, addressed as
+	// `run.<key>`. A root of its own rather than a reserved step id, for the
+	// reason `triggers` and `var` are: a step may legitimately be called `run`,
+	// and resolving one root by looking in two places is how a workflow starts
+	// depending on which of them the runner checked first.
+	Run map[string]Value
 	// Trigger names which Trigger fired. Empty means none was supplied.
 	Trigger string
 	// Now is the clock dt.now() reads. Never the system clock: an expression
@@ -320,6 +326,8 @@ func root(name string, ctx Context) any {
 		return asObject(ctx.Triggers)
 	case "var":
 		return asObject(ctx.Vars)
+	case "run":
+		return asObject(ctx.Run)
 	}
 	if value, ok := ctx.Steps[name]; ok {
 		return value

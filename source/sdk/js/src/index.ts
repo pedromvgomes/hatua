@@ -45,6 +45,7 @@ export {
   upstreamOf,
   walkSteps,
   whenSlot,
+  workflowScope,
 } from '@hatua/model'
 export * from '@hatua/schema'
-export { loadDefinition, loadExecution, loadManifests } from './load'
+export { loadDefinition, loadExecution, loadManifests, loadRunContext } from './load'

@@ -1,7 +1,14 @@
-import { fieldVisible } from '@hatua/model'
+import {
+  FIELD_KIND_TYPES,
+  fieldVisible,
+  type MappableFieldKind,
+  type ScopeEntry,
+} from '@hatua/model'
 import type { Connection, Field, Manifest } from '@hatua/schema'
+import { isMappable } from '@hatua/schema'
 import type { ConnectionState } from '@hatua/services'
 import { type ComponentPropsWithRef, useEffect, useId, useState, useSyncExternalStore } from 'react'
+import { TemplateInput } from '../compounds/TemplateInput'
 import { cx } from '../primitives/classNames'
 import { Input } from '../primitives/Input'
 import { Select } from '../primitives/Select'
@@ -25,12 +32,13 @@ import css from './Fields.module.css?inline'
  * lands, and clicking the canvas's start node reaches it without `triggers[]`
  * moving anywhere.
  *
- * ## What it does not do
+ * ## Templates
  *
- * Templates. The kinds that accept an Expression get a plain mono input here —
- * the Template input, with its highlighting, completion and picker, is one
- * widget shared by every site that holds a Template, and building half of it in
- * one of those sites is how the three end up disagreeing.
+ * Every mappable kind gets `<TemplateInput>` — one widget shared by every site
+ * that holds a Template, because building half of it per site is how the three
+ * end up disagreeing about what `{{` does. What this form contributes is the
+ * two things the widget cannot know on its own: what the field may read, and
+ * what its value has to produce.
  */
 export interface FieldsProps extends Omit<ComponentPropsWithRef<'div'>, 'onChange'> {
   /** Declares which fields exist. Absent when nothing declares this component's verb. */
@@ -39,6 +47,19 @@ export interface FieldsProps extends Omit<ComponentPropsWithRef<'div'>, 'onChang
   values: Record<string, unknown>
   /** The Connections the workflow declares, which is what a `conn` field stores. */
   connections: readonly Connection[]
+  /**
+   * Everything a Template in this form may read.
+   *
+   * A prop rather than something this form works out, because scope is a
+   * question about a *position* — `scopeFor` for a Step, `workflowScope` for a
+   * Trigger — and which of those applies is exactly what "one form, wherever
+   * the thing being edited lives" means this form must not know.
+   *
+   * Defaults to empty rather than being required, because a Host that wired a
+   * `WorkflowStore` and no `ManifestSource` still edits every field it has: the
+   * completion offers nothing, and the text stays typeable.
+   */
+  scope?: readonly ScopeEntry[]
   onChange: (key: string, value: string | number | boolean) => void
   /**
    * Bind one of the Host's Connections to a workflow-local name and point the
@@ -54,6 +75,7 @@ export function Fields({
   manifest,
   values,
   connections,
+  scope = NO_SCOPE,
   onChange,
   onDeclareConnection,
   className,
@@ -82,6 +104,7 @@ export function Fields({
             field={field}
             value={values[field.k]}
             connections={connections}
+            scope={scope}
             established={established}
             onChange={(next) => onChange(field.k, next)}
             onDeclareConnection={
@@ -243,6 +266,7 @@ function FieldRow({
   field,
   value,
   connections,
+  scope,
   established,
   onChange,
   onDeclareConnection,
@@ -250,6 +274,7 @@ function FieldRow({
   field: Field
   value: unknown
   connections: readonly Connection[]
+  scope: readonly ScopeEntry[]
   established: PickerState
   onChange: (next: string | number | boolean) => void
   onDeclareConnection?: (id: string, ref: string) => void
@@ -322,16 +347,28 @@ function FieldRow({
           </option>
         ))}
       </Select>
-    ) : field.kind === 'textarea' ? (
-      <CommittedTextarea id={id} label={field.label} value={text} onCommit={onChange} />
-    ) : field.kind === 'map' ? null : (
+    ) : field.kind === 'map' ? null : isMappable(field.kind) ? (
+      <TemplateInput
+        id={id}
+        label={field.label}
+        value={text}
+        placeholder={field.ph}
+        scope={scope}
+        expectedType={declaredType(field.kind as MappableFieldKind)}
+        // A `ref` field holds exactly one Reference — for-each's list, Filter's
+        // list — so a drop replaces rather than appends.
+        single={field.kind === 'ref'}
+        multiline={field.kind === 'textarea'}
+        onCommit={(next) => onChange(numberIfAsked(field, next))}
+      />
+    ) : (
       <CommittedInput
         id={id}
         label={field.label}
         value={text}
         placeholder={field.ph}
-        mono={field.kind === 'mono' || field.kind === 'ref' || field.kind === 'secret'}
-        type={field.kind === 'number' ? 'number' : field.kind === 'secret' ? 'password' : 'text'}
+        mono={field.kind === 'secret'}
+        type={field.kind === 'secret' ? 'password' : 'text'}
         onCommit={(next) => onChange(numberIfAsked(field, next))}
       />
     )
@@ -395,40 +432,20 @@ function UneditableField({
   )
 }
 
-function CommittedTextarea({
-  id,
-  label,
-  value,
-  onCommit,
-}: {
-  id: string
-  label: string
-  value: string
-  onCommit: (next: string) => void
-}) {
-  const [draft, setDraft] = useState(value)
-  const [committed, setCommitted] = useState(value)
+const NO_SCOPE: readonly ScopeEntry[] = []
 
-  if (value !== committed) {
-    setCommitted(value)
-    setDraft(value)
-  }
-
-  return (
-    <textarea
-      id={id}
-      aria-label={label}
-      className={cx(styles.textarea, styles.mono)}
-      value={draft}
-      rows={3}
-      onChange={(event) => setDraft(event.target.value)}
-      onBlur={() => {
-        if (draft === committed) return
-        setCommitted(draft)
-        onCommit(draft)
-      }}
-    />
-  )
+/**
+ * What a field's value has to produce, as the left rail judges it.
+ *
+ * `unknown` becomes *nothing to judge against* rather than being passed
+ * through. `match()` reads a declared `unknown` as "everything fits", so a
+ * `ref` field would mark every row in the list green — and a rail that is
+ * always green carries no more information than one that is never green, while
+ * looking like it carries some.
+ */
+const declaredType = (kind: MappableFieldKind) => {
+  const declared = FIELD_KIND_TYPES[kind]
+  return declared === 'unknown' ? undefined : declared
 }
 
 const NO_CONNECTIONS = { status: 'unconfigured' } as const

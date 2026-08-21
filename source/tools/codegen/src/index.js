@@ -24,6 +24,7 @@ const FILES = [
   { file: 'workflow-execution.schema.yaml', out: 'execution.ts' },
   { file: 'component-manifest.schema.yaml', out: 'component.ts' },
   { file: 'function-manifest.schema.yaml', out: 'function.ts' },
+  { file: 'context-manifest.schema.yaml', out: 'context.ts' },
 ]
 
 fs.mkdirSync(OUT, { recursive: true })

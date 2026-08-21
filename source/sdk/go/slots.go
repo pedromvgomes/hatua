@@ -151,11 +151,20 @@ func collectUpstream(steps []Step, id string, ancestors []Step) []Step {
 	return nil
 }
 
-// ScopeFor is everything addressable from a step, with the shape of each thing.
+// WorkflowScope is everything addressable with no position in the tree: Run
+// Context, the Triggers, the TRIGGER built-in, and the workflow's variables.
 //
-// Scope position comes from the tree; the shapes come from the manifests. The
-// two are joined here because neither side owns both.
-func ScopeFor(doc Definition, stepID string, manifests []Manifest) []expressions.ScopeEntry {
+// Never a step's output. A workflow variable's value has no position — it is
+// not reached by running anything — so no step is guaranteed to have run by the
+// time it is evaluated. Everything here is available unconditionally for the
+// mirror-image reason: a workflow cannot run without a trigger firing, the Host
+// supplies Run Context to every execution, and a var is workflow-scoped rather
+// than positional.
+//
+// Split out because the builder needs scope without a step to ask about, and
+// ScopeFor is this plus the upstream steps — one definition of the unpositioned
+// half, two readers.
+func WorkflowScope(doc Definition, manifests []Manifest, context []ContextKey) []expressions.ScopeEntry {
 	byUse := make(map[string]Manifest, len(manifests))
 	for _, manifest := range manifests {
 		byUse[manifest.Use] = manifest
@@ -163,9 +172,15 @@ func ScopeFor(doc Definition, stepID string, manifests []Manifest) []expressions
 
 	entries := []expressions.ScopeEntry{}
 
-	// Triggers and vars are in scope everywhere: a workflow cannot run without a
-	// trigger firing, and vars are workflow-scoped rather than positional. Only
-	// steps are constrained by tree position, because only a step can fail to run.
+	// First, because it is the only part of scope no document declares: it is
+	// there before a workflow has a trigger, a var or a step.
+	for _, key := range context {
+		entries = append(entries, expressions.ScopeEntry{
+			Path: "run." + key.K,
+			Type: contextKeyType(key),
+		})
+	}
+
 	for _, trigger := range doc.Triggers {
 		entries = append(entries, expressions.ScopeEntry{
 			Path: "triggers." + trigger.ID,
@@ -187,6 +202,23 @@ func ScopeFor(doc Definition, stepID string, manifests []Manifest) []expressions
 		})
 	}
 
+	return entries
+}
+
+// ScopeFor is everything addressable from a step: the unpositioned scope, plus
+// the upstream steps.
+//
+// Scope position comes from the tree; the shapes come from the manifests. The
+// two are joined here because neither side owns both. Only steps are
+// constrained by tree position, because only a step can fail to run.
+func ScopeFor(doc Definition, stepID string, manifests []Manifest, context []ContextKey) []expressions.ScopeEntry {
+	byUse := make(map[string]Manifest, len(manifests))
+	for _, manifest := range manifests {
+		byUse[manifest.Use] = manifest
+	}
+
+	entries := WorkflowScope(doc, manifests, context)
+
 	for _, step := range UpstreamOf(doc, stepID) {
 		manifest := byUse[step.Use]
 		entries = append(entries, expressions.ScopeEntry{
@@ -196,6 +228,23 @@ func ScopeFor(doc Definition, stepID string, manifests []Manifest) []expressions
 	}
 
 	return entries
+}
+
+// contextKeyType turns a Run Context key into the shape the checker wants.
+//
+// Three lines rather than a second traversal, because a ContextKey is spelled
+// exactly as an Output is: one shape whether the value came from a component's
+// outputs or from the Host's ambient values.
+func contextKeyType(key ContextKey) expressions.TypeNode {
+	node := expressions.TypeNode{Type: expressions.ValueType(key.T)}
+	if len(key.Of) > 0 {
+		members := make(map[string]expressions.TypeNode, len(key.Of))
+		for _, member := range key.Of {
+			members[member.K] = contextKeyType(member)
+		}
+		node.Members = members
+	}
+	return node
 }
 
 // varType reads a workflow variable's type from its literal value.

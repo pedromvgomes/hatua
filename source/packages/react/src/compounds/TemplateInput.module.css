@@ -1,0 +1,156 @@
+@layer hatua {
+  .wrap {
+    position: relative;
+    inline-size: 100%;
+  }
+
+  /*
+   * The box the user sees. The input inside it is transparent and carries the
+   * caret and the selection; the mirror behind it carries the colour. Both are
+   * laid out identically, so "identical" is a property of these rules rather
+   * than of two components agreeing.
+   */
+  .box {
+    position: relative;
+    display: grid;
+    min-block-size: 40px;
+    padding: 8px 44px 8px 10px;
+    border: 1px solid var(--hatua-border-strong);
+    border-radius: var(--hatua-radius-md);
+    background: var(--hatua-surface-card);
+    cursor: text;
+    transition:
+      border-color 120ms ease,
+      background 120ms ease;
+  }
+
+  .tall {
+    min-block-size: 76px;
+  }
+
+  .box:focus-within {
+    border-color: var(--hatua-border-accent);
+  }
+
+  .invalid {
+    border-color: var(--hatua-status-error);
+  }
+
+  .mirror,
+  .field {
+    grid-area: 1 / 1;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    font-family: var(--hatua-font-mono);
+    font-size: 0.8125rem;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    letter-spacing: 0;
+  }
+
+  .mirror {
+    pointer-events: none;
+    color: var(--hatua-text-primary);
+    overflow: hidden;
+  }
+
+  .field {
+    appearance: none;
+    background: transparent;
+    resize: none;
+    /* Transparent text, opaque caret: the platform keeps selection, undo, IME
+       and autofill, and the mirror behind supplies the colour. */
+    color: transparent;
+    caret-color: var(--hatua-text-primary);
+    outline: none;
+  }
+
+  .field::placeholder {
+    color: var(--hatua-text-muted);
+  }
+
+  .field::selection {
+    background: var(--hatua-focus-ring);
+  }
+
+  /* A hole, highlighted in place — never replaced by a widget you cannot type
+     through. */
+  .hole {
+    background: var(--hatua-accent-wash);
+    box-shadow: inset 0 0 0 1px var(--hatua-border-accent);
+    border-radius: var(--hatua-radius-sm);
+    color: var(--hatua-text-accent);
+  }
+
+  /* A `{{` with no `}}` after it: the ordinary state of a Template halfway
+     through being typed, so it is underlined rather than filled. */
+  .broken {
+    text-decoration: underline wavy var(--hatua-status-error);
+    text-underline-offset: 3px;
+  }
+
+  /* Zero width, and the only thing the popovers are positioned against. */
+  .caret {
+    display: inline-block;
+    inline-size: 0;
+  }
+
+  .ghost {
+    color: var(--hatua-text-muted);
+  }
+
+  .spark {
+    position: absolute;
+    inset-block-start: 3px;
+    inset-inline-end: 3px;
+    display: grid;
+    place-items: center;
+    inline-size: 32px;
+    block-size: 32px;
+    appearance: none;
+    border: 0;
+    border-radius: var(--hatua-radius-sm);
+    background: transparent;
+    color: var(--hatua-text-muted);
+    cursor: pointer;
+  }
+
+  .spark:hover,
+  .spark:focus-visible {
+    background: var(--hatua-accent-wash);
+    color: var(--hatua-text-accent);
+    outline: none;
+  }
+
+  .spark svg {
+    fill: currentColor;
+  }
+
+  .signature {
+    margin-block-start: 4px;
+    padding: 6px 9px;
+    background: var(--hatua-surface-sunken);
+    border-radius: var(--hatua-radius-sm);
+  }
+
+  .signatureLine {
+    margin: 0;
+    font-family: var(--hatua-font-mono);
+    font-size: 0.75rem;
+    color: var(--hatua-text-secondary);
+  }
+
+  .activeParam {
+    color: var(--hatua-text-accent);
+    font-weight: 600;
+  }
+
+  .signatureDoc {
+    margin: 3px 0 0;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: var(--hatua-text-secondary);
+  }
+}

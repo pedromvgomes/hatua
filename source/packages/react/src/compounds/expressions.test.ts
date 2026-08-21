@@ -1,0 +1,252 @@
+import type { ScopeEntry } from '@hatua/model'
+import { describe, expect, it } from 'vitest'
+import { completionsAt, ghostFor, referenceTree } from './candidates'
+import {
+  caretContext,
+  dragPayload,
+  dropReference,
+  expectedAt,
+  fits,
+  insertCandidate,
+  REFERENCE_MIME,
+} from './insertion'
+import { templateShape } from './templateSpans'
+
+const SCOPE: ScopeEntry[] = [
+  {
+    path: 'run.tenant',
+    kind: 'context',
+    label: 'Tenant',
+    description: 'Who this run belongs to.',
+    type: { type: 'text' },
+  },
+  { path: 'var.digest_to', kind: 'var', label: 'digest_to', type: { type: 'text' } },
+  {
+    path: 'triggers.nightly',
+    kind: 'trigger',
+    label: 'Nightly',
+    type: { type: 'object', members: { triggered_at: { type: 'datetime' } } },
+  },
+  {
+    path: 's2',
+    kind: 'step',
+    label: 'Fetch emails',
+    type: {
+      type: 'object',
+      members: {
+        count: { type: 'number' },
+        messages: { type: 'list', members: { subject: { type: 'text' } } },
+      },
+    },
+  },
+]
+
+describe('where the holes are', () => {
+  /*
+   * Derived from the parse and never scanned. ADR-0008 puts `{{` / `}}`
+   * segmentation inside the shared grammar precisely so no hand-written scanner
+   * sits in front of the parser.
+   */
+  it('finds a whole-value hole', () => {
+    expect(templateShape('{{ s2.count }}').holes).toEqual([{ start: 0, end: 14 }])
+  })
+
+  it('finds every hole in mixed text, and the text between them', () => {
+    expect(templateShape('Hi {{ a }} and {{ b }}!').holes).toEqual([
+      { start: 3, end: 10 },
+      { start: 15, end: 22 },
+    ])
+  })
+
+  it('finds two holes with nothing between them', () => {
+    expect(templateShape('{{a}}{{b}}').holes).toEqual([
+      { start: 0, end: 5 },
+      { start: 5, end: 10 },
+    ])
+  })
+
+  /*
+   * A hole holding a text literal, not an escape rule — which is exactly why
+   * reading the delimiters off the text would eventually disagree with the
+   * parser about it.
+   */
+  it("treats {{ '{{' }} as one hole, because that is what it is", () => {
+    expect(templateShape("a {{ '{{' }} b").holes).toEqual([{ start: 2, end: 12 }])
+  })
+
+  it('reports a `{{` with no `}}` as the unclosed tail, not as a parse failure', () => {
+    const shape = templateShape('Hi {{ s2.co')
+    expect(shape.unclosed).toEqual({ start: 3, end: 11 })
+    expect(shape.holes).toEqual([])
+  })
+
+  it('reports text that closing the hole would not fix', () => {
+    expect(templateShape('{{ s2. + }}').parses).toBe(false)
+  })
+})
+
+describe('what the caret is inside', () => {
+  it('reads the prefix from the `{{`, not from the token under the caret', () => {
+    const value = '{{ s2.messages[].su }}'
+    expect(caretContext(value, 19).prefix).toBe('s2.messages[].su')
+  })
+
+  it('is outside every hole when the caret sits in the surrounding text', () => {
+    expect(caretContext('Hi {{ a }} there', 14).hole).toBeNull()
+  })
+})
+
+describe('what a row is judged against', () => {
+  /*
+   * The open question this PR closes. A hole that is the whole value resolves
+   * to the field's value and keeps the expression's own type; a hole inside
+   * mixed text is concatenated into a sentence, which ADR-0009 keeps soft — and
+   * `checkTemplate` already says nothing about an individual hole's type in
+   * that case.
+   */
+  it('judges a whole-value hole against the field', () => {
+    expect(expectedAt('', 0, 0, 'number')).toBe('number')
+    expect(expectedAt('{{ x }}', 0, 7, 'number')).toBe('number')
+  })
+
+  it('judges a hole inside mixed text against text', () => {
+    expect(expectedAt('Order {{ x }}', 6, 13, 'number')).toBe('text')
+  })
+
+  it('counts whitespace as text, exactly as the checker does', () => {
+    expect(expectedAt(' {{ x }}', 1, 8, 'number')).toBe('text')
+  })
+
+  it('judges nothing where nothing declares a type', () => {
+    expect(expectedAt('', 0, 0, undefined)).toBeUndefined()
+  })
+
+  it('marks any scalar as fitting mixed text, and no container', () => {
+    expect(fits('number', 'text')).toBe(true)
+    expect(fits('datetime', 'text')).toBe(true)
+    expect(fits('list', 'text')).toBe(false)
+  })
+
+  /* Nothing is ever marked wrong: neutral covers both. */
+  it('never marks an unjudgeable row', () => {
+    expect(fits('unknown', 'number')).toBe(false)
+    expect(fits('number', undefined)).toBe(false)
+  })
+})
+
+describe('what is on offer', () => {
+  it('offers the scope roots and then the namespaces, as a second block', () => {
+    const labels = completionsAt('', SCOPE).map((candidate) => candidate.label)
+    expect(labels.slice(0, 4)).toEqual(['run', 'var', 'triggers', 's2'])
+    expect(labels.slice(4)).toEqual(['dt', 'json', 'list', 'num', 'text'])
+  })
+
+  it("offers a namespace's functions after its dot, and no scope at all", () => {
+    const labels = completionsAt('dt.', SCOPE).map((candidate) => candidate.label)
+    expect(labels.every((label) => label.startsWith('dt.'))).toBe(true)
+    expect(labels).toContain('dt.now')
+  })
+
+  it('puts the caret between the parens of an accepted function', () => {
+    const [now] = completionsAt('dt.no', SCOPE)
+    expect(now?.insert).toBe('dt.now(')
+  })
+
+  it("offers a node's members after a scope dot, and no functions", () => {
+    const labels = completionsAt('s2.', SCOPE).map((candidate) => candidate.label)
+    expect(labels).toEqual(['s2.count', 's2.messages'])
+  })
+
+  /* A list has no members — its elements do, which is what `of:` describes. */
+  it('offers the whole list and `[]`, and navigates through the projection', () => {
+    expect(completionsAt('s2.messages.', SCOPE).map((c) => c.label)).toEqual(['s2.messages[]'])
+    expect(completionsAt('s2.messages[].', SCOPE).map((c) => c.label)).toEqual([
+      's2.messages[].subject',
+    ])
+  })
+
+  it('types everything read through a projection as a list', () => {
+    const [subject] = completionsAt('s2.messages[].', SCOPE)
+    expect(subject?.type).toBe('list')
+  })
+
+  it('narrows on what has been typed', () => {
+    expect(completionsAt('s2.co', SCOPE).map((c) => c.label)).toEqual(['s2.count'])
+  })
+
+  it('carries the sentence a Run Context key declares', () => {
+    const [tenant] = completionsAt('run.', SCOPE)
+    expect(tenant?.summary).toBe('Who this run belongs to.')
+  })
+
+  /* `triggers` alone is a prefix rather than a value — which is what walkName
+     reports, and what lets several triggers coexist. */
+  it('leaves the list open on a grouping prefix rather than inserting it', () => {
+    const [triggers] = completionsAt('trig', SCOPE)
+    expect(triggers?.insert).toBe('triggers.')
+  })
+})
+
+describe('the ghost', () => {
+  it('completes what every remaining candidate agrees on', () => {
+    expect(ghostFor('s2.c', completionsAt('s2.c', SCOPE))).toBe('ount')
+  })
+
+  it('is empty at a dot with no common prefix, and the list alone answers', () => {
+    expect(ghostFor('s2.', completionsAt('s2.', SCOPE))).toBe('')
+  })
+})
+
+describe('writing it in', () => {
+  it('wraps a candidate chosen outside a hole', () => {
+    const edit = insertCandidate('', caretContext('', 0), 0, 's2.count')
+    expect(edit.value).toBe('{{ s2.count }}')
+  })
+
+  it('replaces the typed prefix inside a hole rather than appending to it', () => {
+    const value = '{{ s2.co }}'
+    const edit = insertCandidate(value, caretContext(value, 8), 8, 's2.count')
+    expect(edit.value).toBe('{{ s2.count }}')
+  })
+
+  it('leaves the caret inside the braces when the insertion is mid-expression', () => {
+    const edit = insertCandidate('', caretContext('', 0), 0, 'dt.now(')
+    expect(edit.value.slice(0, edit.caret)).toBe('{{ dt.now(')
+  })
+})
+
+describe('dropping a reference', () => {
+  it('carries the bare path and the wrapped Template, for two different readers', () => {
+    expect(dragPayload('s2.count')).toEqual([
+      [REFERENCE_MIME, 's2.count'],
+      ['text/plain', '{{ s2.count }}'],
+    ])
+  })
+
+  /* A leading-space rule alone welds the token to the following word. */
+  it('spaces the token on both sides when a neighbour is not already whitespace', () => {
+    expect(dropReference('Hithere', 2, 2, 'x').value).toBe('Hi {{ x }} there')
+  })
+
+  it('adds no space where there is already whitespace, or nothing at all', () => {
+    expect(dropReference('Hi ', 3, 3, 'x').value).toBe('Hi {{ x }}')
+    expect(dropReference('', 0, 0, 'x').value).toBe('{{ x }}')
+  })
+
+  it('replaces the whole value in a field that holds exactly one Reference', () => {
+    expect(dropReference('{{ old }}', 4, 4, 'x', { replace: true }).value).toBe('{{ x }}')
+  })
+})
+
+describe('the reference tree', () => {
+  it('recovers a root from dotted paths, and leaves it unaddressable', () => {
+    const tree = referenceTree(SCOPE)
+    const triggers = tree.find((node) => node.path === 'triggers')
+    expect(triggers?.type).toBe('unknown')
+    expect(triggers?.children?.map((child) => child.path)).toEqual(['triggers.nightly'])
+  })
+
+  it('names a grouping prefix in the user’s words, not the document’s', () => {
+    expect(referenceTree(SCOPE).find((node) => node.path === 'run')?.label).toBe('Run context')
+  })
+})

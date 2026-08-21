@@ -171,9 +171,22 @@
 
   /* Key 118px and the value flexible, as the design has it: a key is short and
      a Template is not, so an even split wastes the half that needs the room. */
+  /*
+   * The key and the bin on one line, the value beneath it.
+   *
+   * A Template input is 40px tall and carries a 40px button inside its trailing
+   * edge, so a three-column row leaves it about 110px of writing space in a
+   * 304px panel — narrower than most of the paths it is there to hold, and
+   * every one of them then scrolls sideways under the caret.
+   */
   .variable {
     display: grid;
-    grid-template-columns: 118px minmax(0, 1fr) auto;
+    gap: 6px;
+  }
+
+  .variableHead {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
     gap: 6px;
   }

@@ -98,7 +98,7 @@ func TestWhenSlotIsBoolean(t *testing.T) {
 	}}
 
 	found := expressions.Validate(slot.Template, slot.ExpectedType, expressions.CheckContext{
-		Scope: ScopeFor(doc, "s3", manifests),
+		Scope: ScopeFor(doc, "s3", manifests, nil),
 	})
 	if len(found) != 1 || found[0].Code != expressions.CodeExprTypeMismatch {
 		t.Fatalf("expected one EXPR_TYPE_MISMATCH, got %#v", found)
@@ -120,7 +120,7 @@ func TestScopeForDerivesMappingOutputsFromTheStepItself(t *testing.T) {
 		},
 	}
 
-	scope := ScopeFor(doc, "s2", []Manifest{mapper})
+	scope := ScopeFor(doc, "s2", []Manifest{mapper}, nil)
 	if len(scope) != 1 || scope[0].Path != "s1" {
 		t.Fatalf("unexpected scope %#v", scope)
 	}
@@ -162,5 +162,85 @@ func TestUpstreamOfExcludesSiblingBranches(t *testing.T) {
 	}
 	if got := ids(UpstreamOf(doc, "s2")); len(got) != 0 {
 		t.Fatalf("expected nothing upstream of the first step, got %v", got)
+	}
+}
+
+// WorkflowScope is what a value with no position in the tree may read: a
+// workflow variable's own value is not reached by running anything, so no step
+// is guaranteed to have run by the time it is evaluated.
+//
+// The TypeScript half is packages/model/src/scope.test.ts. A runner and the
+// builder disagreeing about what `run.` resolves to is precisely the divergence
+// the SDK exists to prevent.
+func TestWorkflowScopeOffersRunContextAndNoStepOutput(t *testing.T) {
+	doc := Definition{
+		Triggers: []Trigger{{ID: "nightly", Use: "schedule.cron"}},
+		Vars:     []Variable{{Key: "digest_to", Value: "ops@example.com"}},
+		Steps:    []Step{{ID: "s1", Use: "email.fetch"}, {ID: "s2", Use: "email.send"}},
+	}
+	context := []ContextKey{
+		{K: "id", Label: "Run id", T: "text"},
+		{K: "tenant", Label: "Tenant", T: "object", Of: []ContextKey{
+			{K: "name", Label: "Tenant name", T: "text"},
+		}},
+	}
+
+	paths := map[string]expressions.TypeNode{}
+	for _, entry := range WorkflowScope(doc, nil, context) {
+		paths[entry.Path] = entry.Type
+	}
+
+	for _, want := range []string{"run.id", "run.tenant", "triggers.nightly", "var.digest_to"} {
+		if _, ok := paths[want]; !ok {
+			t.Fatalf("expected %q in scope, got %#v", want, paths)
+		}
+	}
+	if _, ok := paths["s1"]; ok {
+		t.Fatalf("a value with no position must not see a step output: %#v", paths)
+	}
+	if paths["run.tenant"].Members["name"].Type != expressions.TypeText {
+		t.Fatalf("expected `of` to nest, got %#v", paths["run.tenant"])
+	}
+}
+
+// ScopeFor is WorkflowScope plus the upstream steps, and nothing else: one
+// definition of the unpositioned half, two readers.
+func TestScopeForIsWorkflowScopePlusTheSteps(t *testing.T) {
+	doc := Definition{
+		Triggers: []Trigger{{ID: "nightly", Use: "schedule.cron"}},
+		Steps:    []Step{{ID: "s1", Use: "email.fetch"}, {ID: "s2", Use: "email.send"}},
+	}
+	context := []ContextKey{{K: "id", Label: "Run id", T: "text"}}
+
+	unpositioned := WorkflowScope(doc, nil, context)
+	positioned := ScopeFor(doc, "s2", nil, context)
+
+	if len(positioned) != len(unpositioned)+1 {
+		t.Fatalf("expected one step on top, got %#v", positioned)
+	}
+	for i, entry := range unpositioned {
+		if positioned[i].Path != entry.Path {
+			t.Fatalf("scope %d diverged: %q vs %q", i, positioned[i].Path, entry.Path)
+		}
+	}
+	if positioned[len(unpositioned)].Path != "s1" {
+		t.Fatalf("expected s1 last, got %q", positioned[len(unpositioned)].Path)
+	}
+}
+
+// The `run` root resolves out of its own map, not out of the steps: a step may
+// legitimately be called `run`, and resolving one root by looking in two places
+// is how a workflow starts depending on which of them the runner checked first.
+func TestRunContextResolvesFromItsOwnRoot(t *testing.T) {
+	value, err := expressions.Resolve(expressions.Context{
+		Run:   map[string]expressions.Value{"tenant": "acme"},
+		Steps: map[string]expressions.Value{"run": map[string]expressions.Value{"tenant": "nope"}},
+	}, expressions.Slot{Name: "to", Template: "{{ run.tenant }}", ExpectedType: expressions.TypeText})
+
+	if err != nil {
+		t.Fatalf("resolving: %v", err)
+	}
+	if value != "acme" {
+		t.Fatalf("expected acme, got %#v", value)
 	}
 }

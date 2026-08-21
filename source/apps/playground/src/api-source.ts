@@ -1,4 +1,4 @@
-import type { Manifest, ManifestSource } from '@hatua/react'
+import type { ManifestEntry, ManifestSource } from '@hatua/react'
 
 /**
  * A `ManifestSource` that fetches. This is Host code, and that is the point.
@@ -38,7 +38,7 @@ export function createApiManifestSource(
   }: ApiManifestSourceOptions = {},
 ): ManifestSource {
   return {
-    async loadManifests(): Promise<Manifest[]> {
+    async loadManifests(): Promise<ManifestEntry[]> {
       if (delayMs > 0) await wait(delayMs)
 
       const response = await fetch(url)
@@ -60,15 +60,16 @@ export function createApiManifestSource(
       // The cast is the last place a promise can be broken quietly. A 200 whose
       // body is an object — the `components:` catalogue, most likely, since that
       // is a legal way to write a manifest FILE — would otherwise be handed to
-      // Hatua as a Manifest[] it is not. Failing here keeps it on the Host's
-      // side of the seam, which is where this file says such things belong.
+      // Hatua as a ManifestEntry[] it is not. Failing here keeps it on the
+      // Host's side of the seam, which is where this file says such things
+      // belong.
       if (!Array.isArray(body)) {
         throw new Error(
           `${url} returned ${body === null ? 'null' : typeof body}, not an array of manifests. ` +
             'A `components:` catalogue has to be flattened before it is served.',
         )
       }
-      return body as Manifest[]
+      return body as ManifestEntry[]
     },
   }
 }

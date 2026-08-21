@@ -73,6 +73,20 @@ func LoadManifests(data []byte) ([]Manifest, error) {
 	return []Manifest{single}, nil
 }
 
+// LoadRunContext parses a Run Context Manifest: the ambient values the Host
+// supplies to every execution.
+//
+// No catalogue variant to probe for, unlike LoadManifests. There is exactly one
+// Run Context per execution, so the file declares keys directly and a second
+// declaration is a mistake rather than a longer list.
+func LoadRunContext(data []byte) (*RunContextManifest, error) {
+	var manifest RunContextManifest
+	if err := decode(data, &manifest, "Run Context Manifest"); err != nil {
+		return nil, err
+	}
+	return &manifest, nil
+}
+
 // Validate covers every key the schema marks required. It must reject exactly
 // what the TypeScript side rejects: a document Go accepts and zod refuses is a
 // workflow that fails in the builder and runs anyway, which is the divergence
