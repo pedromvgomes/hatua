@@ -93,6 +93,19 @@ describe('addTrigger', () => {
     expect(triggers[2]?.name).toBe('On a call')
   })
 
+  it('keeps minting past the ids the document already has', () => {
+    let text = SOURCE
+    for (let n = 0; n < 3; n++) text = apply(text, addTrigger({ use: 'http.webhook' })).toString()
+
+    expect((definitionOf(text).triggers ?? []).map((t) => t.id)).toEqual([
+      't1',
+      't2',
+      't3',
+      't4',
+      't5',
+    ])
+  })
+
   it('writes `id`, `use`, `name` in the order the schema documents them', () => {
     // A Workflow Definition lives in the Host's repository and a person reads
     // the diff.

@@ -252,6 +252,79 @@ describe('the ports it needs', () => {
   })
 })
 
+describe('what it says while the catalogue is still arriving', () => {
+  it('says the Trigger types are loading rather than that there are none', async () => {
+    // "Not here yet" and "there are none" are different answers, and only one
+    // of them is worth acting on.
+    render(
+      <HatuaProvider
+        ports={{
+          workflows: host().port,
+          manifests: { loadManifests: () => new Promise<Manifest[]>(() => {}) },
+        }}
+        workflowId="wf_morning"
+      >
+        <Workflow />
+      </HatuaProvider>,
+    )
+
+    expect(await screen.findByText('Loading Trigger types…')).toBeDefined()
+    expect(screen.queryByText('No Trigger types are available yet.')).toBeNull()
+  })
+
+  it('reports a catalogue that failed to load, where the type picker would be', async () => {
+    render(
+      <HatuaProvider
+        ports={{
+          workflows: host().port,
+          manifests: {
+            loadManifests: async () => {
+              throw new Error('The catalogue endpoint returned 503.')
+            },
+          },
+        }}
+        workflowId="wf_morning"
+      >
+        <Workflow />
+      </HatuaProvider>,
+    )
+
+    expect(await screen.findByText(/The catalogue endpoint returned 503/)).toBeDefined()
+  })
+
+  it('announces that saving stopped, and keeps every edit on screen', async () => {
+    // ADR-0005: a rejected write halts autosave and keeps the in-memory
+    // document — not retried, not discarded.
+    const refusing = host()
+    refusing.port.saveDraft = async () => {
+      throw new Error('Your lease expired.')
+    }
+    mount(refusing)
+
+    type(await screen.findByLabelText('Name'), 'Overnight triage')
+
+    await waitFor(
+      () =>
+        expect(screen.getByRole('status').textContent).toBe(
+          'Saving stopped. Your changes are still here.',
+        ),
+      AUTOSAVED,
+    )
+    // The edit is still there, which is the half that matters.
+    expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Overnight triage')
+  })
+
+  it('renders a variable whose value the user has not written yet', async () => {
+    // `value:` with nothing after it parses as null. The schema wants the key
+    // present and says nothing about it being filled, so this is a document
+    // somebody is halfway through — and an empty box is the honest rendering.
+    mount(host(SOURCE.replace('    value: 10', '    value:')))
+
+    const box = await screen.findByLabelText('Value of threshold')
+    expect((box as HTMLInputElement).value).toBe('')
+  })
+})
+
 describe('identity', () => {
   it('renames the workflow through the store, and autosaves it', async () => {
     const source = host()
@@ -575,6 +648,141 @@ describe('the shared field form', () => {
     mount(host(WITH_MAILBOX), conditional)
     await screen.findByLabelText('Mode')
     expect(screen.queryByLabelText('Folder')).toBeNull()
+  })
+})
+
+describe('an input that commits rather than fighting the user', () => {
+  /*
+   * Controlled straight from the document, every keystroke would be a command,
+   * a write and a re-parse — so the caret would jump to the end on every
+   * letter. Held locally and committed once, the document sees what the user
+   * settled on. What it must still do is follow the document when the document
+   * moves underneath it.
+   */
+  it('commits on Enter without waiting for the field to lose focus', async () => {
+    const source = host()
+    mount(source)
+
+    const name = await screen.findByLabelText('Name')
+    fireEvent.change(name, { target: { value: 'Overnight triage' } })
+    fireEvent.keyDown(name, { key: 'Enter' })
+
+    await waitFor(() => expect(source.writes).toHaveLength(1), AUTOSAVED)
+    expect(source.writes[0]).toContain('Overnight triage')
+  })
+
+  it('abandons the edit on Escape, and writes nothing', async () => {
+    const source = host()
+    mount(source)
+
+    const name = await screen.findByLabelText('Name')
+    fireEvent.change(name, { target: { value: 'Half a thought' } })
+    fireEvent.keyDown(name, { key: 'Escape' })
+
+    expect((name as HTMLInputElement).value).toBe('Morning inbox triage')
+    await new Promise((resolve) => setTimeout(resolve, 1200))
+    expect(source.writes).toHaveLength(0)
+  })
+
+  it('follows the document when it changes from somewhere else', async () => {
+    // Two regions over one store is the cheapest way to be something else. An
+    // undo does the same thing, and so will the canvas.
+    const source = host()
+    render(
+      <HatuaProvider
+        ports={{ workflows: source.port, manifests: serving(CATALOGUE) }}
+        workflowId="wf_morning"
+      >
+        <Workflow />
+        <Workflow />
+      </HatuaProvider>,
+    )
+
+    const [first, second] = await screen.findAllByLabelText('Name')
+    type(first as HTMLElement, 'Overnight triage')
+
+    await waitFor(() => expect((second as HTMLInputElement).value).toBe('Overnight triage'))
+  })
+
+  it('commits a textarea the same way, on blur', async () => {
+    const source = host(WITH_MAILBOX)
+    mount(source, CATALOGUE, AVAILABLE)
+
+    type(await screen.findByLabelText('Notes'), 'Ask before archiving anything.')
+    await waitFor(() => expect(source.writes).toHaveLength(1), AUTOSAVED)
+    expect(source.writes[0]).toContain('Ask before archiving anything.')
+  })
+
+  it('follows the document in a textarea too', async () => {
+    const source = host(WITH_MAILBOX)
+    render(
+      <HatuaProvider
+        ports={{
+          workflows: source.port,
+          manifests: serving(CATALOGUE),
+          ...connectionPorts(AVAILABLE),
+        }}
+        workflowId="wf_morning"
+      >
+        <Workflow />
+        <Workflow />
+      </HatuaProvider>,
+    )
+
+    const [first, second] = await screen.findAllByLabelText('Notes')
+    type(first as HTMLElement, 'Written once, seen twice.')
+
+    await waitFor(() =>
+      expect((second as HTMLTextAreaElement).value).toBe('Written once, seen twice.'),
+    )
+  })
+})
+
+describe('naming a connection the workflow has not declared', () => {
+  it('disambiguates two Connections the Host calls the same thing', async () => {
+    // The name lands in a file in the Host's repository and has to be unique
+    // there — two `ops_mailbox` entries would be a workflow with connections
+    // nobody can tell apart.
+    const twins = [
+      { ref: 'ref_one', type: 'email', label: 'Ops mailbox' },
+      { ref: 'ref_two', type: 'email', label: 'Ops Mailbox' },
+    ]
+    const source = host(WITH_MAILBOX)
+    mount(source, CATALOGUE, twins)
+
+    const picker = await screen.findByRole('combobox', { name: 'Mailbox' })
+    fireEvent.change(picker, { target: { value: '+ref_one' } })
+    await waitFor(() => expect(source.writes).toHaveLength(1), AUTOSAVED)
+
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Mailbox' }), {
+      target: { value: '+ref_two' },
+    })
+    await waitFor(() => expect(source.writes).toHaveLength(2), AUTOSAVED)
+
+    const written = source.writes[1] as string
+    expect(written).toContain('id: ops_mailbox')
+    expect(written).toContain('id: ops_mailbox_2')
+  })
+
+  it('says so when the connections could not be loaded', async () => {
+    render(
+      <HatuaProvider
+        ports={{
+          workflows: host(WITH_MAILBOX).port,
+          manifests: serving(CATALOGUE),
+          connections: {
+            async listConnections() {
+              throw new Error('the connections endpoint returned 503')
+            },
+          },
+        }}
+        workflowId="wf_morning"
+      >
+        <Workflow />
+      </HatuaProvider>,
+    )
+
+    expect(await screen.findByText(/the connections endpoint returned 503/)).toBeDefined()
   })
 })
 

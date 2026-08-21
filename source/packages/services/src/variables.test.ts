@@ -60,6 +60,21 @@ describe('addVariable', () => {
     expect(parseWorkflow(twice).validate().success).toBe(true)
   })
 
+  it('keeps counting past the second minted key', () => {
+    // Deterministic, so the same edits produce the same document twice — which
+    // is what makes the round-trip assertable and the diff readable.
+    let text = SOURCE
+    for (let n = 0; n < 3; n++) text = apply(text, addVariable()).toString()
+
+    expect(varsOf(text).map((v) => v.key)).toEqual([
+      'digest_to',
+      'threshold',
+      'new_variable',
+      'new_variable_2',
+      'new_variable_3',
+    ])
+  })
+
   it('takes a key when the caller has one', () => {
     const text = apply(SOURCE, addVariable('digest_subject')).toString()
     expect(varsOf(text).map((v) => v.key)).toContain('digest_subject')

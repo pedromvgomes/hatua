@@ -716,7 +716,14 @@ describe('undo and redo', () => {
     // because the oldest revision was dropped rather than the stack growing.
     expect(ready(store).text).not.toBe(SOURCE)
     expect(ready(store).definition?.steps).toHaveLength(4)
-  })
+  } /*
+   * 201 documents parsed and serialised, which is the point: the bound is
+   * what stops it being unbounded. Vitest's default 5s covers it on a quiet
+   * machine and does not cover it under coverage instrumentation with the
+   * monorepo's suites running in parallel — the same margin `AUTOSAVED`
+   * exists for, and the same reason. The number under test is the stack
+   * depth, never the clock.
+   */, 30_000)
 
   it('does nothing on an empty stack', async () => {
     const { store } = await open()

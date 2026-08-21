@@ -147,21 +147,20 @@ export function createConnectionStore(
       if (mine === generation) publish(next)
     }
 
-    // The try/catch is not redundant with the rejection handler:
-    // `listConnections` is a plain method on the Host's object and nothing
-    // obliges it to be `async`, so one that throws synchronously would throw
-    // straight back out of `load()` — which a field calls inside an effect. The
-    // same reasoning manifests.ts spells out.
-    try {
-      drain((cursor) => source.listConnections(cursor))
-        .then(describeAll)
-        .then(
-          (connections) => settle({ status: 'ready', connections }),
-          (cause) => settle({ status: 'failed', error: asError(cause) }),
-        )
-    } catch (cause) {
-      settle({ status: 'failed', error: asError(cause) })
-    }
+    // No try/catch around this, unlike `manifests.ts`, and the difference is
+    // `drain`. `listConnections` is a plain method on the Host's object and
+    // nothing obliges it to be `async`, so one that throws synchronously is a
+    // real case — but it is called from inside `drain`, which IS `async`, so
+    // the throw is already a rejected promise by the time anything here sees
+    // it. `manifests.ts` calls the Host's method directly and needs the guard;
+    // a second one here would be unreachable, and an unreachable guard reads as
+    // a path somebody has thought about.
+    drain((cursor) => source.listConnections(cursor))
+      .then(describeAll)
+      .then(
+        (connections) => settle({ status: 'ready', connections }),
+        (cause) => settle({ status: 'failed', error: asError(cause) }),
+      )
   }
 
   return {

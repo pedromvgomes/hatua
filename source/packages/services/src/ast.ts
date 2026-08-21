@@ -189,10 +189,21 @@ interface Pair {
   key?: { value?: unknown }
 }
 
-/** The top-level mapping's pairs, or undefined when the document is not a mapping. */
+/**
+ * The top-level mapping's pairs, or undefined when the document is not a
+ * mapping.
+ *
+ * Tagged, not shaped, for the reason `asSeq` gives: a top-level SEQUENCE also
+ * carries an `items` array, and reading it as pairs would splice a `Pair` into
+ * a sequence — the same corruption as the other way round, and it surfaces the
+ * same way, from a `toString()` no caller guards. `- just\n- a list` parses, so
+ * it opens, so a command can be run against it.
+ */
 const topLevelPairs = (document: WorkflowDocument): Pair[] | undefined => {
-  const contents = document.ast.contents as { items?: unknown } | null
-  return contents && Array.isArray(contents.items) ? (contents.items as Pair[]) : undefined
+  const contents = document.ast.contents
+  if (tagOf(contents) !== MAP) return undefined
+  const items = (contents as { items?: unknown }).items
+  return Array.isArray(items) ? (items as Pair[]) : undefined
 }
 
 /** One `key: value` pair, built by the document rather than by a `yaml` import. */
@@ -218,10 +229,12 @@ export function topLevelList(document: WorkflowDocument, key: string): Path {
   if (existing !== undefined) throw new Error(`"${key}" is not a list`)
 
   const pairs = topLevelPairs(document)
-  if (!pairs) {
-    document.ast.setIn([key], [])
-    return [key]
-  }
+  // A Workflow Definition is a mapping, and a document that is not one has
+  // nowhere to put a top-level key: `setIn(['vars'], …)` against a sequence
+  // asks it to index by a string and throws with a message about indices. The
+  // command aborts either way; saying which document it refused is what makes
+  // the difference readable.
+  if (!pairs) throw new Error(`Cannot add "${key}" to a document that is not a mapping`)
 
   const rank = KEY_ORDER.indexOf(key)
   // An unrecognised key ranks -1 and therefore sorts before everything, so a
