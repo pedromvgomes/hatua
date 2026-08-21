@@ -6,6 +6,7 @@ import {
   dragPayload,
   dropReference,
   expectedAt,
+  expressionEnd,
   fits,
   insertCandidate,
   REFERENCE_MIME,
@@ -342,5 +343,30 @@ describe('what a Reference is called at rest', () => {
    */
   it('refuses to name a path that is no longer in scope', () => {
     expect(labelOf('s9.gone', SCOPE)).toBeNull()
+  })
+})
+
+describe('clicking a chip', () => {
+  /*
+   * A chip is narrower than the characters it stands for, so the offset the
+   * browser derives from the pointer lands somewhere arbitrary inside the path
+   * — the one place a click has an obviously right answer and would get a
+   * nearly random one.
+   */
+  it('puts the caret at the end of the expression, inside the braces', () => {
+    const value = '{{ var.digest_to }}'
+    const hole = templateShape(value).holes[0]
+    expect(expressionEnd(value, hole as never)).toBe(16)
+    expect(value.slice(0, 16)).toBe('{{ var.digest_to')
+  })
+
+  it('works for a hole written with no spaces at all', () => {
+    const value = '{{s2.count}}'
+    expect(expressionEnd(value, templateShape(value).holes[0] as never)).toBe(10)
+  })
+
+  it('never lands before the opening braces, whatever is between them', () => {
+    const value = '{{   }}'
+    expect(expressionEnd(value, templateShape(value).holes[0] as never)).toBe(2)
   })
 })

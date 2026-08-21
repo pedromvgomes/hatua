@@ -22,6 +22,7 @@ import {
   droppedPath,
   dropReference,
   expectedAt,
+  expressionEnd,
   insertCandidate,
   spliceAt,
 } from './insertion'
@@ -311,7 +312,26 @@ export function TemplateInput({
         {css}
       </style>
       <div className={styles.wrap}>
-        <div className={cx(styles.box, multiline && styles.tall, invalid && styles.invalid)}>
+        <div
+          className={cx(styles.box, multiline && styles.tall, invalid && styles.invalid)}
+          /*
+           * A click on a chip is a click on something narrower than the
+           * characters it stands for, so the offset the browser derives from
+           * the pointer lands somewhere arbitrary inside the path. Claimed
+           * here, before focus, and answered deliberately instead.
+           *
+           * Capture, because the `<input>` paints over the mirror and would
+           * otherwise have set its own caret by the time this ran.
+           */
+          onMouseDownCapture={(event) => {
+            const hit = chipUnder(mirror.current, event.clientX, event.clientY)
+            if (hit === null) return
+            const hole = shape.holes.find((candidate) => candidate.start === hit)
+            if (!hole) return
+            event.preventDefault()
+            write({ value: draft, caret: expressionEnd(draft, hole) })
+          }}
+        >
           {/*
             The mirror. `aria-hidden` because it is the same characters twice:
             a screen reader reads the input, and this exists only so the holes
@@ -526,7 +546,7 @@ function paint({
     .map((piece) => {
       if (piece.chip) {
         return (
-          <span key={piece.start} className={styles.chip}>
+          <span key={piece.start} className={styles.chip} data-hole={piece.start}>
             {piece.chip}
           </span>
         )
@@ -549,6 +569,17 @@ function paint({
         </span>
       )
     })
+}
+
+/** The offset of the hole whose chip is under the pointer, or null. */
+function chipUnder(mirror: HTMLDivElement | null, x: number, y: number): number | null {
+  for (const chip of mirror?.querySelectorAll('[data-hole]') ?? []) {
+    const box = chip.getBoundingClientRect()
+    if (x >= box.left && x <= box.right && y >= box.top && y <= box.bottom) {
+      return Number(chip.getAttribute('data-hole'))
+    }
+  }
+  return null
 }
 
 /**

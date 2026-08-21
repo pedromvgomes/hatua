@@ -250,3 +250,20 @@ export function insertCandidate(
   const inner = insert.endsWith('.') || insert.endsWith('(') ? 3 + insert.length : wrapped.length
   return spliceAt(value, caret, caret, wrapped, inner)
 }
+
+/**
+ * Where the caret goes when a chip is clicked: the end of the expression the
+ * chip stands for, just inside the closing braces.
+ *
+ * A chip is narrower than the characters it replaces, so the offset the browser
+ * would derive from the pointer is somewhere arbitrary inside the path — the
+ * one place a click has an obviously right answer and would get a nearly random
+ * one. The end of the expression is where an edit starts: backspace shortens
+ * the path, and a dot extends it.
+ */
+export function expressionEnd(value: string, hole: HoleSpan): number {
+  // Just inside the `}}`, then back over the whitespace the writer put there.
+  let at = Math.max(hole.start + 2, hole.end - 2)
+  while (at > hole.start + 2 && /\s/.test(value[at - 1] as string)) at--
+  return at
+}
