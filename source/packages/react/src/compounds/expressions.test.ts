@@ -1,6 +1,6 @@
 import type { ScopeEntry } from '@hatua/model'
 import { describe, expect, it } from 'vitest'
-import { completionsAt, ghostFor, labelOf, referenceTree } from './candidates'
+import { chipFor, completionsAt, ghostFor, referenceTree } from './candidates'
 import {
   caretContext,
   dragPayload,
@@ -321,19 +321,44 @@ describe('completing inside a call', () => {
 })
 
 describe('what a Reference is called at rest', () => {
-  it('reads as the Step and the way down to the value', () => {
-    expect(labelOf('s2.count', SCOPE)).toBe('Fetch emails count')
+  it('reads as the Step, then the way down to the value', () => {
+    expect(chipFor('s2.count', SCOPE)).toEqual({
+      kind: 'step',
+      source: 'Fetch emails',
+      leaf: 'count',
+    })
   })
 
-  /* `run`, `var` and `triggers` are how a Template spells a root, not what
+  /*
+   * The source is the half a label alone loses. `var.digest_to` reduced to
+   * "digest_to", and two chips reading "digest_to" and "count" say nothing
+   * about where either value is from.
+   */
+  it('supplies the kind as the source where the path names no entity', () => {
+    expect(chipFor('var.digest_to', SCOPE)).toEqual({
+      kind: 'var',
+      source: 'Variable',
+      leaf: 'digest_to',
+    })
+    expect(chipFor('run.tenant', SCOPE)).toEqual({
+      kind: 'context',
+      source: 'Run context',
+      leaf: 'Tenant',
+    })
+  })
+
+  /* `run`, `var` and `triggers` are how a Template spells a root, never what
      anyone calls it. */
-  it('drops the grouping prefix', () => {
-    expect(labelOf('run.tenant', SCOPE)).toBe('Tenant')
-    expect(labelOf('var.digest_to', SCOPE)).toBe('digest_to')
+  it('never shows the grouping prefix itself', () => {
+    expect(chipFor('triggers.nightly.triggered_at', SCOPE)).toEqual({
+      kind: 'trigger',
+      source: 'Nightly',
+      leaf: 'triggered_at',
+    })
   })
 
   it('names a projection as each of its elements', () => {
-    expect(labelOf('s2.messages[].subject', SCOPE)).toBe('Fetch emails messages each subject')
+    expect(chipFor('s2.messages[].subject', SCOPE)?.leaf).toBe('messages each subject')
   })
 
   /*
@@ -342,7 +367,7 @@ describe('what a Reference is called at rest', () => {
    * longer exists hides the one fact worth seeing.
    */
   it('refuses to name a path that is no longer in scope', () => {
-    expect(labelOf('s9.gone', SCOPE)).toBeNull()
+    expect(chipFor('s9.gone', SCOPE)).toBeNull()
   })
 })
 

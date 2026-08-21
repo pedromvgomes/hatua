@@ -15,7 +15,7 @@ import {
 } from 'react'
 import { cx } from '../primitives/classNames'
 import { CompletionList, rowId } from './CompletionList'
-import { type Candidate, completionsAt, ghostFor, labelOf } from './candidates'
+import { type Candidate, type ChipParts, chipFor, completionsAt, ghostFor } from './candidates'
 import { ExpressionPicker } from './ExpressionPicker'
 import {
   caretContext,
@@ -315,21 +315,31 @@ export function TemplateInput({
         <div
           className={cx(styles.box, multiline && styles.tall, invalid && styles.invalid)}
           /*
-           * A click on a chip is a click on something narrower than the
-           * characters it stands for, so the offset the browser derives from
-           * the pointer lands somewhere arbitrary inside the path. Claimed
-           * here, before focus, and answered deliberately instead.
+           * At rest the mirror shows different characters from the ones the
+           * `<input>` behind it holds, so the offset the browser derives from
+           * the pointer is measured against text nobody can see: click the word
+           * after a chip and the caret lands inside the hole. Claimed here and
+           * translated through what is actually visible.
            *
-           * Capture, because the `<input>` paints over the mirror and would
+           * Capture, because the input paints over the mirror and would
            * otherwise have set its own caret by the time this ran.
            */
           onMouseDownCapture={(event) => {
-            const hit = chipUnder(mirror.current, event.clientX, event.clientY)
-            if (hit === null) return
-            const hole = shape.holes.find((candidate) => candidate.start === hit)
-            if (!hole) return
+            // Only at rest: with the characters back the input's own hit-testing
+            // is measuring the text that is actually on screen, and the platform
+            // does it better than this can.
+            if (focused) return
+            const at = offsetAtPoint(
+              mirror.current,
+              field.current,
+              draft,
+              shape.holes,
+              event.clientX,
+              event.clientY,
+            )
+            if (at === null) return
             event.preventDefault()
-            write({ value: draft, caret: expressionEnd(draft, hole) })
+            write({ value: draft, caret: at })
           }}
         >
           {/*
@@ -347,7 +357,7 @@ export function TemplateInput({
               // At rest there is no caret to keep aligned, so a hole that names
               // one value may be drawn as what it is rather than as how it is
               // spelled. See `chipOf`.
-              chip: focused ? null : (path) => labelOf(path, scope),
+              chip: focused ? null : (path) => chipFor(path, scope),
             })}
             {/* A trailing newline collapses in a block box, so the mirror comes
                 up one line short of the textarea it is behind. */}
@@ -468,7 +478,7 @@ interface Piece {
   start: number
   className?: string
   /** Set when this hole is drawn as a chip instead of as its own characters. */
-  chip?: string
+  chip?: ChipParts
 }
 
 /**
@@ -482,11 +492,11 @@ interface Piece {
  */
 function chipOf(
   hole: HoleSpan,
-  chip: ((path: string) => string | null) | null,
-): string | undefined {
+  chip: ((path: string) => ChipParts | null) | null,
+): ChipParts | undefined {
   if (!chip || !hole.expr) return undefined
   const path = referencePath(hole.expr)
-  return (path && chip(path)) || undefined
+  return (path ? chip(path) : null) ?? undefined
 }
 
 /**
@@ -518,7 +528,7 @@ function paint({
   ghost: string
   mark: React.RefObject<HTMLSpanElement | null>
   /** What to call a Reference at rest, or null while the field has focus. */
-  chip: ((path: string) => string | null) | null
+  chip: ((path: string) => ChipParts | null) | null
 }) {
   const pieces: Piece[] = []
   let at = 0
@@ -539,15 +549,23 @@ function paint({
   // it both start at the same offset, so comparing offsets seats a marker in
   // both — and the one inside the hole splits its inline box, which draws the
   // pill's end cap adrift of the pill.
-  const seat = seatOf(pieces, caret)
+  /*
+   * No marker at rest. It anchors the popups, which cannot be open unless the
+   * field has focus — and seating one splits a piece's text into two nodes,
+   * which is exactly what `offsetAtPoint` must not have to reason about when it
+   * translates a click back into an offset in the value.
+   */
+  const seat = chip ? { piece: null } : seatOf(pieces, caret)
 
   return pieces
     .filter((piece) => piece.text !== '' || piece === seat.piece)
     .map((piece) => {
       if (piece.chip) {
         return (
-          <span key={piece.start} className={styles.chip} data-hole={piece.start}>
-            {piece.chip}
+          <span key={piece.start} className={styles.chip} data-at={piece.start} data-hole="">
+            <KindMark kind={piece.chip.kind} />
+            <span className={styles.chipSource}>{piece.chip.source}</span>
+            <span className={styles.chipLeaf}>{piece.chip.leaf}</span>
           </span>
         )
       }
@@ -555,13 +573,13 @@ function paint({
       const cut = piece === seat.piece ? caret - piece.start : -1
       if (cut < 0) {
         return (
-          <span key={piece.start} className={piece.className}>
+          <span key={piece.start} className={piece.className} data-at={piece.start}>
             {piece.text}
           </span>
         )
       }
       return (
-        <span key={piece.start} className={piece.className}>
+        <span key={piece.start} className={piece.className} data-at={piece.start}>
           {piece.text.slice(0, cut)}
           <span className={styles.caret} ref={mark} />
           {ghost ? <span className={styles.ghost}>{ghost}</span> : null}
@@ -571,15 +589,74 @@ function paint({
     })
 }
 
-/** The offset of the hole whose chip is under the pointer, or null. */
-function chipUnder(mirror: HTMLDivElement | null, x: number, y: number): number | null {
-  for (const chip of mirror?.querySelectorAll('[data-hole]') ?? []) {
-    const box = chip.getBoundingClientRect()
-    if (x >= box.left && x <= box.right && y >= box.top && y <= box.bottom) {
-      return Number(chip.getAttribute('data-hole'))
-    }
+/**
+ * Which offset in the value a click at this point means.
+ *
+ * At rest the mirror is a different width from the `<input>` behind it — that is
+ * the whole point of a chip — so the offset the browser derives from the pointer
+ * is measured against text nobody can see. Click the word after a chip and the
+ * caret lands several characters earlier, inside the hole.
+ *
+ * So the browser's own text hit-testing is borrowed and pointed at the mirror
+ * instead. Flipping `pointer-events` for the length of one synchronous call is
+ * what makes `caretPositionFromPoint` resolve into the visible text: no frame is
+ * painted in between, so nothing about the field changes, and the answer comes
+ * from the engine rather than from a second implementation of text measurement
+ * that would have to know about wrapping, ligatures and bidi.
+ *
+ * A chip stands for characters it does not show, so no offset inside one means
+ * anything: the answer there is the end of its expression, which is where an
+ * edit starts.
+ *
+ * Null when the point is over nothing the mirror rendered, which the caller
+ * reads as "leave it to the platform".
+ */
+function offsetAtPoint(
+  mirror: HTMLDivElement | null,
+  field: (HTMLInputElement & HTMLTextAreaElement) | null,
+  value: string,
+  holes: readonly HoleSpan[],
+  x: number,
+  y: number,
+): number | null {
+  if (!mirror || !field) return null
+
+  // A chip's whole box, padding included, stands for its hole. Asked of the
+  // engine, a point in the padding resolves to whichever text node comes next,
+  // so the last few pixels of a chip would put the caret outside the hole the
+  // user just clicked on.
+  for (const element of mirror.querySelectorAll('[data-hole]')) {
+    const box = element.getBoundingClientRect()
+    if (x < box.left || x > box.right || y < box.top || y > box.bottom) continue
+    const start = Number(element.getAttribute('data-at'))
+    const hole = holes.find((candidate) => candidate.start === start)
+    return hole ? expressionEnd(value, hole) : start
   }
-  return null
+
+  mirror.style.pointerEvents = 'auto'
+  field.style.pointerEvents = 'none'
+  let node: Node | null = null
+  let offset = 0
+  try {
+    // `caretRangeFromPoint` is the same thing under WebKit's older spelling.
+    const position = document.caretPositionFromPoint?.(x, y)
+    if (position) {
+      node = position.offsetNode
+      offset = position.offset
+    } else {
+      const range = document.caretRangeFromPoint?.(x, y)
+      node = range?.startContainer ?? null
+      offset = range?.startOffset ?? 0
+    }
+  } finally {
+    mirror.style.pointerEvents = ''
+    field.style.pointerEvents = ''
+  }
+
+  const piece = (node instanceof Element ? node : node?.parentElement)?.closest('[data-at]')
+  if (!piece || !mirror.contains(piece)) return null
+
+  return Number(piece.getAttribute('data-at')) + offset
 }
 
 /**
@@ -649,6 +726,45 @@ function signatureAt(
   const name = /([a-z][a-z0-9_]*\.[a-z][a-z0-9_]*)$/.exec(value.slice(holeStart, openAt))?.[1]
   const spec = CORE_FUNCTIONS.find((candidate) => candidate.qualified === name)
   return spec ? { spec, active: commas } : null
+}
+
+/**
+ * The mark at a chip's leading edge: which of the four kinds this value is from.
+ *
+ * Drawn rather than set in type, because the only bin-and-bolt glyphs in a text
+ * font are emoji, which render at a size and colour the row does not control.
+ * Undescribed on purpose: the mirror is `aria-hidden` in its entirety — it is
+ * the same value twice — so a screen reader reads the `<input>`, which holds
+ * the path itself and needs no mark to explain it.
+ */
+function KindMark({ kind }: { kind: ChipParts['kind'] }) {
+  return (
+    <svg
+      className={styles.mark}
+      viewBox="0 0 12 12"
+      width="11"
+      height="11"
+      focusable="false"
+      aria-hidden="true"
+    >
+      {kind === 'step' ? (
+        // A node in the tree.
+        <rect x="2.5" y="2.5" width="7" height="7" rx="1.6" />
+      ) : kind === 'trigger' ? (
+        // What starts a run: a mark pointing forward.
+        <path d="M4 2.4 9.2 6 4 9.6z" />
+      ) : kind === 'var' ? (
+        // A value the workflow keeps, held on a shelf.
+        <path d="M2.6 3.6h6.8M2.6 6h6.8M2.6 8.4h4.4" />
+      ) : (
+        // Ambient, and around the whole run.
+        <>
+          <circle cx="6" cy="6" r="3.6" />
+          <circle cx="6" cy="6" r="1.1" />
+        </>
+      )}
+    </svg>
+  )
 }
 
 /** `dt.add(value: datetime, …) → datetime`, with the active parameter emphasised. */

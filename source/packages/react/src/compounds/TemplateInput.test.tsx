@@ -248,11 +248,10 @@ describe('TemplateInput', () => {
 })
 
 describe('at rest', () => {
-  // By the CSS Module's stable prefix rather than a full attribute selector,
-  // which biome's secret scanner reads as a high-entropy string.
+  /** The outer chip, by the offset it stands for — its parts are spans too. */
   const chips = () =>
     [...document.querySelectorAll('span')]
-      .filter((span) => span.className.startsWith('_chip'))
+      .filter((span) => span.hasAttribute('data-hole'))
       .map((span) => span.textContent)
 
   /*
@@ -262,12 +261,14 @@ describe('at rest', () => {
    */
   it('draws a whole-value Reference as what it names', () => {
     mount({ value: '{{ s2.count }}' })
-    expect(chips()).toEqual(['Fetch emails count'])
+    // The source and the value, in that order — a chip carrying only a label
+    // loses the half that says where the value is from.
+    expect(chips()).toEqual(['Fetch emailscount'])
   })
 
   it('draws a Reference inside a sentence the same way', () => {
     mount({ value: 'Inbox digest · {{ s2.count }} messages' })
-    expect(chips()).toEqual(['Fetch emails count'])
+    expect(chips()).toEqual(['Fetch emailscount'])
   })
 
   /* A Reference is a shape, not a syntax: the moment something is computed

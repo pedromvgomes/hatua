@@ -159,9 +159,74 @@
     border-radius: var(--hatua-radius-sm);
     background: var(--hatua-accent-wash);
     box-shadow: inset 0 0 0 1px var(--hatua-border-accent);
-    color: var(--hatua-text-accent);
+    /*
+     * One unbreakable unit that moves to the next line whole.
+     *
+     * Left to wrap, a long chip broke through its own middle and
+     * `box-decoration-break: clone` drew a full pill around each half — so
+     * "Weekday mornings › triggered_at" read as two chips naming two different
+     * things. `inline-flex` is safe here in a way it would not be anywhere the
+     * mirror has to stand in for a glyph: at rest nothing is aligned to the
+     * text behind it.
+     */
+    display: inline-flex;
+    align-items: baseline;
     white-space: nowrap;
-    box-decoration-break: clone;
+    max-inline-size: 100%;
+  }
+
+  /*
+   * When there is not room for both halves, the source gives way.
+   *
+   * It is the half a reader can most often infer from the rest of the sentence,
+   * and the leaf is the reason they are looking at the chip at all — so
+   * truncating from the other end would keep the context and lose the answer.
+   */
+  .chipSource {
+    flex: 0 1 auto;
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .chipLeaf {
+    flex: 0 0 auto;
+  }
+
+  /* The kind mark. Stroked, not filled, except the two shapes that read as
+     solid at 11px. */
+  .mark {
+    margin-inline-end: 4px;
+    fill: none;
+    stroke: var(--hatua-text-muted);
+    stroke-width: 1.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  /* Where the value is from: present on every chip, and never the loud half. */
+  .chipSource {
+    color: var(--hatua-text-secondary);
+  }
+
+  /* Which value, and the reason anyone is reading the chip. */
+  .chipLeaf {
+    color: var(--hatua-text-accent);
+    font-weight: 500;
+  }
+
+  .mark {
+    align-self: center;
+    flex: 0 0 auto;
+  }
+
+  /* The separator is drawn rather than typed, so it cannot be selected or
+     mistaken for part of either name. */
+  .chipSource::after {
+    content: "›";
+    margin: 0 4px;
+    color: var(--hatua-text-muted);
+    font-weight: 400;
   }
 
   /* A `{{` with no `}}` after it: the ordinary state of a Template halfway

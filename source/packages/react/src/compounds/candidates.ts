@@ -61,6 +61,7 @@ export interface RefNode {
   path: string
   label: string
   type: ValueType
+  /** Kept on every node, so a leaf several dots down still knows where it is from. */
   origin: ScopeEntry['kind']
   description?: string
   /** Null when nothing can be reached through it: a scalar, or an opaque object. */
@@ -312,25 +313,64 @@ export function ghostFor(prefix: string, candidates: readonly Candidate[]): stri
 }
 
 /**
- * What a Reference is called, in the words the person reading it would use.
+ * What a Reference is called, in the words the person reading it would use, and
+ * where its value comes from.
  *
- * `s2.count` is "Fetch emails count": the Step's own name, then the way down to
- * the value. Grouping prefixes are dropped, because `run`, `var` and `triggers`
- * are how a Template spells a root and not what anyone calls it — `run.tenant`
- * reads as "Tenant", not "Run context Tenant".
+ * Two parts, because a label alone answers the wrong half. "Fetch emails count"
+ * carries its source only because a Step happens to have a name — `var.digest_to`
+ * reduced to "digest_to", and two chips reading "digest_to" and "count" say
+ * nothing at all about where either value is from.
  *
+ * So the source is always present: the Step's or Trigger's own name where the
+ * path passes through one, and the kind's own word where it does not. `run.id`
+ * is "Run context", never "run", because `run` is how a Template spells a root
+ * and not what anybody calls it.
+ */
+export interface ChipParts {
+  /** Which of the four kinds, for the mark at the chip's leading edge. */
+  kind: ScopeEntry['kind']
+  /** Dimmed, and the answer to "where is this from". */
+  source: string
+  /** Accented, and the answer to "which value". */
+  leaf: string
+}
+
+/**
  * Null when the path names nothing in scope. A Reference that has gone stale —
  * a renamed variable, a removed Step — must keep showing the path it actually
  * holds, because the path is what the checker will name and what has to be
  * edited; a chip reading "Fetch emails count" over a Step that no longer exists
  * would hide the one fact worth seeing.
  */
-export function labelOf(path: string, scope: readonly ScopeEntry[]): string | null {
+export function chipFor(path: string, scope: readonly ScopeEntry[]): ChipParts | null {
   const chain = chainTo(referenceTree(scope), path)
   if (!chain) return null
 
-  const named = chain.filter((node) => !isGroup(node)).map((node) => node.label)
-  return named.length > 0 ? named.join(' ') : null
+  const kind = chain[0]?.origin ?? 'step'
+  // A grouping prefix yields nothing on its own, so it names nothing either.
+  const named = chain.filter((node) => !isGroup(node))
+  const [first, ...rest] = named
+  if (!first) return null
+
+  // One named thing means the path stops at the entity itself and the entity's
+  // own label IS the value, so the kind supplies the source instead.
+  if (rest.length === 0) return { kind, source: KIND_WORDS[kind], leaf: first.label }
+
+  return { kind, source: first.label, leaf: rest.map((node) => node.label).join(' ') }
+}
+
+/**
+ * What each kind is called when nothing else names it.
+ *
+ * Singular, and in the reader's words rather than the document's: a chip says
+ * "Variable", not `var` and not "Workflow variables".
+ */
+const KIND_WORDS: Readonly<Record<ScopeEntry['kind'], string>> = {
+  step: 'Step',
+  trigger: 'Trigger',
+  var: 'Variable',
+  context: 'Run context',
+  builtin: 'Built-in',
 }
 
 /** A grouping prefix yields nothing on its own, which is what `unknown` marks it as. */

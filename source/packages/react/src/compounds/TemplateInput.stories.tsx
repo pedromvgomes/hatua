@@ -174,6 +174,20 @@ export const MixedTextWhileEditing: Story = {
 }
 
 /**
+ * The four kinds side by side, which is the only way to judge the marks against
+ * each other. A chip carrying only a label loses the half that says where the
+ * value came from — two of these would otherwise read as "digest_to" and
+ * "count" and say nothing at all.
+ */
+export const EveryKindOfSource: Story = {
+  args: {
+    value:
+      '{{ s2.count }} · {{ triggers.nightly.triggered_at }} · {{ var.digest_to }} · {{ run.id }}',
+    expectedType: 'text',
+  },
+}
+
+/**
  * A Reference is a shape and not a syntax, so the moment something is computed
  * there is no single target to put on a chip — and a Reference that has gone
  * stale keeps showing the path the checker will name.

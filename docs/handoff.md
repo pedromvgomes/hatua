@@ -239,11 +239,20 @@ The text is the editing surface. `{{ … }}` is highlighted in place — `--acce
 `--border-accent`, `--text-accent` — and an unclosed hole takes a wavy `--status-error` underline. It
 is never replaced by a widget you cannot type through.
 
-**At rest, a whole Reference is drawn as what it names.** Unfocused there is no caret to keep
+**At rest, a whole Reference is drawn as what it names, and where it is from.** A chip carries a
+mark for its kind, then the source in `--text-secondary` and the value in `--text-accent`:
+`▢ Fetch emails › count`, `≡ Variable › digest_to`. The source is always there, because a label
+alone loses the half that matters — `var.digest_to` reduced to "digest_to", and two chips reading
+"digest_to" and "count" say nothing about where either value is from. Where the path passes through
+a named entity that entity supplies the source; where it does not, the kind's own word does, so
+`run.id` reads "Run context" and never "run". Unfocused there is no caret to keep
 aligned, so the mirror painting the highlight is free to be a different width from the field behind
 it — which is precisely what showing `Fetch emails count` in place of `{{ s2.count }}` requires.
 Focus puts every character back, braces and all, so the sentence above holds wherever it means
-anything. Two conditions, both the parser's to answer: the hole is a **Reference** (`isReference()`
+anything — and a click at rest is translated through the visible text rather than through the
+characters behind it, or the word after a chip would put the caret several characters earlier,
+inside the hole. Clicking a chip itself lands at the end of its expression, which is where an edit
+starts. Two conditions, both the parser's to answer: the hole is a **Reference** (`isReference()`
 reads the parsed shape, and `{{ s2.count + 1 }}` names no single target), and the path is still in
 scope — a stale one keeps showing the path, because that is what the checker names and what has to
 be edited.
