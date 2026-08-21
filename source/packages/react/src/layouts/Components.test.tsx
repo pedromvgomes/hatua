@@ -4,7 +4,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReactElement } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { HatuaProvider } from '../theme/HatuaProvider'
-import { Library } from './Library'
+import { Components } from './Components'
 
 const component = (over: Partial<Manifest> & Pick<Manifest, 'use' | 'name'>): Manifest => ({
   kind: 'component',
@@ -62,18 +62,18 @@ const mount = (element: ReactElement, manifests?: ManifestSource) =>
 
 const cardNames = () => screen.queryAllByRole('listitem').map((item) => item.textContent ?? '')
 
-describe('Library', () => {
+describe('Components', () => {
   it('says so when the Host wired no ManifestSource', async () => {
     // Not the empty state. "Nothing is wired up" and "nothing is declared" have
     // different fixes, and showing the second for the first sends whoever
     // embedded Hatua looking for a manifest file that was never the problem.
-    mount(<Library />)
+    mount(<Components />)
     expect(await screen.findByText(/no Component Manifests are wired up/i)).toBeDefined()
   })
 
   it('shows loading until the Host answers', async () => {
     const host = pending()
-    mount(<Library />, host.source)
+    mount(<Components />, host.source)
 
     expect(await screen.findByRole('status')).toHaveProperty('textContent', 'Loading components…')
 
@@ -84,7 +84,7 @@ describe('Library', () => {
 
   it('reports a failure and offers a retry that actually refetches', async () => {
     let attempt = 0
-    mount(<Library />, {
+    mount(<Components />, {
       loadManifests: async () => {
         attempt += 1
         if (attempt === 1) throw new Error('the catalogue is offline')
@@ -101,56 +101,54 @@ describe('Library', () => {
   })
 
   it('treats an empty catalogue as a legitimate state, not a fault', async () => {
-    mount(<Library />, { loadManifests: async () => [] })
+    // Said to the person looking at it, who has never heard of a manifest and
+    // could not act on one. See
+    // .agents/rules/rendered-copy-is-written-for-the-hosts-users.md.
+    mount(<Components />, { loadManifests: async () => [] })
 
-    expect(await screen.findByText(/has declared no Components yet/i)).toBeDefined()
+    expect(await screen.findByText('No components are available yet.')).toBeDefined()
     expect(screen.queryByRole('alert')).toBeNull()
     // Nothing to narrow, so nothing to narrow it with.
     expect(screen.queryByRole('searchbox')).toBeNull()
   })
 
   it('groups by the manifest group, keeping the Host’s order and filing the rest last', async () => {
-    mount(<Library />, { loadManifests: async () => CATALOGUE })
+    mount(<Components />, { loadManifests: async () => CATALOGUE })
 
     await screen.findByText('Send email')
-    expect(screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent)).toEqual([
-      'Email',
-      // "Other" is not a section the Host chose, so it cannot sit above one it did.
+    expect(screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)).toEqual([
       'Email',
       'Intelligence',
+      // "Other" is not a section the Host chose, so it cannot sit above one it did.
       'Other',
     ])
   })
 
   /*
-   * CONTEXT.md: a Trigger is NOT a Step and lives in its own section of the
-   * Workflow Definition. Its manifest carries the same `group`, so grouping
-   * alone would file "When mail arrives" beside "Send email" under Email and
-   * offer both as things to add as Steps.
+   * CONTEXT.md: a Trigger is NOT a Step. It lives in `doc.triggers[]`, a
+   * top-level list, and adding one is the Workflow tab's job — so a card here,
+   * which means "add this to the tree", cannot be one. A tab headed Components
+   * that also offered Triggers would present the two as interchangeable.
    */
-  it('separates Triggers from Components rather than mixing or hiding them', async () => {
-    mount(<Library />, { loadManifests: async () => CATALOGUE })
+  it('renders Components only, leaving Triggers to the Workflow tab', async () => {
+    mount(<Components />, { loadManifests: async () => CATALOGUE })
 
     await screen.findByText('Send email')
-    expect(screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)).toEqual([
-      'Triggers',
-      'Components',
-    ])
-
-    const triggers = screen.getByRole('heading', { name: 'Triggers' }).closest('div')
-    expect(triggers?.textContent).toContain('When mail arrives')
-    expect(triggers?.textContent).not.toContain('Send email')
-  })
-
-  it('drops a section entirely when the Host declared nothing of that kind', async () => {
-    mount(<Library />, { loadManifests: async () => [CATALOGUE[0] as Manifest] })
-
-    await screen.findByText('Send email')
+    expect(screen.queryByText('When mail arrives')).toBeNull()
     expect(screen.queryByRole('heading', { name: 'Triggers' })).toBeNull()
   })
 
+  it('reads a catalogue of Triggers alone as no components, not as a fault', async () => {
+    // The Host declared plenty; none of it belongs on this tab. Same answer as
+    // an empty catalogue, because it is the same question.
+    mount(<Components />, { loadManifests: async () => [CATALOGUE[1] as Manifest] })
+
+    expect(await screen.findByText('No components are available yet.')).toBeDefined()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
   it('renders name, blurb and the icon the Host serves', async () => {
-    const { container } = mount(<Library />, {
+    const { container } = mount(<Components />, {
       loadManifests: async () => [CATALOGUE[0] as Manifest],
     })
 
@@ -170,7 +168,7 @@ describe('Library', () => {
   it('draws a neutral placeholder when a manifest declares no icon', async () => {
     // Artwork must never block declaring a component, and a guessed-at glyph is
     // worse than an honest blank — it carries no more than the name beside it.
-    const { container } = mount(<Library />, {
+    const { container } = mount(<Components />, {
       loadManifests: async () => [component({ use: 'core.wait', name: 'Wait' })],
     })
 
@@ -182,7 +180,7 @@ describe('Library', () => {
   it('falls back to the placeholder when the icon URL fails to load', async () => {
     // A 404 is the Host's to fix; until it does, the card still owes the row a
     // square of the right size.
-    const { container } = mount(<Library />, {
+    const { container } = mount(<Components />, {
       loadManifests: async () => [CATALOGUE[0] as Manifest],
     })
 
@@ -193,23 +191,17 @@ describe('Library', () => {
     expect(container.querySelector('svg')).not.toBeNull()
   })
 
-  it('filters as the user types, across every kind at once', async () => {
-    mount(<Library />, { loadManifests: async () => CATALOGUE })
+  it('filters as the user types', async () => {
+    mount(<Components />, { loadManifests: async () => CATALOGUE })
     await screen.findByText('Send email')
 
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'mail' } })
-    // Matches the trigger's name and the component's group — both survive.
-    expect(cardNames()).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining('Send email'),
-        expect.stringContaining('When mail arrives'),
-      ]),
-    )
+    expect(cardNames()).toEqual([expect.stringContaining('Send email')])
     expect(screen.queryByText('Run agent')).toBeNull()
   })
 
   it('matches the blurb and the use, not just the name', async () => {
-    mount(<Library />, { loadManifests: async () => CATALOGUE })
+    mount(<Components />, { loadManifests: async () => CATALOGUE })
     await screen.findByText('Send email')
     const search = screen.getByRole('searchbox')
 
@@ -221,12 +213,12 @@ describe('Library', () => {
   })
 
   it('distinguishes "nothing matches" from "nothing declared"', async () => {
-    mount(<Library />, { loadManifests: async () => CATALOGUE })
+    mount(<Components />, { loadManifests: async () => CATALOGUE })
     await screen.findByText('Send email')
 
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'zzz' } })
     expect(screen.getByText(/nothing matches/i)).toBeDefined()
-    expect(screen.queryByText(/has declared no Components yet/i)).toBeNull()
+    expect(screen.queryByText('No components are available yet.')).toBeNull()
     // The box stays: a filter you cannot clear is a dead end.
     expect(screen.getByRole('searchbox')).toBeDefined()
   })
@@ -235,19 +227,62 @@ describe('Library', () => {
     // Reachable without anyone typing: an array whose entries carry no `kind`
     // this region renders — a `components:` catalogue is one array away — files
     // into no section, which would otherwise read as `Nothing matches “”.`
-    mount(<Library />, {
+    mount(<Components />, {
       loadManifests: async () => [{ components: [] }, { components: [] }] as unknown as Manifest[],
     })
 
-    expect(await screen.findByText(/nothing in it is a Component or a Trigger/i)).toBeDefined()
+    expect(await screen.findByText(/nothing in it is a Component/i)).toBeDefined()
     expect(screen.queryByText(/nothing matches/i)).toBeNull()
+    // A malformed catalogue is a wiring mistake, not an empty one, and the two
+    // have different fixes.
+    expect(screen.queryByText('No components are available yet.')).toBeNull()
+  })
+
+  /*
+   * The store validates the outer array and deliberately not each entry —
+   * `manifests.ts` argues that validating every one "would turn one malformed
+   * entry into an empty catalogue". The cost lands here, and it must not land
+   * as a TypeError from render: that takes down the Host's tree, which is the
+   * outcome the `failed` state exists to avoid.
+   */
+  it('survives an entry that is not a manifest at all', async () => {
+    const junk = [
+      null,
+      42,
+      { kind: 'component' },
+      { kind: 7, name: 3, use: [], blurb: {}, group: null, icon: 12 },
+      CATALOGUE[0] as Manifest,
+    ] as unknown as Manifest[]
+
+    mount(<Components />, { loadManifests: async () => junk })
+
+    // The one real entry still renders, and nothing threw on the way.
+    expect(await screen.findByText('Send email')).toBeDefined()
+  })
+
+  it('reports a catalogue of nothing but junk rather than crashing on it', async () => {
+    mount(<Components />, {
+      loadManifests: async () => [null, 'nope'] as unknown as Manifest[],
+    })
+
+    expect(await screen.findByText(/nothing in it is a Component/i)).toBeDefined()
+  })
+
+  it('names a component the Host left unnamed, rather than drawing a blank row', async () => {
+    // Dropping it would leave whoever wrote that manifest counting rows that
+    // are not there.
+    mount(<Components />, {
+      loadManifests: async () => [{ kind: 'component', use: 'core.wait' }] as unknown as Manifest[],
+    })
+
+    expect(await screen.findByText('core.wait')).toBeDefined()
   })
 
   it('keeps one live region mounted, so a change to it is a change worth announcing', async () => {
     // A <p role="status"> inserted together with its text is a new node, not an
     // update to a watched one, and is frequently announced by nothing.
     const host = pending()
-    mount(<Library />, host.source)
+    mount(<Components />, host.source)
 
     const live = screen.getByRole('status')
     expect(live.textContent).toBe('Loading components…')
@@ -261,7 +296,7 @@ describe('Library', () => {
   })
 
   it('starts filtered when told to', async () => {
-    mount(<Library defaultQuery="agent" />, { loadManifests: async () => CATALOGUE })
+    mount(<Components defaultQuery="agent" />, { loadManifests: async () => CATALOGUE })
 
     expect(await screen.findByText('Run agent')).toBeDefined()
     expect(screen.queryByText('Send email')).toBeNull()
@@ -269,14 +304,14 @@ describe('Library', () => {
 
   it('hands the whole manifest back on select', async () => {
     const onSelect = vi.fn()
-    mount(<Library onSelect={onSelect} />, { loadManifests: async () => CATALOGUE })
+    mount(<Components onSelect={onSelect} />, { loadManifests: async () => CATALOGUE })
 
     fireEvent.click(await screen.findByRole('button', { name: /Send email/ }))
     expect(onSelect).toHaveBeenCalledWith(CATALOGUE[0])
   })
 
   it('renders cards as cards, not as dead buttons, when nothing can be selected', async () => {
-    mount(<Library />, { loadManifests: async () => CATALOGUE })
+    mount(<Components />, { loadManifests: async () => CATALOGUE })
 
     await screen.findByText('Send email')
     // A control that does nothing still takes a tab stop and still announces
@@ -284,12 +319,12 @@ describe('Library', () => {
     expect(screen.queryByRole('button', { name: /Send email/ })).toBeNull()
   })
 
-  it('reads the catalogue once however many Libraries mount', async () => {
+  it('reads the catalogue once however many Components regions mount', async () => {
     const loadManifests = vi.fn(async () => CATALOGUE)
     render(
       <HatuaProvider ports={{ manifests: { loadManifests } }}>
-        <Library />
-        <Library />
+        <Components />
+        <Components />
       </HatuaProvider>,
     )
 
@@ -307,7 +342,7 @@ describe('Library', () => {
 
     const { rerender } = render(
       <HatuaProvider ports={{ manifests: first }}>
-        <Library />
+        <Components />
       </HatuaProvider>,
     )
     await screen.findByText('Send email')
@@ -315,14 +350,14 @@ describe('Library', () => {
     // A fresh `ports` object holding the same source is not a change.
     rerender(
       <HatuaProvider ports={{ manifests: first }}>
-        <Library />
+        <Components />
       </HatuaProvider>,
     )
     expect(first.loadManifests).toHaveBeenCalledTimes(1)
 
     rerender(
       <HatuaProvider ports={{ manifests: second }}>
-        <Library />
+        <Components />
       </HatuaProvider>,
     )
     expect(await screen.findByText('Run agent')).toBeDefined()

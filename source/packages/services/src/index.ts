@@ -7,6 +7,8 @@
  * renderer, and dragging a node does not re-render the step list.
  */
 
+export * from './command'
+export * from './connections'
 export * from './editing'
 export * from './manifests'
 export * from './paging'
@@ -14,3 +16,5 @@ export * from './ports'
 export * from './steps'
 export * from './store'
 export * from './validation'
+export * from './variables'
+export * from './workflow'

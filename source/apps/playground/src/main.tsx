@@ -14,14 +14,14 @@ import { createLocalWorkflowStore } from './workflow-store'
  * It passes `ports` and a `workflowId`. That is not a third way to embed — it
  * is the Host answering the two questions Hatua cannot answer for itself. Hatua
  * never invents a Component, so a designer with no ManifestSource has an empty
- * Library by definition; and it has no storage at all, so a designer with no
+ * Components tab by definition; and it has no storage at all, so a designer with no
  * WorkflowStore has nothing to edit. The alternative to these props is Hatua
  * shipping a catalogue and a database of its own, which is exactly what
  * CONTEXT.md says it does not do.
  *
  * This entry takes the happy path deliberately, and takes it at build time: its
- * catalogue is compiled into the bundle, so the Library renders on the first
- * frame with no request behind it. The Library's slow, failing and empty states
+ * catalogue is compiled into the bundle, so the Components tab renders on the
+ * first frame with no request behind it. Its slow, failing and empty states
  * are exercised by host.tsx, where a Host can switch between them; api.tsx is
  * the same designer as this one with the manifests fetched at run time, which
  * is the shape a real Host has.

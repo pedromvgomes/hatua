@@ -20,7 +20,7 @@
    * Border-box, everywhere inside the provider's subtree.
    *
    * Not optional for Hatua's own components: every one that pairs
-   * `inline-size: 100%` with padding and a border (the Library's cards, Input,
+   * `inline-size: 100%` with padding and a border (the Components cards, Input,
    * Button) otherwise overflows its column by exactly the padding — invisible
    * while columns are fluid, a horizontal scrollbar under a 304px panel the
    * moment one is not.
@@ -83,7 +83,7 @@
 
     /* The mono face, aliased so a component can read it: seeds are off limits
        above this file, and `mono` is a field kind the manifest declares — the
-       Library's code spans are only the first thing to need it. */
+       code spans in the side panel are only the first thing to need it. */
     --hatua-font-mono: var(--hatua-seed-font-mono);
 
     --hatua-radius-sm: calc(var(--hatua-seed-radius) * 0.6);

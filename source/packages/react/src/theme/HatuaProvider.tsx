@@ -1,4 +1,8 @@
 import {
+  type ConnectionDescriber,
+  type ConnectionSource,
+  type ConnectionStore,
+  createConnectionStore,
   createEditingStore,
   createManifestStore,
   createValidationStore,
@@ -26,7 +30,7 @@ import { createTheme, type Theme } from './createTheme'
  *  4. carries the Host's ports, and wires each one to the store that reads it.
  *
  * The fourth is what makes this the composition root rather than a theme
- * provider. <Library /> takes no props in either embedding —
+ * provider. <Components /> takes no props in either embedding —
  * apps/playground/src/host.tsx mounts it bare and layouts/regions.test.tsx
  * mounts every region bare — so a `manifests` prop would break the promise
  * those two exist to keep. The provider is the only seam both paths share.
@@ -46,7 +50,7 @@ export type ColorMode = 'light' | 'dark'
  * port is missing must degrade rather than throw.
  */
 export interface HostPorts {
-  /** Where the Component Manifests come from. The Library reads this. */
+  /** Where the Component Manifests come from. The Components tab reads this. */
   manifests?: ManifestSource
   /**
    * Where the Workflow Definitions live. Hatua has no storage, no server and no
@@ -57,12 +61,33 @@ export interface HostPorts {
    * which workflow the Host wants open is the Host's to say.
    */
   workflows?: WorkflowStore
+  /**
+   * Which Connections the Host has already established. A `conn` field offers
+   * these and nothing else; without it the field says a Connection cannot be
+   * chosen here rather than offering an empty list.
+   *
+   * Hatua never establishes one — it has no server, so it can hold no client
+   * secret and receive no redirect (ADR-0007).
+   */
+  connections?: ConnectionSource
+  /**
+   * What to call each Connection. `listConnections` returns an opaque handle
+   * and a type, deliberately: everything shown about a Connection comes from
+   * asking the Host, so nothing cached in the Workflow Definition can go stale
+   * when one is renamed.
+   *
+   * Separate from `connections` because the run viewer describes the
+   * Connections a run used and never lists or creates any. Supply the list
+   * without this and the picker labels each one by its ref, which is a poor
+   * label and better than an empty list.
+   */
+  describeConnection?: ConnectionDescriber
 }
 
 const PortalContext = createContext<HTMLElement | null>(null)
 
 /**
- * Null when no ManifestSource was given, which the Library renders as its own
+ * Null when no ManifestSource was given, which the Components tab renders as its own
  * state rather than as an empty catalogue — "the Host wired nothing" and "the
  * Host declared nothing" are different problems with different fixes.
  */
@@ -77,6 +102,9 @@ const EditingStoreContext = createContext<EditingStore | null>(null)
  * field only relative to the manifest that declares the field required.
  */
 const ValidationStoreContext = createContext<ValidationStore | null>(null)
+
+/** Null when the Host wired no ConnectionSource, which a `conn` field renders as its own state. */
+const ConnectionStoreContext = createContext<ConnectionStore | null>(null)
 
 /**
  * The element overlays should portal into. Null until the provider has mounted,
@@ -96,6 +124,9 @@ export const useManifestStore = () => use(ManifestStoreContext)
  */
 export const useEditingStore = () => use(EditingStoreContext)
 
+/** The Host's established Connections, or null when no ConnectionSource was supplied. */
+export const useConnectionStore = () => use(ConnectionStoreContext)
+
 /**
  * What is wrong with each Step, or null when there is no workflow or no
  * catalogue to check it against. A region renders the absence as no markers at
@@ -113,7 +144,7 @@ export interface HatuaProviderProps {
   /**
    * Which Workflow Definition to open, as the Host's `WorkflowStore` addresses
    * it. Omit and nothing is opened — which is what a Host embedding only the
-   * Library or the run viewer wants, and is also why the store below is lazy:
+   * catalogue or the run viewer wants, and is also why the store below is lazy:
    * `openDraft` claims the edit, so mounting must not take a lease.
    */
   workflowId?: string
@@ -160,6 +191,16 @@ export function HatuaProvider({
   // keep running would leave a workflow claimed by a session that is gone.
   useEffect(() => () => editingStore?.dispose(), [editingStore])
 
+  // Keyed on both ports together: a Host that swaps either has changed what the
+  // pickers should offer. The describer is optional, so a Host supplying only
+  // the list still gets a store — labelled by ref.
+  const connectionSource = ports?.connections
+  const connectionDescriber = ports?.describeConnection
+  const connectionStore = useMemo(
+    () => (connectionSource ? createConnectionStore(connectionSource, connectionDescriber) : null),
+    [connectionSource, connectionDescriber],
+  )
+
   // Pure derivation over the two stores above, so it holds nothing of its own
   // and needs no disposal — see createValidationStore.
   const validationStore = useMemo(
@@ -176,12 +217,14 @@ export function HatuaProvider({
       <div className="hatua-root" style={theme ?? createTheme()} data-hatua-mode={colorMode}>
         <ManifestStoreContext value={manifestStore}>
           <EditingStoreContext value={editingStore}>
-            <ValidationStoreContext value={validationStore}>
-              <PortalContext value={portalHost}>
-                {children}
-                <div className="hatua-portals" ref={setPortalHost} />
-              </PortalContext>
-            </ValidationStoreContext>
+            <ConnectionStoreContext value={connectionStore}>
+              <ValidationStoreContext value={validationStore}>
+                <PortalContext value={portalHost}>
+                  {children}
+                  <div className="hatua-portals" ref={setPortalHost} />
+                </PortalContext>
+              </ValidationStoreContext>
+            </ConnectionStoreContext>
           </EditingStoreContext>
         </ManifestStoreContext>
       </div>

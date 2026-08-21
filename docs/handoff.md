@@ -414,9 +414,10 @@ Every field on `HostPorts` is optional and a region whose port is missing degrad
 throws. **Two absences are different states**: "the Host wired nothing" and "the Host declared
 nothing" have different fixes and different copy.
 
-The Data panel is the first region to read **two** stores — the document and the manifests, because
-scope needs both. A Host supplying one and not the other is a real case; render it as an empty state,
-not a crash.
+The **Workflow tab** is the first region other than validation to read **two** stores: the document
+says which Triggers a workflow declares, and only the catalogue says what a Trigger's fields are. The
+Data panel is the second, because scope needs both. A Host supplying one and not the other is a real
+case; render it as an empty state, not a crash.
 
 Function Manifests have a format and no port. The first surface to read Host-declared Functions is
 the completion list, and that is when the port becomes justified — a port with no reader is a shape
@@ -431,9 +432,10 @@ DOM. In short: **misconfiguration copy** can only reach the integrator and shoul
 prop; **runtime copy** renders in a correctly-wired product and must name neither Hatua nor Host,
 port or manifest.
 
-`Library.tsx:150` is the known offender — it renders on `status: 'ready'` with an empty catalogue,
-which an end user sees, and explains itself in terms of Component Manifests and "this Host". Fix it in
-the Components rename.
+The Components tab is where the distinction is drawn twice over: an empty catalogue and one holding
+only Triggers are both *No components are available yet.* — runtime copy, said to the person looking
+at it — while a catalogue whose entries carry no `kind` this region reads is a wiring mistake and
+names the key that fixes it.
 
 ---
 

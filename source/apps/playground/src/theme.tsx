@@ -1,4 +1,4 @@
-import { createTheme, Hatua, HatuaProvider, Library } from '@hatua/react'
+import { Components, createTheme, Hatua, HatuaProvider } from '@hatua/react'
 import type { ReactNode } from 'react'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -150,7 +150,7 @@ function ThemePage() {
             >
               Host markup, inside the provider, still the Host's pink.
             </p>
-            <Library />
+            <Components />
           </div>
         </HatuaProvider>
       </Frame>

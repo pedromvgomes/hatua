@@ -6,8 +6,12 @@
  * @hatua/react for the type of the thing it is being asked to write would be a
  * seam that exists only in our directory layout.
  */
-export type { Manifest, Step, WorkflowDefinition } from '@hatua/schema'
+export type { Field, Manifest, Step, Trigger, Variable, WorkflowDefinition } from '@hatua/schema'
 export type {
+  ConnectionDescriber,
+  ConnectionDescription,
+  ConnectionSource,
+  ConnectionSummary,
   Cursor,
   DraftSession,
   EditToken,
@@ -19,16 +23,26 @@ export type {
   WorkflowStore,
 } from '@hatua/services'
 export type {
+  ComponentsProps,
   DataProps,
   FlowMapProps,
   InspectorProps,
-  LibraryProps,
   PanelTab,
   StepListProps,
   TabbedPanelProps,
   TopBarProps,
+  WorkflowProps,
 } from './layouts'
-export { Data, FlowMap, Inspector, Library, StepList, TabbedPanel, TopBar } from './layouts'
+export {
+  Components,
+  Data,
+  FlowMap,
+  Inspector,
+  StepList,
+  TabbedPanel,
+  TopBar,
+  Workflow,
+} from './layouts'
 export type {
   ButtonProps,
   ButtonSize,

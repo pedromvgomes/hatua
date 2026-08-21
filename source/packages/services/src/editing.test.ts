@@ -10,6 +10,7 @@ import type {
   WorkflowStore,
 } from './ports'
 import { addStep, moveStep, removeStep } from './steps'
+import { setWorkflowName } from './workflow'
 
 /**
  * There is no region reading this store until the Flow tab, so these tests are
@@ -334,6 +335,84 @@ describe('getSnapshot stability', () => {
   })
 })
 
+describe('a command that cannot be applied', () => {
+  const open = async (yaml?: string) => {
+    const host = recorder(yaml ? { yaml } : {})
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+    return { host, store }
+  }
+
+  /*
+   * `steps:` written as a mapping. It parses, so the document opens; it does
+   * not validate, which ADR-0001 requires the store to survive; and it is not a
+   * list, so a command that splices into one cannot run.
+   *
+   * The failure this guards: a YAMLMap carries an `items` array too, so
+   * recognising a sequence by shape accepts this — and the spliced node then
+   * makes the whole document unserialisable, out of a `toString()` no caller
+   * expects to fail.
+   */
+  const MAPPING = 'id: wf\nname: n\nversion: 1\nstatus: draft\nsteps:\n  first: nope\n'
+
+  it('leaves a half-written document exactly as it was', async () => {
+    const { store, host } = await open(MAPPING)
+    const before = ready(store).text
+
+    store.apply(addStep({ use: 'email.send' }, { index: 0 }))
+
+    expect(ready(store).text).toBe(before)
+    expect(ready(store).undoLabel).toBeNull()
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(host.writes).toEqual([])
+  })
+
+  it('does not throw out of apply, because a click handler is what calls it', async () => {
+    const { store } = await open(MAPPING)
+    expect(() => store.apply(addStep({ use: 'email.send' }, { index: 0 }))).not.toThrow()
+  })
+
+  it('leaves the store usable, rather than poisoned for the rest of the session', async () => {
+    // The document is read back on every commit, undo, redo and autosave, so
+    // one command that left it unserialisable would take all of them with it
+    // and only `reopen()` would recover.
+    const { store, host } = await open(MAPPING)
+    store.apply(addStep({ use: 'email.send' }, { index: 0 }))
+
+    expect(() => store.undo()).not.toThrow()
+    expect(() => ready(store).text).not.toThrow()
+
+    // And a command that CAN be applied still works afterwards.
+    store.apply(setWorkflowName('Renamed'))
+    expect(ready(store).text).toContain('Renamed')
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(host.writes).toHaveLength(1)
+  })
+
+  it('rolls the document back when a command breaks it after mutating', async () => {
+    // Every command in this package does its lookups before its first mutation,
+    // so it cannot half-apply — but the store must not depend on that, because
+    // a Host may write its own EditCommand.
+    const { store } = await open()
+    const before = ready(store).text
+
+    store.apply({
+      label: 'Wreck it',
+      apply(document) {
+        const steps = document.ast.getIn(['steps'], true) as { items: unknown[] }
+        steps.items.push(document.ast.createNode({ id: 's9', use: 'x' }))
+        // A bare object where a node belongs: the AST takes it and the next
+        // serialisation refuses it.
+        ;(document.ast.contents as unknown as { items: unknown[] }).items.push({ nope: true })
+      },
+    })
+
+    expect(ready(store).text).toBe(before)
+    expect(ready(store).undoLabel).toBeNull()
+  })
+})
+
 describe('commands', () => {
   const open = async () => {
     const host = recorder()
@@ -637,7 +716,14 @@ describe('undo and redo', () => {
     // because the oldest revision was dropped rather than the stack growing.
     expect(ready(store).text).not.toBe(SOURCE)
     expect(ready(store).definition?.steps).toHaveLength(4)
-  })
+  } /*
+   * 201 documents parsed and serialised, which is the point: the bound is
+   * what stops it being unbounded. Vitest's default 5s covers it on a quiet
+   * machine and does not cover it under coverage instrumentation with the
+   * monorepo's suites running in parallel — the same margin `AUTOSAVED`
+   * exists for, and the same reason. The number under test is the stack
+   * depth, never the clock.
+   */, 30_000)
 
   it('does nothing on an empty stack', async () => {
     const { store } = await open()
@@ -1093,12 +1179,78 @@ describe('ending the session', () => {
   it('stops autosave when the session ends, whichever way it ended', async () => {
     for (const end of ['release', 'discard'] as const) {
       const { host, store } = await open()
-      store.apply(removeStep('s1'))
       await store[end]()
 
+      store.apply(removeStep('s1'))
       await vi.advanceTimersByTimeAsync(10_000)
-      expect(host.writes).toHaveLength(0)
+      expect(host.writes, end).toHaveLength(0)
     }
+  })
+
+  /*
+   * There is no Save button (ADR-0005), so the only thing between the user's
+   * last keystroke and the Host's copy is an 800ms timer — and every way of
+   * ending a session cancels it. Release keeps the Draft for whoever picks it
+   * up next, so the edit made inside that window has to reach it.
+   */
+  it('writes the edit still waiting out the autosave delay before releasing', async () => {
+    const { host, store } = await open()
+    store.apply(removeStep('s1'))
+    expect(ready(store).save).toEqual({ state: 'pending' })
+
+    await store.release()
+
+    expect(host.writes).toHaveLength(1)
+    expect(host.writes[0]).not.toContain('id: s1')
+    expect(host.released).toBe(1)
+  })
+
+  it('does not write before discarding, because the Draft is being thrown away', async () => {
+    // The only possible effect would be to lose a race with the delete.
+    const { host, store } = await open()
+    store.apply(removeStep('s1'))
+    await store.discard()
+
+    expect(host.writes).toHaveLength(0)
+    expect(host.discarded).toBe(1)
+  })
+
+  it('gets the last edit out when the store is disposed', async () => {
+    // <HatuaProvider> disposes on a `workflowId` change, a swapped port, or the
+    // Host unmounting the designer on a route change. Fire and forget, because
+    // an effect cleanup cannot await — and there is nobody left to report to.
+    const { host, store } = await open()
+    store.apply(removeStep('s1'))
+
+    store.dispose()
+    await settle()
+
+    expect(host.writes).toHaveLength(1)
+    expect(host.writes[0]).not.toContain('id: s1')
+  })
+
+  it('writes nothing on dispose when the Host is already level with the document', async () => {
+    const { host, store } = await open()
+    store.dispose()
+    await settle()
+    expect(host.writes).toHaveLength(0)
+  })
+
+  it('writes nothing on dispose once autosave has halted', async () => {
+    // Halted means the Host said no. Retrying on the way out would hammer a
+    // Host that has already refused, which is what ADR-0005 forbids.
+    const host = recorder({ rejectSave: new Error('Your lease expired.') })
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 500 })
+    store.open()
+    await settle()
+
+    store.apply(removeStep('s1'))
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
+
+    store.dispose()
+    await settle()
+    expect(host.writes).toHaveLength(0)
   })
 
   it('says the session ended rather than leaving an edit pending for ever', async () => {
@@ -1141,5 +1293,68 @@ describe('ending the session', () => {
     const host = recorder()
     const store = createEditingStore(host.port, 'wf_morning')
     await expect(store.publish()).rejects.toThrow(/No Draft is open/)
+  })
+
+  /*
+   * ADR-0005 puts the conflict check at publish and nowhere else — "the Host
+   * rejects the whole operation if the version the draft branched from is no
+   * longer the live one" — so a refused publish is the documented path, not an
+   * exotic one. Ending the session before the Host has answered throws the
+   * token away while the Host still considers the claim live: the user is told
+   * the publish failed, and the Draft in front of them is no longer saved
+   * anywhere, with nothing on screen saying so.
+   */
+  it('keeps the session alive when the Host refuses the publish', async () => {
+    const host = recorder()
+    host.port.publish = async () => {
+      throw new Error('Someone else published v5 while you were editing.')
+    }
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 500 })
+    store.open()
+    await settle()
+
+    await expect(store.publish()).rejects.toThrow(/Someone else published/)
+
+    // Still editing, and still being saved.
+    store.apply(removeStep('s1'))
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(host.writes).toHaveLength(1)
+    expect(ready(store).save).toEqual({ state: 'saved' })
+  })
+
+  it('renews the lease again after a refused publish, so the claim does not lapse', async () => {
+    const host = recorder({ lease: leaseFor(10) })
+    host.port.publish = async () => {
+      throw new Error('rejected')
+    }
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+
+    await expect(store.publish()).rejects.toThrow()
+    await vi.advanceTimersByTimeAsync(6 * 60_000)
+    expect(host.renewals).toBeGreaterThan(0)
+  })
+
+  it('does not leave a pending write promised for ever when the session ends', async () => {
+    // finish() cancels the timer and drops the token, so a write scheduled
+    // inside the autosave window can never happen — and a snapshot still
+    // reading `pending` is promising one that nothing can deliver. Discard,
+    // because release writes the pending edit out rather than abandoning it.
+    const { store } = await open()
+    store.apply(removeStep('s1'))
+    expect(ready(store).save).toEqual({ state: 'pending' })
+
+    await store.discard()
+
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
+  })
+
+  it('leaves a saved session saved when it ends, rather than reporting a halt', async () => {
+    const { store } = await open()
+    await store.release()
+    expect(ready(store).save).toEqual({ state: 'saved' })
   })
 })

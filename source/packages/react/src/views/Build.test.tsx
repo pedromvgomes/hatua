@@ -37,16 +37,18 @@ describe('Build', () => {
     expect(screen.getByRole('tabpanel').contains(canvas)).toBe(false)
 
     // Still there with a different tab open, which is the whole point.
-    fireEvent.click(screen.getByRole('tab', { name: 'Library' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Components' }))
     expect(screen.getByRole('region', { name: 'Flow map' })).toBeDefined()
   })
 
   it('offers exactly the three tabs, opening on the step tree', () => {
+    // Flow is here only until the canvas can select a Step: dropping it before
+    // then leaves no way to choose one at all.
     render(<Build />)
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
       'Flow',
-      'Library',
-      'Data',
+      'Components',
+      'Workflow',
     ])
     expect(screen.getByRole('tab', { selected: true }).textContent).toBe('Flow')
     // The Flow TAB is the tree as a list; the map is the column beside it.
@@ -55,8 +57,8 @@ describe('Build', () => {
 
   it('mounts only the open tab, so the other two cost nothing until asked for', () => {
     render(<Build />)
-    expect(screen.queryByRole('region', { name: 'Library' })).toBeNull()
-    expect(screen.queryByRole('region', { name: 'Data' })).toBeNull()
+    expect(screen.queryByRole('region', { name: 'Components' })).toBeNull()
+    expect(screen.queryByRole('region', { name: 'Workflow' })).toBeNull()
   })
 
   it('claims neither the page banner nor its <h1>, wherever a Host puts it', () => {
@@ -88,11 +90,11 @@ describe('Build', () => {
  * halves of "add a Step" to each other.
  *
  * Neither region can do it alone and neither should. <StepList> knows where a
- * Step would go and nothing about the catalogue; <Library> knows the Components
- * and nothing about the tree. Both emit rather than reach, so something above
+ * Step would go and nothing about the catalogue; <Components> knows the
+ * Components and nothing about the tree. Both emit rather than reach, so something above
  * both has to wire them — and that is the whole of what is tested here.
  */
-describe('Build wires the Library to the Flow tab', () => {
+describe('Build wires the Components tab to the Flow tab', () => {
   const token = 'tok_build' as EditToken
   const lease: Lease = { token, expiresAt: '2099-01-01T00:00:00.000Z' }
 
@@ -153,14 +155,14 @@ describe('Build wires the Library to the Flow tab', () => {
       )
       .map((button) => button.firstElementChild?.textContent)
 
-  it('opens the Library when an insert point is chosen, with that point pending', async () => {
-    // The design: "Clicking it opens the Library with that insertion point
-    // pending." <TabbedPanel>'s controlled `tabId` exists for exactly this.
+  it('opens the Components tab when an insert point is chosen, with it pending', async () => {
+    // The design: "Clicking it opens the Components tab with that insertion
+    // point pending." <TabbedPanel>'s controlled `tabId` exists for this.
     wired()
     await screen.findByText('First')
 
     fireEvent.click(screen.getByRole('button', { name: 'Insert a Step after First' }))
-    expect(screen.getByRole('tab', { selected: true }).textContent).toBe('Library')
+    expect(screen.getByRole('tab', { selected: true }).textContent).toBe('Components')
     expect(await screen.findByRole('button', { name: /Send email/ })).toBeDefined()
   })
 
@@ -180,7 +182,7 @@ describe('Build wires the Library to the Flow tab', () => {
     wired()
     await screen.findByText('First')
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Library' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Components' }))
     fireEvent.click(await screen.findByRole('button', { name: /Send email/ }))
 
     await waitFor(() => expect(rowNames()).toEqual(['First', 'Second', 'Send email']))
@@ -192,7 +194,7 @@ describe('Build wires the Library to the Flow tab', () => {
     const { writes } = wired('name: half written\nsteps:\n  - use: a\n  - use: b\n')
     await screen.findByText(/not a valid Workflow Definition yet/)
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Library' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Components' }))
     fireEvent.click(await screen.findByRole('button', { name: /Send email/ }))
 
     // Autosave waits 800ms of quiet and `waitFor` defaults to 1000ms, which is
@@ -212,11 +214,11 @@ describe('Build wires the Library to the Flow tab', () => {
     fireEvent.click(
       screen.getByRole('button', { name: 'Insert a Step at the start of the workflow' }),
     )
-    expect(screen.getByRole('tab', { selected: true }).textContent).toBe('Library')
+    expect(screen.getByRole('tab', { selected: true }).textContent).toBe('Components')
 
     // Thought better of it.
     fireEvent.click(screen.getByRole('tab', { name: 'Flow' }))
-    fireEvent.click(screen.getByRole('tab', { name: 'Library' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Components' }))
     fireEvent.click(await screen.findByRole('button', { name: /Send email/ }))
 
     await waitFor(() => expect(rowNames()).toEqual(['First', 'Second', 'Send email']))
@@ -230,10 +232,62 @@ describe('Build wires the Library to the Flow tab', () => {
     await screen.findByText('First')
 
     fireEvent.click(screen.getByRole('button', { name: 'Insert a Step after First' }))
-    fireEvent.click(screen.getByRole('tab', { name: 'Library' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Components' }))
     fireEvent.click(await screen.findByRole('button', { name: /Send email/ }))
 
     await waitFor(() => expect(rowNames()).toEqual(['First', 'Send email', 'Second']))
+  })
+
+  /*
+   * <TabbedPanel> renders only the open tab, so adding a Step — Flow, then
+   * Components, then Flow — unmounts and remounts <StepList> twice. Selection
+   * and collapse are its own state, and without something above holding them
+   * every insert cleared the selection and re-expanded every container the user
+   * had collapsed: on the one action most likely to be repeated.
+   *
+   * Still chrome, and still nowhere near the document (ADR-0001). It just
+   * outlives the region, which is what the design means by the composition root
+   * holding selection.
+   */
+  it('keeps the selected Step through the round trip that adds one', async () => {
+    wired()
+    await screen.findByText('First')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Insert a Step after First' }))
+    fireEvent.click(await screen.findByRole('button', { name: /Send email/ }))
+    await waitFor(() => expect(rowNames()).toEqual(['First', 'Send email', 'Second']))
+
+    const selected = screen
+      .getAllByRole('button')
+      .find((button) => button.getAttribute('aria-current') === 'true')
+    expect(selected).toBeUndefined()
+
+    // Select one, then add another, and the selection is still there.
+    fireEvent.click(screen.getByText('First'))
+    fireEvent.click(screen.getByRole('button', { name: 'Insert a Step after Second' }))
+    fireEvent.click(await screen.findByRole('button', { name: /Send email/ }))
+    await waitFor(() => expect(rowNames().at(-1)).toBe('Send email'))
+
+    expect(
+      screen.getAllByRole('button').find((button) => button.getAttribute('aria-current') === 'true')
+        ?.firstElementChild?.textContent,
+    ).toBe('First')
+  })
+
+  it('keeps a collapsed container collapsed through the same round trip', async () => {
+    const NESTED = `id: wf\nname: n\nversion: 1\nstatus: draft\nsteps:\n  - id: s1\n    use: core.for_each\n    name: "Each"\n    steps:\n      - id: s2\n        use: b\n        name: "Inner"\n`
+    wired(NESTED)
+    await screen.findByText('Each')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse Each' }))
+    expect(screen.queryByText('Inner')).toBeNull()
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Components' }))
+    fireEvent.click(await screen.findByRole('button', { name: /Send email/ }))
+    await waitFor(() => expect(rowNames()).toContain('Send email'))
+
+    expect(screen.queryByText('Inner')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Expand Each' })).toBeDefined()
   })
 
   it('forgets the pending point once it has been used', async () => {
@@ -248,7 +302,7 @@ describe('Build wires the Library to the Flow tab', () => {
 
     // A second pick with nothing pending appends rather than repeating the
     // first insertion point.
-    fireEvent.click(screen.getByRole('tab', { name: 'Library' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Components' }))
     fireEvent.click(await screen.findByRole('button', { name: /Send email/ }))
     await waitFor(() => expect(rowNames().at(-1)).toBe('Send email'))
   })

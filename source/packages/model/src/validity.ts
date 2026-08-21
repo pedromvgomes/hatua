@@ -25,14 +25,23 @@ import type { Diagnostic } from './connections'
 type ManifestIndex = ReadonlyMap<string, Manifest>
 
 /**
- * A field hidden by its `when` clause is not missing.
+ * Whether a field is shown, and therefore whether it can be missing.
  *
  * `when: [otherKey, value]` shows a field only while another field equals a
  * value — it is how one trigger component reshapes its form across schedule,
  * API and upstream modes. Counting a hidden field as unfilled would mark a Step
  * invalid for a field the user cannot see, let alone fill.
+ *
+ * Exported because the form that draws the fields has to ask the same question,
+ * and two copies of it are two answers waiting to disagree: a hidden field that
+ * starts blocking Publish, or a visible required one that stops being reported.
+ * `reference.ts` and `slots.ts` refuse the same duplication for the same
+ * reason — the rule lives once, in the package that owns the domain.
  */
-const visible = (field: Manifest['fields'][number], values: Record<string, unknown>): boolean => {
+export const fieldVisible = (
+  field: Manifest['fields'][number],
+  values: Record<string, unknown>,
+): boolean => {
   if (!field.when) return true
   const [key, expected] = field.when
   return String(values[key as string] ?? '') === expected
@@ -59,7 +68,11 @@ export function missingRequiredFields(
 ): Diagnostic[] {
   const out: Diagnostic[] = []
 
-  const check = (id: string, use: string, values: Record<string, unknown> | undefined) => {
+  const check = (
+    subject: { stepId: string } | { triggerId: string },
+    use: string,
+    values: Record<string, unknown> | undefined,
+  ) => {
     const manifest = manifests.get(use)
     // Unknown components are reported once, by their own rule. Guessing that
     // every field is missing would bury that one diagnostic under ten.
@@ -67,43 +80,63 @@ export function missingRequiredFields(
 
     const filled = values ?? {}
     for (const field of manifest.fields ?? []) {
-      if (!field.req || !visible(field, filled)) continue
+      if (!field.req || !fieldVisible(field, filled)) continue
       if (!unfilled(filled[field.k])) continue
 
       out.push({
         code: 'FIELD_REQUIRED',
         message: `${field.label} is required.`,
         blocks: 'publish',
-        stepId: id,
+        ...subject,
         fieldKey: field.k,
       })
     }
   }
 
-  for (const step of walk(doc.steps)) check(step.id, step.use, step.with)
-  for (const trigger of doc.triggers ?? []) check(trigger.id, trigger.use, trigger.with)
+  for (const step of walk(doc.steps)) check({ stepId: step.id }, step.use, step.with)
+  for (const trigger of doc.triggers ?? []) {
+    check({ triggerId: trigger.id }, trigger.use, trigger.with)
+  }
 
   return out
 }
 
 /**
- * A Step whose `use` no Component Manifest declares.
+ * A Step or a Trigger whose `use` no Component Manifest declares.
  *
- * Blocks editing, because it cannot be reached by building: the Library only
- * offers what the catalogue declares. It means a hand-edited verb, or a
- * workflow written against a Host that has since dropped a component — and in
- * the second case the fields are gone too, so there is nothing to fill in.
+ * Blocks editing, because it cannot be reached by building: the catalogue only
+ * offers what it declares. It means a hand-edited verb, or a workflow written
+ * against a Host that has since dropped a component — and in the second case
+ * the fields are gone too, so there is nothing to fill in.
+ *
+ * Triggers are checked alongside Steps because the same mistake is possible in
+ * `triggers:` and has the same consequence: `missingRequiredFields` returns
+ * early for a manifest it cannot find, so without this a Trigger naming a verb
+ * nothing declares produces no diagnostic at all, while the Workflow tab draws
+ * it as a card that says its type is unknown. The checker and the screen would
+ * be answering differently about the same entry.
  */
 export function unknownComponents(doc: WorkflowDefinition, manifests: ManifestIndex): Diagnostic[] {
   const out: Diagnostic[] = []
+
+  const unknown = (use: string) => `Nothing declares "${use}". It may no longer be available.`
 
   for (const step of walk(doc.steps)) {
     if (manifests.has(step.use)) continue
     out.push({
       code: 'COMPONENT_UNKNOWN',
-      message: `Nothing declares "${step.use}". This Host may no longer offer it.`,
+      message: unknown(step.use),
       blocks: 'edit',
       stepId: step.id,
+    })
+  }
+  for (const trigger of doc.triggers ?? []) {
+    if (manifests.has(trigger.use)) continue
+    out.push({
+      code: 'COMPONENT_UNKNOWN',
+      message: unknown(trigger.use),
+      blocks: 'edit',
+      triggerId: trigger.id,
     })
   }
   return out
@@ -179,10 +212,23 @@ export function malformedContainers(doc: WorkflowDefinition): Diagnostic[] {
  */
 
 /** Every step-level rule, in one pass, indexed by the Step it belongs to. */
-export function validateSteps(
-  doc: WorkflowDefinition,
-  manifests: ManifestIndex,
-): Map<string, Diagnostic[]> {
+export interface Validity {
+  /** Diagnostics for each Step that has any. A Step with none is absent. */
+  byStep: ReadonlyMap<string, Diagnostic[]>
+  /** The same, for Triggers, which are not Steps and are drawn by another region. */
+  byTrigger: ReadonlyMap<string, Diagnostic[]>
+  /**
+   * Everything, in the order the rules ran.
+   *
+   * Returned rather than left to a caller to flatten out of `byStep`: a
+   * diagnostic about a Trigger has no `stepId`, so flattening the Step map
+   * silently drops it — and a Publish gate counting what it found there would
+   * pass a workflow whose Trigger is missing a required field.
+   */
+  all: readonly Diagnostic[]
+}
+
+export function validateSteps(doc: WorkflowDefinition, manifests: ManifestIndex): Validity {
   const all = [
     ...unknownComponents(doc, manifests),
     ...missingRequiredFields(doc, manifests),
@@ -190,13 +236,19 @@ export function validateSteps(
   ]
 
   const byStep = new Map<string, Diagnostic[]>()
-  for (const diagnostic of all) {
-    if (!diagnostic.stepId) continue
-    const held = byStep.get(diagnostic.stepId)
+  const byTrigger = new Map<string, Diagnostic[]>()
+
+  const file = (map: Map<string, Diagnostic[]>, id: string, diagnostic: Diagnostic) => {
+    const held = map.get(id)
     if (held) held.push(diagnostic)
-    else byStep.set(diagnostic.stepId, [diagnostic])
+    else map.set(id, [diagnostic])
   }
-  return byStep
+
+  for (const diagnostic of all) {
+    if (diagnostic.stepId) file(byStep, diagnostic.stepId, diagnostic)
+    else if (diagnostic.triggerId) file(byTrigger, diagnostic.triggerId, diagnostic)
+  }
+  return { byStep, byTrigger, all }
 }
 
 /** Depth-first, including Triggers' siblings-in-spirit: the Steps only. */

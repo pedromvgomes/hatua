@@ -66,7 +66,7 @@ describe('HatuaProvider', () => {
   })
 
   /*
-   * The provider is the composition root, not only the theme: <Library /> takes
+   * The provider is the composition root, not only the theme: <Components /> takes
    * no props in either embedding, so the ports are the only seam the Host path
    * and the <Hatua> path share.
    */

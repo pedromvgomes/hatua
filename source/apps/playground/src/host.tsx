@@ -1,17 +1,19 @@
 import {
+  Components,
   createTheme,
   FlowMap,
   HatuaProvider,
   Inspector,
-  Library,
   type Manifest,
   StepList,
   TabbedPanel,
   TopBar,
+  Workflow,
 } from '@hatua/react'
 import { StrictMode, useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { SOURCES, type SourceName } from './catalogue'
+import { CONNECTIONS, type ConnectionsName } from './connections'
 import { createLocalWorkflowStore } from './workflow-store'
 
 /**
@@ -45,17 +47,17 @@ import { createLocalWorkflowStore } from './workflow-store'
  *
  *  1. **They move.** The Inspector is on the left here and the toolbar is at
  *     the bottom. <Build> puts them the other way round. Neither region knows.
- *  2. **They are optional.** The Data tab is deliberately not mounted. That is
- *     the harder half: a region that is merely movable can still be required,
- *     and a shell that quietly needs all five is a shell every Host has to
- *     accept whole.
- *  3. **The tab strip owns nothing.** <TabbedPanel> is handed two regions and
- *     renders two tabs. It has no third child to lose — and it never holds the
- *     canvas: <FlowMap> gets a column here, as it does in <Build>, because a
- *     canvas mounted as a tab is a canvas the screen has no room for.
- *  4. **The regions take no data props.** <Library /> is still written exactly
- *     as it was before it rendered anything — the catalogue reaches it through
- *     the provider's ports. Had the manifests arrived as a prop, this line
+ *  2. **They are optional.** The Flow map keeps its column and the Data panel
+ *     is deliberately not mounted at all. That is the harder half: a region
+ *     that is merely movable can still be required, and a shell that quietly
+ *     needs all of them is a shell every Host has to accept whole.
+ *  3. **The tab strip owns nothing.** <TabbedPanel> is handed the regions this
+ *     page chose, in the order this page chose — and it never holds the canvas:
+ *     <FlowMap> gets a column here, as it does in <Build>, because a canvas
+ *     mounted as a tab is a canvas the screen has no room for.
+ *  4. **The regions take no data props.** <Components /> is written exactly as
+ *     it was before it rendered anything — the catalogue reaches it through the
+ *     provider's ports. Had the manifests arrived as a prop, this line
  *     would have had to change, and "mount the regions wherever you like" would
  *     have quietly become "mount them and wire each one up".
  *
@@ -78,8 +80,8 @@ import { createLocalWorkflowStore } from './workflow-store'
  * second tab takes the claim and the first halts on its next write. See
  * src/workflow-store.ts on why takeover rather than refusal.
  *
- * The source switcher below is the half of the Library that the default entry
- * cannot show. A catalogue that always resolves instantly makes loading,
+ * The source switcher below is the half of the Components tab that the default
+ * entry cannot show. A catalogue that always resolves instantly makes loading,
  * failure and emptiness look theoretical; they are not — they are what a Host
  * fetching manifests over a network gets — so this page lets you pick one and
  * look at it. The sources here are fakes, chosen so each state can be held
@@ -116,9 +118,18 @@ const SOURCE_LABELS: Record<SourceName, string> = {
   empty: 'Declares nothing',
 }
 
+const CONNECTION_LABELS: Record<ConnectionsName, string> = {
+  ready: 'Listed and described',
+  slow: 'Slow (1.2s)',
+  undescribed: 'Listed, not described',
+  empty: 'None established',
+  none: 'No ports wired',
+}
+
 function HostPage() {
   const [sourceName, setSourceName] = useState<SourceName>('ready')
   const [storeName, setStoreName] = useState<StoreName>('local')
+  const [connectionsName, setConnectionsName] = useState<ConnectionsName>('ready')
   const [lastSelected, setLastSelected] = useState<Manifest | null>(null)
 
   // Memoised on the name, because <HatuaProvider> keys its editing store on the
@@ -145,9 +156,9 @@ function HostPage() {
         }}
       >
         <p style={{ margin: 0 }}>
-          Host-authored embedding — the Inspector on the left, the toolbar at the bottom, and no
-          Data tab at all. Compare with <a href="/index.html">the default embedding</a> and{' '}
-          <a href="/api.html">the API-backed one</a>.
+          Host-authored embedding — the Inspector on the left, the toolbar at the bottom, and the
+          tabs in the Host's own order. Compare with <a href="/index.html">the default embedding</a>{' '}
+          and <a href="/api.html">the API-backed one</a>.
         </p>
         <fieldset style={{ display: 'flex', gap: 10, border: 0, margin: 0, padding: 0 }}>
           <legend style={{ float: 'left', padding: 0, marginInlineEnd: 10 }}>
@@ -172,6 +183,20 @@ function HostPage() {
           {lastSelected ? `Last selected: ${lastSelected.use}` : 'Nothing selected yet.'}
         </p>
         <fieldset style={{ display: 'flex', gap: 10, border: 0, margin: 0, padding: 0 }}>
+          <legend style={{ float: 'left', padding: 0, marginInlineEnd: 10 }}>Connections:</legend>
+          {(Object.keys(CONNECTIONS) as ConnectionsName[]).map((name) => (
+            <label key={name} style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+              <input
+                type="radio"
+                name="connections"
+                checked={connectionsName === name}
+                onChange={() => setConnectionsName(name)}
+              />
+              {CONNECTION_LABELS[name]}
+            </label>
+          ))}
+        </fieldset>
+        <fieldset style={{ display: 'flex', gap: 10, border: 0, margin: 0, padding: 0 }}>
           <legend style={{ float: 'left', padding: 0, marginInlineEnd: 10 }}>
             Workflow storage:
           </legend>
@@ -191,7 +216,7 @@ function HostPage() {
 
       <HatuaProvider
         theme={theme}
-        ports={{ manifests: SOURCES[sourceName], workflows }}
+        ports={{ manifests: SOURCES[sourceName], workflows, ...CONNECTIONS[connectionsName] }}
         workflowId="wf_morning"
       >
         <div
@@ -209,17 +234,20 @@ function HostPage() {
             <TabbedPanel
               tabs={[
                 {
-                  id: 'library',
-                  label: 'Library',
-                  content: <Library onSelect={setLastSelected} />,
+                  id: 'components',
+                  label: 'Components',
+                  content: <Components onSelect={setLastSelected} />,
                 },
+                // Mounted here and not in <Build>'s order, because the point of
+                // this page is that the arrangement is the Host's.
+                { id: 'workflow', label: 'Workflow', content: <Workflow /> },
                 {
                   id: 'flow',
                   label: 'Flow',
                   // No onInsert here, and that is the point of this page: the
                   // regions emit, and what a Host does with what they emit is
                   // the Host's business. <Build> is the one that introduces the
-                  // Library and the Flow tab to each other; this page prints
+                  // Components and Flow tabs to each other; this page prints
                   // the selection instead and still edits, because removing and
                   // reordering need no catalogue.
                   content: <StepList onSelect={(id) => console.info('selected', id)} />,

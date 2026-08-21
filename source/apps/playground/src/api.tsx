@@ -21,7 +21,7 @@ import { createLocalWorkflowStore } from './workflow-store'
  *  1. **Hatua needed nothing.** No part of @hatua/react or @hatua/services
  *     changed to make this page work. `ManifestSource` is one method returning
  *     a promise, so "an array I already have" and "whatever this endpoint says"
- *     are the same shape, and the Library's loading, failed and empty states —
+ *     are the same shape, and the Components tab's loading, failed and empty states —
  *     which looked like defensive programming when every source resolved
  *     instantly — are what this page actually goes through on every load.
  *  2. **The fetching is the Host's, all of it.** src/api-source.ts is fifteen

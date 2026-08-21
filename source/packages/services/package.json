@@ -28,5 +28,8 @@
     "@hatua/document": "workspace:*",
     "@hatua/model": "workspace:*",
     "@hatua/layout": "workspace:*"
+  },
+  "devDependencies": {
+    "@hatua/expressions": "workspace:*"
   }
 }

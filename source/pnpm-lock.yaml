@@ -159,6 +159,10 @@ importers:
       '@hatua/schema':
         specifier: workspace:*
         version: link:../schema
+    devDependencies:
+      '@hatua/expressions':
+        specifier: workspace:*
+        version: link:../expressions
 
   sdk/js:
     dependencies:

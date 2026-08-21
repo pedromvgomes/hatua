@@ -1,12 +1,12 @@
 import { addStep, type InsertPoint, rootStepCount } from '@hatua/services'
 import { type ComponentPropsWithRef, useState } from 'react'
-import { Data } from '../layouts/Data'
+import { Components } from '../layouts/Components'
 import { FlowMap } from '../layouts/FlowMap'
 import { Inspector } from '../layouts/Inspector'
-import { Library } from '../layouts/Library'
 import { StepList } from '../layouts/StepList'
 import { TabbedPanel } from '../layouts/TabbedPanel'
 import { TopBar } from '../layouts/TopBar'
+import { Workflow } from '../layouts/Workflow'
 import { cx } from '../primitives/classNames'
 import { useEditingStore } from '../theme/HatuaProvider'
 import styles from './Build.module.css'
@@ -56,7 +56,7 @@ export function Build({ className, ...rest }: BuildProps) {
    * halves of "add a Step" to each other.
    *
    * Neither region can do it alone, and neither should. <StepList> knows where
-   * a Step would go and nothing about the catalogue; <Library> knows the
+   * a Step would go and nothing about the catalogue; <Components> knows the
    * Components and nothing about the tree. Both emit rather than reach — props
    * out, the rule layouts/README states — so something has to be above both,
    * and the composition root is where that belongs.
@@ -65,9 +65,20 @@ export function Build({ className, ...rest }: BuildProps) {
    * line drawn around which tab is open. Appending is the fallback: a Component
    * picked with no insert point pending goes at the end of the workflow, which
    * is what "add this" means when nowhere was named.
+   *
+   * The Flow tab's selection and collapse are held here for a different reason,
+   * and it is this view's doing rather than that region's. <TabbedPanel>
+   * renders only the open tab, and adding a Step goes Flow → Components → Flow,
+   * so <StepList> is unmounted and remounted every time — which threw away
+   * which Step was selected and re-expanded every container the user had
+   * collapsed, on the one action most likely to follow another. The state stays
+   * chrome and never reaches the document; it just outlives the region now,
+   * which is what the design means by the composition root holding selection.
    */
   const [tab, setTab] = useState('flow')
   const [pending, setPending] = useState<InsertPoint | null>(null)
+  const [selectedId, setSelectedId] = useState<string | undefined>(undefined)
+  const [collapsedIds, setCollapsedIds] = useState<readonly string[]>([])
 
   /**
    * Read at click time, not at render time. <Build> deliberately does not
@@ -103,24 +114,32 @@ export function Build({ className, ...rest }: BuildProps) {
               // layouts/README.
               tabs={[
                 {
+                  // The Flow tab is in the default set only until the canvas
+                  // can select a Step. Dropping it before then leaves no way to
+                  // choose one at all, which is why it is here and why it
+                  // leaves when the canvas arrives rather than now.
                   id: 'flow',
                   label: 'Flow',
                   content: (
                     <StepList
+                      defaultSelectedId={selectedId}
+                      onSelect={setSelectedId}
+                      defaultCollapsedIds={collapsedIds}
+                      onCollapseChange={setCollapsedIds}
                       onInsert={(at) => {
                         setPending(at)
-                        // The design: "Clicking it opens the Library with that
-                        // insertion point pending."
-                        setTab('library')
+                        // The design: "Clicking it opens the Components tab
+                        // with that insertion point pending."
+                        setTab('components')
                       }}
                     />
                   ),
                 },
                 {
-                  id: 'library',
-                  label: 'Library',
+                  id: 'components',
+                  label: 'Components',
                   content: (
-                    <Library
+                    <Components
                       onSelect={(manifest) => {
                         store?.apply(
                           addStep(
@@ -134,7 +153,7 @@ export function Build({ className, ...rest }: BuildProps) {
                     />
                   ),
                 },
-                { id: 'data', label: 'Data', content: <Data /> },
+                { id: 'workflow', label: 'Workflow', content: <Workflow /> },
               ]}
               tabId={tab}
               onTabChange={(next) => {
@@ -146,8 +165,8 @@ export function Build({ className, ...rest }: BuildProps) {
                 //
                 // A click on the tab ALREADY open is not navigating away.
                 // <TabbedPanel> reports every click, including that one, and
-                // clicking "Library" while looking at the Library is what
-                // anyone does to focus it — losing the pending point there
+                // clicking "Components" while looking at it is what anyone
+                // does to focus it — losing the pending point there
                 // would be the same silent misplacement, arrived at by
                 // touching nothing.
                 if (next !== tab) setPending(null)

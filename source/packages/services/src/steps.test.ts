@@ -77,6 +77,123 @@ describe('stepIn', () => {
   })
 })
 
+describe('reaching into a document that is barely one', () => {
+  /*
+   * The AST helpers are shared by every command, so their edges are reachable
+   * from all of them. ADR-0001 requires each to survive a document someone is
+   * halfway through typing.
+   */
+  it('merges a comment on the sequence with one on its first item', () => {
+    // A comment above the FIRST item of a block sequence is anchored to the
+    // sequence, so when the item has one too both have to survive the splice —
+    // the user wrote two lines and gets to keep both.
+    const both = [
+      'id: wf',
+      'name: n',
+      'version: 1',
+      'status: draft',
+      'steps:',
+      '  # about the list',
+      '  # about this step',
+      '  - id: s1',
+      '    use: a',
+      '',
+    ].join('\n')
+
+    const document = parse(both)
+    removeStep('s1').apply(document)
+
+    const text = document.toString()
+    expect(text).not.toContain('about this step')
+    expect(text).not.toContain('about the list')
+  })
+
+  it('keeps both comments when a Step is added above them', () => {
+    const both = [
+      'id: wf',
+      'name: n',
+      'version: 1',
+      'status: draft',
+      'steps:',
+      '  # about the list',
+      '  # about this step',
+      '  - id: s1',
+      '    use: a',
+      '',
+    ].join('\n')
+
+    const document = parse(both)
+    addStep({ use: 'email.send' }, { index: 0 }).apply(document)
+
+    const text = document.toString()
+    expect(text).toContain('# about the list')
+    expect(text).toContain('# about this step')
+  })
+
+  it('refuses to detach an index the list does not have', () => {
+    // Reachable from a stale projection: the tree a caller built its index
+    // against has moved on, and splicing at a position past the end would take
+    // nothing out and report success.
+    const document = parse(VALID)
+    expect(() => removeStep('s99').apply(document)).toThrow(/No Step with id/)
+    expect(document.toString()).toBe(VALID)
+  })
+
+  it('refuses a document that is not a mapping, and leaves it alone', () => {
+    // `- just\n- a list` parses, so it opens and a command can be run against
+    // it. A top-level SEQUENCE carries an `items` array exactly as a mapping
+    // does, so reading it as pairs would splice a `Pair` into a sequence — the
+    // same corruption as the other way round, surfacing from a `toString()` no
+    // caller guards.
+    const source = '- just\n- a list\n'
+    const document = parse(source)
+
+    expect(() => addStep({ use: 'email.send' }, { index: 0 }).apply(document)).toThrow()
+    expect(document.toString()).toBe(source)
+  })
+})
+
+describe('a list that is not a list', () => {
+  /*
+   * A YAMLMap carries an `items` array exactly as a YAMLSeq does, so a sequence
+   * cannot be recognised by shape: `steps:` written as a mapping would pass,
+   * and the node spliced into it makes the document unserialisable — the error
+   * arriving from `toString()`, which no caller guards, rather than from the
+   * command.
+   *
+   * A mapping under `steps:` is a document someone halfway through typing in
+   * Text Mode has, and ADR-0001 requires the commands to survive it.
+   */
+  const MAPPING = 'id: wf\nname: n\nversion: 1\nstatus: draft\nsteps:\n  first: nope\n'
+
+  it('refuses to add into it, and leaves the text untouched', () => {
+    const document = parse(MAPPING)
+    expect(() => addStep({ use: 'email.send' }, { index: 0 }).apply(document)).toThrow(/not a list/)
+    expect(document.toString()).toBe(MAPPING)
+  })
+
+  it('still serialises afterwards, which is the failure worth preventing', () => {
+    const document = parse(MAPPING)
+    try {
+      addStep({ use: 'email.send' }, { index: 0 }).apply(document)
+    } catch {
+      // The command refuses; what matters is the state it left behind.
+    }
+    expect(() => document.toString()).not.toThrow()
+  })
+
+  it('counts no Steps in it rather than guessing', () => {
+    expect(rootStepCount(parse(MAPPING))).toBe(0)
+  })
+
+  it('refuses an empty mapping too, which no shape check can tell from `[]`', () => {
+    const empty = 'id: wf\nname: n\nversion: 1\nstatus: draft\nsteps: {}\n'
+    const document = parse(empty)
+    expect(() => addStep({ use: 'email.send' }, { index: 0 }).apply(document)).toThrow(/not a list/)
+    expect(document.toString()).toBe(empty)
+  })
+})
+
 describe('commands against a document that does not project', () => {
   /*
    * The state ADR-0001 forces on everything here: `toJSON()` throws while the

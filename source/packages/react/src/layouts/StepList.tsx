@@ -58,19 +58,41 @@ import css from './StepList.module.css?inline'
  */
 export interface StepListProps extends Omit<ComponentPropsWithRef<'section'>, 'onSelect'> {
   /**
-   * Fired when a Step row is activated. Optional, and its absence is meaningful
-   * in the same way `Library`'s is: with no handler there is still selection to
-   * show, but nothing outside this region hears about it.
+   * Fired when the selection changes. Optional, and its absence is meaningful
+   * in the same way `Components`'s is: with no handler there is still selection
+   * to show, but nothing outside this region hears about it.
+   *
+   * `undefined` means nothing is selected — which is what removing the selected
+   * Step leaves behind. A caller holding the selection across a remount has to
+   * hear that, or it keeps handing back the id of a Step that is gone.
    */
-  onSelect?: (stepId: string) => void
+  onSelect?: (stepId: string | undefined) => void
   /**
    * Fired when an insert point is chosen. Optional — this region knows where a
    * Step would go and nothing at all about which Component to put there, so it
-   * hands the point out and the Library fills it in.
+   * hands the point out and the Components tab fills it in.
    */
   onInsert?: (at: InsertPoint) => void
   /** Which Step starts selected. Uncontrolled, like TabbedPanel's defaultTabId. */
   defaultSelectedId?: string
+  /**
+   * Which containers start collapsed, and a way to hear about it.
+   *
+   * Both are chrome and both stay chrome — they never reach the document, the
+   * same line ADR-0001 draws around node positions. What they are not is
+   * necessarily short-lived: `<TabbedPanel>` renders only the open tab, so
+   * anything held in here is thrown away every time the user looks at another
+   * tab. In `<Build>` that happens on the way to adding a Step — Flow, then
+   * Components, then back — which is precisely when losing the selection and
+   * re-expanding every container is most annoying.
+   *
+   * So a caller that wants this state to outlive a remount holds it and hands
+   * it back, the way the design already has selection work. A caller that does
+   * not, does nothing, and the region behaves as it always has.
+   */
+  defaultCollapsedIds?: readonly string[]
+  /** Fired when a container is expanded or collapsed, with everything now collapsed. */
+  onCollapseChange?: (collapsedIds: string[]) => void
 }
 
 /** "The Host wired nothing" is not a phase of the load, so it is not the store's to report. */
@@ -84,7 +106,12 @@ const OPENING = { status: 'opening' } as const
 // returns a fresh object each call.
 const subscribeToNothing = () => () => {}
 const NO_PROBLEMS: ReadonlyMap<string, Diagnostic[]> = new Map()
-const UNCHECKED: ValidationState = { byStep: NO_PROBLEMS, all: [], ready: false }
+const UNCHECKED: ValidationState = {
+  byStep: NO_PROBLEMS,
+  byTrigger: NO_PROBLEMS,
+  all: [],
+  ready: false,
+}
 const readUnchecked = (): ValidationState => UNCHECKED
 const readUnconfigured = (): ListState => UNCONFIGURED
 const readOpening = (): ListState => OPENING
@@ -93,20 +120,24 @@ export function StepList({
   onSelect,
   onInsert,
   defaultSelectedId,
+  defaultCollapsedIds,
+  onCollapseChange,
   className,
   ...rest
 }: StepListProps) {
   const store = useEditingStore()
   const validation = useValidationStore()
   const [selectedId, setSelectedId] = useState<string | undefined>(defaultSelectedId)
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set())
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(
+    () => new Set(defaultCollapsedIds),
+  )
   const [dragging, setDragging] = useState<string | null>(null)
 
   // The one side effect: tell the store somebody is reading. It is idempotent,
   // so every region that mounts may call it and only the first opens the Draft.
   useEffect(() => {
     // `load()` opens the Draft AND asks for the catalogue, because validation
-    // needs both. A Host mounting this region and no Library would otherwise
+    // needs both. A Host mounting this region and no catalogue would otherwise
     // never fetch a manifest, and every Step would sit unchecked with nothing
     // saying why.
     if (validation) validation.load()
@@ -141,16 +172,21 @@ export function StepList({
     onSelect?.(id)
   }
 
-  const toggle = (id: string) =>
-    setCollapsed((current) => {
-      const next = new Set(current)
-      if (!next.delete(id)) next.add(id)
-      return next
-    })
+  const toggle = (id: string) => {
+    const next = new Set(collapsed)
+    if (!next.delete(id)) next.add(id)
+    setCollapsed(next)
+    onCollapseChange?.([...next])
+  }
 
   const remove = (id: string) => {
     store?.apply(removeStep(id))
-    if (selectedId === id) setSelectedId(undefined)
+    if (selectedId !== id) return
+    setSelectedId(undefined)
+    // Told, not just forgotten locally. <Build> holds this across the unmount
+    // the tab strip forces, so a selection cleared only in here comes back on
+    // the next mount naming a Step the document no longer has.
+    onSelect?.(undefined)
   }
 
   const move = (id: string, to: InsertPoint) => {
@@ -462,7 +498,7 @@ function Gap({
    * hover-revealed gap plus a static box would be two affordances for one
    * place, of which only one works.
    *
-   * It says Step rather than Component deliberately. The Library's cards are
+   * It says Step rather than Component deliberately. The Components cards are
    * not draggable and sit behind another tab, so no Component can be dropped
    * here; what can is an existing Step from the tree.
    */

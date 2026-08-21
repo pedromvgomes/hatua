@@ -19,7 +19,7 @@ export interface TabbedPanelProps extends Omit<ComponentPropsWithRef<'div'>, 'ch
    * controlled — `onTabChange` is then the only thing that opens another tab.
    *
    * Added because one screen genuinely needs it: clicking an insert point in
-   * the Flow tab has to open the Library with that point pending, and the two
+   * the Flow tab has to open the Components tab with that point pending, and the two
    * regions are siblings inside this panel with no other way to reach each
    * other. Uncontrolled is still the default, because that is what every other
    * caller wants and what `regions.test.tsx` mounts.
@@ -32,8 +32,9 @@ export interface TabbedPanelProps extends Omit<ComponentPropsWithRef<'div'>, 'ch
  * Tab chrome that arranges regions it is handed, and owns none of them.
  *
  * This is the shape the three-tab plan forces. Every tab is separately
- * mountable — a Host that wants only the Library mounts <Library> and gets no
- * tab bar at all — so a panel that rendered <Library>, <FlowMap> and <Data>
+ * mountable — a Host that wants only the catalogue mounts <Components> and gets
+ * no tab bar at all — so a panel that rendered <Components>, <StepList> and
+ * <Workflow>
  * itself would be the one component standing between that Host and the region
  * it asked for. Regions in, chrome around them, nothing else.
  *

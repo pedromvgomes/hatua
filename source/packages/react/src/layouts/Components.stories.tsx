@@ -1,10 +1,10 @@
 import type { Manifest } from '@hatua/schema'
 import type { ManifestSource } from '@hatua/services'
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { Library } from './Library'
+import { Components } from './Components'
 
 /**
- * Every state the Library has, against a fake ManifestSource.
+ * Every state the Components tab has, against a fake ManifestSource.
  *
  * All of them are real. A Host fetching its catalogue over the network shows
  * loading and can show a failure; a Host on a fresh install, with no manifests
@@ -115,8 +115,8 @@ const serving = (manifests: Manifest[]): ManifestSource => ({
 const READY = { ports: { manifests: serving(CATALOGUE) } }
 
 const meta = {
-  title: 'Layouts/Library',
-  component: Library,
+  title: 'Layouts/Components',
+  component: Components,
   decorators: [
     (Story) => (
       <div
@@ -126,12 +126,16 @@ const meta = {
       </div>
     ),
   ],
-} satisfies Meta<typeof Library>
+} satisfies Meta<typeof Components>
 
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** Triggers and Components under separate headings, grouped by `group`. */
+/**
+ * Grouped by `group`, in the order the Host declared them. The catalogue served
+ * here holds Triggers too, and none of them appears: a Trigger is not a Step,
+ * and adding one is the Workflow tab's job.
+ */
 export const Populated: Story = { parameters: READY }
 
 /** With a handler, every card becomes a control. Without one, none does. */
@@ -153,6 +157,16 @@ export const NothingMatches: Story = {
 /** A Host on a fresh install. Not a fault, and it must not read as one. */
 export const Empty: Story = {
   parameters: { ports: { manifests: serving([]) } },
+}
+
+/**
+ * A catalogue with plenty in it, none of which belongs on this tab. It reads as
+ * the empty state, because that is the same answer to the same question.
+ */
+export const TriggersOnly: Story = {
+  parameters: {
+    ports: { manifests: serving(CATALOGUE.filter((m) => m.kind === 'trigger')) },
+  },
 }
 
 /** Never resolves, so the state stays on screen to be looked at. */
