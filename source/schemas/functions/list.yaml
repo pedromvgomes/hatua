@@ -8,51 +8,76 @@ functions:
   - name: len
     summary: Number of elements.
     params:
-      - { name: value, type: list }
+      - name: value
+        type: list
+        description: The list to measure.
     returns: number
 
   - name: first
     summary: First element, or null when empty.
     params:
-      - { name: value, type: list }
+      - name: value
+        type: list
+        description: The list to read from.
     returns: unknown
 
   - name: last
     summary: Last element, or null when empty.
     params:
-      - { name: value, type: list }
+      - name: value
+        type: list
+        description: The list to read from.
     returns: unknown
 
   - name: slice
     summary: Elements from start up to but not including end.
     params:
-      - { name: value, type: list }
-      - { name: start, type: number }
-      - { name: end, type: number, optional: true }
+      - name: value
+        type: list
+        description: The list to take elements from.
+      - name: start
+        type: number
+        description: Index of the first element kept, counting from zero.
+      - name: end
+        type: number
+        optional: true
+        description: Index to stop before. Omitted, the slice runs to the end.
     returns: list
 
   - name: contains
     summary: Whether the list holds a value equal to the needle, by the same rule as `==`.
     params:
-      - { name: value, type: list }
-      - { name: needle, type: unknown }
+      - name: value
+        type: list
+        description: The list to search.
+      - name: needle
+        type: unknown
+        description: The value to look for.
     returns: boolean
 
   - name: join
     summary: Render each element as text and join with a separator.
     params:
-      - { name: value, type: list }
-      - { name: separator, type: text }
+      - name: value
+        type: list
+        description: The list whose elements are rendered and joined.
+      - name: separator
+        type: text
+        description: Placed between elements. Not added before the first or after the last.
     returns: text
 
   - name: unique
     summary: Elements with later duplicates removed, order preserved.
     params:
-      - { name: value, type: list }
+      - name: value
+        type: list
+        description: The list to remove duplicates from.
     returns: list
 
   - name: sort
     summary: Ascending. Every element must be the same comparable type.
     params:
-      - { name: value, type: list }
+      - name: value
+        type: list
+        description: The list to sort.
     returns: list

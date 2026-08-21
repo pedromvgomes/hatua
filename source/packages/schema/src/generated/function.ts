@@ -40,6 +40,10 @@ export const param = z.strictObject({
     return valueType
   },
   /**
+   * One sentence saying what this parameter is for, shown beside its input in the function builder and as signature help while the call is being typed. Optional here so an existing Host manifest keeps validating; Hatua's own `schemas/functions/*.yaml` are held to a stricter rule by the generator, which refuses to build without one.
+   */
+  description: z.string().optional(),
+  /**
    * Optional parameters must come last.
    */
   optional: z.boolean().optional(),
