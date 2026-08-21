@@ -8,7 +8,7 @@ import type { Manifest, ManifestSource } from '@hatua/react'
  * `ManifestSource` is one method returning a promise and not a URL. Everything
  * an API adds over a baked-in array lives on this side of the seam: the
  * endpoint, the credentials, the retry policy, the caching. What Hatua
- * contributed is the three states the Library already renders — a load that
+ * contributed is the three states the Components tab already renders — a load that
  * takes time, a load that fails, and a catalogue that is legitimately empty —
  * and none of them needed changing to make this work.
  *
@@ -20,7 +20,7 @@ export interface ApiManifestSourceOptions {
   /**
    * Stands in for network latency. The endpoint behind this playground is a
    * file on the same origin, so it answers in about a millisecond and the
-   * Library's loading state would flash past unseen — which would make a state
+   * loading state would flash past unseen — which would make a state
    * that is real for every Host look theoretical here. A Host deletes this.
    */
   delayMs?: number
@@ -44,7 +44,7 @@ export function createApiManifestSource(
       const response = await fetch(url)
       // A non-2xx body is usually an HTML error page, and letting it reach
       // `.json()` turns "the endpoint is down" into "Unexpected token <". The
-      // Library renders whatever message arrives, so the message is worth
+      // The region renders whatever message arrives, so the message is worth
       // spending a line on.
       if (!response.ok) {
         throw new Error(`${url} responded ${response.status} ${response.statusText}`.trim())

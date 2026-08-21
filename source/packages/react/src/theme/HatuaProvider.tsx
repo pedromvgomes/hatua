@@ -26,7 +26,7 @@ import { createTheme, type Theme } from './createTheme'
  *  4. carries the Host's ports, and wires each one to the store that reads it.
  *
  * The fourth is what makes this the composition root rather than a theme
- * provider. <Library /> takes no props in either embedding —
+ * provider. <Components /> takes no props in either embedding —
  * apps/playground/src/host.tsx mounts it bare and layouts/regions.test.tsx
  * mounts every region bare — so a `manifests` prop would break the promise
  * those two exist to keep. The provider is the only seam both paths share.
@@ -46,7 +46,7 @@ export type ColorMode = 'light' | 'dark'
  * port is missing must degrade rather than throw.
  */
 export interface HostPorts {
-  /** Where the Component Manifests come from. The Library reads this. */
+  /** Where the Component Manifests come from. The Components tab reads this. */
   manifests?: ManifestSource
   /**
    * Where the Workflow Definitions live. Hatua has no storage, no server and no
@@ -62,7 +62,7 @@ export interface HostPorts {
 const PortalContext = createContext<HTMLElement | null>(null)
 
 /**
- * Null when no ManifestSource was given, which the Library renders as its own
+ * Null when no ManifestSource was given, which the Components tab renders as its own
  * state rather than as an empty catalogue — "the Host wired nothing" and "the
  * Host declared nothing" are different problems with different fixes.
  */
@@ -113,7 +113,7 @@ export interface HatuaProviderProps {
   /**
    * Which Workflow Definition to open, as the Host's `WorkflowStore` addresses
    * it. Omit and nothing is opened — which is what a Host embedding only the
-   * Library or the run viewer wants, and is also why the store below is lazy:
+   * catalogue or the run viewer wants, and is also why the store below is lazy:
    * `openDraft` claims the edit, so mounting must not take a lease.
    */
   workflowId?: string

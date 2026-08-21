@@ -1,16 +1,16 @@
 import type { Manifest } from '@hatua/schema'
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import { Components } from '../layouts/Components'
 import { Data } from '../layouts/Data'
 import { FlowMap } from '../layouts/FlowMap'
 import { Inspector } from '../layouts/Inspector'
-import { Library } from '../layouts/Library'
 import { StepList } from '../layouts/StepList'
 import { TabbedPanel } from '../layouts/TabbedPanel'
 import { TopBar } from '../layouts/TopBar'
 import { Build } from './Build'
 
 /**
- * Enough of a catalogue for the Library to have something to show. The shell is
+ * Enough of a catalogue for the Components tab to have something to show. The shell is
  * still what is on review here; a region that renders "no manifests are wired
  * up" inside it would read as a broken shell rather than as an unwired story.
  */
@@ -86,7 +86,7 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 /**
- * Every region but the Library is a stub until its own PR; what is on review
+ * Every region but the Components and Workflow tabs is a stub until its own PR; what is on review
  * here is the shell — and specifically that all three columns are on screen at
  * once, with the canvas in the middle rather than behind a tab.
  *
@@ -126,7 +126,7 @@ export const ComposedByAHost: Story = {
         <TabbedPanel
           tabs={[
             { id: 'flow', label: 'Flow', content: <StepList /> },
-            { id: 'library', label: 'Library', content: <Library /> },
+            { id: 'components', label: 'Components', content: <Components /> },
           ]}
         />
       </div>

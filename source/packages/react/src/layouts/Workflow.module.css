@@ -1,0 +1,230 @@
+@layer hatua {
+  .workflow {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
+    block-size: 100%;
+    min-block-size: 0;
+    background: var(--hatua-surface-card);
+  }
+
+  .body {
+    min-block-size: 0;
+    overflow-y: auto;
+    padding-block-end: 16px;
+  }
+
+  .section {
+    display: grid;
+    gap: 8px;
+    padding: 12px;
+  }
+
+  /* One divider between each section, and none above the first or below the
+     last — a rule under the final section reads as the start of something that
+     is not there. */
+  .section + .section {
+    border-block-start: 1px solid var(--hatua-border-subtle);
+  }
+
+  .sectionHeading {
+    margin: 0;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--hatua-text-secondary);
+  }
+
+  .blurb {
+    margin: 0;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: var(--hatua-text-muted);
+    text-wrap: pretty;
+  }
+
+  /* Loading, empty and "nothing declares this" all read as one voice: a
+     sentence in the panel, not a spinner and not an error. */
+  .note {
+    margin: 0;
+    padding: 16px;
+    color: var(--hatua-text-muted);
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    text-wrap: pretty;
+  }
+
+  /* The live region stays mounted with nothing to say; it must not take up a
+     line of the panel while it is quiet. `display: none` would defeat the point
+     — a hidden region is not observed — so it collapses instead. */
+  .silent {
+    padding: 0;
+    block-size: 0;
+    overflow: hidden;
+  }
+
+  .empty {
+    margin: 0;
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    color: var(--hatua-text-muted);
+    text-wrap: pretty;
+  }
+
+  .code {
+    font-family: var(--hatua-font-mono);
+    font-size: 0.75rem;
+    color: var(--hatua-text-secondary);
+    overflow-wrap: anywhere;
+  }
+
+  .failure {
+    display: grid;
+    justify-items: start;
+    gap: 8px;
+    margin: 12px;
+    padding: 12px;
+    border: 1px solid var(--hatua-status-error);
+    border-radius: var(--hatua-radius-md);
+    background: var(--hatua-status-error-wash);
+  }
+
+  .failureText {
+    margin: 0;
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    color: var(--hatua-text-primary);
+    text-wrap: pretty;
+  }
+
+  .field {
+    display: grid;
+    gap: 4px;
+  }
+
+  .label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--hatua-text-muted);
+  }
+
+  .hint {
+    margin: 0;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: var(--hatua-text-muted);
+    text-wrap: pretty;
+  }
+
+  /* A variable's value and a Trigger's `mono` field are both read back as
+     source: `{{ … }}` and a cron line are neither of them prose. */
+  .mono {
+    font-family: var(--hatua-font-mono);
+    font-size: 0.75rem;
+  }
+
+  .triggers,
+  .variables {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 8px;
+  }
+
+  .card {
+    display: grid;
+    gap: 8px;
+    padding: 10px;
+    border: 1px solid var(--hatua-border-subtle);
+    border-radius: var(--hatua-radius-md);
+    background: var(--hatua-surface-raised);
+  }
+
+  .cardHead {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .meta {
+    margin: 0;
+    font-family: var(--hatua-font-mono);
+    font-size: 0.6875rem;
+    color: var(--hatua-text-muted);
+    overflow-wrap: anywhere;
+  }
+
+  /* Key 118px and the value flexible, as the design has it: a key is short and
+     a Template is not, so an even split wastes the half that needs the room. */
+  .variable {
+    display: grid;
+    grid-template-columns: 118px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .key {
+    min-inline-size: 0;
+  }
+
+  .add {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 6px;
+  }
+
+  /* Ghost until the row is hovered or the button is focused: a bin drawn at
+     full strength on every row reads as the row's purpose. */
+  .remove {
+    display: grid;
+    place-items: center;
+    inline-size: 26px;
+    block-size: 26px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: var(--hatua-radius-sm);
+    background: transparent;
+    color: var(--hatua-text-muted);
+    cursor: pointer;
+    opacity: 0.6;
+  }
+
+  .remove:hover {
+    border-color: var(--hatua-border-subtle);
+    background: var(--hatua-status-error-wash);
+    color: var(--hatua-status-error);
+    opacity: 1;
+  }
+
+  .remove:focus-visible {
+    outline: 2px solid var(--hatua-focus-ring);
+    outline-offset: -2px;
+    opacity: 1;
+  }
+
+  .icon {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.25;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  /* Reachable and announced, never painted. `display: none` and
+     `visibility: hidden` both take it out of the accessibility tree. */
+  .offscreen {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}

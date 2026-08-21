@@ -197,7 +197,7 @@ describe('StepList', () => {
 
   it('offers a Branch with no Steps somewhere to put one', async () => {
     // One element, not two: an empty list's insert point IS its empty state.
-    // It says Step rather than Component because the Library's cards are not
+    // It says Step rather than Component because the Components cards are not
     // draggable and sit behind another tab — no Component can be dropped
     // here.
     mount(host())
@@ -330,7 +330,7 @@ describe('edits go through the store as commands', () => {
 
   it('hands an insert point out rather than guessing at a Component', async () => {
     // This region knows where a Step would go and nothing about what to put
-    // there — the catalogue is the Library's. So the point goes out as a prop.
+    // there — the catalogue is the Components tab's. So the point goes out as a prop.
     const onInsert = vi.fn()
     mount(host(), { onInsert })
     await screen.findByText('Fetch mail')

@@ -7,11 +7,16 @@ import { Placeholder } from './Placeholder'
 export type DataProps = ComponentPropsWithRef<'section'>
 
 /**
- * The Data tab: the values a Template can read — a Trigger's declared outputs,
- * each Step's outputs, the workflow's variables and its Connections.
+ * The Data panel: everything the selected Step can read, as a read-only tree —
+ * a Trigger's declared outputs, each upstream Step's outputs, Run Context and
+ * the workflow's variables.
  *
- * A stub until the data PR. It is the same vocabulary the reference picker
- * offers, shown as a browsable tree rather than a popover.
+ * A stub until the reference-tree PR. It is the same component the picker's
+ * **Reference** tab mounts, and it is not a tab: the step editor expands
+ * leftward into it, so a run of mappings does not mean reopening a popover each
+ * time. Drag out of it; do not edit in it — a variable is *edited* in the
+ * Workflow tab and *read* here, one place to change a thing and one place to
+ * use it.
  */
 export function Data({ className, ...rest }: DataProps) {
   return (

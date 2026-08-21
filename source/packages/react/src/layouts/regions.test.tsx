@@ -1,12 +1,13 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
+import { Components } from './Components'
 import { Data } from './Data'
 import { FlowMap } from './FlowMap'
 import { Inspector } from './Inspector'
-import { Library } from './Library'
 import { StepList } from './StepList'
 import { TabbedPanel } from './TabbedPanel'
 import { TopBar } from './TopBar'
+import { Workflow } from './Workflow'
 
 /**
  * Every region, mounted alone — outside <Build>, outside <Hatua>, outside the
@@ -21,11 +22,20 @@ import { TopBar } from './TopBar'
 const REGIONS = [
   { name: 'TopBar', element: <TopBar />, role: 'region', label: 'Toolbar', href: 'hatua-topbar' },
   {
-    name: 'Library',
-    element: <Library />,
+    // "Components", not "Library": the label a user reads and the region a Host
+    // imports are the same word, which is the whole point of the rename.
+    name: 'Components',
+    element: <Components />,
     role: 'region',
-    label: 'Library',
-    href: 'hatua-library',
+    label: 'Components',
+    href: 'hatua-components',
+  },
+  {
+    name: 'Workflow',
+    element: <Workflow />,
+    role: 'region',
+    label: 'Workflow',
+    href: 'hatua-workflow',
   },
   {
     name: 'StepList',
@@ -90,31 +100,31 @@ describe.each(REGIONS)('$name', ({ element, role, label, href }) => {
 
 describe('TabbedPanel', () => {
   const TABS = [
-    { id: 'library', label: 'Library', content: <p>library body</p> },
+    { id: 'components', label: 'Components', content: <p>components body</p> },
     { id: 'flow', label: 'Flow', content: <p>flow body</p> },
-    { id: 'data', label: 'Data', content: <p>data body</p> },
+    { id: 'workflow', label: 'Workflow', content: <p>workflow body</p> },
   ]
 
   it('arranges the regions it is handed and imports none of them', () => {
     render(<TabbedPanel tabs={TABS} />)
     expect(screen.getAllByRole('tab')).toHaveLength(3)
-    expect(screen.getByText('library body')).toBeDefined()
+    expect(screen.getByText('components body')).toBeDefined()
   })
 
   it('opens the first tab, or the one named', () => {
     const { unmount } = render(<TabbedPanel tabs={TABS} />)
-    expect(screen.getByRole('tab', { selected: true }).textContent).toBe('Library')
+    expect(screen.getByRole('tab', { selected: true }).textContent).toBe('Components')
     unmount()
 
-    render(<TabbedPanel tabs={TABS} defaultTabId="data" />)
-    expect(screen.getByRole('tab', { selected: true }).textContent).toBe('Data')
+    render(<TabbedPanel tabs={TABS} defaultTabId="workflow" />)
+    expect(screen.getByRole('tab', { selected: true }).textContent).toBe('Workflow')
   })
 
   it('switches on click', () => {
     render(<TabbedPanel tabs={TABS} />)
     fireEvent.click(screen.getByRole('tab', { name: 'Flow' }))
     expect(screen.getByText('flow body')).toBeDefined()
-    expect(screen.queryByText('library body')).toBeNull()
+    expect(screen.queryByText('components body')).toBeNull()
   })
 
   it('moves between tabs with the arrow keys, wrapping at both ends', () => {
@@ -124,7 +134,7 @@ describe('TabbedPanel', () => {
     expect(screen.getByRole('tab', { selected: true }).textContent).toBe('Flow')
     fireEvent.keyDown(tablist, { key: 'ArrowLeft' })
     fireEvent.keyDown(tablist, { key: 'ArrowLeft' })
-    expect(screen.getByRole('tab', { selected: true }).textContent).toBe('Data')
+    expect(screen.getByRole('tab', { selected: true }).textContent).toBe('Workflow')
   })
 
   /*
@@ -174,8 +184,8 @@ describe('TabbedPanel', () => {
   })
 
   it('renders one tab and no strip of three when handed one region', () => {
-    // The Host that mounts only the Library is the case the whole design turns
-    // on: nothing here reaches for the other two.
+    // The Host that mounts only the Components tab is the case the whole design
+    // turns on: nothing here reaches for the other two.
     render(<TabbedPanel tabs={[TABS[0]!]} />)
     expect(screen.getAllByRole('tab')).toHaveLength(1)
     expect(screen.queryByText('flow body')).toBeNull()

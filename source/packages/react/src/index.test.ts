@@ -13,6 +13,7 @@ describe('@hatua/react exports', () => {
     expect(Object.keys(api).sort()).toEqual([
       'Build',
       'Button',
+      'Components',
       'ConfirmDialog',
       'Data',
       'FlowMap',
@@ -20,13 +21,13 @@ describe('@hatua/react exports', () => {
       'HatuaProvider',
       'Input',
       'Inspector',
-      'Library',
       'Select',
       'StepList',
       'TabbedPanel',
       'Toast',
       'Toggle',
       'TopBar',
+      'Workflow',
       'createTheme',
     ])
   })
@@ -39,7 +40,15 @@ describe('@hatua/react exports', () => {
    * export and nothing hangs off <Hatua> itself.
    */
   it('exports the parts individually, not as properties of Hatua', () => {
-    for (const part of ['Build', 'TopBar', 'FlowMap', 'StepList', 'Inspector', 'Library', 'Data']) {
+    for (const part of [
+      'Build',
+      'TopBar',
+      'FlowMap',
+      'StepList',
+      'Inspector',
+      'Components',
+      'Workflow',
+    ]) {
       expect(api).toHaveProperty(part)
       expect(api.Hatua).not.toHaveProperty(part)
     }

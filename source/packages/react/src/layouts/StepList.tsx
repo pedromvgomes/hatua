@@ -59,14 +59,14 @@ import css from './StepList.module.css?inline'
 export interface StepListProps extends Omit<ComponentPropsWithRef<'section'>, 'onSelect'> {
   /**
    * Fired when a Step row is activated. Optional, and its absence is meaningful
-   * in the same way `Library`'s is: with no handler there is still selection to
+   * in the same way `Components`'s is: with no handler there is still selection to
    * show, but nothing outside this region hears about it.
    */
   onSelect?: (stepId: string) => void
   /**
    * Fired when an insert point is chosen. Optional — this region knows where a
    * Step would go and nothing at all about which Component to put there, so it
-   * hands the point out and the Library fills it in.
+   * hands the point out and the Components tab fills it in.
    */
   onInsert?: (at: InsertPoint) => void
   /** Which Step starts selected. Uncontrolled, like TabbedPanel's defaultTabId. */
@@ -106,7 +106,7 @@ export function StepList({
   // so every region that mounts may call it and only the first opens the Draft.
   useEffect(() => {
     // `load()` opens the Draft AND asks for the catalogue, because validation
-    // needs both. A Host mounting this region and no Library would otherwise
+    // needs both. A Host mounting this region and no catalogue would otherwise
     // never fetch a manifest, and every Step would sit unchecked with nothing
     // saying why.
     if (validation) validation.load()
@@ -462,7 +462,7 @@ function Gap({
    * hover-revealed gap plus a static box would be two affordances for one
    * place, of which only one works.
    *
-   * It says Step rather than Component deliberately. The Library's cards are
+   * It says Step rather than Component deliberately. The Components cards are
    * not draggable and sit behind another tab, so no Component can be dropped
    * here; what can is an existing Step from the tree.
    */

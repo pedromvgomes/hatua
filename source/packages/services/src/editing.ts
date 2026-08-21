@@ -1,7 +1,7 @@
 import { parseWorkflow, type WorkflowDocument } from '@hatua/document'
 import type { WorkflowDefinition } from '@hatua/schema'
+import type { EditCommand } from './command'
 import type { EditToken, Lease, PublishedVersion, WorkflowStore } from './ports'
-import type { EditCommand } from './steps'
 import type { Store } from './store'
 
 /**

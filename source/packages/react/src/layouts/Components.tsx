@@ -12,10 +12,10 @@ import { Button } from '../primitives/Button'
 import { cx } from '../primitives/classNames'
 import { Input } from '../primitives/Input'
 import { useManifestStore } from '../theme/HatuaProvider'
-import styles from './Library.module.css'
-import css from './Library.module.css?inline'
+import styles from './Components.module.css'
+import css from './Components.module.css?inline'
 
-export interface LibraryProps extends Omit<ComponentPropsWithRef<'section'>, 'onSelect'> {
+export interface ComponentsProps extends Omit<ComponentPropsWithRef<'section'>, 'onSelect'> {
   /**
    * Fired when a card is activated. Optional, and its absence is meaningful:
    * with no handler there is nothing a card can do, so the cards render as
@@ -30,25 +30,37 @@ export interface LibraryProps extends Omit<ComponentPropsWithRef<'section'>, 'on
 }
 
 /**
- * The Library tab: the Components a Host's Component Manifests declare, ready
- * to be added to the Workflow Definition as Steps.
+ * The Components tab: the Components a Host's Component Manifests declare,
+ * ready to be added to the Workflow Definition as Steps.
+ *
+ * **Components and nothing else.** A catalogue serves two `kind`s and this
+ * region renders one, because adding a Trigger belongs to the Workflow tab: a
+ * Trigger is not a Step (CONTEXT.md), `doc.triggers[]` is a top-level list, and
+ * a card here means "add this to the tree". A tab headed Components that also
+ * offered Triggers would present the two as interchangeable things to add, and
+ * nothing on a card distinguishes them — the manifests are declared
+ * identically, same `group`, same `icon`, same `blurb`.
+ *
+ * The label and the region are one word for the same reason. `Build.tsx` and
+ * `layouts/regions.test.tsx` both record what happened when a tab labelled
+ * "Flow" and a region called `FlowMap` drifted apart — two different things
+ * wearing one name, and a canvas with nowhere to live.
  *
  * It takes no manifests prop, and that is the decision this region turns on.
  * Both embeddings mount it bare — apps/playground/src/host.tsx writes
- * `<Library />` and layouts/regions.test.tsx renders every region with no
+ * `<Components />` and layouts/regions.test.tsx renders every region with no
  * container above it — so the catalogue reaches it through <HatuaProvider>,
  * which carries the Host's ports and holds the store that reads them. The
  * region subscribes; it does not fetch, and it does not copy what it reads into
  * state of its own.
  *
  * What it deliberately does not do: add anything. `once: true` — at most one
- * instance per workflow — would grey out an already-used Component, and
- * knowing that needs the Workflow Definition, which arrives with the editing
- * store. Half of that check is worse than none, because the half that is
- * missing is the half a user notices. Dragging onto the canvas waits for the
- * canvas.
+ * instance per workflow — would grey out an already-used Component, and knowing
+ * that needs the Workflow Definition. Half of that check is worse than none,
+ * because the half that is missing is the half a user notices. Dragging onto
+ * the canvas waits for the canvas.
  */
-export function Library({ onSelect, defaultQuery = '', className, ...rest }: LibraryProps) {
+export function Components({ onSelect, defaultQuery = '', className, ...rest }: ComponentsProps) {
   const store = useManifestStore()
   const [query, setQuery] = useState(defaultQuery)
   const filterId = useId()
@@ -59,7 +71,7 @@ export function Library({ onSelect, defaultQuery = '', className, ...rest }: Lib
     store?.load()
   }, [store])
 
-  const state = useSyncExternalStore<LibraryState>(
+  const state = useSyncExternalStore<CatalogueState>(
     store ? store.subscribe : subscribeToNothing,
     store ? store.getSnapshot : readUnconfigured,
     // Without a server snapshot this throws during SSR, and the whole package
@@ -69,30 +81,41 @@ export function Library({ onSelect, defaultQuery = '', className, ...rest }: Lib
   )
 
   const manifests = state.status === 'ready' ? state.manifests : NONE
-  const sections = useMemo(() => sectionsOf(manifests, query), [manifests, query])
-  const matched = sections.reduce((n, section) => n + section.count, 0)
+  const components = useMemo(
+    () => manifests.filter((manifest) => manifest.kind === 'component'),
+    [manifests],
+  )
+  const groups = useMemo(() => groupsOf(components, query), [components, query])
+  const matched = groups.reduce((n, group) => n + group.manifests.length, 0)
 
   const searching = query.trim() !== ''
-  const populated = state.status === 'ready' && manifests.length > 0
-  /** Loaded, holds something, and none of it is a kind this region can render. */
-  const unrenderable = populated && matched === 0 && !searching
+  const ready = state.status === 'ready'
+  /**
+   * An entry whose `kind` is neither of the two a manifest declares. A
+   * `components:` catalogue resolved one array too shallow is exactly this, and
+   * it is a wiring mistake rather than an empty catalogue — different fix,
+   * different audience, so different copy.
+   */
+  const undeclared = ready && manifests.some((manifest) => !KINDS.has(manifest.kind))
+  /** Loaded and correctly shaped, and there is simply no Component in it. */
+  const none = ready && components.length === 0 && !undeclared
 
   const liveMessage =
     state.status === 'loading'
       ? 'Loading components…'
-      : populated && matched === 0 && searching
+      : components.length > 0 && matched === 0 && searching
         ? `Nothing matches “${query}”.`
         : ''
 
   return (
     <>
-      <style href="hatua-library" precedence="hatua">
+      <style href="hatua-components" precedence="hatua">
         {css}
       </style>
-      <section aria-label="Library" className={cx(styles.library, className)} {...rest}>
+      <section aria-label="Components" className={cx(styles.components, className)} {...rest}>
         {/* Only once there is something to filter. A search box over a failed
             load offers to narrow nothing. */}
-        {state.status === 'ready' && manifests.length > 0 ? (
+        {components.length > 0 ? (
           <div className={styles.filter}>
             <label className={styles.filterLabel} htmlFor={filterId}>
               Filter
@@ -101,7 +124,7 @@ export function Library({ onSelect, defaultQuery = '', className, ...rest }: Lib
               id={filterId}
               type="search"
               value={query}
-              placeholder="Search the library"
+              placeholder="Search components"
               onChange={(event) => setQuery(event.target.value)}
             />
           </div>
@@ -141,46 +164,39 @@ export function Library({ onSelect, defaultQuery = '', className, ...rest }: Lib
             </div>
           ) : null}
 
-          {/* An empty catalogue is a state, not a fault: a Host that has
-              declared nothing yet is exactly this, and saying so is what stops
-              it being read as a failed load. */}
-          {state.status === 'ready' && manifests.length === 0 ? (
-            <p className={styles.note}>
-              This Host has declared no Components yet. Everything the Library shows comes from its
-              Component Manifests — Hatua invents none.
-            </p>
-          ) : null}
-
           {/*
-            "Nothing matched" is not the same as "nothing here is renderable".
-            A Host that resolves an array of things with no `kind` we know —
-            a `components:` catalogue is one array away from exactly that —
-            filters to nothing with an EMPTY query, which would otherwise
-            render the literal `Nothing matches “”.`
+            An end user's screen, so it is said in their words. Nothing about
+            manifests, and nothing about a Host: a workflow builder with no
+            components in it yet is a state a correctly-wired product has, and
+            the person looking at it cannot act on a sentence about files they
+            do not own. See .agents/rules/rendered-copy-is-written-for-the-hosts-users.md.
+
+            One sentence covers both ways of getting here — a catalogue with
+            nothing in it, and one holding only Triggers — because they are the
+            same answer to the same question.
           */}
-          {unrenderable ? (
+          {none ? <p className={styles.note}>No components are available yet.</p> : null}
+
+          {/* The other half: entries the catalogue declared and this region
+              cannot read. Only a wiring mistake produces it, so it names the
+              key that fixes it. */}
+          {undeclared && matched === 0 ? (
             <p className={styles.note}>
-              The catalogue loaded, but nothing in it is a Component or a Trigger. A manifest
-              declares which with <code className={styles.code}>kind</code>.
+              The catalogue loaded, but nothing in it is a Component. A manifest declares which with{' '}
+              <code className={styles.code}>kind</code>.
             </p>
           ) : null}
 
-          {sections.map((section) => (
-            <div key={section.kind} className={styles.section}>
-              <h2 className={styles.sectionHeading}>{section.heading}</h2>
-              <p className={styles.sectionBlurb}>{section.blurb}</p>
-              {section.groups.map((group) => (
-                <div key={group.name} className={styles.group}>
-                  <h3 className={styles.groupHeading}>{group.name}</h3>
-                  <ul className={styles.cards}>
-                    {group.manifests.map((manifest) => (
-                      <li key={manifest.use}>
-                        <Card manifest={manifest} onSelect={onSelect} />
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
+          {groups.map((group) => (
+            <div key={group.name} className={styles.group}>
+              <h2 className={styles.groupHeading}>{group.name}</h2>
+              <ul className={styles.cards}>
+                {group.manifests.map((manifest) => (
+                  <li key={manifest.use}>
+                    <Card manifest={manifest} onSelect={onSelect} />
+                  </li>
+                ))}
+              </ul>
             </div>
           ))}
         </div>
@@ -260,7 +276,7 @@ function ComponentIcon({ manifest }: { manifest: Manifest }) {
 /**
  * A card is a button only when something happens on click. A control that does
  * nothing still takes a tab stop, still says "button" to a screen reader and
- * still invites a click — so the Host that mounts <Library /> to browse a
+ * still invites a click — so the Host that mounts <Components /> to browse a
  * catalogue gets a list, and the one that passes onSelect gets controls.
  */
 function Card({ manifest, onSelect }: { manifest: Manifest; onSelect?: (m: Manifest) => void }) {
@@ -292,60 +308,26 @@ function Card({ manifest, onSelect }: { manifest: Manifest; onSelect?: (m: Manif
  * problems with different fixes, so they are different states. The store knows
  * only the second; this one exists between the provider and the region.
  */
-type LibraryState = ManifestState | { status: 'unconfigured' }
+type CatalogueState = ManifestState | { status: 'unconfigured' }
 
 const UNCONFIGURED = { status: 'unconfigured' } as const
 const LOADING = { status: 'loading' } as const
 const NONE: Manifest[] = []
 
+/** The kinds a Component Manifest may declare. Anything else is a malformed catalogue. */
+const KINDS: ReadonlySet<string> = new Set<Manifest['kind']>(['component', 'trigger'])
+
 // Module-level and therefore stable: useSyncExternalStore re-subscribes
 // whenever `subscribe` changes identity, and re-renders forever if `getSnapshot`
 // returns a fresh object each call.
 const subscribeToNothing = () => () => {}
-const readUnconfigured = (): LibraryState => UNCONFIGURED
-const readLoading = (): LibraryState => LOADING
+const readUnconfigured = (): CatalogueState => UNCONFIGURED
+const readLoading = (): CatalogueState => LOADING
 
 interface Group {
   name: string
   manifests: Manifest[]
 }
-
-interface Section {
-  kind: Manifest['kind']
-  heading: string
-  blurb: string
-  groups: Group[]
-  count: number
-}
-
-/**
- * Triggers and Components are shown together but never mixed.
- *
- * CONTEXT.md is unambiguous: a Trigger is *not* a Step, and it lives in its own
- * section of the Workflow Definition. Its manifests are declared identically —
- * same `group`, same `icon`, same `blurb` — so grouping by `group` alone would
- * file `email.received` next to `email.send` under "Email" and present the two
- * as interchangeable things to add. They are not, and the difference is not
- * recoverable from anything on the card.
- *
- * Hiding Triggers was the other option and is worse. The Host declared them; a
- * Library that silently drops half of what it was handed sends whoever wrote
- * that manifest looking for a parse error. Separate headings show everything
- * and still say which is which, which is why this is a product decision rather
- * than a filter picked in passing.
- */
-const SECTIONS = [
-  {
-    kind: 'trigger',
-    heading: 'Triggers',
-    blurb: 'What starts a workflow. A Trigger is not a Step — its outputs are the parameters.',
-  },
-  {
-    kind: 'component',
-    heading: 'Components',
-    blurb: 'Added to the workflow as Steps.',
-  },
-] as const satisfies readonly { kind: Manifest['kind']; heading: string; blurb: string }[]
 
 /** Free-form and optional, so everything unfiled lands together and last. */
 const UNGROUPED = 'Other'
@@ -361,37 +343,22 @@ const matches = (manifest: Manifest, needle: string) =>
  * only ordering information there is — alphabetising would discard it and put
  * "Advanced" above "Email" for no reason a user could name.
  */
-function sectionsOf(manifests: Manifest[], query: string): Section[] {
+function groupsOf(components: Manifest[], query: string): Group[] {
   const needle = query.trim().toLowerCase()
-  const visible = needle ? manifests.filter((m) => matches(m, needle)) : manifests
+  const visible = needle ? components.filter((m) => matches(m, needle)) : components
 
-  return SECTIONS.flatMap(({ kind, heading, blurb }) => {
-    const mine = visible.filter((m) => m.kind === kind)
-    if (mine.length === 0) return []
+  const groups = new Map<string, Manifest[]>()
+  for (const manifest of visible) {
+    const name = manifest.group?.trim() || UNGROUPED
+    const existing = groups.get(name)
+    if (existing) existing.push(manifest)
+    else groups.set(name, [manifest])
+  }
 
-    const groups = new Map<string, Manifest[]>()
-    for (const manifest of mine) {
-      const name = manifest.group?.trim() || UNGROUPED
-      const existing = groups.get(name)
-      if (existing) existing.push(manifest)
-      else groups.set(name, [manifest])
-    }
-
-    // Whatever the Host left ungrouped goes last, wherever it happened to
-    // appear: "Other" is not a section a Host chose, so it should not be able
-    // to sit above the ones it did.
-    const ordered = [...groups].sort(
-      ([a], [b]) => Number(a === UNGROUPED) - Number(b === UNGROUPED),
-    )
-
-    return [
-      {
-        kind,
-        heading,
-        blurb,
-        count: mine.length,
-        groups: ordered.map(([name, list]) => ({ name, manifests: list })),
-      },
-    ]
-  })
+  // Whatever the Host left ungrouped goes last, wherever it happened to appear:
+  // "Other" is not a section a Host chose, so it should not be able to sit
+  // above the ones it did.
+  return [...groups]
+    .sort(([a], [b]) => Number(a === UNGROUPED) - Number(b === UNGROUPED))
+    .map(([name, manifests]) => ({ name, manifests }))
 }

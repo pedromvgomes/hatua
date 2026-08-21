@@ -1,9 +1,9 @@
 import {
+  Components,
   createTheme,
   FlowMap,
   HatuaProvider,
   Inspector,
-  Library,
   type Manifest,
   StepList,
   TabbedPanel,
@@ -23,8 +23,9 @@ import { createLocalWorkflowStore } from './workflow-store'
  * about what a Host does NOT have to pull in can only be checked by a bundle
  * that does not pull it in. A bundler cannot include what nobody imports, so
  * the evidence is what this page's chunks do not contain. `hatua-build` and
- * `hatua-data` — the style hrefs of the container and of the region this page
- * leaves out — appear in exactly one chunk, and host.html never asks for it:
+ * `hatua-workflow` — the style hrefs of the container and of the region this
+ * page leaves out — appear in exactly one chunk, and host.html never asks for
+ * it:
  *
  *     $ grep -l hatua-build dist/assets/*.js
  *     dist/assets/Hatua-*.js
@@ -45,17 +46,17 @@ import { createLocalWorkflowStore } from './workflow-store'
  *
  *  1. **They move.** The Inspector is on the left here and the toolbar is at
  *     the bottom. <Build> puts them the other way round. Neither region knows.
- *  2. **They are optional.** The Data tab is deliberately not mounted. That is
- *     the harder half: a region that is merely movable can still be required,
- *     and a shell that quietly needs all five is a shell every Host has to
- *     accept whole.
+ *  2. **They are optional.** The Workflow tab is deliberately not mounted. That
+ *     is the harder half: a region that is merely movable can still be
+ *     required, and a shell that quietly needs all of them is a shell every
+ *     Host has to accept whole.
  *  3. **The tab strip owns nothing.** <TabbedPanel> is handed two regions and
  *     renders two tabs. It has no third child to lose — and it never holds the
  *     canvas: <FlowMap> gets a column here, as it does in <Build>, because a
  *     canvas mounted as a tab is a canvas the screen has no room for.
- *  4. **The regions take no data props.** <Library /> is still written exactly
- *     as it was before it rendered anything — the catalogue reaches it through
- *     the provider's ports. Had the manifests arrived as a prop, this line
+ *  4. **The regions take no data props.** <Components /> is written exactly as
+ *     it was before it rendered anything — the catalogue reaches it through the
+ *     provider's ports. Had the manifests arrived as a prop, this line
  *     would have had to change, and "mount the regions wherever you like" would
  *     have quietly become "mount them and wire each one up".
  *
@@ -78,8 +79,8 @@ import { createLocalWorkflowStore } from './workflow-store'
  * second tab takes the claim and the first halts on its next write. See
  * src/workflow-store.ts on why takeover rather than refusal.
  *
- * The source switcher below is the half of the Library that the default entry
- * cannot show. A catalogue that always resolves instantly makes loading,
+ * The source switcher below is the half of the Components tab that the default
+ * entry cannot show. A catalogue that always resolves instantly makes loading,
  * failure and emptiness look theoretical; they are not — they are what a Host
  * fetching manifests over a network gets — so this page lets you pick one and
  * look at it. The sources here are fakes, chosen so each state can be held
@@ -146,7 +147,7 @@ function HostPage() {
       >
         <p style={{ margin: 0 }}>
           Host-authored embedding — the Inspector on the left, the toolbar at the bottom, and no
-          Data tab at all. Compare with <a href="/index.html">the default embedding</a> and{' '}
+          Workflow tab at all. Compare with <a href="/index.html">the default embedding</a> and{' '}
           <a href="/api.html">the API-backed one</a>.
         </p>
         <fieldset style={{ display: 'flex', gap: 10, border: 0, margin: 0, padding: 0 }}>
@@ -209,9 +210,9 @@ function HostPage() {
             <TabbedPanel
               tabs={[
                 {
-                  id: 'library',
-                  label: 'Library',
-                  content: <Library onSelect={setLastSelected} />,
+                  id: 'components',
+                  label: 'Components',
+                  content: <Components onSelect={setLastSelected} />,
                 },
                 {
                   id: 'flow',
@@ -219,7 +220,7 @@ function HostPage() {
                   // No onInsert here, and that is the point of this page: the
                   // regions emit, and what a Host does with what they emit is
                   // the Host's business. <Build> is the one that introduces the
-                  // Library and the Flow tab to each other; this page prints
+                  // Components and Flow tabs to each other; this page prints
                   // the selection instead and still edits, because removing and
                   // reordering need no catalogue.
                   content: <StepList onSelect={(id) => console.info('selected', id)} />,

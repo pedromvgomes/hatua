@@ -41,7 +41,7 @@ describe('createApiManifestSource', () => {
   })
 
   it('reports the status rather than letting an error page reach the parser', async () => {
-    // The failure this avoids: an HTML 503 page hits `.json()` and the Library
+    // The failure this avoids: an HTML 503 page hits `.json()` and the region
     // shows "Unexpected token <", which tells nobody the endpoint is down.
     const fetch = vi.fn(async () => new Response('<html>nope</html>', { status: 503 }))
     const source = createApiManifestSource('/api/manifests.json', { delayMs: 0, fetch })

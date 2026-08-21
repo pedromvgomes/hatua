@@ -1,5 +1,7 @@
 import type { WorkflowDocument } from '@hatua/document'
 import type { Step } from '@hatua/schema'
+import { asObject, detachNode, insertNode, type Path } from './ast'
+import type { EditCommand } from './command'
 
 /**
  * The edit commands, and the addressing they need.
@@ -12,10 +14,12 @@ import type { Step } from '@hatua/schema'
  * projection: the node carries the user's comments, key order and quoting, and
  * a rebuilt one would not.
  *
- * Only three commands exist here, and that is deliberate. The mechanism is the
- * deliverable; a command set designed before the screens that create them is a
- * command set those screens reshape. These three have consumers landing with
- * this PR — the Library's `onSelect` adds, and the Flow tab moves and removes.
+ * This file holds the commands that address a Step, and only those. The
+ * workflow's own fields — its name, its Triggers, its variables — are addressed
+ * by key rather than by tree position, and live in `workflow.ts` and
+ * `variables.ts`. Splitting them keeps the addressing in one file per subject:
+ * everything below needs an `InsertPoint` and a walk of the tree, and nothing
+ * beside it does.
  */
 
 /** A position among a list of sibling Steps, named in domain terms rather than YAML paths. */
@@ -43,43 +47,10 @@ export interface NewStep {
   id?: string
 }
 
-/**
- * One undoable change.
- *
- * `apply` mutates and returns nothing: there is no inverse to write, because
- * undo restores the document's previous TEXT rather than replaying an opposite
- * command. See `createEditingStore` for why that is the cheaper correctness.
- *
- * Throwing aborts the command. The store catches it, leaves the document alone
- * and records nothing on the undo stack, so a command that cannot find its Step
- * is a no-op rather than half an edit.
- */
-export interface EditCommand {
-  /** What an undo control says it will undo. */
-  readonly label: string
-  apply(document: WorkflowDocument): void
-}
-
-type Path = (string | number)[]
-
 interface Located {
   /** Path of the sequence holding the Step. */
   listPath: Path
   index: number
-}
-
-/**
- * The document as plain JS, whether or not it is a valid Workflow Definition.
- *
- * `toJSON()` is not usable here and must not become so: it throws while the
- * source is mid-edit, which is a legitimate state (ADR-0001), and a command
- * that only worked on documents that already validate would be unusable in
- * exactly the situation the user is trying to edit their way out of. The AST's
- * own projection has no opinion about the schema.
- */
-const asObject = (document: WorkflowDocument): Record<string, unknown> => {
-  const value = document.ast.toJS()
-  return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
 }
 
 /**
@@ -162,91 +133,6 @@ function mintId(document: WorkflowDocument): string {
     const id = `s${n}`
     if (!taken.has(id)) return id
   }
-}
-
-interface Seq {
-  items: unknown[]
-  flow?: boolean
-  commentBefore?: string
-}
-
-const asSeq = (value: unknown): Seq | undefined =>
-  value && typeof value === 'object' && 'items' in value && Array.isArray((value as Seq).items)
-    ? (value as Seq)
-    : undefined
-
-/**
- * A comment above the FIRST item of a block sequence is anchored to the
- * sequence, not to the item — every other item carries its own `commentBefore`.
- *
- * Left alone, that makes the comment describe a position rather than a Step:
- * remove the first Step and its comment stays behind to label whatever moves
- * up; move it and the comment does not go with it. The user wrote "# retry the
- * flaky one" above a Step, and it ends up above a different one, in a file that
- * lives in their repository.
- *
- * So it is lifted onto the item before any splice and lowered back onto the
- * sequence afterwards. Between those two calls every comment belongs to a node,
- * which is the model the rest of the file assumes.
- */
-const liftLeadingComment = (seq: Seq) => {
-  // Block sequences only. A flow list keeps its comment at the list level
-  // whatever happens to its items, so moving one onto an item there would
-  // change what the comment is about — and re-anchoring it forces the list to
-  // break across lines, rewriting formatting Hatua does not own (ADR-0001).
-  if (seq.flow) return
-  const first = seq.items[0] as { commentBefore?: string } | undefined
-  if (!first || seq.commentBefore === undefined) return
-  first.commentBefore =
-    first.commentBefore === undefined
-      ? seq.commentBefore
-      : `${seq.commentBefore}\n${first.commentBefore}`
-  seq.commentBefore = undefined
-}
-
-const lowerLeadingComment = (seq: Seq) => {
-  if (seq.flow) return
-  const first = seq.items[0] as { commentBefore?: string } | undefined
-  if (!first || first.commentBefore === undefined) return
-  seq.commentBefore = first.commentBefore
-  first.commentBefore = undefined
-}
-
-/**
- * Splice a node into the sequence at `listPath`, creating the sequence when the
- * document has none — an empty Branch has no `steps:` key at all until the
- * first Step lands in it.
- */
-function insertNode(document: WorkflowDocument, listPath: Path, index: number, node: unknown) {
-  const seq = asSeq(document.ast.getIn(listPath, true))
-
-  if (!seq) {
-    document.ast.setIn(listPath, [node])
-    return
-  }
-
-  // `steps: []` is flow style, and splicing into it keeps flow style — so the
-  // first Step added to an empty Branch re-serialises the whole subtree onto
-  // one line as `[ { id: s3, use: email.send } ]`, beside siblings written in
-  // block. Only an EMPTY sequence is converted: a list the user wrote in flow
-  // style with items in it is a formatting choice, and Hatua does not own the
-  // file's formatting (ADR-0001).
-  if (seq.items.length === 0) seq.flow = false
-
-  liftLeadingComment(seq)
-  seq.items.splice(Math.max(0, Math.min(index, seq.items.length)), 0, node)
-  lowerLeadingComment(seq)
-}
-
-/** Remove the node at `listPath[index]` and hand it back, formatting intact. */
-function detachNode(document: WorkflowDocument, listPath: Path, index: number): unknown {
-  const seq = asSeq(document.ast.getIn(listPath, true))
-  if (!seq) throw new Error(`No step sequence at ${listPath.join('.')}`)
-
-  liftLeadingComment(seq)
-  const [node] = seq.items.splice(index, 1)
-  lowerLeadingComment(seq)
-  return node
 }
 
 const samePath = (a: Path, b: Path) => a.length === b.length && a.every((part, i) => part === b[i])

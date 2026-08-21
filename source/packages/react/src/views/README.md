@@ -15,5 +15,5 @@ what importing the regions is *for*.
 reads, forwarded straight to `<HatuaProvider>`. That is not a third mechanism
 creeping in: it is the one question Hatua cannot answer for itself. Hatua never
 invents a Component, so a designer given no `ManifestSource` has an empty
-Library by definition, and both ways to embed have to say where the manifests
+catalogue by definition, and both ways to embed have to say where the manifests
 come from. The regions themselves still take none of it.

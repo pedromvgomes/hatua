@@ -7,7 +7,7 @@
    * height is the CONTENT's — so the list grew straight past the panel instead
    * of scrolling inside it, and <TabbedPanel>'s `overflow: hidden` clipped it
    * over whatever sat below. Adding a Step is what made it long enough to
-   * notice. `minmax(0, 1fr)` is the same shape `Library` uses, and the `0`
+   * notice. `minmax(0, 1fr)` is the same shape `Components` uses, and the `0`
    * minimum is the load-bearing half: a plain `1fr` floors at min-content and
    * overflows again.
    */

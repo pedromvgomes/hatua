@@ -1,5 +1,5 @@
 @layer hatua {
-  .library {
+  .components {
     display: grid;
     /* The filter stays put and only the catalogue scrolls; a search box that
        scrolls away is unusable the moment the list is long enough to need it. */
@@ -77,40 +77,20 @@
     text-wrap: pretty;
   }
 
-  .section {
-    padding: 8px 0;
+  .group {
+    padding-block-start: 8px;
   }
 
-  .sectionHeading {
+  /* The only heading level in the panel, so it carries the overline treatment
+     the design gives a group: small, uppercase and tracked, muted against the
+     card names under it. */
+  .groupHeading {
     margin: 0;
-    padding: 8px 12px 0;
+    padding: 8px 12px 4px;
     font-size: 0.6875rem;
     font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: var(--hatua-text-secondary);
-  }
-
-  /* Why a Trigger is not a Component, said once per section rather than on
-     every card. */
-  .sectionBlurb {
-    margin: 0;
-    padding: 2px 12px 4px;
-    font-size: 0.75rem;
-    line-height: 1.4;
-    color: var(--hatua-text-muted);
-    text-wrap: pretty;
-  }
-
-  .group {
-    padding-block-start: 4px;
-  }
-
-  .groupHeading {
-    margin: 0;
-    padding: 6px 12px 2px;
-    font-size: 0.75rem;
-    font-weight: 600;
     color: var(--hatua-text-muted);
   }
 

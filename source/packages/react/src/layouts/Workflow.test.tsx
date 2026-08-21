@@ -1,0 +1,416 @@
+import type { Manifest } from '@hatua/schema'
+import type {
+  Cursor,
+  DraftSession,
+  EditToken,
+  Lease,
+  ManifestSource,
+  PublishedVersion,
+  VersionSummary,
+  WorkflowStore,
+} from '@hatua/services'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { describe, expect, it } from 'vitest'
+import { HatuaProvider } from '../theme/HatuaProvider'
+import { Workflow } from './Workflow'
+
+/**
+ * The Workflow tab against a Host's ports.
+ *
+ * Everything here mounts <Workflow /> with no document prop, because it takes
+ * none: Hatua has no storage and no idea where a workflow lives, so the ports
+ * go into <HatuaProvider> and the region subscribes to what comes out.
+ *
+ * It is the first region other than validation to read two stores, and either
+ * may be absent — so a fair share of what follows is about a Host that wired
+ * one and not the other.
+ */
+
+const SOURCE = `# Runs before anyone is awake.
+id: wf_morning
+name: "Morning inbox triage"
+version: 4
+status: draft
+
+triggers:
+  - id: t1
+    use: schedule.cron
+    name: "Every morning"
+    with:
+      at: "0 6 * * 1-5"
+
+vars:
+  # Where the digest goes.
+  - key: digest_to
+    value: "ops@example.com"
+  - key: threshold
+    value: 10
+
+steps:
+  - id: s1
+    use: email.fetch
+`
+
+const CATALOGUE: Manifest[] = [
+  {
+    kind: 'trigger',
+    use: 'schedule.cron',
+    name: 'On a schedule',
+    fields: [
+      { k: 'at', label: 'Runs at', kind: 'mono', req: true, hint: 'A cron expression.' },
+      {
+        k: 'catch_up',
+        label: 'Catch up on missed runs',
+        kind: 'bool',
+      },
+      {
+        k: 'zone',
+        label: 'Time zone',
+        kind: 'enum',
+        options: [
+          { value: 'utc', label: 'UTC' },
+          { value: 'local', label: 'The workflow owner’s' },
+        ],
+      },
+    ],
+    outputs: [],
+  },
+  {
+    kind: 'trigger',
+    use: 'email.received',
+    name: 'When mail arrives',
+    fields: [{ k: 'folder', label: 'Folder', kind: 'text' }],
+    outputs: [],
+  },
+  { kind: 'component', use: 'email.fetch', name: 'Fetch mail', fields: [], outputs: [] },
+]
+
+const token = 'tok_test' as EditToken
+const lease: Lease = { token, expiresAt: '2099-01-01T00:00:00.000Z' }
+
+interface Host {
+  port: WorkflowStore
+  writes: string[]
+}
+
+function host(yaml = SOURCE, overrides: Partial<WorkflowStore> = {}): Host {
+  const writes: string[] = []
+  return {
+    writes,
+    port: {
+      async openDraft(): Promise<DraftSession> {
+        return { token, lease, yaml, resumed: false }
+      },
+      async saveDraft(_token, text) {
+        writes.push(text)
+      },
+      async renewLease(): Promise<Lease> {
+        return lease
+      },
+      async publish(): Promise<PublishedVersion> {
+        return { version: 5, publishedAt: '2026-01-01T00:00:00.000Z' }
+      },
+      async releaseDraft() {},
+      async discardDraft() {},
+      async listVersions(): Promise<Cursor<VersionSummary>> {
+        return { items: [] }
+      },
+      async loadVersion() {
+        return yaml
+      },
+    },
+    ...overrides,
+  }
+}
+
+const serving = (manifests: Manifest[]): ManifestSource => ({
+  loadManifests: async () => manifests,
+})
+
+const mount = (source?: Host, manifests: Manifest[] | null = CATALOGUE) =>
+  render(
+    <HatuaProvider
+      ports={{
+        ...(source ? { workflows: source.port } : {}),
+        ...(manifests ? { manifests: serving(manifests) } : {}),
+      }}
+      workflowId={source ? 'wf_morning' : undefined}
+    >
+      <Workflow />
+    </HatuaProvider>,
+  )
+
+/**
+ * Long enough for the autosave debounce plus contention.
+ *
+ * Autosave waits 800ms of quiet before it writes, and `waitFor` defaults to a
+ * 1000ms timeout — 200ms of headroom, which a machine running the whole
+ * monorepo's suites in parallel does not reliably have.
+ */
+const AUTOSAVED = { timeout: 5000 }
+
+/** Commit the way the user does: type, then leave the field. */
+const type = (field: HTMLElement, value: string) => {
+  fireEvent.change(field, { target: { value } })
+  fireEvent.blur(field)
+}
+
+describe('the ports it needs', () => {
+  it('says so when the Host wired no storage, rather than showing an empty workflow', () => {
+    // "The Host wired nothing" and "the workflow has nothing in it" are
+    // different problems with different fixes, so they are different states.
+    render(<Workflow />)
+    expect(screen.getByText(/No workflow is wired up/)).toBeDefined()
+  })
+
+  it('opens the Draft and draws all three sections', async () => {
+    mount(host())
+    expect(await screen.findByRole('region', { name: 'Identity' })).toBeDefined()
+    expect(screen.getByRole('region', { name: 'Triggers' })).toBeDefined()
+    expect(screen.getByRole('region', { name: 'Variables' })).toBeDefined()
+  })
+
+  it('edits a workflow with no catalogue wired, and says why nothing can be added', async () => {
+    // A Host supplying a WorkflowStore and no ManifestSource is a real case:
+    // every field on HostPorts is optional. The document still says which
+    // Triggers exist, so they are still listed and still editable — only the
+    // type picker needs the catalogue, and only the type picker says so.
+    mount(host(), null)
+
+    expect(await screen.findByDisplayValue('Every morning')).toBeDefined()
+    expect(screen.getByText(/No Component Manifests are wired up/)).toBeDefined()
+    expect(screen.queryByRole('button', { name: 'Add trigger' })).toBeNull()
+    // The variables have nothing to do with the catalogue and are untouched.
+    expect(screen.getByDisplayValue('digest_to')).toBeDefined()
+  })
+
+  it('tells a catalogue with no Triggers in it apart from no catalogue at all', async () => {
+    mount(host(), [CATALOGUE[2] as Manifest])
+
+    expect(await screen.findByText('No Trigger types are available yet.')).toBeDefined()
+    expect(screen.queryByText(/ManifestSource|ports=/)).toBeNull()
+  })
+
+  it('reports a failure to open and offers a retry', async () => {
+    const failing = host()
+    failing.port.openDraft = async () => {
+      throw new Error('Another session holds the draft.')
+    }
+    mount(failing)
+
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toContain('Another session holds the draft.')
+  })
+
+  it('says the document is not a Workflow Definition yet, and keeps it open', async () => {
+    // The state ADR-0001 forces on this region: `toJSON()` throws, so there are
+    // no fields to draw — and the text is intact and fixed in Text Mode.
+    mount(host('name: half written\nsteps:\n  - use: a\n'))
+    expect(await screen.findByText(/not a valid Workflow Definition yet/)).toBeDefined()
+    expect(screen.queryByRole('region', { name: 'Identity' })).toBeNull()
+  })
+})
+
+describe('identity', () => {
+  it('renames the workflow through the store, and autosaves it', async () => {
+    const source = host()
+    mount(source)
+
+    type(await screen.findByLabelText('Name'), 'Overnight triage')
+
+    await waitFor(() => expect(source.writes).toHaveLength(1), AUTOSAVED)
+    expect(source.writes[0]).toContain('name: "Overnight triage"')
+    // Nothing was clicked to save it. ADR-0005: editing autosaves.
+    expect(screen.queryByRole('button', { name: /save/i })).toBeNull()
+  })
+
+  it('edits the slug, which is the workflow’s id', async () => {
+    const source = host()
+    mount(source)
+
+    type(await screen.findByLabelText('Slug'), 'overnight-triage')
+    await waitFor(() => expect(source.writes).toHaveLength(1), AUTOSAVED)
+    expect(source.writes[0]).toContain('id: overnight-triage')
+  })
+
+  it('commits on leaving the field, not on every keystroke', async () => {
+    // A command per keystroke is a write per keystroke and a re-parse per
+    // keystroke, which puts the caret at the end of the box on every letter.
+    const source = host()
+    mount(source)
+
+    const name = await screen.findByLabelText('Name')
+    fireEvent.change(name, { target: { value: 'Over' } })
+    fireEvent.change(name, { target: { value: 'Overnight' } })
+    expect(source.writes).toHaveLength(0)
+
+    fireEvent.blur(name)
+    await waitFor(() => expect(source.writes).toHaveLength(1), AUTOSAVED)
+    expect(source.writes[0]).toContain('name: "Overnight"')
+  })
+
+  it('holds no version control, because the top bar shows the version', async () => {
+    // ADR-0011: a property of the whole document, shown behind a tab, is
+    // visible only while that tab is open. This tab edits; the top bar shows.
+    mount(host())
+    await screen.findByLabelText('Name')
+    expect(screen.queryByText(/v4|draft/i)).toBeNull()
+  })
+})
+
+describe('triggers', () => {
+  it('lists what the document declares, with the id a Template addresses', async () => {
+    mount(host())
+    expect(await screen.findByDisplayValue('Every morning')).toBeDefined()
+    expect(screen.getByText('schedule.cron · t1')).toBeDefined()
+  })
+
+  it('renders each declared field from the manifest, by kind', async () => {
+    mount(host())
+
+    expect((await screen.findByLabelText('Runs at')).getAttribute('value')).toBe('0 6 * * 1-5')
+    expect(screen.getByRole('switch', { name: 'Catch up on missed runs' })).toBeDefined()
+    expect(screen.getByRole('combobox', { name: 'Time zone' })).toBeDefined()
+    expect(screen.getByText('A cron expression.')).toBeDefined()
+  })
+
+  it('writes a field value into `with:` under the manifest’s key', async () => {
+    const source = host()
+    mount(source)
+
+    type(await screen.findByLabelText('Runs at'), '0 7 * * *')
+    await waitFor(() => expect(source.writes).toHaveLength(1), AUTOSAVED)
+    expect(source.writes[0]).toContain('at: "0 7 * * *"')
+  })
+
+  it('renames a Trigger without disturbing the id or the comments', async () => {
+    const source = host()
+    mount(source)
+
+    type(await screen.findByDisplayValue('Every morning'), 'Weekday mornings')
+    await waitFor(() => expect(source.writes).toHaveLength(1), AUTOSAVED)
+
+    expect(source.writes[0]).toContain('Weekday mornings')
+    expect(source.writes[0]).toContain('id: t1')
+    // The round-trip promise, on a key outside `steps:`.
+    expect(source.writes[0]).toContain('# Runs before anyone is awake.')
+    expect(source.writes[0]).toContain('# Where the digest goes.')
+  })
+
+  it('adds one of the type chosen, filtered to Triggers', async () => {
+    const source = host()
+    mount(source)
+
+    const picker = await screen.findByRole('combobox', { name: 'Trigger type' })
+    expect([...picker.querySelectorAll('option')].map((o) => o.textContent)).toEqual([
+      'On a schedule',
+      'When mail arrives',
+    ])
+
+    fireEvent.change(picker, { target: { value: 'email.received' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add trigger' }))
+
+    await waitFor(() => expect(source.writes).toHaveLength(1), AUTOSAVED)
+    expect(source.writes[0]).toContain('use: email.received')
+    expect(source.writes[0]).toContain('id: t2')
+  })
+
+  it('removes one, and every Reference to it goes stale rather than being repaired', async () => {
+    const source = host()
+    mount(source)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove Every morning' }))
+    await waitFor(() => expect(source.writes).toHaveLength(1), AUTOSAVED)
+    expect(source.writes[0]).not.toContain('id: t1')
+  })
+
+  it('says so when nothing starts the workflow', async () => {
+    mount(host('id: wf\nname: n\nversion: 1\nstatus: draft\nsteps: []\n'))
+    expect(await screen.findByText('Nothing starts this workflow yet.')).toBeDefined()
+  })
+
+  it('renders a Trigger whose type nothing declares, rather than dropping it', async () => {
+    // A hand-edited verb, or a Host that stopped serving one. Hiding the row
+    // would leave the user unable to remove the thing that is breaking Publish.
+    mount(host(), [CATALOGUE[1] as Manifest])
+
+    expect(await screen.findByDisplayValue('Every morning')).toBeDefined()
+    expect(screen.getByText(/Nothing declares this trigger type/)).toBeDefined()
+  })
+})
+
+describe('variables', () => {
+  it('lists key and value as separate fields', async () => {
+    mount(host())
+    expect(await screen.findByDisplayValue('digest_to')).toBeDefined()
+    expect(screen.getByDisplayValue('ops@example.com')).toBeDefined()
+    expect(screen.getByDisplayValue('10')).toBeDefined()
+  })
+
+  it('adds one, keeping every comment in the file', async () => {
+    const source = host()
+    mount(source)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Add variable' }))
+    await waitFor(() => expect(source.writes).toHaveLength(1), AUTOSAVED)
+
+    expect(source.writes[0]).toContain('new_variable')
+    // ADR-0001's whole claim, on a key outside `steps:`.
+    expect(source.writes[0]).toContain('# Where the digest goes.')
+    expect(source.writes[0]).toContain('name: "Morning inbox triage"')
+  })
+
+  it('removes one, keeping every comment in the file', async () => {
+    const source = host()
+    mount(source)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove threshold' }))
+    await waitFor(() => expect(source.writes).toHaveLength(1), AUTOSAVED)
+
+    expect(source.writes[0]).not.toContain('threshold')
+    expect(source.writes[0]).toContain('# Where the digest goes.')
+    expect(source.writes[0]).toContain('# Runs before anyone is awake.')
+  })
+
+  it('renames a key and leaves every Reference to the old one alone', async () => {
+    // Settled in docs/handoff.md: a Reference is stored verbatim, so
+    // `{{ var.digest_to }}` goes stale and the checker reports it. Rewriting
+    // every Template on a keystroke would edit the file where nobody is
+    // looking, and mid-typing every intermediate key is a rename too.
+    const source = host(`${SOURCE}    with:\n      to: "{{ var.digest_to }}"\n`)
+    mount(source)
+
+    type(await screen.findByDisplayValue('digest_to'), 'digest_recipient')
+    await waitFor(() => expect(source.writes).toHaveLength(1), AUTOSAVED)
+
+    expect(source.writes[0]).toContain('key: digest_recipient')
+    expect(source.writes[0]).toContain('{{ var.digest_to }}')
+  })
+
+  it('stores a value as what the text denotes, so the type follows the value', async () => {
+    // `varType` reads a variable's type off its value, so this box is also a
+    // type control — and typing `25` here has to mean the same as typing it in
+    // Text Mode (ADR-0001).
+    const source = host()
+    mount(source)
+
+    type(await screen.findByLabelText('Value of threshold'), '25')
+    await waitFor(() => expect(source.writes).toHaveLength(1), AUTOSAVED)
+    expect(source.writes[0]).toContain('value: 25')
+  })
+
+  it('stores a Template as a Template, holes and all', async () => {
+    const source = host()
+    mount(source)
+
+    type(await screen.findByLabelText('Value of digest_to'), '{{ triggers.t1.from }}')
+    await waitFor(() => expect(source.writes).toHaveLength(1), AUTOSAVED)
+    expect(source.writes[0]).toContain('{{ triggers.t1.from }}')
+  })
+
+  it('says so when there are none, and still offers to add one', async () => {
+    mount(host('id: wf\nname: n\nversion: 1\nstatus: draft\nsteps: []\n'))
+    expect(await screen.findByText('No variables yet.')).toBeDefined()
+    expect(screen.getByRole('button', { name: 'Add variable' })).toBeDefined()
+  })
+})
