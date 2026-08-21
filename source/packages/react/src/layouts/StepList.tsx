@@ -71,6 +71,24 @@ export interface StepListProps extends Omit<ComponentPropsWithRef<'section'>, 'o
   onInsert?: (at: InsertPoint) => void
   /** Which Step starts selected. Uncontrolled, like TabbedPanel's defaultTabId. */
   defaultSelectedId?: string
+  /**
+   * Which containers start collapsed, and a way to hear about it.
+   *
+   * Both are chrome and both stay chrome — they never reach the document, the
+   * same line ADR-0001 draws around node positions. What they are not is
+   * necessarily short-lived: `<TabbedPanel>` renders only the open tab, so
+   * anything held in here is thrown away every time the user looks at another
+   * tab. In `<Build>` that happens on the way to adding a Step — Flow, then
+   * Components, then back — which is precisely when losing the selection and
+   * re-expanding every container is most annoying.
+   *
+   * So a caller that wants this state to outlive a remount holds it and hands
+   * it back, the way the design already has selection work. A caller that does
+   * not, does nothing, and the region behaves as it always has.
+   */
+  defaultCollapsedIds?: readonly string[]
+  /** Fired when a container is expanded or collapsed, with everything now collapsed. */
+  onCollapseChange?: (collapsedIds: string[]) => void
 }
 
 /** "The Host wired nothing" is not a phase of the load, so it is not the store's to report. */
@@ -84,7 +102,12 @@ const OPENING = { status: 'opening' } as const
 // returns a fresh object each call.
 const subscribeToNothing = () => () => {}
 const NO_PROBLEMS: ReadonlyMap<string, Diagnostic[]> = new Map()
-const UNCHECKED: ValidationState = { byStep: NO_PROBLEMS, all: [], ready: false }
+const UNCHECKED: ValidationState = {
+  byStep: NO_PROBLEMS,
+  byTrigger: NO_PROBLEMS,
+  all: [],
+  ready: false,
+}
 const readUnchecked = (): ValidationState => UNCHECKED
 const readUnconfigured = (): ListState => UNCONFIGURED
 const readOpening = (): ListState => OPENING
@@ -93,13 +116,17 @@ export function StepList({
   onSelect,
   onInsert,
   defaultSelectedId,
+  defaultCollapsedIds,
+  onCollapseChange,
   className,
   ...rest
 }: StepListProps) {
   const store = useEditingStore()
   const validation = useValidationStore()
   const [selectedId, setSelectedId] = useState<string | undefined>(defaultSelectedId)
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set())
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(
+    () => new Set(defaultCollapsedIds),
+  )
   const [dragging, setDragging] = useState<string | null>(null)
 
   // The one side effect: tell the store somebody is reading. It is idempotent,
@@ -141,12 +168,12 @@ export function StepList({
     onSelect?.(id)
   }
 
-  const toggle = (id: string) =>
-    setCollapsed((current) => {
-      const next = new Set(current)
-      if (!next.delete(id)) next.add(id)
-      return next
-    })
+  const toggle = (id: string) => {
+    const next = new Set(collapsed)
+    if (!next.delete(id)) next.add(id)
+    setCollapsed(next)
+    onCollapseChange?.([...next])
+  }
 
   const remove = (id: string) => {
     store?.apply(removeStep(id))

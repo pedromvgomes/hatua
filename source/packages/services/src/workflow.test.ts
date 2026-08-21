@@ -115,6 +115,17 @@ describe('addTrigger', () => {
     expect(() => apply(half, addTrigger({ use: 'schedule.cron' }))).toThrow(/not a list/)
   })
 
+  it('refuses a `triggers:` key written as a mapping, and leaves it intact', () => {
+    // A mapping carries an `items` array too, so recognising a sequence by
+    // shape accepts this — and the spliced node then makes the whole document
+    // unserialisable, from a `toString()` no caller expects to fail.
+    const mapping = 'id: wf\nname: n\nversion: 1\nstatus: draft\ntriggers:\n  cron: daily\n'
+    const document = parseWorkflow(mapping)
+
+    expect(() => addTrigger({ use: 'schedule.cron' }).apply(document)).toThrow(/not a list/)
+    expect(document.toString()).toBe(mapping)
+  })
+
   it('keeps every comment in the file', () => {
     const text = apply(SOURCE, addTrigger({ use: 'http.webhook' })).toString()
     expect(text).toContain('# Runs before anyone is awake.')

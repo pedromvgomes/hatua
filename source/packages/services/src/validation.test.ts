@@ -79,7 +79,12 @@ describe('withholding an answer', () => {
    */
   it('is not ready before anything has been asked for', () => {
     const { validation } = wired()
-    expect(validation.getSnapshot()).toEqual({ byStep: new Map(), all: [], ready: false })
+    expect(validation.getSnapshot()).toEqual({
+      byStep: new Map(),
+      byTrigger: new Map(),
+      all: [],
+      ready: false,
+    })
   })
 
   it('is not ready while the Draft is still opening', async () => {

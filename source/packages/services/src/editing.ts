@@ -515,6 +515,20 @@ export function createEditingStore(
     // Host that never answered the last one must not hold a later flush open
     // for the life of the page.
     queue = Promise.resolve()
+
+    // A write scheduled inside the autosave window has just been cancelled, and
+    // with the token gone nothing can ever pick it up — so a snapshot left
+    // reading `pending` promises a write that cannot happen, with no timer
+    // behind it and no way out. `halted` is what this is: autosave has stopped
+    // and the document is intact, which is exactly ADR-0005's state.
+    if (save.state === 'pending' || save.state === 'saving') {
+      setSave({
+        state: 'halted',
+        error: new Error(
+          'This editing session has ended. Open the workflow again to keep editing it.',
+        ),
+      })
+    }
   }
 
   return {
@@ -534,21 +548,50 @@ export function createEditingStore(
 
     apply(command) {
       if (!document) return
-      const before = document.toString()
 
+      /*
+       * The serialisations are inside the guard, not only `command.apply`.
+       *
+       * A command that leaves the AST in a state `toString()` refuses — a node
+       * spliced somewhere it does not belong — throws from the line that reads
+       * the result rather than from the mutation, so guarding the mutation
+       * alone lets it escape into whatever click handler called this. The store
+       * is then holding a document that cannot be serialised, which means every
+       * later commit, undo, autosave and even the NEXT apply throws too: one
+       * bad command and nothing but `reopen()` recovers.
+       *
+       * So the document is put back. `before` is the text it had, and ADR-0001
+       * makes text the source of truth — re-parsing it yields the same document
+       * including its comments and quoting, which is the same move `undo` makes
+       * and for the same reason.
+       */
+      let before: string
       try {
-        command.apply(document)
+        before = document.toString()
       } catch {
-        // Deliberately swallowed. A command throws when the tree it was built
-        // against has moved on — a Step removed under a stale insertion point,
-        // most likely — and the document is untouched, so there is nothing to
-        // report and nothing to roll back. Half-applied is the failure worth
-        // preventing, and `apply` cannot half-apply: every command does its
-        // lookups before its first mutation.
         return
       }
 
-      const after = document.toString()
+      let after: string
+      try {
+        command.apply(document)
+        after = document.toString()
+      } catch {
+        // A command throws when the tree it was built against has moved on — a
+        // Step removed under a stale insertion point, most likely — or when
+        // what it was asked to edit is not the shape it edits. Either way the
+        // document is left as it was and nothing reaches the undo stack, so a
+        // stale insertion point is a no-op rather than half an edit.
+        try {
+          document = parseWorkflow(before)
+        } catch {
+          // Unreachable while `before` came out of this document, and cheap
+          // insurance if it ever does not: a store holding an unparseable
+          // document has nothing left to offer.
+        }
+        return
+      }
+
       if (after === before) return
 
       history.push({ text: before, label: command.label })
@@ -577,16 +620,35 @@ export function createEditingStore(
       return write()
     },
 
+    /*
+     * Publish is the one of the three that can be REFUSED.
+     *
+     * ADR-0005 puts the conflict check here and nowhere else — the Host rejects
+     * it when the version the Draft branched from is no longer the live one —
+     * so the session may only end once the Host has said yes. Ending it first
+     * throws the token away while the Host still considers the claim live: the
+     * user is told their publish failed, and the Draft they are looking at is
+     * no longer being saved anywhere, with nothing on screen saying so until
+     * their next keystroke trips the halt.
+     *
+     * So the write is awaited before the session is closed, and a rejection
+     * leaves the session exactly as it was — lease renewing, autosave running,
+     * every edit still going somewhere. Release and Discard are not like this:
+     * both END the claim by definition, and a Host that fails to record either
+     * has still had the claim relinquished on this side.
+     */
     async publish() {
       const held = requireToken()
       if (!document) throw new Error('No Draft is open')
+      // The current text rather than the last text the Host accepted. Autosave
+      // may still have been pending, and publishing a version that silently
+      // omits the user's last edit is the one outcome worse than a rejected
+      // publish.
       const yaml = document.toString()
+
+      const published = await port.publish(held, yaml)
       finish()
-      // Publish sends the current text rather than the last text the Host
-      // accepted. Autosave may still have been pending, and publishing a
-      // version that silently omits the user's last edit is the one outcome
-      // worse than a rejected publish.
-      return port.publish(held, yaml)
+      return published
     },
 
     async release() {

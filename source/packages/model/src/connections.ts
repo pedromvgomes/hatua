@@ -10,6 +10,15 @@ export interface Diagnostic {
   /** Where it surfaces: an unconnected connection must not block editing. */
   blocks: 'edit' | 'publish'
   stepId?: string
+  /**
+   * Set instead of `stepId` when the subject is a Trigger.
+   *
+   * Separate because a Trigger is not a Step and the two are rendered by
+   * different regions: the Flow tab looks a Step's id up in `byStep`, and a
+   * Trigger's id filed there is either drawn by nobody or — if a hand-edited
+   * Trigger id happens to match a Step's — painted on that Step's row.
+   */
+  triggerId?: string
   connectionId?: string
   fieldKey?: string
 }

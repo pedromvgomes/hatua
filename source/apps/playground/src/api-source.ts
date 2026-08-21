@@ -44,7 +44,7 @@ export function createApiManifestSource(
       const response = await fetch(url)
       // A non-2xx body is usually an HTML error page, and letting it reach
       // `.json()` turns "the endpoint is down" into "Unexpected token <". The
-      // The region renders whatever message arrives, so the message is worth
+      // region renders whatever message arrives, so the message is worth
       // spending a line on.
       if (!response.ok) {
         throw new Error(`${url} responded ${response.status} ${response.statusText}`.trim())

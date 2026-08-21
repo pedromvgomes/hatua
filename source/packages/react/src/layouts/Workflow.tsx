@@ -1,3 +1,4 @@
+import { type Diagnostic, fieldVisible } from '@hatua/model'
 import type { Field, Manifest, Trigger, Variable } from '@hatua/schema'
 import {
   addTrigger,
@@ -12,6 +13,7 @@ import {
   setVariableValue,
   setWorkflowName,
   setWorkflowSlug,
+  type ValidationState,
 } from '@hatua/services'
 import {
   type ComponentPropsWithRef,
@@ -26,7 +28,7 @@ import { cx } from '../primitives/classNames'
 import { Input } from '../primitives/Input'
 import { Select } from '../primitives/Select'
 import { Toggle } from '../primitives/Toggle'
-import { useEditingStore, useManifestStore } from '../theme/HatuaProvider'
+import { useEditingStore, useManifestStore, useValidationStore } from '../theme/HatuaProvider'
 import styles from './Workflow.module.css'
 import css from './Workflow.module.css?inline'
 
@@ -76,6 +78,13 @@ const OPENING = { status: 'opening' } as const
 const CATALOGUE_UNCONFIGURED = { status: 'unconfigured' } as const
 const CATALOGUE_LOADING = { status: 'loading' } as const
 const NO_MANIFESTS: Manifest[] = []
+const NO_PROBLEMS: ReadonlyMap<string, Diagnostic[]> = new Map()
+const UNCHECKED: ValidationState = {
+  byStep: NO_PROBLEMS,
+  byTrigger: NO_PROBLEMS,
+  all: [],
+  ready: false,
+}
 
 // Module-level and therefore stable: useSyncExternalStore re-subscribes
 // whenever `subscribe` changes identity, and re-renders forever if `getSnapshot`
@@ -85,12 +94,14 @@ const readUnconfigured = (): PanelState => UNCONFIGURED
 const readOpening = (): PanelState => OPENING
 const readCatalogueUnconfigured = (): CatalogueState => CATALOGUE_UNCONFIGURED
 const readCatalogueLoading = (): CatalogueState => CATALOGUE_LOADING
+const readUnchecked = (): ValidationState => UNCHECKED
 
 type CatalogueState = ManifestState | { status: 'unconfigured' }
 
 export function Workflow({ className, ...rest }: WorkflowProps) {
   const store = useEditingStore()
   const manifests = useManifestStore()
+  const validation = useValidationStore()
 
   // The one side effect: tell each store somebody is reading. Both are
   // idempotent, so every region that mounts may call them and only the first
@@ -115,9 +126,20 @@ export function Workflow({ className, ...rest }: WorkflowProps) {
     manifests ? readCatalogueLoading : readCatalogueUnconfigured,
   )
 
+  const checks = useSyncExternalStore<ValidationState>(
+    validation ? validation.subscribe : subscribeToNothing,
+    validation ? validation.getSnapshot : readUnchecked,
+    readUnchecked,
+  )
+
   const workflow = state.status === 'ready' ? state.workflow : null
   const definition = workflow?.definition ?? null
   const served = catalogue.status === 'ready' ? catalogue.manifests : NO_MANIFESTS
+  // Absent, not empty. "Not checked yet" and "checked and fine" must not look
+  // the same: every Trigger is an unknown component until the manifests land,
+  // so painting `byTrigger` before `ready` would mark a perfectly good workflow
+  // on every load.
+  const problems = checks.ready ? checks.byTrigger : NO_PROBLEMS
 
   const liveMessage =
     state.status === 'opening'
@@ -186,6 +208,7 @@ export function Workflow({ className, ...rest }: WorkflowProps) {
                 triggers={definition.triggers ?? []}
                 catalogue={catalogue}
                 manifests={served}
+                problems={problems}
                 onAdd={(manifest) =>
                   store?.apply(addTrigger({ use: manifest.use, name: manifest.name }))
                 }
@@ -326,6 +349,7 @@ function Triggers({
   triggers,
   catalogue,
   manifests,
+  problems,
   onAdd,
   onRemove,
   onName,
@@ -334,6 +358,8 @@ function Triggers({
   triggers: readonly Trigger[]
   catalogue: CatalogueState
   manifests: readonly Manifest[]
+  /** Diagnostics per Trigger id; a Trigger with none is absent. */
+  problems: ReadonlyMap<string, Diagnostic[]>
   onAdd: (manifest: Manifest) => void
   onRemove: (id: string) => void
   onName: (id: string, name: string) => void
@@ -356,6 +382,7 @@ function Triggers({
             <TriggerCard
               trigger={trigger}
               manifest={byUse.get(trigger.use)}
+              problems={problems.get(trigger.id)}
               onRemove={onRemove}
               onName={onName}
               onField={onField}
@@ -439,18 +466,24 @@ function AddTrigger({
 function TriggerCard({
   trigger,
   manifest,
+  problems,
   onRemove,
   onName,
   onField,
 }: {
   trigger: Trigger
   manifest: Manifest | undefined
+  problems?: Diagnostic[]
   onRemove: (id: string) => void
   onName: (id: string, name: string) => void
   onField: (id: string, key: string, value: string | number | boolean) => void
 }) {
   const values = (trigger.with ?? {}) as Record<string, unknown>
-  const fields = (manifest?.fields ?? []).filter((field) => visible(field, values))
+  // `fieldVisible` rather than a copy of it: the same rule decides whether a
+  // required field counts as missing, and two copies are two answers waiting to
+  // disagree — a hidden field that starts blocking Publish, or a visible
+  // required one that stops being reported.
+  const fields = (manifest?.fields ?? []).filter((field) => fieldVisible(field, values))
 
   return (
     <div className={styles.card}>
@@ -495,34 +528,37 @@ function TriggerCard({
         {trigger.use} · {trigger.id}
       </p>
 
-      {manifest ? (
-        fields.map((field) => (
-          <TriggerField
-            key={field.k}
-            field={field}
-            value={values[field.k]}
-            onChange={(next) => onField(trigger.id, field.k, next)}
-          />
-        ))
-      ) : (
-        <p className={styles.empty}>Nothing declares this trigger type, so it has no settings.</p>
-      )}
+      {/*
+        `role="status"` rather than `alert`: an unfilled field is the normal
+        state of a Trigger someone just added, and interrupting a screen reader
+        for it every time would make the builder unusable. ADR-0009 draws the
+        same line — this blocks Publish, never editing.
+      */}
+      {problems?.length ? (
+        <p className={styles.problems} role="status">
+          {problems.map((problem) => problem.message).join(' ')}
+        </p>
+      ) : null}
+
+      {manifest
+        ? fields.map((field) => (
+            <TriggerField
+              key={field.k}
+              field={field}
+              value={values[field.k]}
+              onChange={(next) => onField(trigger.id, field.k, next)}
+            />
+          ))
+        : // Only when the checker has not already said it. Without a catalogue
+          // wired there is no checker at all, and the card would otherwise be a
+          // name box with no account of why it has nothing else on it.
+          !problems?.some((problem) => problem.code === 'COMPONENT_UNKNOWN') && (
+            <p className={styles.empty}>
+              Nothing declares this trigger type, so it has no settings.
+            </p>
+          )}
     </div>
   )
-}
-
-/**
- * A field hidden by its `when` clause is not rendered.
- *
- * `when: [otherKey, value]` shows a field only while another field equals a
- * value — it is how one trigger component reshapes its form across schedule,
- * API and upstream modes. The same predicate decides whether a required field
- * counts as missing, in @hatua/model.
- */
-const visible = (field: Field, values: Record<string, unknown>): boolean => {
-  if (!field.when) return true
-  const [key, expected] = field.when
-  return String(values[key as string] ?? '') === expected
 }
 
 /**
@@ -539,6 +575,22 @@ const visible = (field: Field, values: Record<string, unknown>): boolean => {
  * the thing the schema warns against on `ref`. A required one left unset is
  * already reported by the checker, which is the mechanism for saying so.
  */
+/**
+ * What a `number` field's box actually stores.
+ *
+ * `Number('')` is 0, so emptying the box would write a zero — and `unfilled()`
+ * counts 0 as answered, so a required numeric field would silently stop being
+ * reported as missing while reading as answered to the person who just cleared
+ * it. `Number('abc')` is NaN, which serialises into the document as something
+ * no reader can do anything with. Both stay as the text the user typed, which
+ * is the state the checker already knows how to talk about.
+ */
+const numberIfAsked = (field: Field, text: string): string | number => {
+  if (field.kind !== 'number') return text
+  const parsed = Number(text)
+  return text.trim() === '' || !Number.isFinite(parsed) ? text : parsed
+}
+
 function TriggerField({
   field,
   value,
@@ -583,7 +635,7 @@ function TriggerField({
         placeholder={field.ph}
         mono={field.kind === 'mono' || field.kind === 'ref'}
         type={field.kind === 'number' ? 'number' : 'text'}
-        onCommit={(next) => onChange(field.kind === 'number' ? Number(next) : next)}
+        onCommit={(next) => onChange(numberIfAsked(field, next))}
       />
     )
 

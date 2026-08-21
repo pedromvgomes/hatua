@@ -162,7 +162,12 @@ describe('missing required fields', () => {
   it('checks Triggers too, because their fields are required the same way', () => {
     const doc = workflow([])
     doc.triggers = [{ id: 't1', use: 'email.send' }]
-    expect(missingRequiredFields(doc, CATALOGUE).map((d) => d.stepId)).toEqual(['t1', 't1'])
+    const found = missingRequiredFields(doc, CATALOGUE)
+
+    // Under `triggerId`, not `stepId`: a Trigger is not a Step, and the region
+    // that draws Step diagnostics looks up Step ids.
+    expect(found.map((d) => d.triggerId)).toEqual(['t1', 't1'])
+    expect(found.every((d) => d.stepId === undefined)).toBe(true)
   })
 
   it('says nothing about a Step whose Component is unknown', () => {
@@ -307,7 +312,7 @@ describe('the two structural verbs', () => {
 
 describe('validateSteps', () => {
   it('indexes every rule by the Step it belongs to', () => {
-    const byStep = validateSteps(
+    const { byStep } = validateSteps(
       workflow([
         { id: 's1', use: 'email.send', with: { to: 'a' } },
         { id: 's2', use: 'core.fork', branches: [{ label: 'only', steps: [] }] },
@@ -325,16 +330,41 @@ describe('validateSteps', () => {
   })
 
   it('collects several problems on one Step', () => {
-    const byStep = validateSteps(workflow([{ id: 's1', use: 'email.send' }]), CATALOGUE)
+    const { byStep } = validateSteps(workflow([{ id: 's1', use: 'email.send' }]), CATALOGUE)
     expect(byStep.get('s1')).toHaveLength(2)
   })
 
   it('is empty for a workflow with nothing wrong', () => {
-    expect(
-      validateSteps(
-        workflow([{ id: 's1', use: 'email.send', with: { to: 'a', subject: 'b' } }]),
-        CATALOGUE,
-      ).size,
-    ).toBe(0)
+    const validity = validateSteps(
+      workflow([{ id: 's1', use: 'email.send', with: { to: 'a', subject: 'b' } }]),
+      CATALOGUE,
+    )
+    expect(validity.byStep.size).toBe(0)
+    expect(validity.byTrigger.size).toBe(0)
+    expect(validity.all).toEqual([])
+  })
+
+  /*
+   * A Trigger is not a Step, and the two are drawn by different regions. Filed
+   * together, a Trigger's diagnostic is either rendered by nobody — the Flow
+   * tab looks up Step ids — or, when a hand-edited Trigger id matches a Step's,
+   * painted on that Step's row.
+   */
+  it('keeps Trigger diagnostics out of the Step map', () => {
+    const doc = {
+      ...workflow([{ id: 's1', use: 'email.send', with: { to: 'a', subject: 'b' } }]),
+      triggers: [
+        { id: 't1', use: 'ghost.received' },
+        { id: 's1', use: 'ghost.received' },
+      ],
+    }
+
+    const { byStep, byTrigger, all } = validateSteps(doc, CATALOGUE)
+
+    expect(byStep.size).toBe(0)
+    expect([...byTrigger.keys()].sort()).toEqual(['s1', 't1'])
+    expect(byTrigger.get('t1')?.map((d) => d.code)).toEqual(['COMPONENT_UNKNOWN'])
+    // And nothing is lost on the way: flattening `byStep` alone would drop both.
+    expect(all).toHaveLength(2)
   })
 })

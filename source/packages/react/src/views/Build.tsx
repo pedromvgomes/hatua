@@ -65,9 +65,20 @@ export function Build({ className, ...rest }: BuildProps) {
    * line drawn around which tab is open. Appending is the fallback: a Component
    * picked with no insert point pending goes at the end of the workflow, which
    * is what "add this" means when nowhere was named.
+   *
+   * The Flow tab's selection and collapse are held here for a different reason,
+   * and it is this view's doing rather than that region's. <TabbedPanel>
+   * renders only the open tab, and adding a Step goes Flow → Components → Flow,
+   * so <StepList> is unmounted and remounted every time — which threw away
+   * which Step was selected and re-expanded every container the user had
+   * collapsed, on the one action most likely to follow another. The state stays
+   * chrome and never reaches the document; it just outlives the region now,
+   * which is what the design means by the composition root holding selection.
    */
   const [tab, setTab] = useState('flow')
   const [pending, setPending] = useState<InsertPoint | null>(null)
+  const [selectedId, setSelectedId] = useState<string | undefined>(undefined)
+  const [collapsedIds, setCollapsedIds] = useState<readonly string[]>([])
 
   /**
    * Read at click time, not at render time. <Build> deliberately does not
@@ -111,6 +122,10 @@ export function Build({ className, ...rest }: BuildProps) {
                   label: 'Flow',
                   content: (
                     <StepList
+                      defaultSelectedId={selectedId}
+                      onSelect={setSelectedId}
+                      defaultCollapsedIds={collapsedIds}
+                      onCollapseChange={setCollapsedIds}
                       onInsert={(at) => {
                         setPending(at)
                         // The design: "Clicking it opens the Components tab

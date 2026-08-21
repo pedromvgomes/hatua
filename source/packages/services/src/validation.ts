@@ -30,7 +30,13 @@ import type { Store } from './store'
 export interface ValidationState {
   /** Diagnostics for each Step that has any. A Step with none is absent. */
   byStep: ReadonlyMap<string, Diagnostic[]>
-  /** Everything, flattened — what a count in the toolbar is drawn from. */
+  /**
+   * The same, per Trigger. Separate because a Trigger is not a Step: the Flow
+   * tab draws one map and the Workflow tab draws the other, and a Trigger id
+   * filed under a Step's would be painted on whichever row happened to match.
+   */
+  byTrigger: ReadonlyMap<string, Diagnostic[]>
+  /** Everything — what a count in the toolbar is drawn from. */
   all: readonly Diagnostic[]
   /**
    * Whether the answer means anything yet.
@@ -62,7 +68,12 @@ const NONE: ReadonlyMap<string, Diagnostic[]> = new Map()
 const NOTHING: readonly Diagnostic[] = []
 
 /** Not ready, and therefore empty — one object, so an unready snapshot is stable. */
-const PENDING: ValidationState = { byStep: NONE, all: NOTHING, ready: false }
+const PENDING: ValidationState = {
+  byStep: NONE,
+  byTrigger: NONE,
+  all: NOTHING,
+  ready: false,
+}
 
 export function createValidationStore(
   editing: EditingStore,
@@ -83,8 +94,11 @@ export function createValidationStore(
     if (document.status !== 'ready' || !document.workflow.definition) return PENDING
     if (catalogue.status !== 'ready') return PENDING
 
-    const byStep = validateSteps(document.workflow.definition, indexManifests(catalogue.manifests))
-    return { byStep, all: [...byStep.values()].flat(), ready: true }
+    const validity = validateSteps(
+      document.workflow.definition,
+      indexManifests(catalogue.manifests),
+    )
+    return { ...validity, ready: true }
   }
 
   return {

@@ -118,6 +118,17 @@
     text-wrap: pretty;
   }
 
+  /* What is wrong with a Trigger, in words. It blocks Publish and never
+     editing (ADR-0009), so it is stated rather than shouted: a line of text
+     under the row, no panel and no alert role. */
+  .problems {
+    margin: 0;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: var(--hatua-status-error);
+    text-wrap: pretty;
+  }
+
   /* A variable's value and a Trigger's `mono` field are both read back as
      source: `{{ … }}` and a cron line are neither of them prose. */
   .mono {

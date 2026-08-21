@@ -238,6 +238,46 @@ describe('Components', () => {
     expect(screen.queryByText('No components are available yet.')).toBeNull()
   })
 
+  /*
+   * The store validates the outer array and deliberately not each entry —
+   * `manifests.ts` argues that validating every one "would turn one malformed
+   * entry into an empty catalogue". The cost lands here, and it must not land
+   * as a TypeError from render: that takes down the Host's tree, which is the
+   * outcome the `failed` state exists to avoid.
+   */
+  it('survives an entry that is not a manifest at all', async () => {
+    const junk = [
+      null,
+      42,
+      { kind: 'component' },
+      { kind: 7, name: 3, use: [], blurb: {}, group: null, icon: 12 },
+      CATALOGUE[0] as Manifest,
+    ] as unknown as Manifest[]
+
+    mount(<Components />, { loadManifests: async () => junk })
+
+    // The one real entry still renders, and nothing threw on the way.
+    expect(await screen.findByText('Send email')).toBeDefined()
+  })
+
+  it('reports a catalogue of nothing but junk rather than crashing on it', async () => {
+    mount(<Components />, {
+      loadManifests: async () => [null, 'nope'] as unknown as Manifest[],
+    })
+
+    expect(await screen.findByText(/nothing in it is a Component/i)).toBeDefined()
+  })
+
+  it('names a component the Host left unnamed, rather than drawing a blank row', async () => {
+    // Dropping it would leave whoever wrote that manifest counting rows that
+    // are not there.
+    mount(<Components />, {
+      loadManifests: async () => [{ kind: 'component', use: 'core.wait' }] as unknown as Manifest[],
+    })
+
+    expect(await screen.findByText('core.wait')).toBeDefined()
+  })
+
   it('keeps one live region mounted, so a change to it is a change worth announcing', async () => {
     // A <p role="status"> inserted together with its text is a new node, not an
     // update to a watched one, and is frequently announced by nothing.

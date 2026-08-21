@@ -335,6 +335,20 @@ describe('triggers', () => {
     mount(host(), [CATALOGUE[1] as Manifest])
 
     expect(await screen.findByDisplayValue('Every morning')).toBeDefined()
+    // The checker's words, not a second sentence of this region's. Both ports
+    // are wired here, so `unknownComponents` reports it and the card renders
+    // what it said.
+    expect(await screen.findByText(/Nothing declares "schedule.cron"/)).toBeDefined()
+    expect(screen.queryByText(/Nothing declares this trigger type/)).toBeNull()
+  })
+
+  it('accounts for an undeclared type even when there is no checker', async () => {
+    // With no catalogue wired there is no validation store at all, so the
+    // region says it itself — otherwise the card is a name box with no account
+    // of why it has nothing else on it.
+    mount(host(), null)
+
+    expect(await screen.findByDisplayValue('Every morning')).toBeDefined()
     expect(screen.getByText(/Nothing declares this trigger type/)).toBeDefined()
   })
 })

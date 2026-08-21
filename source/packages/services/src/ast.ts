@@ -3,14 +3,36 @@ import type { WorkflowDocument } from '@hatua/document'
 /**
  * Reaching into the document's AST, in the terms a command needs.
  *
- * Nothing here imports `yaml`. The nodes are duck-typed instead — a sequence is
- * whatever carries an `items` array, a scalar is whatever carries a `value` —
- * and every new node is minted through `document.ast.createNode`, which
- * @hatua/document already owns. A second copy of the library in this package's
- * dependencies is a second copy in a Host's bundle, and nodes built by one copy
- * fail the other's `instanceof` checks, which is a failure with no error
- * message on it.
+ * Nothing here imports `yaml`. Every new node is minted through
+ * `document.ast.createNode`, which @hatua/document already owns: a second copy
+ * of the library in this package's dependencies is a second copy in a Host's
+ * bundle, and nodes built by one copy fail the other's `instanceof` checks,
+ * which is a failure with no error message on it.
+ *
+ * Nodes are recognised by the tag `yaml` stamps on each one — a REGISTERED
+ * symbol, `Symbol.for('yaml.node.type')`, holding `Symbol.for('yaml.seq')` or
+ * `Symbol.for('yaml.map')`. The global registry is what makes that readable
+ * from here: the same call in two modules yields the same symbol, so this
+ * matches whichever copy of the library parsed the document.
+ *
+ * Shape alone cannot do it. A YAMLMap's `items` is a `Pair[]`, so "a sequence
+ * is whatever carries an `items` array" calls `steps:` written as a mapping a
+ * list — and `insertNode` then splices a bare node into a mapping's pair list,
+ * which throws `Map items must all be pairs` the next time the document is
+ * serialised, out of a `toString()` no caller expects to fail. An empty `[]`
+ * and an empty `{}` are indistinguishable by shape altogether. A half-written
+ * `steps:` is a state ADR-0001 requires this file to survive, so it has to be
+ * told apart rather than guessed at.
  */
+
+const NODE_TYPE = Symbol.for('yaml.node.type')
+const SEQ = Symbol.for('yaml.seq')
+const MAP = Symbol.for('yaml.map')
+
+const tagOf = (value: unknown): symbol | undefined =>
+  value && typeof value === 'object'
+    ? ((value as Record<symbol, unknown>)[NODE_TYPE] as symbol | undefined)
+    : undefined
 
 export type Path = (string | number)[]
 
@@ -35,9 +57,7 @@ interface Seq {
 }
 
 export const asSeq = (value: unknown): Seq | undefined =>
-  value && typeof value === 'object' && 'items' in value && Array.isArray((value as Seq).items)
-    ? (value as Seq)
-    : undefined
+  tagOf(value) === SEQ && Array.isArray((value as Seq).items) ? (value as Seq) : undefined
 
 /**
  * A comment above the FIRST item of a block sequence is anchored to the
@@ -80,6 +100,11 @@ const lowerLeadingComment = (seq: Seq) => {
  * Splice a node into the sequence at `listPath`, creating the sequence when the
  * document has none — an empty Branch has no `steps:` key at all until the
  * first Step lands in it.
+ *
+ * ABSENT is the only thing that gets created. A key holding a mapping or a
+ * scalar is a half-written list, not a missing one, and replacing it with
+ * `[node]` would delete whatever the user had typed there — which is the
+ * opposite of what a command may do to a file it does not own (ADR-0001).
  */
 export function insertNode(
   document: WorkflowDocument,
@@ -87,9 +112,11 @@ export function insertNode(
   index: number,
   node: unknown,
 ) {
-  const seq = asSeq(document.ast.getIn(listPath, true))
+  const existing = document.ast.getIn(listPath, true)
+  const seq = asSeq(existing)
 
   if (!seq) {
+    if (existing !== undefined) throw new Error(`${listPath.join('.')} is not a list`)
     document.ast.setIn(listPath, [node])
     return
   }
@@ -111,6 +138,9 @@ export function insertNode(
 export function detachNode(document: WorkflowDocument, listPath: Path, index: number): unknown {
   const seq = asSeq(document.ast.getIn(listPath, true))
   if (!seq) throw new Error(`No sequence at ${listPath.join('.')}`)
+  if (index < 0 || index >= seq.items.length) {
+    throw new Error(`No entry at ${listPath.join('.')}.${index}`)
+  }
 
   liftLeadingComment(seq)
   const [node] = seq.items.splice(index, 1)
@@ -118,11 +148,13 @@ export function detachNode(document: WorkflowDocument, listPath: Path, index: nu
   return node
 }
 
-/** A scalar node: the one shape carrying its own `value` and nothing else. */
-const asScalar = (value: unknown): { value: unknown } | undefined =>
-  value && typeof value === 'object' && 'value' in value && !('items' in value)
+/** A scalar node, told apart from a collection by the same tag `asSeq` reads. */
+const asScalar = (value: unknown): { value: unknown } | undefined => {
+  const tag = tagOf(value)
+  return tag !== SEQ && tag !== MAP && value && typeof value === 'object' && 'value' in value
     ? (value as { value: unknown })
     : undefined
+}
 
 /**
  * Write a scalar, keeping the style the user wrote it in.
@@ -176,8 +208,9 @@ const newPair = (document: WorkflowDocument, key: string, value: unknown): Pair 
  * when the document has no such key.
  *
  * A key that exists and holds something other than a list throws rather than
- * being replaced. `triggers: tomorrow` is a half-typed document, not an absent
- * one, and overwriting it would discard text the user is in the middle of.
+ * being replaced — a mapping and a scalar alike. `triggers: tomorrow` and
+ * `triggers:` written as a mapping are half-typed documents, not absent ones,
+ * and overwriting either would discard text the user is in the middle of.
  */
 export function topLevelList(document: WorkflowDocument, key: string): Path {
   const existing = document.ast.getIn([key], true)

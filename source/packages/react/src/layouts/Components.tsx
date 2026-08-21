@@ -82,7 +82,7 @@ export function Components({ onSelect, defaultQuery = '', className, ...rest }: 
 
   const manifests = state.status === 'ready' ? state.manifests : NONE
   const components = useMemo(
-    () => manifests.filter((manifest) => manifest.kind === 'component'),
+    () => manifests.filter((manifest) => kindOf(manifest) === 'component'),
     [manifests],
   )
   const groups = useMemo(() => groupsOf(components, query), [components, query])
@@ -96,7 +96,7 @@ export function Components({ onSelect, defaultQuery = '', className, ...rest }: 
    * it is a wiring mistake rather than an empty catalogue — different fix,
    * different audience, so different copy.
    */
-  const undeclared = ready && manifests.some((manifest) => !KINDS.has(manifest.kind))
+  const undeclared = ready && manifests.some((manifest) => !KINDS.has(kindOf(manifest) ?? ''))
   /** Loaded and correctly shaped, and there is simply no Component in it. */
   const none = ready && components.length === 0 && !undeclared
 
@@ -191,8 +191,11 @@ export function Components({ onSelect, defaultQuery = '', className, ...rest }: 
             <div key={group.name} className={styles.group}>
               <h2 className={styles.groupHeading}>{group.name}</h2>
               <ul className={styles.cards}>
-                {group.manifests.map((manifest) => (
-                  <li key={manifest.use}>
+                {group.manifests.map((manifest, index) => (
+                  // `use` is the identity, and is what this key is — except for
+                  // an entry the Host malformed badly enough to have none,
+                  // where its place in the group is the only identity there is.
+                  <li key={textOf(manifest.use) ?? `${group.name}:${index}`}>
                     <Card manifest={manifest} onSelect={onSelect} />
                   </li>
                 ))}
@@ -232,12 +235,13 @@ function ComponentIcon({ manifest }: { manifest: Manifest }) {
   // Written this way regardless: it costs a comparison, and it stops being
   // load-bearing on a store detail this component cannot see.
   const [failedUrl, setFailedUrl] = useState<string | null>(null)
-  const broken = failedUrl !== null && failedUrl === manifest.icon
+  const icon = textOf(manifest?.icon)
+  const broken = failedUrl !== null && failedUrl === icon
 
   // A URL that 404s is the Host's to fix, and until it does the card still has
   // to draw something square. The placeholder is deliberately neutral rather
   // than a guess at what the icon would have been.
-  if (!manifest.icon || broken) {
+  if (!icon || broken) {
     return (
       <span className={styles.icon}>
         {/* No <title>: this is decoration inside an aria-hidden element, so a
@@ -260,14 +264,14 @@ function ComponentIcon({ manifest }: { manifest: Manifest }) {
     <span className={styles.icon}>
       <img
         className={styles.image}
-        src={manifest.icon}
+        src={icon}
         alt=""
         width={18}
         height={18}
         loading="lazy"
         decoding="async"
         referrerPolicy="no-referrer"
-        onError={() => setFailedUrl(manifest.icon ?? null)}
+        onError={() => setFailedUrl(icon)}
       />
     </span>
   )
@@ -280,12 +284,18 @@ function ComponentIcon({ manifest }: { manifest: Manifest }) {
  * catalogue gets a list, and the one that passes onSelect gets controls.
  */
 function Card({ manifest, onSelect }: { manifest: Manifest; onSelect?: (m: Manifest) => void }) {
+  // A card with no name still draws, because dropping it would leave a Host
+  // debugging a catalogue by counting rows that are not there. The verb is the
+  // fallback, since it is what a Step would be written with.
+  const name = textOf(manifest.name) ?? textOf(manifest.use) ?? 'Unnamed component'
+  const blurb = textOf(manifest.blurb)
+
   const body = (
     <>
       <ComponentIcon manifest={manifest} />
       <span className={styles.text}>
-        <span className={styles.name}>{manifest.name}</span>
-        {manifest.blurb ? <span className={styles.blurb}>{manifest.blurb}</span> : null}
+        <span className={styles.name}>{name}</span>
+        {blurb ? <span className={styles.blurb}>{blurb}</span> : null}
       </span>
     </>
   )
@@ -317,6 +327,27 @@ const NONE: Manifest[] = []
 /** The kinds a Component Manifest may declare. Anything else is a malformed catalogue. */
 const KINDS: ReadonlySet<string> = new Set<Manifest['kind']>(['component', 'trigger'])
 
+/**
+ * An entry's `kind`, or undefined when the entry is not even an object.
+ *
+ * The store validates the outer array and deliberately not each entry —
+ * `manifests.ts` argues that validating every one "would turn one malformed
+ * entry into an empty catalogue". The cost of that decision lands here: this
+ * region is handed whatever the Host resolved, so `entry.kind` may be reading a
+ * property of `null`. A TypeError from render takes down the Host's tree, which
+ * is the outcome the `failed` state exists to avoid — so a junk entry is
+ * something this region files under "not a Component" and reports, never
+ * something it dereferences.
+ */
+const kindOf = (manifest: Manifest): string | undefined =>
+  manifest && typeof manifest === 'object' && typeof manifest.kind === 'string'
+    ? manifest.kind
+    : undefined
+
+/** The card's text, only where the Host actually supplied a string. */
+const textOf = (value: unknown): string | undefined =>
+  typeof value === 'string' ? value : undefined
+
 // Module-level and therefore stable: useSyncExternalStore re-subscribes
 // whenever `subscribe` changes identity, and re-renders forever if `getSnapshot`
 // returns a fresh object each call.
@@ -334,7 +365,7 @@ const UNGROUPED = 'Other'
 
 const matches = (manifest: Manifest, needle: string) =>
   [manifest.name, manifest.blurb, manifest.group, manifest.use].some((field) =>
-    field?.toLowerCase().includes(needle),
+    textOf(field)?.toLowerCase().includes(needle),
   )
 
 /**
@@ -349,7 +380,7 @@ function groupsOf(components: Manifest[], query: string): Group[] {
 
   const groups = new Map<string, Manifest[]>()
   for (const manifest of visible) {
-    const name = manifest.group?.trim() || UNGROUPED
+    const name = textOf(manifest.group)?.trim() || UNGROUPED
     const existing = groups.get(name)
     if (existing) existing.push(manifest)
     else groups.set(name, [manifest])
