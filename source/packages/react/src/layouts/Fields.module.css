@@ -1,0 +1,77 @@
+@layer hatua {
+  .fields {
+    display: grid;
+    gap: 10px;
+  }
+
+  .field {
+    display: grid;
+    gap: 4px;
+  }
+
+  .label {
+    display: flex;
+    align-items: baseline;
+    gap: 3px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--hatua-text-muted);
+  }
+
+  /* Colour alone would say nothing to a screen reader, so the glyph carries it
+     — and the checker says it again in words when the field is left empty. */
+  .required {
+    color: var(--hatua-status-error);
+  }
+
+  .hint {
+    margin: 0;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: var(--hatua-text-muted);
+    text-wrap: pretty;
+  }
+
+  /* A `mono` field, a `ref` and a Template are all read back as source: a cron
+     line and `{{ … }}` are neither of them prose. */
+  .mono {
+    font-family: var(--hatua-font-mono);
+    font-size: 0.75rem;
+  }
+
+  .textarea {
+    inline-size: 100%;
+    min-block-size: 76px;
+    padding: 8px 10px;
+    border: 1px solid var(--hatua-border-strong);
+    border-radius: var(--hatua-radius-md);
+    background: var(--hatua-surface-card);
+    color: var(--hatua-text-primary);
+    line-height: 1.5;
+    resize: vertical;
+  }
+
+  .textarea:focus-visible {
+    outline: 2px solid var(--hatua-focus-ring);
+    outline-offset: -1px;
+    border-color: var(--hatua-border-accent);
+  }
+
+  /* A field this form shows and does not edit. It reads as a value rather than
+     as a control, because there is nothing here to operate — but it is drawn,
+     since a field rendered as empty space cannot be told from one nothing knows
+     about. */
+  .uneditable {
+    margin: 0;
+    padding: 6px 8px;
+    border: 1px dashed var(--hatua-border-subtle);
+    border-radius: var(--hatua-radius-sm);
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: var(--hatua-text-muted);
+    text-wrap: pretty;
+    overflow-wrap: anywhere;
+  }
+}

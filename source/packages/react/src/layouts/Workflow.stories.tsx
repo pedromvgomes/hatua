@@ -1,5 +1,7 @@
 import type { Manifest } from '@hatua/schema'
 import type {
+  ConnectionDescriber,
+  ConnectionSource,
   Cursor,
   DraftSession,
   EditToken,
@@ -33,6 +35,11 @@ id: wf_morning
 name: "Morning inbox triage"
 version: 4
 status: draft
+
+connections:
+  # Established outside Hatua; this file holds the handle and nothing else.
+  - id: ops_mailbox
+    ref: ref_ops
 
 triggers:
   - id: t1
@@ -99,8 +106,10 @@ const CATALOGUE: Manifest[] = [
     name: 'When mail arrives',
     blurb: 'Starts the workflow when a message arrives.',
     fields: [
+      { k: 'connection', label: 'Mailbox', kind: 'conn', conn_type: 'email', req: true },
       { k: 'folder', label: 'Folder', kind: 'text', ph: 'INBOX' },
       { k: 'from', label: 'Only from', kind: 'mono' },
+      { k: 'notes', label: 'Notes', kind: 'textarea', hint: 'Anything worth remembering.' },
     ],
     outputs: [],
   },
@@ -141,12 +150,49 @@ const catalogue = (manifests: Manifest[]): ManifestSource => ({
 })
 
 /**
+ * The Host's established Connections. Two ports, because they answer different
+ * questions: `listConnections` says what exists, `describe` says what to call
+ * it — and a Workflow Definition caches neither, so a renamed Connection can
+ * never go stale in the file.
+ */
+const ESTABLISHED = [
+  { ref: 'ref_ops', type: 'email', label: 'Ops mailbox' },
+  { ref: 'ref_support', type: 'email', label: 'Support inbox' },
+  { ref: 'ref_haiku', type: 'llm', label: 'Claude Code · Haiku 4.5' },
+]
+
+const connectionPorts = (
+  available = ESTABLISHED,
+): { connections: ConnectionSource; describeConnection: ConnectionDescriber } => ({
+  connections: {
+    async listConnections() {
+      return { items: available.map(({ ref, type }) => ({ ref, type })) }
+    },
+  },
+  describeConnection: {
+    async describe(ref) {
+      const found = available.find((connection) => connection.ref === ref)
+      if (!found) throw new Error(`no such connection "${ref}"`)
+      return { type: found.type, label: found.label, status: 'ready', details: {} }
+    },
+  },
+})
+
+/**
  * Set per story rather than once on `meta`: Storybook merges parameters, so a
  * story cannot un-set an inherited one — the unconfigured story that tried
  * would silently inherit a workflow and show the fields instead.
  */
-const wired = (store: WorkflowStore, manifests: Manifest[] | null = CATALOGUE) => ({
-  ports: { workflows: store, ...(manifests ? { manifests: catalogue(manifests) } : {}) },
+const wired = (
+  store: WorkflowStore,
+  manifests: Manifest[] | null = CATALOGUE,
+  connections: ReturnType<typeof connectionPorts> | null = connectionPorts(),
+) => ({
+  ports: {
+    workflows: store,
+    ...(manifests ? { manifests: catalogue(manifests) } : {}),
+    ...(connections ?? {}),
+  },
   workflowId: 'wf',
 })
 
@@ -237,6 +283,30 @@ export const SavingHalted: Story = {
       },
     }),
   ),
+}
+
+/**
+ * A Host that established no Connections, or wired no `ConnectionSource` at
+ * all. The `conn` field says so rather than offering an empty picker — Hatua
+ * establishes none itself, and never will: it has no server, so it can hold no
+ * client secret and receive no redirect (ADR-0007).
+ */
+export const NoConnections: Story = { parameters: wired(serving(FULL), CATALOGUE, null) }
+
+/**
+ * The list without the describer. A ref is a poor label and a better one than
+ * an empty picker — an editor-only Host may implement just `listConnections`,
+ * and the run viewer implements just the describer.
+ */
+export const UndescribedConnections: Story = {
+  parameters: {
+    ports: {
+      workflows: serving(FULL),
+      manifests: catalogue(CATALOGUE),
+      connections: connectionPorts().connections,
+    },
+    workflowId: 'wf',
+  },
 }
 
 /** No WorkflowStore at all — a wiring mistake, told apart from an empty workflow. */

@@ -8,6 +8,7 @@
  */
 
 export * from './command'
+export * from './connections'
 export * from './editing'
 export * from './manifests'
 export * from './paging'

@@ -8,6 +8,10 @@
  */
 export type { Field, Manifest, Step, Trigger, Variable, WorkflowDefinition } from '@hatua/schema'
 export type {
+  ConnectionDescriber,
+  ConnectionDescription,
+  ConnectionSource,
+  ConnectionSummary,
   Cursor,
   DraftSession,
   EditToken,

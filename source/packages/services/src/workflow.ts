@@ -3,8 +3,8 @@ import { asObject, detachNode, entriesOf, insertNode, setScalar, topLevelList } 
 import type { EditCommand } from './command'
 
 /**
- * The commands that address the workflow itself: its identity, and its
- * Triggers.
+ * The commands that address the workflow itself: its identity, its Triggers,
+ * and the Connections it declares.
  *
  * Addressed by key, not by tree position. A Step is found by walking a tree and
  * spliced at an `InsertPoint`; `name` is one key on the root mapping and a
@@ -22,6 +22,39 @@ import type { EditCommand } from './command'
  * gives applies verbatim: the node carries the user's comments, key order and
  * quoting, and a rebuilt one would not.
  */
+
+/**
+ * Bind a Host's Connection handle to a workflow-local name.
+ *
+ * A `conn` field stores the NAME, never the handle: `connections[]` holds the
+ * `ref` once, and every field that uses it points at the id. That is what lets
+ * a Connection be renamed by the Host without touching a field, and it is why
+ * picking one the workflow has not declared yet is two edits rather than one —
+ * `sequence` makes them a single undo.
+ *
+ * The id is the caller's to choose, because the caller is the only thing that
+ * knows what the other ids are and what this Connection is called. Nothing here
+ * can mint one without reading a projection a command must not depend on.
+ */
+export function declareConnection(id: string, ref: string): EditCommand {
+  return {
+    label: `Add ${id}`,
+    apply(document) {
+      for (const { entry } of entriesOf(document, 'connections')) {
+        // Already bound. Declaring it twice would give one handle two names,
+        // and a field pointing at either would be equally correct — which is
+        // how a workflow ends up with connections nobody can tell apart.
+        if (entry.ref === ref) return
+        if (entry.id === id) throw new Error(`A connection named "${id}" already exists`)
+      }
+
+      const listPath = topLevelList(document, 'connections')
+      const list = asObject(document).connections
+      const index = Array.isArray(list) ? list.length : 0
+      insertNode(document, listPath, index, document.ast.createNode({ id, ref }))
+    },
+  }
+}
 
 /** Enough to write a Trigger; its `with:` values are the Workflow tab's to fill in. */
 export interface NewTrigger {

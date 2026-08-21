@@ -17,3 +17,23 @@ export interface EditCommand {
   readonly label: string
   apply(document: WorkflowDocument): void
 }
+
+/**
+ * Several commands as one undoable change.
+ *
+ * Picking a Connection a workflow has not declared yet is two edits — bind the
+ * Host's handle to a workflow-local name, then point the field at that name —
+ * and they are one thing the user did. Left as two, undo puts the field back
+ * and leaves a Connection nobody declared behind, which is a document state
+ * nothing on screen explains.
+ *
+ * Still all-or-nothing, and for free: `EditingStore.apply` restores the
+ * document's previous text when a command throws, so a member that fails
+ * halfway takes its predecessors with it.
+ */
+export const sequence = (label: string, ...commands: EditCommand[]): EditCommand => ({
+  label,
+  apply(document) {
+    for (const command of commands) command.apply(document)
+  },
+})

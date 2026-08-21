@@ -32,7 +32,8 @@ store the same way — the parsed **Workflow Definition** in, a tree out, and
 every structural change back through the store as a command against the document
 (ADR-0001). `Workflow` is the first region other than validation to read *both*,
 because the document says which Triggers a workflow declares and only the
-catalogue says what a Trigger's fields are.
+catalogue says what a Trigger's fields are — and a third, `ConnectionStore`,
+because a `conn` field offers what the Host says it has established.
 
 `TabbedPanel` still owns no data. It gained a controlled `tabId`, which is a
 different thing: the tab that is open is still chrome, and lifting it into a
@@ -84,6 +85,18 @@ because neither needs a catalogue.
 | `Components` | The Component Manifests a Host serves, as cards. Components only — a Trigger is not a Step, and adding one is the Workflow tab's job. |
 | `Workflow` | Everything scoped to the workflow rather than to a Step: the name and slug, the Triggers, the variables. |
 | `Data` | The reference tree the step editor expands into. Not a tab. |
+
+`Fields` is not a region and is never exported: it is the form for one Component
+Manifest's fields, over one set of values. A Trigger's fields and a Step's are
+the same shape declared by the same schema, differing only in which key of the
+document they are written back to — so `Workflow` mounts it today and the step
+editor mounts the same component when it lands.
+
+That is the point worth keeping: **which surface edits a thing is a rendering
+decision, not a document one.** Clicking the canvas's derived start node can
+open this form in the step editor without `triggers[]` moving into `steps[]`,
+which is what would otherwise force `once`/`fixed` back and a special case into
+`removeStep`, `walkSteps`, `unknownComponents` and the layout.
 
 A run drawer belongs to `views/Runs`, not to `Build`. A **Workflow Execution**
 is read-only history; nothing in the designer edits one.

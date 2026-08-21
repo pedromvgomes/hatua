@@ -1,8 +1,10 @@
 import { parseWorkflow, type WorkflowDocument } from '@hatua/document'
 import { describe, expect, it } from 'vitest'
 import type { EditCommand } from './command'
+import { sequence } from './command'
 import {
   addTrigger,
+  declareConnection,
   removeTrigger,
   setTriggerField,
   setTriggerName,
@@ -214,5 +216,76 @@ describe('a document that does not project', () => {
     const text = apply(hole, removeTrigger('t1')).toString()
     expect(text).toMatch(/^ {2}- ?$/m)
     expect(text).not.toContain('id: t1')
+  })
+})
+
+describe('declareConnection', () => {
+  /*
+   * A `conn` field stores the workflow-local NAME, never the Host's handle:
+   * `connections[]` holds the `ref` once and every field points at the id,
+   * which is what lets the Host rename a Connection without touching a field.
+   */
+  it('binds a handle to a name, in the schema’s key position', () => {
+    const bare = 'id: wf\nname: n\nversion: 1\nstatus: draft\nsteps: []\n'
+    const text = apply(bare, declareConnection('ops_mailbox', 'ref_ops')).toString()
+
+    expect(definitionOf(text).connections).toEqual([{ id: 'ops_mailbox', ref: 'ref_ops' }])
+    // Before `triggers:` and `steps:`, where the schema documents it.
+    expect(text.indexOf('connections:')).toBeLessThan(text.indexOf('steps:'))
+  })
+
+  it('is a no-op for a handle the workflow already binds', () => {
+    // Declaring one handle twice would give it two names, and a field pointing
+    // at either would be equally correct — which is how a workflow ends up with
+    // connections nobody can tell apart.
+    const once = apply(SOURCE, declareConnection('ops_mailbox', 'ref_ops')).toString()
+    const twice = apply(once, declareConnection('ops_again', 'ref_ops')).toString()
+
+    expect(definitionOf(twice).connections).toEqual([{ id: 'ops_mailbox', ref: 'ref_ops' }])
+  })
+
+  it('refuses to reuse a name that is taken by another handle', () => {
+    const once = apply(SOURCE, declareConnection('mailbox', 'ref_ops')).toString()
+    expect(() => apply(once, declareConnection('mailbox', 'ref_other'))).toThrow(/already exists/)
+  })
+
+  it('keeps every comment in the file', () => {
+    const text = apply(SOURCE, declareConnection('ops_mailbox', 'ref_ops')).toString()
+    expect(text).toContain('# Runs before anyone is awake.')
+    expect(text).toContain('# Every weekday at six.')
+  })
+})
+
+describe('sequence', () => {
+  it('records several commands as one undoable change', () => {
+    // Picking a Connection the workflow does not declare yet is two edits and
+    // one thing the user did. Left as two, undo puts the field back and leaves
+    // a Connection nobody declared behind.
+    const command = sequence(
+      'Use ops_mailbox',
+      declareConnection('ops_mailbox', 'ref_ops'),
+      setTriggerField('t1', 'connection', 'ops_mailbox'),
+    )
+    const text = apply(SOURCE, command).toString()
+    const definition = definitionOf(text)
+
+    expect(command.label).toBe('Use ops_mailbox')
+    expect(definition.connections).toEqual([{ id: 'ops_mailbox', ref: 'ref_ops' }])
+    expect((definition.triggers ?? [])[0]?.with?.connection).toBe('ops_mailbox')
+  })
+
+  it('throws out of the member that failed, leaving the store to roll back', () => {
+    // All-or-nothing comes from the store restoring the previous text, which
+    // ADR-0001 makes lossless — not from anything this helper does.
+    expect(() =>
+      apply(
+        SOURCE,
+        sequence(
+          'Both',
+          declareConnection('ops_mailbox', 'ref_ops'),
+          setTriggerField('t9', 'connection', 'ops_mailbox'),
+        ),
+      ),
+    ).toThrow(/No Trigger with id/)
   })
 })

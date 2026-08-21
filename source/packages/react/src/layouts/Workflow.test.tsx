@@ -1,5 +1,7 @@
 import type { Manifest } from '@hatua/schema'
 import type {
+  ConnectionDescriber,
+  ConnectionSource,
   Cursor,
   DraftSession,
   EditToken,
@@ -79,7 +81,12 @@ const CATALOGUE: Manifest[] = [
     kind: 'trigger',
     use: 'email.received',
     name: 'When mail arrives',
-    fields: [{ k: 'folder', label: 'Folder', kind: 'text' }],
+    fields: [
+      { k: 'folder', label: 'Folder', kind: 'text' },
+      { k: 'connection', label: 'Mailbox', kind: 'conn', conn_type: 'email', req: true },
+      { k: 'notes', label: 'Notes', kind: 'textarea' },
+      { k: 'retries', label: 'Retries', kind: 'number' },
+    ],
     outputs: [],
   },
   { kind: 'component', use: 'email.fetch', name: 'Fetch mail', fields: [], outputs: [] },
@@ -127,18 +134,52 @@ const serving = (manifests: Manifest[]): ManifestSource => ({
   loadManifests: async () => manifests,
 })
 
-const mount = (source?: Host, manifests: Manifest[] | null = CATALOGUE) =>
+/** The Host's established Connections: `{ref, type}` from one port, a label from the other. */
+const connectionPorts = (
+  available: { ref: string; type: string; label: string }[],
+): { connections: ConnectionSource; describeConnection: ConnectionDescriber } => ({
+  connections: {
+    async listConnections() {
+      return { items: available.map(({ ref, type }) => ({ ref, type })) }
+    },
+  },
+  describeConnection: {
+    async describe(ref) {
+      const found = available.find((connection) => connection.ref === ref)
+      if (!found) throw new Error(`no such connection "${ref}"`)
+      return { type: found.type, label: found.label, status: 'ready', details: {} }
+    },
+  },
+})
+
+const mount = (
+  source?: Host,
+  manifests: Manifest[] | null = CATALOGUE,
+  available?: { ref: string; type: string; label: string }[],
+) =>
   render(
     <HatuaProvider
       ports={{
         ...(source ? { workflows: source.port } : {}),
         ...(manifests ? { manifests: serving(manifests) } : {}),
+        ...(available ? connectionPorts(available) : {}),
       }}
       workflowId={source ? 'wf_morning' : undefined}
     >
       <Workflow />
     </HatuaProvider>,
   )
+
+const AVAILABLE = [
+  { ref: 'ref_ops', type: 'email', label: 'Ops mailbox' },
+  { ref: 'ref_haiku', type: 'llm', label: 'Claude Code · Haiku 4.5' },
+]
+
+/** A workflow whose Trigger has a `conn` field to fill in. */
+const WITH_MAILBOX = SOURCE.replace(
+  '  - id: t1\n    use: schedule.cron\n    name: "Every morning"\n    with:\n      at: "0 6 * * 1-5"\n',
+  '  - id: t1\n    use: email.received\n    name: "Every morning"\n',
+)
 
 /**
  * Long enough for the autosave debounce plus contention.
@@ -350,6 +391,143 @@ describe('triggers', () => {
 
     expect(await screen.findByDisplayValue('Every morning')).toBeDefined()
     expect(screen.getByText(/Nothing declares this trigger type/)).toBeDefined()
+  })
+})
+
+describe('a Trigger’s connection field', () => {
+  /*
+   * A `conn` field stores the workflow-local NAME, and `connections[]` holds
+   * the Host's opaque handle once. Hatua never establishes a Connection — it
+   * has no server, so it can hold no client secret and receive no redirect
+   * (ADR-0007) — so the picker offers what the Host says exists and nothing
+   * more.
+   */
+  it('offers the Host’s connections, labelled the way the Host describes them', async () => {
+    mount(host(WITH_MAILBOX), CATALOGUE, AVAILABLE)
+
+    const picker = await screen.findByRole('combobox', { name: 'Mailbox' })
+    expect([...picker.querySelectorAll('option')].map((o) => o.textContent)).toContain(
+      'Ops mailbox',
+    )
+  })
+
+  it('offers only connections whose type matches conn_type', async () => {
+    // So a "when mail arrives" Trigger is never handed an LLM connection —
+    // which `mismatchedConnections` would then block editing over.
+    mount(host(WITH_MAILBOX), CATALOGUE, AVAILABLE)
+
+    const picker = await screen.findByRole('combobox', { name: 'Mailbox' })
+    const options = [...picker.querySelectorAll('option')].map((o) => o.textContent)
+    expect(options).toContain('Ops mailbox')
+    expect(options).not.toContain('Claude Code · Haiku 4.5')
+  })
+
+  it('declares the connection and points the field at it, as one undoable change', async () => {
+    const source = host(WITH_MAILBOX)
+    mount(source, CATALOGUE, AVAILABLE)
+
+    const picker = await screen.findByRole('combobox', { name: 'Mailbox' })
+    fireEvent.change(picker, { target: { value: '+ref_ops' } })
+
+    await waitFor(() => expect(source.writes).toHaveLength(1), AUTOSAVED)
+    const written = source.writes[0] as string
+    // The handle lands once, in `connections:`; the field points at the name.
+    expect(written).toContain('ref: ref_ops')
+    expect(written).toContain('id: ops_mailbox')
+    expect(written).toContain('connection: ops_mailbox')
+  })
+
+  it('offers a connection the workflow already declares, without redeclaring it', async () => {
+    const declared = WITH_MAILBOX.replace(
+      'triggers:',
+      'connections:\n  - id: ops_mailbox\n    ref: ref_ops\n\ntriggers:',
+    )
+    const source = host(declared)
+    mount(source, CATALOGUE, AVAILABLE)
+
+    const picker = await screen.findByRole('combobox', { name: 'Mailbox' })
+    fireEvent.change(picker, { target: { value: 'ops_mailbox' } })
+
+    await waitFor(() => expect(source.writes).toHaveLength(1), AUTOSAVED)
+    const written = source.writes[0] as string
+    expect(written).toContain('connection: ops_mailbox')
+    // Declared once, not twice: one handle with two names is a workflow with
+    // connections nobody can tell apart.
+    expect(written.match(/ref_ops/g)).toHaveLength(1)
+  })
+
+  it('says so when the Host wired no ConnectionSource, rather than offering nothing', async () => {
+    mount(host(WITH_MAILBOX), CATALOGUE)
+
+    expect(await screen.findByText(/No connection is available for this yet/)).toBeDefined()
+    expect(screen.queryByRole('combobox', { name: 'Mailbox' })).toBeNull()
+  })
+
+  it('marks a required field, so an empty one is visibly unfinished', async () => {
+    mount(host(WITH_MAILBOX), CATALOGUE, AVAILABLE)
+    const label = await screen.findByText('Mailbox')
+    expect(label.textContent).toContain('*')
+  })
+})
+
+describe('the shared field form', () => {
+  /*
+   * The same component the step editor mounts. A Trigger's fields and a Step's
+   * are the same shape declared by the same schema, so which surface draws them
+   * is a rendering decision — which is what lets the canvas's start node open
+   * this form later without `triggers[]` moving into `steps[]`.
+   */
+  it('renders a textarea for a textarea field, not a single-line input', async () => {
+    mount(host(WITH_MAILBOX), CATALOGUE, AVAILABLE)
+    const notes = await screen.findByLabelText('Notes')
+    expect(notes.tagName).toBe('TEXTAREA')
+  })
+
+  it('clears a number field rather than writing zero into it', async () => {
+    // `Number('')` is 0, and `unfilled()` counts 0 as answered — so a required
+    // numeric field would silently stop being reported while reading as
+    // answered to the person who just cleared it.
+    const source = host(
+      WITH_MAILBOX.replace(
+        'name: "Every morning"',
+        'name: "Every morning"\n    with:\n      retries: 3',
+      ),
+    )
+    mount(source, CATALOGUE, AVAILABLE)
+
+    type(await screen.findByLabelText('Retries'), '')
+    await waitFor(() => expect(source.writes).toHaveLength(1), AUTOSAVED)
+    expect(source.writes[0]).not.toMatch(/retries: 0/)
+  })
+
+  it('hides a field its `when` clause switches off', async () => {
+    // One rule, in @hatua/model: the same predicate decides whether a required
+    // field counts as missing, so a second copy here would eventually let a
+    // hidden field block Publish.
+    const conditional: Manifest[] = [
+      {
+        kind: 'trigger',
+        use: 'email.received',
+        name: 'When mail arrives',
+        fields: [
+          {
+            k: 'mode',
+            label: 'Mode',
+            kind: 'enum',
+            options: [
+              { value: 'all', label: 'Everything' },
+              { value: 'folder', label: 'One folder' },
+            ],
+          },
+          { k: 'folder', label: 'Folder', kind: 'text', when: ['mode', 'folder'] },
+        ],
+        outputs: [],
+      },
+    ]
+
+    mount(host(WITH_MAILBOX), conditional)
+    await screen.findByLabelText('Mode')
+    expect(screen.queryByLabelText('Folder')).toBeNull()
   })
 })
 

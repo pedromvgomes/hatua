@@ -1,13 +1,15 @@
-import { type Diagnostic, fieldVisible } from '@hatua/model'
-import type { Field, Manifest, Trigger, Variable } from '@hatua/schema'
+import type { Diagnostic } from '@hatua/model'
+import type { Connection, Manifest, Trigger, Variable } from '@hatua/schema'
 import {
   addTrigger,
   addVariable,
+  declareConnection,
   type EditingState,
   type ManifestState,
   removeTrigger,
   removeVariable,
   renameVariable,
+  sequence,
   setTriggerField,
   setTriggerName,
   setVariableValue,
@@ -25,10 +27,9 @@ import {
 } from 'react'
 import { Button } from '../primitives/Button'
 import { cx } from '../primitives/classNames'
-import { Input } from '../primitives/Input'
 import { Select } from '../primitives/Select'
-import { Toggle } from '../primitives/Toggle'
 import { useEditingStore, useManifestStore, useValidationStore } from '../theme/HatuaProvider'
+import { CommittedInput, Fields } from './Fields'
 import styles from './Workflow.module.css'
 import css from './Workflow.module.css?inline'
 
@@ -39,6 +40,19 @@ import css from './Workflow.module.css?inline'
  * thing they have in common: none of them is addressed by a position in the
  * Step tree. That is what makes them one region rather than three, and it is
  * why the Flow tab beside it holds none of them.
+ *
+ * ## The Triggers section is the surface, not the form
+ *
+ * A Trigger's fields are drawn by `<Fields>`, which is the same component the
+ * step editor mounts: the fields are declared by the same schema and differ
+ * only in which key of the document they are written back to. So editing a
+ * Trigger and editing a Step are one form, and where that form appears is a
+ * rendering decision — which is what lets the canvas's start node open it later
+ * without `triggers[]` moving into `steps[]`.
+ *
+ * It is here rather than in the step editor because the step editor and the
+ * canvas are both still stubs, so there is nowhere else to select a Trigger
+ * from. The same reasoning keeps the Flow tab in `<Build>`'s default set.
  *
  * ## What it does not hold
  *
@@ -213,8 +227,20 @@ export function Workflow({ className, ...rest }: WorkflowProps) {
                   store?.apply(addTrigger({ use: manifest.use, name: manifest.name }))
                 }
                 onRemove={(id) => store?.apply(removeTrigger(id))}
+                connections={definition.connections ?? []}
                 onName={(id, name) => store?.apply(setTriggerName(id, name))}
                 onField={(id, key, value) => store?.apply(setTriggerField(id, key, value))}
+                onDeclareConnection={(triggerId, key, name, ref) =>
+                  // One undoable change: binding the handle and pointing the
+                  // field at it are two edits and one thing the user did.
+                  store?.apply(
+                    sequence(
+                      `Use ${name}`,
+                      declareConnection(name, ref),
+                      setTriggerField(triggerId, key, name),
+                    ),
+                  )
+                }
               />
               <Variables
                 variables={definition.vars ?? []}
@@ -237,64 +263,6 @@ function Section({ heading, children }: { heading: string; children: ReactNode }
       <h2 className={styles.sectionHeading}>{heading}</h2>
       {children}
     </section>
-  )
-}
-
-/**
- * An input that holds what the user is typing and commits on blur.
- *
- * Controlled from the document it would fight the user: every keystroke is a
- * command, a command is a write, and a write re-parses — so the caret jumps to
- * the end and a half-typed key like `dige` is a rename in its own right. Held
- * locally and committed once, the document sees the value the user settled on.
- *
- * It follows the document when the document moves under it — an undo, or
- * another region's edit — which is what the effect below is for. `committed` is
- * the last value this input either received or sent, so a change arriving from
- * anywhere else is distinguishable from the echo of its own edit.
- */
-function CommittedInput({
-  value,
-  onCommit,
-  label,
-  mono = false,
-  ...rest
-}: {
-  value: string
-  onCommit: (next: string) => void
-  label: string
-  mono?: boolean
-} & Omit<ComponentPropsWithRef<'input'>, 'value' | 'onChange' | 'onBlur'>) {
-  const [draft, setDraft] = useState(value)
-  const [committed, setCommitted] = useState(value)
-
-  if (value !== committed) {
-    // Rendered rather than deferred to an effect: an effect would paint the
-    // stale value first, so an undo would flash the old text before correcting
-    // itself. React re-renders immediately when state is set during render.
-    setCommitted(value)
-    setDraft(value)
-  }
-
-  const commit = () => {
-    if (draft === committed) return
-    setCommitted(draft)
-    onCommit(draft)
-  }
-
-  return (
-    <Input
-      {...rest}
-      aria-label={label}
-      className={cx(mono && styles.mono, rest.className)}
-      value={draft}
-      onChange={(event) => setDraft(event.target.value)}
-      onBlur={commit}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter') commit()
-        if (event.key === 'Escape') setDraft(committed)
-      }}
-    />
   )
 }
 
@@ -350,20 +318,24 @@ function Triggers({
   catalogue,
   manifests,
   problems,
+  connections,
   onAdd,
   onRemove,
   onName,
   onField,
+  onDeclareConnection,
 }: {
   triggers: readonly Trigger[]
   catalogue: CatalogueState
   manifests: readonly Manifest[]
   /** Diagnostics per Trigger id; a Trigger with none is absent. */
   problems: ReadonlyMap<string, Diagnostic[]>
+  connections: readonly Connection[]
   onAdd: (manifest: Manifest) => void
   onRemove: (id: string) => void
   onName: (id: string, name: string) => void
   onField: (id: string, key: string, value: string | number | boolean) => void
+  onDeclareConnection: (triggerId: string, key: string, name: string, ref: string) => void
 }) {
   const byUse = new Map(manifests.map((manifest) => [manifest.use, manifest]))
   const addable = manifests.filter((manifest) => manifest.kind === 'trigger')
@@ -383,9 +355,11 @@ function Triggers({
               trigger={trigger}
               manifest={byUse.get(trigger.use)}
               problems={problems.get(trigger.id)}
+              connections={connections}
               onRemove={onRemove}
               onName={onName}
               onField={onField}
+              onDeclareConnection={onDeclareConnection}
             />
           </li>
         ))}
@@ -467,23 +441,22 @@ function TriggerCard({
   trigger,
   manifest,
   problems,
+  connections,
   onRemove,
   onName,
   onField,
+  onDeclareConnection,
 }: {
   trigger: Trigger
   manifest: Manifest | undefined
   problems?: Diagnostic[]
+  connections: readonly Connection[]
   onRemove: (id: string) => void
   onName: (id: string, name: string) => void
   onField: (id: string, key: string, value: string | number | boolean) => void
+  onDeclareConnection: (triggerId: string, key: string, name: string, ref: string) => void
 }) {
   const values = (trigger.with ?? {}) as Record<string, unknown>
-  // `fieldVisible` rather than a copy of it: the same rule decides whether a
-  // required field counts as missing, and two copies are two answers waiting to
-  // disagree — a hidden field that starts blocking Publish, or a visible
-  // required one that stops being reported.
-  const fields = (manifest?.fields ?? []).filter((field) => fieldVisible(field, values))
 
   return (
     <div className={styles.card}>
@@ -540,114 +513,22 @@ function TriggerCard({
         </p>
       ) : null}
 
-      {manifest
-        ? fields.map((field) => (
-            <TriggerField
-              key={field.k}
-              field={field}
-              value={values[field.k]}
-              onChange={(next) => onField(trigger.id, field.k, next)}
-            />
-          ))
-        : // Only when the checker has not already said it. Without a catalogue
-          // wired there is no checker at all, and the card would otherwise be a
-          // name box with no account of why it has nothing else on it.
-          !problems?.some((problem) => problem.code === 'COMPONENT_UNKNOWN') && (
-            <p className={styles.empty}>
-              Nothing declares this trigger type, so it has no settings.
-            </p>
-          )}
-    </div>
-  )
-}
-
-/**
- * One of a Trigger's declared fields.
- *
- * The kinds that accept an Expression get a plain mono input here. The Template
- * input — highlighting, completion, the picker — is one widget used by every
- * site that holds a Template, and building half of it in one of those sites is
- * how the three end up disagreeing.
- *
- * `conn`, `secret` and `map` have no control here. A `conn` needs the Host
- * asked to describe its handles (ADR-0007), a `map` is a list of typed entries
- * rather than a value, and a `secret` in a file that lives in a repository is
- * the thing the schema warns against on `ref`. A required one left unset is
- * already reported by the checker, which is the mechanism for saying so.
- */
-/**
- * What a `number` field's box actually stores.
- *
- * `Number('')` is 0, so emptying the box would write a zero — and `unfilled()`
- * counts 0 as answered, so a required numeric field would silently stop being
- * reported as missing while reading as answered to the person who just cleared
- * it. `Number('abc')` is NaN, which serialises into the document as something
- * no reader can do anything with. Both stay as the text the user typed, which
- * is the state the checker already knows how to talk about.
- */
-const numberIfAsked = (field: Field, text: string): string | number => {
-  if (field.kind !== 'number') return text
-  const parsed = Number(text)
-  return text.trim() === '' || !Number.isFinite(parsed) ? text : parsed
-}
-
-function TriggerField({
-  field,
-  value,
-  onChange,
-}: {
-  field: Field
-  value: unknown
-  onChange: (next: string | number | boolean) => void
-}) {
-  const id = useId()
-  const text = value === undefined || value === null ? '' : String(value)
-
-  const control =
-    field.kind === 'bool' ? (
-      <Toggle
-        id={id}
-        checked={value === true}
-        onCheckedChange={onChange}
-        aria-label={field.label}
-      />
-    ) : field.kind === 'enum' ? (
-      <Select
-        id={id}
-        value={text}
-        aria-label={field.label}
-        onChange={(event) => onChange(event.target.value)}
-      >
-        {/* An unset enum needs somewhere to sit, or the <select> reports the
-            first option as chosen when nothing was. */}
-        <option value="">—</option>
-        {(field.options ?? []).map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </Select>
-    ) : field.kind === 'conn' || field.kind === 'secret' || field.kind === 'map' ? null : (
-      <CommittedInput
-        id={id}
-        label={field.label}
-        value={text}
-        placeholder={field.ph}
-        mono={field.kind === 'mono' || field.kind === 'ref'}
-        type={field.kind === 'number' ? 'number' : 'text'}
-        onCommit={(next) => onChange(numberIfAsked(field, next))}
-      />
-    )
-
-  if (!control) return null
-
-  return (
-    <div className={styles.field}>
-      <label className={styles.label} htmlFor={id}>
-        {field.label}
-      </label>
-      {control}
-      {field.hint ? <p className={styles.hint}>{field.hint}</p> : null}
+      {manifest ? (
+        <Fields
+          manifest={manifest}
+          values={values}
+          connections={connections}
+          onChange={(key, next) => onField(trigger.id, key, next)}
+          onDeclareConnection={(key, name, ref) => onDeclareConnection(trigger.id, key, name, ref)}
+        />
+      ) : (
+        // Only when the checker has not already said it. Without a catalogue
+        // wired there is no checker at all, and the card would otherwise be a
+        // name box with no account of why it has nothing else on it.
+        !problems?.some((problem) => problem.code === 'COMPONENT_UNKNOWN') && (
+          <p className={styles.empty}>Nothing declares this trigger type, so it has no settings.</p>
+        )
+      )}
     </div>
   )
 }
