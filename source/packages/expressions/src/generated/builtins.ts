@@ -6,9 +6,47 @@ import type { ValueType } from '../value.js'
 export interface ParamSpec {
   readonly name: string
   readonly type: ValueType
+  /** One sentence saying what this parameter is for. */
+  readonly description: string
   readonly optional: boolean
   readonly variadic: boolean
 }
+
+export interface NamespaceSpec {
+  readonly namespace: string
+  /** One sentence describing the group, shown above its functions. */
+  readonly summary: string
+}
+
+/**
+ * The namespaces, for a picker that groups functions before listing them.
+ * Declarations only — reading this pulls in no implementation.
+ */
+export const CORE_NAMESPACES: readonly NamespaceSpec[] = [
+  {
+    namespace: 'dt',
+    summary: 'Instants. RFC 3339 only — there are no free-form format strings in v1.',
+  },
+  {
+    namespace: 'json',
+    summary:
+      'The escape hatch for opaque payloads. `json.parse` returns `unknown`, which is what makes `json.parse(s2.output).count` a warning rather than an error at design time — and a runtime type check at the slot boundary.',
+  },
+  {
+    namespace: 'list',
+    summary:
+      'Lists. There are no lambdas in v1, so no `filter` or `map` — closures would mean implementing scoping and capture twice. `[]` projection and `core.for_each` cover the common cases.',
+  },
+  {
+    namespace: 'num',
+    summary:
+      'Numbers. There is one numeric type and it is a 64-bit float, so `7 / 2` is 3.5 in both languages; rounding is half away from zero, so `round(-0.5)` is -1 in both.',
+  },
+  {
+    namespace: 'text',
+    summary: 'Strings. Case mapping is full Unicode and language-neutral, never locale-sensitive.',
+  },
+] as const
 
 export interface FunctionSpec {
   readonly namespace: string
@@ -31,9 +69,27 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     qualified: 'dt.add',
     summary: 'Shift an instant. Unit is one of seconds, minutes, hours, days.',
     params: [
-      { name: 'value', type: 'datetime', optional: false, variadic: false },
-      { name: 'amount', type: 'number', optional: false, variadic: false },
-      { name: 'unit', type: 'text', optional: false, variadic: false },
+      {
+        name: 'value',
+        type: 'datetime',
+        description: 'The instant to shift.',
+        optional: false,
+        variadic: false,
+      },
+      {
+        name: 'amount',
+        type: 'number',
+        description: 'How many units to add. A negative amount shifts backwards.',
+        optional: false,
+        variadic: false,
+      },
+      {
+        name: 'unit',
+        type: 'text',
+        description: 'One of seconds, minutes, hours or days.',
+        optional: false,
+        variadic: false,
+      },
     ],
     returns: 'datetime',
   },
@@ -43,9 +99,27 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     qualified: 'dt.diff',
     summary: 'Whole units from the second instant to the first, truncated toward zero.',
     params: [
-      { name: 'a', type: 'datetime', optional: false, variadic: false },
-      { name: 'b', type: 'datetime', optional: false, variadic: false },
-      { name: 'unit', type: 'text', optional: false, variadic: false },
+      {
+        name: 'a',
+        type: 'datetime',
+        description: 'The instant measured to.',
+        optional: false,
+        variadic: false,
+      },
+      {
+        name: 'b',
+        type: 'datetime',
+        description: 'The instant measured from. Later than a gives a negative result.',
+        optional: false,
+        variadic: false,
+      },
+      {
+        name: 'unit',
+        type: 'text',
+        description: 'One of seconds, minutes, hours or days.',
+        optional: false,
+        variadic: false,
+      },
     ],
     returns: 'number',
   },
@@ -54,7 +128,15 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     name: 'iso',
     qualified: 'dt.iso',
     summary: 'Render an instant as RFC 3339 in UTC.',
-    params: [{ name: 'value', type: 'datetime', optional: false, variadic: false }],
+    params: [
+      {
+        name: 'value',
+        type: 'datetime',
+        description: 'The instant to render.',
+        optional: false,
+        variadic: false,
+      },
+    ],
     returns: 'text',
   },
   {
@@ -70,7 +152,15 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     name: 'parse',
     qualified: 'dt.parse',
     summary: 'Read an RFC 3339 timestamp.',
-    params: [{ name: 'value', type: 'text', optional: false, variadic: false }],
+    params: [
+      {
+        name: 'value',
+        type: 'text',
+        description: 'The timestamp to read, in RFC 3339 form.',
+        optional: false,
+        variadic: false,
+      },
+    ],
     returns: 'datetime',
   },
   {
@@ -78,7 +168,15 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     name: 'parse',
     qualified: 'json.parse',
     summary: 'Read a JSON document.',
-    params: [{ name: 'value', type: 'text', optional: false, variadic: false }],
+    params: [
+      {
+        name: 'value',
+        type: 'text',
+        description: 'The JSON document, as text.',
+        optional: false,
+        variadic: false,
+      },
+    ],
     returns: 'unknown',
   },
   {
@@ -86,7 +184,15 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     name: 'stringify',
     qualified: 'json.stringify',
     summary: 'Render a value as compact JSON.',
-    params: [{ name: 'value', type: 'unknown', optional: false, variadic: false }],
+    params: [
+      {
+        name: 'value',
+        type: 'unknown',
+        description: 'The value to render. Lists and objects are rendered whole.',
+        optional: false,
+        variadic: false,
+      },
+    ],
     returns: 'text',
   },
   {
@@ -95,8 +201,20 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     qualified: 'list.contains',
     summary: 'Whether the list holds a value equal to the needle, by the same rule as `==`.',
     params: [
-      { name: 'value', type: 'list', optional: false, variadic: false },
-      { name: 'needle', type: 'unknown', optional: false, variadic: false },
+      {
+        name: 'value',
+        type: 'list',
+        description: 'The list to search.',
+        optional: false,
+        variadic: false,
+      },
+      {
+        name: 'needle',
+        type: 'unknown',
+        description: 'The value to look for.',
+        optional: false,
+        variadic: false,
+      },
     ],
     returns: 'boolean',
   },
@@ -105,7 +223,15 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     name: 'first',
     qualified: 'list.first',
     summary: 'First element, or null when empty.',
-    params: [{ name: 'value', type: 'list', optional: false, variadic: false }],
+    params: [
+      {
+        name: 'value',
+        type: 'list',
+        description: 'The list to read from.',
+        optional: false,
+        variadic: false,
+      },
+    ],
     returns: 'unknown',
   },
   {
@@ -114,8 +240,20 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     qualified: 'list.join',
     summary: 'Render each element as text and join with a separator.',
     params: [
-      { name: 'value', type: 'list', optional: false, variadic: false },
-      { name: 'separator', type: 'text', optional: false, variadic: false },
+      {
+        name: 'value',
+        type: 'list',
+        description: 'The list whose elements are rendered and joined.',
+        optional: false,
+        variadic: false,
+      },
+      {
+        name: 'separator',
+        type: 'text',
+        description: 'Placed between elements. Not added before the first or after the last.',
+        optional: false,
+        variadic: false,
+      },
     ],
     returns: 'text',
   },
@@ -124,7 +262,15 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     name: 'last',
     qualified: 'list.last',
     summary: 'Last element, or null when empty.',
-    params: [{ name: 'value', type: 'list', optional: false, variadic: false }],
+    params: [
+      {
+        name: 'value',
+        type: 'list',
+        description: 'The list to read from.',
+        optional: false,
+        variadic: false,
+      },
+    ],
     returns: 'unknown',
   },
   {
@@ -132,7 +278,15 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     name: 'len',
     qualified: 'list.len',
     summary: 'Number of elements.',
-    params: [{ name: 'value', type: 'list', optional: false, variadic: false }],
+    params: [
+      {
+        name: 'value',
+        type: 'list',
+        description: 'The list to measure.',
+        optional: false,
+        variadic: false,
+      },
+    ],
     returns: 'number',
   },
   {
@@ -141,9 +295,27 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     qualified: 'list.slice',
     summary: 'Elements from start up to but not including end.',
     params: [
-      { name: 'value', type: 'list', optional: false, variadic: false },
-      { name: 'start', type: 'number', optional: false, variadic: false },
-      { name: 'end', type: 'number', optional: true, variadic: false },
+      {
+        name: 'value',
+        type: 'list',
+        description: 'The list to take elements from.',
+        optional: false,
+        variadic: false,
+      },
+      {
+        name: 'start',
+        type: 'number',
+        description: 'Index of the first element kept, counting from zero.',
+        optional: false,
+        variadic: false,
+      },
+      {
+        name: 'end',
+        type: 'number',
+        description: 'Index to stop before. Omitted, the slice runs to the end.',
+        optional: true,
+        variadic: false,
+      },
     ],
     returns: 'list',
   },
@@ -152,7 +324,15 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     name: 'sort',
     qualified: 'list.sort',
     summary: 'Ascending. Every element must be the same comparable type.',
-    params: [{ name: 'value', type: 'list', optional: false, variadic: false }],
+    params: [
+      {
+        name: 'value',
+        type: 'list',
+        description: 'The list to sort.',
+        optional: false,
+        variadic: false,
+      },
+    ],
     returns: 'list',
   },
   {
@@ -160,7 +340,15 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     name: 'unique',
     qualified: 'list.unique',
     summary: 'Elements with later duplicates removed, order preserved.',
-    params: [{ name: 'value', type: 'list', optional: false, variadic: false }],
+    params: [
+      {
+        name: 'value',
+        type: 'list',
+        description: 'The list to remove duplicates from.',
+        optional: false,
+        variadic: false,
+      },
+    ],
     returns: 'list',
   },
   {
@@ -168,7 +356,15 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     name: 'abs',
     qualified: 'num.abs',
     summary: 'Magnitude.',
-    params: [{ name: 'value', type: 'number', optional: false, variadic: false }],
+    params: [
+      {
+        name: 'value',
+        type: 'number',
+        description: 'The number whose magnitude is taken.',
+        optional: false,
+        variadic: false,
+      },
+    ],
     returns: 'number',
   },
   {
@@ -176,7 +372,15 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     name: 'ceil',
     qualified: 'num.ceil',
     summary: 'Smallest whole number not less than the value.',
-    params: [{ name: 'value', type: 'number', optional: false, variadic: false }],
+    params: [
+      {
+        name: 'value',
+        type: 'number',
+        description: 'The number to round up.',
+        optional: false,
+        variadic: false,
+      },
+    ],
     returns: 'number',
   },
   {
@@ -184,7 +388,15 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     name: 'floor',
     qualified: 'num.floor',
     summary: 'Largest whole number not greater than the value.',
-    params: [{ name: 'value', type: 'number', optional: false, variadic: false }],
+    params: [
+      {
+        name: 'value',
+        type: 'number',
+        description: 'The number to round down.',
+        optional: false,
+        variadic: false,
+      },
+    ],
     returns: 'number',
   },
   {
@@ -192,7 +404,15 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     name: 'max',
     qualified: 'num.max',
     summary: 'Largest of its arguments.',
-    params: [{ name: 'values', type: 'number', optional: false, variadic: true }],
+    params: [
+      {
+        name: 'values',
+        type: 'number',
+        description: 'The numbers to compare, as separate arguments.',
+        optional: false,
+        variadic: true,
+      },
+    ],
     returns: 'number',
   },
   {
@@ -200,7 +420,15 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     name: 'min',
     qualified: 'num.min',
     summary: 'Smallest of its arguments.',
-    params: [{ name: 'values', type: 'number', optional: false, variadic: true }],
+    params: [
+      {
+        name: 'values',
+        type: 'number',
+        description: 'The numbers to compare, as separate arguments.',
+        optional: false,
+        variadic: true,
+      },
+    ],
     returns: 'number',
   },
   {
@@ -209,7 +437,15 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     qualified: 'num.parse',
     summary:
       'Read a number from text. This is the only text-to-number conversion; none is implicit.',
-    params: [{ name: 'value', type: 'text', optional: false, variadic: false }],
+    params: [
+      {
+        name: 'value',
+        type: 'text',
+        description: 'The text to read a number from.',
+        optional: false,
+        variadic: false,
+      },
+    ],
     returns: 'number',
   },
   {
@@ -217,7 +453,15 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     name: 'round',
     qualified: 'num.round',
     summary: 'Nearest whole number, halves away from zero.',
-    params: [{ name: 'value', type: 'number', optional: false, variadic: false }],
+    params: [
+      {
+        name: 'value',
+        type: 'number',
+        description: 'The number to round.',
+        optional: false,
+        variadic: false,
+      },
+    ],
     returns: 'number',
   },
   {
@@ -225,7 +469,15 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     name: 'concat',
     qualified: 'text.concat',
     summary: 'Join values end to end. There is no `+` for text.',
-    params: [{ name: 'parts', type: 'text', optional: false, variadic: true }],
+    params: [
+      {
+        name: 'parts',
+        type: 'text',
+        description: 'The pieces to join, in order, as separate arguments.',
+        optional: false,
+        variadic: true,
+      },
+    ],
     returns: 'text',
   },
   {
@@ -234,8 +486,20 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     qualified: 'text.contains',
     summary: 'Whether the value contains the search string.',
     params: [
-      { name: 'value', type: 'text', optional: false, variadic: false },
-      { name: 'search', type: 'text', optional: false, variadic: false },
+      {
+        name: 'value',
+        type: 'text',
+        description: 'The text to search in.',
+        optional: false,
+        variadic: false,
+      },
+      {
+        name: 'search',
+        type: 'text',
+        description: 'The text to look for.',
+        optional: false,
+        variadic: false,
+      },
     ],
     returns: 'boolean',
   },
@@ -245,8 +509,20 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     qualified: 'text.ends_with',
     summary: 'Whether the value ends with the suffix.',
     params: [
-      { name: 'value', type: 'text', optional: false, variadic: false },
-      { name: 'suffix', type: 'text', optional: false, variadic: false },
+      {
+        name: 'value',
+        type: 'text',
+        description: 'The text to test.',
+        optional: false,
+        variadic: false,
+      },
+      {
+        name: 'suffix',
+        type: 'text',
+        description: 'The suffix to test for.',
+        optional: false,
+        variadic: false,
+      },
     ],
     returns: 'boolean',
   },
@@ -256,8 +532,20 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     qualified: 'text.join',
     summary: 'Join a list with a separator.',
     params: [
-      { name: 'values', type: 'list', optional: false, variadic: false },
-      { name: 'separator', type: 'text', optional: false, variadic: false },
+      {
+        name: 'values',
+        type: 'list',
+        description: 'The list whose elements are joined.',
+        optional: false,
+        variadic: false,
+      },
+      {
+        name: 'separator',
+        type: 'text',
+        description: 'Placed between elements. Not added before the first or after the last.',
+        optional: false,
+        variadic: false,
+      },
     ],
     returns: 'text',
   },
@@ -266,7 +554,15 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     name: 'len',
     qualified: 'text.len',
     summary: 'Length in code points.',
-    params: [{ name: 'value', type: 'text', optional: false, variadic: false }],
+    params: [
+      {
+        name: 'value',
+        type: 'text',
+        description: 'The text to measure.',
+        optional: false,
+        variadic: false,
+      },
+    ],
     returns: 'number',
   },
   {
@@ -274,7 +570,15 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     name: 'lower',
     qualified: 'text.lower',
     summary: 'Lowercase.',
-    params: [{ name: 'value', type: 'text', optional: false, variadic: false }],
+    params: [
+      {
+        name: 'value',
+        type: 'text',
+        description: 'The text to convert.',
+        optional: false,
+        variadic: false,
+      },
+    ],
     returns: 'text',
   },
   {
@@ -283,9 +587,27 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     qualified: 'text.replace',
     summary: 'Replace every occurrence.',
     params: [
-      { name: 'value', type: 'text', optional: false, variadic: false },
-      { name: 'search', type: 'text', optional: false, variadic: false },
-      { name: 'replacement', type: 'text', optional: false, variadic: false },
+      {
+        name: 'value',
+        type: 'text',
+        description: 'The text to search in.',
+        optional: false,
+        variadic: false,
+      },
+      {
+        name: 'search',
+        type: 'text',
+        description: 'The text to look for. Every occurrence is replaced, not just the first.',
+        optional: false,
+        variadic: false,
+      },
+      {
+        name: 'replacement',
+        type: 'text',
+        description: 'What each occurrence becomes.',
+        optional: false,
+        variadic: false,
+      },
     ],
     returns: 'text',
   },
@@ -295,9 +617,27 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     qualified: 'text.slice',
     summary: 'Characters from start up to but not including end. Counted in code points.',
     params: [
-      { name: 'value', type: 'text', optional: false, variadic: false },
-      { name: 'start', type: 'number', optional: false, variadic: false },
-      { name: 'end', type: 'number', optional: true, variadic: false },
+      {
+        name: 'value',
+        type: 'text',
+        description: 'The text to take characters from.',
+        optional: false,
+        variadic: false,
+      },
+      {
+        name: 'start',
+        type: 'number',
+        description: 'Index of the first code point kept, counting from zero.',
+        optional: false,
+        variadic: false,
+      },
+      {
+        name: 'end',
+        type: 'number',
+        description: 'Index to stop before. Omitted, the slice runs to the end.',
+        optional: true,
+        variadic: false,
+      },
     ],
     returns: 'text',
   },
@@ -307,8 +647,20 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     qualified: 'text.split',
     summary: 'Split on a separator.',
     params: [
-      { name: 'value', type: 'text', optional: false, variadic: false },
-      { name: 'separator', type: 'text', optional: false, variadic: false },
+      {
+        name: 'value',
+        type: 'text',
+        description: 'The text to split.',
+        optional: false,
+        variadic: false,
+      },
+      {
+        name: 'separator',
+        type: 'text',
+        description: 'The text to split on. It does not appear in the result.',
+        optional: false,
+        variadic: false,
+      },
     ],
     returns: 'list',
   },
@@ -318,8 +670,20 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     qualified: 'text.starts_with',
     summary: 'Whether the value begins with the prefix.',
     params: [
-      { name: 'value', type: 'text', optional: false, variadic: false },
-      { name: 'prefix', type: 'text', optional: false, variadic: false },
+      {
+        name: 'value',
+        type: 'text',
+        description: 'The text to test.',
+        optional: false,
+        variadic: false,
+      },
+      {
+        name: 'prefix',
+        type: 'text',
+        description: 'The prefix to test for.',
+        optional: false,
+        variadic: false,
+      },
     ],
     returns: 'boolean',
   },
@@ -328,7 +692,15 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     name: 'trim',
     qualified: 'text.trim',
     summary: 'Remove leading and trailing whitespace.',
-    params: [{ name: 'value', type: 'text', optional: false, variadic: false }],
+    params: [
+      {
+        name: 'value',
+        type: 'text',
+        description: 'The text to trim.',
+        optional: false,
+        variadic: false,
+      },
+    ],
     returns: 'text',
   },
   {
@@ -336,7 +708,15 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     name: 'upper',
     qualified: 'text.upper',
     summary: 'Uppercase.',
-    params: [{ name: 'value', type: 'text', optional: false, variadic: false }],
+    params: [
+      {
+        name: 'value',
+        type: 'text',
+        description: 'The text to convert.',
+        optional: false,
+        variadic: false,
+      },
+    ],
     returns: 'text',
   },
 ] as const

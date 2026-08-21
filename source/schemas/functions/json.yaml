@@ -8,11 +8,15 @@ functions:
   - name: parse
     summary: Read a JSON document.
     params:
-      - { name: value, type: text }
+      - name: value
+        type: text
+        description: The JSON document, as text.
     returns: unknown
 
   - name: stringify
     summary: Render a value as compact JSON.
     params:
-      - { name: value, type: unknown }
+      - name: value
+        type: unknown
+        description: The value to render. Lists and objects are rendered whole.
     returns: text

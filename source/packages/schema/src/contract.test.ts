@@ -215,6 +215,36 @@ describe('function manifest', () => {
     }
   })
 
+  /*
+   * `description` is optional in the schema and mandatory in Hatua's own
+   * corpus, and the asymmetry is the decision rather than an oversight: a
+   * Host's existing manifest has to keep validating, while a built-in with an
+   * undescribed parameter is one the function builder cannot explain to
+   * anybody. `readFunctions` refuses to generate without it; this says the same
+   * thing where a reader of the suite can see it.
+   */
+  it('describes every parameter and namespace it ships, which the schema only invites', async () => {
+    const { readdirSync, readFileSync } = await import('node:fs')
+    const { parse } = await import('yaml')
+    const dir = new URL('../../../schemas/functions/', import.meta.url)
+
+    const undescribed: string[] = []
+    for (const file of readdirSync(dir).filter((name) => name.endsWith('.yaml'))) {
+      const doc = parse(readFileSync(new URL(file, dir), 'utf8'))
+      if (!doc.summary?.trim()) undescribed.push(`${doc.namespace} (namespace)`)
+
+      for (const fn of doc.functions ?? []) {
+        if (!fn.summary?.trim()) undescribed.push(`${doc.namespace}.${fn.name}`)
+        for (const param of fn.params ?? []) {
+          if (!param.description?.trim()) {
+            undescribed.push(`${doc.namespace}.${fn.name}(${param.name})`)
+          }
+        }
+      }
+    }
+    expect(undescribed).toEqual([])
+  })
+
   it('accepts a Host namespace declaration', () => {
     const manifest = {
       kind: 'function',

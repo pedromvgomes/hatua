@@ -10,27 +10,43 @@ functions:
   - name: parse
     summary: Read an RFC 3339 timestamp.
     params:
-      - { name: value, type: text }
+      - name: value
+        type: text
+        description: The timestamp to read, in RFC 3339 form.
     returns: datetime
 
   - name: iso
     summary: Render an instant as RFC 3339 in UTC.
     params:
-      - { name: value, type: datetime }
+      - name: value
+        type: datetime
+        description: The instant to render.
     returns: text
 
   - name: add
     summary: Shift an instant. Unit is one of seconds, minutes, hours, days.
     params:
-      - { name: value, type: datetime }
-      - { name: amount, type: number }
-      - { name: unit, type: text }
+      - name: value
+        type: datetime
+        description: The instant to shift.
+      - name: amount
+        type: number
+        description: How many units to add. A negative amount shifts backwards.
+      - name: unit
+        type: text
+        description: One of seconds, minutes, hours or days.
     returns: datetime
 
   - name: diff
     summary: Whole units from the second instant to the first, truncated toward zero.
     params:
-      - { name: a, type: datetime }
-      - { name: b, type: datetime }
-      - { name: unit, type: text }
+      - name: a
+        type: datetime
+        description: The instant measured to.
+      - name: b
+        type: datetime
+        description: The instant measured from. Later than a gives a negative result.
+      - name: unit
+        type: text
+        description: One of seconds, minutes, hours or days.
     returns: number

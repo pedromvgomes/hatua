@@ -5,10 +5,29 @@ package expressions
 
 // ParamSpec is one declared parameter.
 type ParamSpec struct {
-	Name     string
-	Type     ValueType
-	Optional bool
-	Variadic bool
+	Name string
+	Type ValueType
+	// Description is one sentence saying what this parameter is for.
+	Description string
+	Optional    bool
+	Variadic    bool
+}
+
+// NamespaceSpec is one declared namespace.
+type NamespaceSpec struct {
+	Namespace string
+	// Summary describes the group, shown above its functions.
+	Summary string
+}
+
+// CoreFunctionNamespaces groups the functions below, for a picker that
+// lists a namespace before the functions inside it.
+var CoreFunctionNamespaces = []NamespaceSpec{
+	{Namespace: "dt", Summary: "Instants. RFC 3339 only — there are no free-form format strings in v1."},
+	{Namespace: "json", Summary: "The escape hatch for opaque payloads. `json.parse` returns `unknown`, which is what makes `json.parse(s2.output).count` a warning rather than an error at design time — and a runtime type check at the slot boundary."},
+	{Namespace: "list", Summary: "Lists. There are no lambdas in v1, so no `filter` or `map` — closures would mean implementing scoping and capture twice. `[]` projection and `core.for_each` cover the common cases."},
+	{Namespace: "num", Summary: "Numbers. There is one numeric type and it is a 64-bit float, so `7 / 2` is 3.5 in both languages; rounding is half away from zero, so `round(-0.5)` is -1 in both."},
+	{Namespace: "text", Summary: "Strings. Case mapping is full Unicode and language-neutral, never locale-sensitive."},
 }
 
 // FunctionSpec is one declared function.
@@ -32,9 +51,9 @@ var CoreFunctionSpecs = []FunctionSpec{
 		Qualified: "dt.add",
 		Summary:   "Shift an instant. Unit is one of seconds, minutes, hours, days.",
 		Params: []ParamSpec{
-			{Name: "value", Type: TypeDatetime, Optional: false, Variadic: false},
-			{Name: "amount", Type: TypeNumber, Optional: false, Variadic: false},
-			{Name: "unit", Type: TypeText, Optional: false, Variadic: false},
+			{Name: "value", Type: TypeDatetime, Description: "The instant to shift.", Optional: false, Variadic: false},
+			{Name: "amount", Type: TypeNumber, Description: "How many units to add. A negative amount shifts backwards.", Optional: false, Variadic: false},
+			{Name: "unit", Type: TypeText, Description: "One of seconds, minutes, hours or days.", Optional: false, Variadic: false},
 		},
 		Returns: TypeDatetime,
 	},
@@ -44,9 +63,9 @@ var CoreFunctionSpecs = []FunctionSpec{
 		Qualified: "dt.diff",
 		Summary:   "Whole units from the second instant to the first, truncated toward zero.",
 		Params: []ParamSpec{
-			{Name: "a", Type: TypeDatetime, Optional: false, Variadic: false},
-			{Name: "b", Type: TypeDatetime, Optional: false, Variadic: false},
-			{Name: "unit", Type: TypeText, Optional: false, Variadic: false},
+			{Name: "a", Type: TypeDatetime, Description: "The instant measured to.", Optional: false, Variadic: false},
+			{Name: "b", Type: TypeDatetime, Description: "The instant measured from. Later than a gives a negative result.", Optional: false, Variadic: false},
+			{Name: "unit", Type: TypeText, Description: "One of seconds, minutes, hours or days.", Optional: false, Variadic: false},
 		},
 		Returns: TypeNumber,
 	},
@@ -56,7 +75,7 @@ var CoreFunctionSpecs = []FunctionSpec{
 		Qualified: "dt.iso",
 		Summary:   "Render an instant as RFC 3339 in UTC.",
 		Params: []ParamSpec{
-			{Name: "value", Type: TypeDatetime, Optional: false, Variadic: false},
+			{Name: "value", Type: TypeDatetime, Description: "The instant to render.", Optional: false, Variadic: false},
 		},
 		Returns: TypeText,
 	},
@@ -74,7 +93,7 @@ var CoreFunctionSpecs = []FunctionSpec{
 		Qualified: "dt.parse",
 		Summary:   "Read an RFC 3339 timestamp.",
 		Params: []ParamSpec{
-			{Name: "value", Type: TypeText, Optional: false, Variadic: false},
+			{Name: "value", Type: TypeText, Description: "The timestamp to read, in RFC 3339 form.", Optional: false, Variadic: false},
 		},
 		Returns: TypeDatetime,
 	},
@@ -84,7 +103,7 @@ var CoreFunctionSpecs = []FunctionSpec{
 		Qualified: "json.parse",
 		Summary:   "Read a JSON document.",
 		Params: []ParamSpec{
-			{Name: "value", Type: TypeText, Optional: false, Variadic: false},
+			{Name: "value", Type: TypeText, Description: "The JSON document, as text.", Optional: false, Variadic: false},
 		},
 		Returns: TypeUnknown,
 	},
@@ -94,7 +113,7 @@ var CoreFunctionSpecs = []FunctionSpec{
 		Qualified: "json.stringify",
 		Summary:   "Render a value as compact JSON.",
 		Params: []ParamSpec{
-			{Name: "value", Type: TypeUnknown, Optional: false, Variadic: false},
+			{Name: "value", Type: TypeUnknown, Description: "The value to render. Lists and objects are rendered whole.", Optional: false, Variadic: false},
 		},
 		Returns: TypeText,
 	},
@@ -104,8 +123,8 @@ var CoreFunctionSpecs = []FunctionSpec{
 		Qualified: "list.contains",
 		Summary:   "Whether the list holds a value equal to the needle, by the same rule as `==`.",
 		Params: []ParamSpec{
-			{Name: "value", Type: TypeList, Optional: false, Variadic: false},
-			{Name: "needle", Type: TypeUnknown, Optional: false, Variadic: false},
+			{Name: "value", Type: TypeList, Description: "The list to search.", Optional: false, Variadic: false},
+			{Name: "needle", Type: TypeUnknown, Description: "The value to look for.", Optional: false, Variadic: false},
 		},
 		Returns: TypeBoolean,
 	},
@@ -115,7 +134,7 @@ var CoreFunctionSpecs = []FunctionSpec{
 		Qualified: "list.first",
 		Summary:   "First element, or null when empty.",
 		Params: []ParamSpec{
-			{Name: "value", Type: TypeList, Optional: false, Variadic: false},
+			{Name: "value", Type: TypeList, Description: "The list to read from.", Optional: false, Variadic: false},
 		},
 		Returns: TypeUnknown,
 	},
@@ -125,8 +144,8 @@ var CoreFunctionSpecs = []FunctionSpec{
 		Qualified: "list.join",
 		Summary:   "Render each element as text and join with a separator.",
 		Params: []ParamSpec{
-			{Name: "value", Type: TypeList, Optional: false, Variadic: false},
-			{Name: "separator", Type: TypeText, Optional: false, Variadic: false},
+			{Name: "value", Type: TypeList, Description: "The list whose elements are rendered and joined.", Optional: false, Variadic: false},
+			{Name: "separator", Type: TypeText, Description: "Placed between elements. Not added before the first or after the last.", Optional: false, Variadic: false},
 		},
 		Returns: TypeText,
 	},
@@ -136,7 +155,7 @@ var CoreFunctionSpecs = []FunctionSpec{
 		Qualified: "list.last",
 		Summary:   "Last element, or null when empty.",
 		Params: []ParamSpec{
-			{Name: "value", Type: TypeList, Optional: false, Variadic: false},
+			{Name: "value", Type: TypeList, Description: "The list to read from.", Optional: false, Variadic: false},
 		},
 		Returns: TypeUnknown,
 	},
@@ -146,7 +165,7 @@ var CoreFunctionSpecs = []FunctionSpec{
 		Qualified: "list.len",
 		Summary:   "Number of elements.",
 		Params: []ParamSpec{
-			{Name: "value", Type: TypeList, Optional: false, Variadic: false},
+			{Name: "value", Type: TypeList, Description: "The list to measure.", Optional: false, Variadic: false},
 		},
 		Returns: TypeNumber,
 	},
@@ -156,9 +175,9 @@ var CoreFunctionSpecs = []FunctionSpec{
 		Qualified: "list.slice",
 		Summary:   "Elements from start up to but not including end.",
 		Params: []ParamSpec{
-			{Name: "value", Type: TypeList, Optional: false, Variadic: false},
-			{Name: "start", Type: TypeNumber, Optional: false, Variadic: false},
-			{Name: "end", Type: TypeNumber, Optional: true, Variadic: false},
+			{Name: "value", Type: TypeList, Description: "The list to take elements from.", Optional: false, Variadic: false},
+			{Name: "start", Type: TypeNumber, Description: "Index of the first element kept, counting from zero.", Optional: false, Variadic: false},
+			{Name: "end", Type: TypeNumber, Description: "Index to stop before. Omitted, the slice runs to the end.", Optional: true, Variadic: false},
 		},
 		Returns: TypeList,
 	},
@@ -168,7 +187,7 @@ var CoreFunctionSpecs = []FunctionSpec{
 		Qualified: "list.sort",
 		Summary:   "Ascending. Every element must be the same comparable type.",
 		Params: []ParamSpec{
-			{Name: "value", Type: TypeList, Optional: false, Variadic: false},
+			{Name: "value", Type: TypeList, Description: "The list to sort.", Optional: false, Variadic: false},
 		},
 		Returns: TypeList,
 	},
@@ -178,7 +197,7 @@ var CoreFunctionSpecs = []FunctionSpec{
 		Qualified: "list.unique",
 		Summary:   "Elements with later duplicates removed, order preserved.",
 		Params: []ParamSpec{
-			{Name: "value", Type: TypeList, Optional: false, Variadic: false},
+			{Name: "value", Type: TypeList, Description: "The list to remove duplicates from.", Optional: false, Variadic: false},
 		},
 		Returns: TypeList,
 	},
@@ -188,7 +207,7 @@ var CoreFunctionSpecs = []FunctionSpec{
 		Qualified: "num.abs",
 		Summary:   "Magnitude.",
 		Params: []ParamSpec{
-			{Name: "value", Type: TypeNumber, Optional: false, Variadic: false},
+			{Name: "value", Type: TypeNumber, Description: "The number whose magnitude is taken.", Optional: false, Variadic: false},
 		},
 		Returns: TypeNumber,
 	},
@@ -198,7 +217,7 @@ var CoreFunctionSpecs = []FunctionSpec{
 		Qualified: "num.ceil",
 		Summary:   "Smallest whole number not less than the value.",
 		Params: []ParamSpec{
-			{Name: "value", Type: TypeNumber, Optional: false, Variadic: false},
+			{Name: "value", Type: TypeNumber, Description: "The number to round up.", Optional: false, Variadic: false},
 		},
 		Returns: TypeNumber,
 	},
@@ -208,7 +227,7 @@ var CoreFunctionSpecs = []FunctionSpec{
 		Qualified: "num.floor",
 		Summary:   "Largest whole number not greater than the value.",
 		Params: []ParamSpec{
-			{Name: "value", Type: TypeNumber, Optional: false, Variadic: false},
+			{Name: "value", Type: TypeNumber, Description: "The number to round down.", Optional: false, Variadic: false},
 		},
 		Returns: TypeNumber,
 	},
@@ -218,7 +237,7 @@ var CoreFunctionSpecs = []FunctionSpec{
 		Qualified: "num.max",
 		Summary:   "Largest of its arguments.",
 		Params: []ParamSpec{
-			{Name: "values", Type: TypeNumber, Optional: false, Variadic: true},
+			{Name: "values", Type: TypeNumber, Description: "The numbers to compare, as separate arguments.", Optional: false, Variadic: true},
 		},
 		Returns: TypeNumber,
 	},
@@ -228,7 +247,7 @@ var CoreFunctionSpecs = []FunctionSpec{
 		Qualified: "num.min",
 		Summary:   "Smallest of its arguments.",
 		Params: []ParamSpec{
-			{Name: "values", Type: TypeNumber, Optional: false, Variadic: true},
+			{Name: "values", Type: TypeNumber, Description: "The numbers to compare, as separate arguments.", Optional: false, Variadic: true},
 		},
 		Returns: TypeNumber,
 	},
@@ -238,7 +257,7 @@ var CoreFunctionSpecs = []FunctionSpec{
 		Qualified: "num.parse",
 		Summary:   "Read a number from text. This is the only text-to-number conversion; none is implicit.",
 		Params: []ParamSpec{
-			{Name: "value", Type: TypeText, Optional: false, Variadic: false},
+			{Name: "value", Type: TypeText, Description: "The text to read a number from.", Optional: false, Variadic: false},
 		},
 		Returns: TypeNumber,
 	},
@@ -248,7 +267,7 @@ var CoreFunctionSpecs = []FunctionSpec{
 		Qualified: "num.round",
 		Summary:   "Nearest whole number, halves away from zero.",
 		Params: []ParamSpec{
-			{Name: "value", Type: TypeNumber, Optional: false, Variadic: false},
+			{Name: "value", Type: TypeNumber, Description: "The number to round.", Optional: false, Variadic: false},
 		},
 		Returns: TypeNumber,
 	},
@@ -258,7 +277,7 @@ var CoreFunctionSpecs = []FunctionSpec{
 		Qualified: "text.concat",
 		Summary:   "Join values end to end. There is no `+` for text.",
 		Params: []ParamSpec{
-			{Name: "parts", Type: TypeText, Optional: false, Variadic: true},
+			{Name: "parts", Type: TypeText, Description: "The pieces to join, in order, as separate arguments.", Optional: false, Variadic: true},
 		},
 		Returns: TypeText,
 	},
@@ -268,8 +287,8 @@ var CoreFunctionSpecs = []FunctionSpec{
 		Qualified: "text.contains",
 		Summary:   "Whether the value contains the search string.",
 		Params: []ParamSpec{
-			{Name: "value", Type: TypeText, Optional: false, Variadic: false},
-			{Name: "search", Type: TypeText, Optional: false, Variadic: false},
+			{Name: "value", Type: TypeText, Description: "The text to search in.", Optional: false, Variadic: false},
+			{Name: "search", Type: TypeText, Description: "The text to look for.", Optional: false, Variadic: false},
 		},
 		Returns: TypeBoolean,
 	},
@@ -279,8 +298,8 @@ var CoreFunctionSpecs = []FunctionSpec{
 		Qualified: "text.ends_with",
 		Summary:   "Whether the value ends with the suffix.",
 		Params: []ParamSpec{
-			{Name: "value", Type: TypeText, Optional: false, Variadic: false},
-			{Name: "suffix", Type: TypeText, Optional: false, Variadic: false},
+			{Name: "value", Type: TypeText, Description: "The text to test.", Optional: false, Variadic: false},
+			{Name: "suffix", Type: TypeText, Description: "The suffix to test for.", Optional: false, Variadic: false},
 		},
 		Returns: TypeBoolean,
 	},
@@ -290,8 +309,8 @@ var CoreFunctionSpecs = []FunctionSpec{
 		Qualified: "text.join",
 		Summary:   "Join a list with a separator.",
 		Params: []ParamSpec{
-			{Name: "values", Type: TypeList, Optional: false, Variadic: false},
-			{Name: "separator", Type: TypeText, Optional: false, Variadic: false},
+			{Name: "values", Type: TypeList, Description: "The list whose elements are joined.", Optional: false, Variadic: false},
+			{Name: "separator", Type: TypeText, Description: "Placed between elements. Not added before the first or after the last.", Optional: false, Variadic: false},
 		},
 		Returns: TypeText,
 	},
@@ -301,7 +320,7 @@ var CoreFunctionSpecs = []FunctionSpec{
 		Qualified: "text.len",
 		Summary:   "Length in code points.",
 		Params: []ParamSpec{
-			{Name: "value", Type: TypeText, Optional: false, Variadic: false},
+			{Name: "value", Type: TypeText, Description: "The text to measure.", Optional: false, Variadic: false},
 		},
 		Returns: TypeNumber,
 	},
@@ -311,7 +330,7 @@ var CoreFunctionSpecs = []FunctionSpec{
 		Qualified: "text.lower",
 		Summary:   "Lowercase.",
 		Params: []ParamSpec{
-			{Name: "value", Type: TypeText, Optional: false, Variadic: false},
+			{Name: "value", Type: TypeText, Description: "The text to convert.", Optional: false, Variadic: false},
 		},
 		Returns: TypeText,
 	},
@@ -321,9 +340,9 @@ var CoreFunctionSpecs = []FunctionSpec{
 		Qualified: "text.replace",
 		Summary:   "Replace every occurrence.",
 		Params: []ParamSpec{
-			{Name: "value", Type: TypeText, Optional: false, Variadic: false},
-			{Name: "search", Type: TypeText, Optional: false, Variadic: false},
-			{Name: "replacement", Type: TypeText, Optional: false, Variadic: false},
+			{Name: "value", Type: TypeText, Description: "The text to search in.", Optional: false, Variadic: false},
+			{Name: "search", Type: TypeText, Description: "The text to look for. Every occurrence is replaced, not just the first.", Optional: false, Variadic: false},
+			{Name: "replacement", Type: TypeText, Description: "What each occurrence becomes.", Optional: false, Variadic: false},
 		},
 		Returns: TypeText,
 	},
@@ -333,9 +352,9 @@ var CoreFunctionSpecs = []FunctionSpec{
 		Qualified: "text.slice",
 		Summary:   "Characters from start up to but not including end. Counted in code points.",
 		Params: []ParamSpec{
-			{Name: "value", Type: TypeText, Optional: false, Variadic: false},
-			{Name: "start", Type: TypeNumber, Optional: false, Variadic: false},
-			{Name: "end", Type: TypeNumber, Optional: true, Variadic: false},
+			{Name: "value", Type: TypeText, Description: "The text to take characters from.", Optional: false, Variadic: false},
+			{Name: "start", Type: TypeNumber, Description: "Index of the first code point kept, counting from zero.", Optional: false, Variadic: false},
+			{Name: "end", Type: TypeNumber, Description: "Index to stop before. Omitted, the slice runs to the end.", Optional: true, Variadic: false},
 		},
 		Returns: TypeText,
 	},
@@ -345,8 +364,8 @@ var CoreFunctionSpecs = []FunctionSpec{
 		Qualified: "text.split",
 		Summary:   "Split on a separator.",
 		Params: []ParamSpec{
-			{Name: "value", Type: TypeText, Optional: false, Variadic: false},
-			{Name: "separator", Type: TypeText, Optional: false, Variadic: false},
+			{Name: "value", Type: TypeText, Description: "The text to split.", Optional: false, Variadic: false},
+			{Name: "separator", Type: TypeText, Description: "The text to split on. It does not appear in the result.", Optional: false, Variadic: false},
 		},
 		Returns: TypeList,
 	},
@@ -356,8 +375,8 @@ var CoreFunctionSpecs = []FunctionSpec{
 		Qualified: "text.starts_with",
 		Summary:   "Whether the value begins with the prefix.",
 		Params: []ParamSpec{
-			{Name: "value", Type: TypeText, Optional: false, Variadic: false},
-			{Name: "prefix", Type: TypeText, Optional: false, Variadic: false},
+			{Name: "value", Type: TypeText, Description: "The text to test.", Optional: false, Variadic: false},
+			{Name: "prefix", Type: TypeText, Description: "The prefix to test for.", Optional: false, Variadic: false},
 		},
 		Returns: TypeBoolean,
 	},
@@ -367,7 +386,7 @@ var CoreFunctionSpecs = []FunctionSpec{
 		Qualified: "text.trim",
 		Summary:   "Remove leading and trailing whitespace.",
 		Params: []ParamSpec{
-			{Name: "value", Type: TypeText, Optional: false, Variadic: false},
+			{Name: "value", Type: TypeText, Description: "The text to trim.", Optional: false, Variadic: false},
 		},
 		Returns: TypeText,
 	},
@@ -377,7 +396,7 @@ var CoreFunctionSpecs = []FunctionSpec{
 		Qualified: "text.upper",
 		Summary:   "Uppercase.",
 		Params: []ParamSpec{
-			{Name: "value", Type: TypeText, Optional: false, Variadic: false},
+			{Name: "value", Type: TypeText, Description: "The text to convert.", Optional: false, Variadic: false},
 		},
 		Returns: TypeText,
 	},

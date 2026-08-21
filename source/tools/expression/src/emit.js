@@ -46,9 +46,26 @@ const goType = (value) => `Type${value.charAt(0).toUpperCase()}${value.slice(1)}
 
 // ---- functions -------------------------------------------------------------
 
+/**
+ * The declared functions, and the namespaces that group them.
+ *
+ * Namespaces are returned alongside the specs rather than folded into them
+ * because a namespace summary describes the group, not any one function: the
+ * picker shows it once, above the list. Reading it per-spec would repeat the
+ * same sentence thirteen times for `dt`.
+ *
+ * `description` and `summary` are REQUIRED here and optional in the published
+ * schema, and that asymmetry is deliberate. A Host's manifest must keep
+ * validating without them or every existing one breaks; Hatua's own corpus is
+ * held to the stricter rule, because an undescribed parameter is one the
+ * builder cannot explain to anybody. This is the same split `coreFunctions()`
+ * already makes when it refuses to build a registry whose declarations and
+ * implementations disagree.
+ */
 export function readFunctions(schemasDir) {
   const dir = path.join(schemasDir, 'functions')
   const specs = []
+  const namespaces = []
 
   for (const file of fs
     .readdirSync(dir)
@@ -59,14 +76,23 @@ export function readFunctions(schemasDir) {
     // the claim only holds if they satisfy their own schema.
     if (doc.kind !== 'function') throw new Error(`${file}: missing \`kind: function\``)
     if (!doc.namespace) throw new Error(`${file}: missing \`namespace\``)
+    if (!(doc.summary ?? '').trim()) throw new Error(`${file}: missing \`summary\``)
+
+    namespaces.push({ namespace: doc.namespace, summary: doc.summary.trim() })
 
     for (const fn of doc.functions ?? []) {
       const qualified = `${doc.namespace}.${fn.name}`
+      if (!(fn.summary ?? '').trim()) throw new Error(`${qualified}: missing \`summary\``)
+
       const params = (fn.params ?? []).map((param) => {
         assertType(param.type, `${qualified}(${param.name})`)
+        if (!(param.description ?? '').trim()) {
+          throw new Error(`${qualified}(${param.name}): missing \`description\``)
+        }
         return {
           name: param.name,
           type: param.type,
+          description: param.description.trim(),
           optional: param.optional === true,
           variadic: param.variadic === true,
         }
@@ -98,7 +124,10 @@ export function readFunctions(schemasDir) {
     if (seen.has(spec.qualified)) throw new Error(`${spec.qualified} is declared twice`)
     seen.add(spec.qualified)
   }
-  return specs.sort((a, b) => a.qualified.localeCompare(b.qualified))
+  return {
+    namespaces: namespaces.sort((a, b) => a.namespace.localeCompare(b.namespace)),
+    specs: specs.sort((a, b) => a.qualified.localeCompare(b.qualified)),
+  }
 }
 
 function assertType(value, where) {
@@ -107,7 +136,7 @@ function assertType(value, where) {
   }
 }
 
-export function functionsToTs(specs) {
+export function functionsToTs({ namespaces, specs }) {
   const lines = [
     ...BANNER.map((line) => line.replace('%s', 'schemas/functions/*.yaml')),
     "import type { ValueType } from '../value.js'",
@@ -115,9 +144,25 @@ export function functionsToTs(specs) {
     'export interface ParamSpec {',
     '  readonly name: string',
     '  readonly type: ValueType',
+    '  /** One sentence saying what this parameter is for. */',
+    '  readonly description: string',
     '  readonly optional: boolean',
     '  readonly variadic: boolean',
     '}',
+    '',
+    'export interface NamespaceSpec {',
+    '  readonly namespace: string',
+    '  /** One sentence describing the group, shown above its functions. */',
+    '  readonly summary: string',
+    '}',
+    '',
+    '/**',
+    ' * The namespaces, for a picker that groups functions before listing them.',
+    ' * Declarations only — reading this pulls in no implementation.',
+    ' */',
+    'export const CORE_NAMESPACES: readonly NamespaceSpec[] = [',
+    ...namespaces.map((ns) => `  { namespace: ${q(ns.namespace)}, summary: ${q(ns.summary)} },`),
+    '] as const',
     '',
     'export interface FunctionSpec {',
     '  readonly namespace: string',
@@ -148,7 +193,7 @@ export function functionsToTs(specs) {
         : `    params: [\n${spec.params
             .map(
               (p) =>
-                `      { name: ${q(p.name)}, type: ${q(p.type)}, optional: ${p.optional}, variadic: ${p.variadic} },`,
+                `      {\n        name: ${q(p.name)},\n        type: ${q(p.type)},\n        description: ${q(p.description)},\n        optional: ${p.optional},\n        variadic: ${p.variadic},\n      },`,
             )
             .join('\n')}\n    ],`,
     )
@@ -160,17 +205,32 @@ export function functionsToTs(specs) {
   return lines.join('\n')
 }
 
-export function functionsToGo(specs) {
+export function functionsToGo({ namespaces, specs }) {
   const lines = [
     ...BANNER.map((line) => line.replace('%s', 'schemas/functions/*.yaml')),
     'package expressions',
     '',
     '// ParamSpec is one declared parameter.',
     'type ParamSpec struct {',
-    '\tName     string',
-    '\tType     ValueType',
-    '\tOptional bool',
-    '\tVariadic bool',
+    '\tName string',
+    '\tType ValueType',
+    '\t// Description is one sentence saying what this parameter is for.',
+    '\tDescription string',
+    '\tOptional    bool',
+    '\tVariadic    bool',
+    '}',
+    '',
+    '// NamespaceSpec is one declared namespace.',
+    'type NamespaceSpec struct {',
+    '\tNamespace string',
+    '\t// Summary describes the group, shown above its functions.',
+    '\tSummary string',
+    '}',
+    '',
+    '// CoreFunctionNamespaces groups the functions below, for a picker that',
+    '// lists a namespace before the functions inside it.',
+    'var CoreFunctionNamespaces = []NamespaceSpec{',
+    ...namespaces.map((ns) => `\t{Namespace: ${q(ns.namespace)}, Summary: ${q(ns.summary)}},`),
     '}',
     '',
     '// FunctionSpec is one declared function.',
@@ -202,7 +262,7 @@ export function functionsToGo(specs) {
         : `\t\tParams: []ParamSpec{\n${spec.params
             .map(
               (p) =>
-                `\t\t\t{Name: ${q(p.name)}, Type: ${goType(p.type)}, Optional: ${p.optional}, Variadic: ${p.variadic}},`,
+                `\t\t\t{Name: ${q(p.name)}, Type: ${goType(p.type)}, Description: ${q(p.description)}, Optional: ${p.optional}, Variadic: ${p.variadic}},`,
             )
             .join('\n')}\n\t\t},`,
     )
