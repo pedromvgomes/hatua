@@ -470,6 +470,53 @@ describe('a Trigger’s connection field', () => {
   })
 })
 
+describe('a field the form shows and does not edit', () => {
+  /*
+   * `<label htmlFor>` may only point at a labelable element. Two rows do not
+   * produce one — a `map` is shown and not edited, and a `conn` degrades to a
+   * sentence while the Connections load or when the Host wired no port — and a
+   * label pointing at a `<p>` is inert: clicking it does nothing, and a screen
+   * reader reads the label and the sentence as two unrelated things.
+   */
+  it('labels the sentence a conn field degrades to', async () => {
+    mount(host(WITH_MAILBOX), CATALOGUE)
+
+    const note = await screen.findByText(/No connection is available for this yet/)
+    const labelledBy = note.getAttribute('aria-labelledby')
+    expect(labelledBy).toBeTruthy()
+    expect(document.getElementById(labelledBy as string)?.textContent).toContain('Mailbox')
+  })
+
+  it('leaves no <label> pointing at nothing', async () => {
+    const { container } = mount(host(WITH_MAILBOX), CATALOGUE)
+    await screen.findByText(/No connection is available for this yet/)
+
+    for (const label of container.querySelectorAll('label[for]')) {
+      const target = label.getAttribute('for') as string
+      expect(document.getElementById(target), `label for="${target}"`).not.toBeNull()
+    }
+  })
+
+  it('shows a map field rather than rendering it as empty space', async () => {
+    // A field drawn as nothing cannot be told from one this form does not know
+    // about — and a required one left unset is reported by the checker with
+    // nothing on screen to act on.
+    const mapped: Manifest[] = [
+      {
+        kind: 'trigger',
+        use: 'email.received',
+        name: 'When mail arrives',
+        fields: [{ k: 'headers', label: 'Headers', kind: 'map' }],
+        outputs: [],
+      },
+    ]
+
+    mount(host(WITH_MAILBOX), mapped)
+    expect(await screen.findByText('Headers')).toBeDefined()
+    expect(screen.getByText(/Nothing set/)).toBeDefined()
+  })
+})
+
 describe('the shared field form', () => {
   /*
    * The same component the step editor mounts. A Trigger's fields and a Step's

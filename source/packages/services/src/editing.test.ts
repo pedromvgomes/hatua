@@ -1172,12 +1172,78 @@ describe('ending the session', () => {
   it('stops autosave when the session ends, whichever way it ended', async () => {
     for (const end of ['release', 'discard'] as const) {
       const { host, store } = await open()
-      store.apply(removeStep('s1'))
       await store[end]()
 
+      store.apply(removeStep('s1'))
       await vi.advanceTimersByTimeAsync(10_000)
-      expect(host.writes).toHaveLength(0)
+      expect(host.writes, end).toHaveLength(0)
     }
+  })
+
+  /*
+   * There is no Save button (ADR-0005), so the only thing between the user's
+   * last keystroke and the Host's copy is an 800ms timer — and every way of
+   * ending a session cancels it. Release keeps the Draft for whoever picks it
+   * up next, so the edit made inside that window has to reach it.
+   */
+  it('writes the edit still waiting out the autosave delay before releasing', async () => {
+    const { host, store } = await open()
+    store.apply(removeStep('s1'))
+    expect(ready(store).save).toEqual({ state: 'pending' })
+
+    await store.release()
+
+    expect(host.writes).toHaveLength(1)
+    expect(host.writes[0]).not.toContain('id: s1')
+    expect(host.released).toBe(1)
+  })
+
+  it('does not write before discarding, because the Draft is being thrown away', async () => {
+    // The only possible effect would be to lose a race with the delete.
+    const { host, store } = await open()
+    store.apply(removeStep('s1'))
+    await store.discard()
+
+    expect(host.writes).toHaveLength(0)
+    expect(host.discarded).toBe(1)
+  })
+
+  it('gets the last edit out when the store is disposed', async () => {
+    // <HatuaProvider> disposes on a `workflowId` change, a swapped port, or the
+    // Host unmounting the designer on a route change. Fire and forget, because
+    // an effect cleanup cannot await — and there is nobody left to report to.
+    const { host, store } = await open()
+    store.apply(removeStep('s1'))
+
+    store.dispose()
+    await settle()
+
+    expect(host.writes).toHaveLength(1)
+    expect(host.writes[0]).not.toContain('id: s1')
+  })
+
+  it('writes nothing on dispose when the Host is already level with the document', async () => {
+    const { host, store } = await open()
+    store.dispose()
+    await settle()
+    expect(host.writes).toHaveLength(0)
+  })
+
+  it('writes nothing on dispose once autosave has halted', async () => {
+    // Halted means the Host said no. Retrying on the way out would hammer a
+    // Host that has already refused, which is what ADR-0005 forbids.
+    const host = recorder({ rejectSave: new Error('Your lease expired.') })
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 500 })
+    store.open()
+    await settle()
+
+    store.apply(removeStep('s1'))
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
+
+    store.dispose()
+    await settle()
+    expect(host.writes).toHaveLength(0)
   })
 
   it('says the session ended rather than leaving an edit pending for ever', async () => {
@@ -1266,12 +1332,13 @@ describe('ending the session', () => {
   it('does not leave a pending write promised for ever when the session ends', async () => {
     // finish() cancels the timer and drops the token, so a write scheduled
     // inside the autosave window can never happen — and a snapshot still
-    // reading `pending` is promising one that nothing can deliver.
+    // reading `pending` is promising one that nothing can deliver. Discard,
+    // because release writes the pending edit out rather than abandoning it.
     const { store } = await open()
     store.apply(removeStep('s1'))
     expect(ready(store).save).toEqual({ state: 'pending' })
 
-    await store.release()
+    await store.discard()
 
     expect(ready(store).save).toMatchObject({ state: 'halted' })
     await vi.advanceTimersByTimeAsync(10_000)

@@ -59,6 +59,8 @@ export function Fields({
   className,
   ...rest
 }: FieldsProps) {
+  const established = useEstablished()
+
   if (!manifest) return null
 
   // `fieldVisible` rather than a copy of the rule: the same predicate decides
@@ -80,6 +82,7 @@ export function Fields({
             field={field}
             value={values[field.k]}
             connections={connections}
+            established={established}
             onChange={(next) => onChange(field.k, next)}
             onDeclareConnection={
               onDeclareConnection && ((id, ref) => onDeclareConnection(field.k, id, ref))
@@ -88,6 +91,30 @@ export function Fields({
         ))}
       </div>
     </>
+  )
+}
+
+/**
+ * The Host's Connections, subscribed to once for the whole form.
+ *
+ * Per field it would be one subscription and one `load()` per `conn` field on
+ * the screen, and two fields looking at the same Connection would carry two
+ * independent loading states. The store dedupes the fetch either way; what it
+ * cannot dedupe is the render.
+ */
+function useEstablished(): PickerState {
+  const store = useConnectionStore()
+
+  // The one side effect: tell the store somebody is reading. Idempotent, so
+  // every form that mounts may call it and only the first fetches.
+  useEffect(() => {
+    store?.load()
+  }, [store])
+
+  return useSyncExternalStore<PickerState>(
+    store ? store.subscribe : subscribeToNothing,
+    store ? store.getSnapshot : readUnconfigured,
+    store ? readLoading : readUnconfigured,
   )
 }
 
@@ -165,29 +192,109 @@ const numberIfAsked = (field: Field, text: string): string | number => {
   return text.trim() === '' || !Number.isFinite(parsed) ? text : parsed
 }
 
+/**
+ * What a `conn` field may offer: the names this workflow declares, and the
+ * Host's Connections it has not bound yet.
+ *
+ * Computed here rather than inside the picker because the row above has to know
+ * whether there will be a control at all — `<label htmlFor>` may only point at
+ * a labelable element, and a picker with nothing to offer is a sentence.
+ */
+function connectionOptions({
+  field,
+  value,
+  connections,
+  established,
+  bindable: canBind,
+}: {
+  field: Field
+  value: string
+  connections: readonly Connection[]
+  established: PickerState
+  bindable: boolean
+}) {
+  const known = established.status === 'ready' ? established.connections : []
+  const byRef = new Map(known.map((connection) => [connection.ref, connection]))
+
+  // Only what this field may hold. `conn_type` is the whole point of the field
+  // kind: a Connection whose type does not match cannot be used here, and
+  // offering it would be offering a choice `mismatchedConnections` then blocks
+  // editing over.
+  const fits = (type: string | undefined) => !field.conn_type || type === field.conn_type
+
+  const declared = connections.filter((connection) => {
+    if (connection.id === value) return true
+    const described = connection.ref ? byRef.get(connection.ref) : undefined
+    // An undeclared type is offered: the workflow declares this Connection, and
+    // hiding it because a description did not arrive would empty the picker on
+    // a slow network.
+    return described ? fits(described.type) : true
+  })
+
+  const boundRefs = new Set(connections.map((connection) => connection.ref))
+  const bindable = canBind
+    ? known.filter((connection) => fits(connection.type) && !boundRefs.has(connection.ref))
+    : []
+
+  return { byRef, declared, bindable }
+}
+
 function FieldRow({
   field,
   value,
   connections,
+  established,
   onChange,
   onDeclareConnection,
 }: {
   field: Field
   value: unknown
   connections: readonly Connection[]
+  established: PickerState
   onChange: (next: string | number | boolean) => void
   onDeclareConnection?: (id: string, ref: string) => void
 }) {
   const id = useId()
+  const labelId = `${id}-label`
   const text = value === undefined || value === null ? '' : String(value)
 
+  /**
+   * Whether this row ends up holding a real form control.
+   *
+   * `<label htmlFor>` may only point at a labelable element, and two of these
+   * rows do not produce one: a `map` is shown and not edited, and a `conn` field
+   * degrades to a sentence while the Connections are loading, when the Host
+   * wired no port, or when none of them fits. A label pointing at a `<p>` is
+   * inert — clicking it does nothing, and a screen reader reads the label and
+   * the sentence as two unrelated things.
+   *
+   * So the label is a `<label>` when there is something to label and a `<span>`
+   * the text points back at when there is not.
+   */
+  const options =
+    field.kind === 'conn'
+      ? connectionOptions({
+          field,
+          value: text,
+          connections,
+          established,
+          bindable: Boolean(onDeclareConnection),
+        })
+      : null
+
+  const offers = Boolean(options && options.declared.length + options.bindable.length > 0)
+  const labelable = field.kind !== 'map' && (field.kind !== 'conn' || offers)
+
   const control =
-    field.kind === 'conn' ? (
+    field.kind === 'conn' && options ? (
       <ConnectionField
         id={id}
+        labelledBy={labelId}
         field={field}
         value={text}
         connections={connections}
+        established={established}
+        options={options}
         onChange={onChange}
         onDeclare={onDeclareConnection}
       />
@@ -229,17 +336,29 @@ function FieldRow({
       />
     )
 
+  const label = (
+    <>
+      {field.label}
+      {field.req ? (
+        <span className={styles.required} aria-hidden="true">
+          *
+        </span>
+      ) : null}
+    </>
+  )
+
   return (
     <div className={styles.field}>
-      <label className={styles.label} htmlFor={id}>
-        {field.label}
-        {field.req ? (
-          <span className={styles.required} aria-hidden="true">
-            *
-          </span>
-        ) : null}
-      </label>
-      {control ?? <UneditableField field={field} value={text} />}
+      {labelable ? (
+        <label className={styles.label} htmlFor={id}>
+          {label}
+        </label>
+      ) : (
+        <span className={styles.label} id={labelId}>
+          {label}
+        </span>
+      )}
+      {control ?? <UneditableField field={field} value={text} labelledBy={labelId} />}
       {field.hint ? <p className={styles.hint}>{field.hint}</p> : null}
     </div>
   )
@@ -255,12 +374,24 @@ function FieldRow({
  * indistinguishable from one this form does not know about, and a required one
  * left unset would be reported by the checker with nothing on screen to act on.
  */
-function UneditableField({ field, value }: { field: Field; value: string }) {
+function UneditableField({
+  field,
+  value,
+  labelledBy,
+}: {
+  field: Field
+  value: string
+  labelledBy: string
+}) {
   return (
-    <p className={styles.uneditable}>
+    // `role="note"` because the row's label is a <span> here, not a <label>:
+    // `<label htmlFor>` may only point at a labelable element and this is not
+    // one, and `aria-labelledby` needs a role that supports it. Without both,
+    // the label and this text are read as two unrelated things.
+    <div className={styles.uneditable} role="note" aria-labelledby={labelledBy}>
       {value ? <code className={styles.mono}>{value}</code> : 'Nothing set.'}{' '}
       {field.kind === 'map' ? 'Entries are edited where the step is.' : null}
-    </p>
+    </div>
   )
 }
 
@@ -348,58 +479,29 @@ const nameFor = (label: string, taken: ReadonlySet<string>): string => {
  */
 function ConnectionField({
   id,
+  labelledBy,
   field,
   value,
   connections,
+  established,
+  options,
   onChange,
   onDeclare,
 }: {
   id: string
+  /** Where the row's label lives while this renders a sentence rather than a control. */
+  labelledBy: string
   field: Field
   value: string
   connections: readonly Connection[]
+  established: PickerState
+  options: ReturnType<typeof connectionOptions>
   onChange: (next: string) => void
   onDeclare?: (name: string, ref: string) => void
 }) {
-  const store = useConnectionStore()
-
-  // The one side effect: tell the store somebody is reading. Idempotent, so
-  // every `conn` field on the screen may call it and only the first fetches —
-  // which is the whole reason the list is a store rather than a fetch inside
-  // this component.
-  useEffect(() => {
-    store?.load()
-  }, [store])
-
-  const state = useSyncExternalStore<PickerState>(
-    store ? store.subscribe : subscribeToNothing,
-    store ? store.getSnapshot : readUnconfigured,
-    store ? readLoading : readUnconfigured,
-  )
-
-  const known = state.status === 'ready' ? state.connections : []
-  const byRef = new Map(known.map((connection) => [connection.ref, connection]))
-
-  // Only what this field may hold. `conn_type` is the whole point of the field
-  // kind: a Connection whose type does not match cannot be used here, and
-  // offering it would be offering a choice `mismatchedConnections` then blocks
-  // editing over.
-  const fits = (type: string | undefined) => !field.conn_type || type === field.conn_type
-
-  const declared = connections.filter((connection) => {
-    if (connection.id === value) return true
-    const described = connection.ref ? byRef.get(connection.ref) : undefined
-    // An undescribed Connection is offered: the Host listed it or the workflow
-    // declares it, and hiding it because a description did not arrive would
-    // empty the picker on a slow network.
-    return described ? fits(described.type) : true
-  })
+  const { byRef, declared, bindable } = options
 
   const takenNames = new Set(connections.map((connection) => connection.id))
-  const boundRefs = new Set(connections.map((connection) => connection.ref))
-  const bindable = onDeclare
-    ? known.filter((connection) => fits(connection.type) && !boundRefs.has(connection.ref))
-    : []
 
   const choose = (next: string) => {
     const binding = bindable.find((connection) => `+${connection.ref}` === next)
@@ -410,17 +512,21 @@ function ConnectionField({
     onDeclare?.(nameFor(binding.label, takenNames), binding.ref)
   }
 
-  if (state.status === 'loading') {
-    return <p className={styles.uneditable}>Loading connections…</p>
+  if (established.status === 'loading') {
+    return (
+      <div className={styles.uneditable} role="note" aria-labelledby={labelledBy}>
+        Loading connections…
+      </div>
+    )
   }
 
   if (declared.length === 0 && bindable.length === 0) {
     return (
-      <p className={styles.uneditable}>
-        {state.status === 'failed'
-          ? `Connections could not be loaded. ${state.error.message}`
+      <div className={styles.uneditable} role="note" aria-labelledby={labelledBy}>
+        {established.status === 'failed'
+          ? `Connections could not be loaded. ${established.error.message}`
           : 'No connection is available for this yet.'}
-      </p>
+      </div>
     )
   }
 

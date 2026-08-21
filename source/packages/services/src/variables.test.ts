@@ -116,6 +116,20 @@ describe('renameVariable', () => {
     expect(text).toContain('{{ var.digest_to }}')
   })
 
+  it('refuses a key another variable already has', () => {
+    // Two rows under one key is worse than a refused rename: every reader here
+    // finds the FIRST match, so the second row's bin deletes the first and its
+    // value box edits the first one's value — and `{{ var.threshold }}` becomes
+    // a Reference with two answers and no diagnostic.
+    expect(() => apply(SOURCE, renameVariable('digest_to', 'threshold'))).toThrow(/already exists/)
+    expect(varsOf(apply(SOURCE).toString()).map((v) => v.key)).toEqual(['digest_to', 'threshold'])
+  })
+
+  it('allows renaming a key to itself, which is what an unchanged box commits', () => {
+    const text = apply(SOURCE, renameVariable('digest_to', 'digest_to')).toString()
+    expect(varsOf(text).map((v) => v.key)).toEqual(['digest_to', 'threshold'])
+  })
+
   it('keeps every comment through the rename', () => {
     const text = apply(SOURCE, renameVariable('digest_to', 'recipient')).toString()
     expect(text).toContain('# Where the digest goes.')

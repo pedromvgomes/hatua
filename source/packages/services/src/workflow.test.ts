@@ -234,14 +234,15 @@ describe('declareConnection', () => {
     expect(text.indexOf('connections:')).toBeLessThan(text.indexOf('steps:'))
   })
 
-  it('is a no-op for a handle the workflow already binds', () => {
-    // Declaring one handle twice would give it two names, and a field pointing
-    // at either would be equally correct — which is how a workflow ends up with
-    // connections nobody can tell apart.
+  it('refuses a handle the workflow already binds, and says what it is called', () => {
+    // Two names for one handle is a workflow with connections nobody can tell
+    // apart. Refusing rather than returning quietly matters because this is
+    // composed with the command that points a field at the new name: a silent
+    // no-op would leave the field naming a Connection nothing declares.
     const once = apply(SOURCE, declareConnection('ops_mailbox', 'ref_ops')).toString()
-    const twice = apply(once, declareConnection('ops_again', 'ref_ops')).toString()
-
-    expect(definitionOf(twice).connections).toEqual([{ id: 'ops_mailbox', ref: 'ref_ops' }])
+    expect(() => apply(once, declareConnection('ops_again', 'ref_ops'))).toThrow(
+      /already declared as "ops_mailbox"/,
+    )
   })
 
   it('refuses to reuse a name that is taken by another handle', () => {

@@ -58,11 +58,15 @@ import css from './StepList.module.css?inline'
  */
 export interface StepListProps extends Omit<ComponentPropsWithRef<'section'>, 'onSelect'> {
   /**
-   * Fired when a Step row is activated. Optional, and its absence is meaningful
-   * in the same way `Components`'s is: with no handler there is still selection to
-   * show, but nothing outside this region hears about it.
+   * Fired when the selection changes. Optional, and its absence is meaningful
+   * in the same way `Components`'s is: with no handler there is still selection
+   * to show, but nothing outside this region hears about it.
+   *
+   * `undefined` means nothing is selected — which is what removing the selected
+   * Step leaves behind. A caller holding the selection across a remount has to
+   * hear that, or it keeps handing back the id of a Step that is gone.
    */
-  onSelect?: (stepId: string) => void
+  onSelect?: (stepId: string | undefined) => void
   /**
    * Fired when an insert point is chosen. Optional — this region knows where a
    * Step would go and nothing at all about which Component to put there, so it
@@ -177,7 +181,12 @@ export function StepList({
 
   const remove = (id: string) => {
     store?.apply(removeStep(id))
-    if (selectedId === id) setSelectedId(undefined)
+    if (selectedId !== id) return
+    setSelectedId(undefined)
+    // Told, not just forgotten locally. <Build> holds this across the unmount
+    // the tab strip forces, so a selection cleared only in here comes back on
+    // the next mount naming a Step the document no longer has.
+    onSelect?.(undefined)
   }
 
   const move = (id: string, to: InsertPoint) => {

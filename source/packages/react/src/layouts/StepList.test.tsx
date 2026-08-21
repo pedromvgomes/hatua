@@ -328,6 +328,33 @@ describe('edits go through the store as commands', () => {
     expect(screen.getAllByText('Drop a Step here')).toHaveLength(2)
   })
 
+  it('reports the selection clearing when the selected Step is removed', async () => {
+    // <Build> holds the selection across the unmount the tab strip forces, so a
+    // selection cleared only in here comes back on the next mount naming a Step
+    // the document no longer has — which is what the step editor gets handed.
+    const onSelect = vi.fn()
+    mount(host(), { onSelect })
+    await screen.findByText('Fetch mail')
+
+    fireEvent.click(screen.getByText('Fetch mail'))
+    expect(onSelect).toHaveBeenLastCalledWith('s1')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Fetch mail' }))
+    expect(onSelect).toHaveBeenLastCalledWith(undefined)
+  })
+
+  it('says nothing when a Step other than the selected one is removed', async () => {
+    const onSelect = vi.fn()
+    mount(host(), { onSelect })
+    await screen.findByText('Fetch mail')
+
+    fireEvent.click(screen.getByText('Fetch mail'))
+    onSelect.mockClear()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Archive' }))
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
   it('hands an insert point out rather than guessing at a Component', async () => {
     // This region knows where a Step would go and nothing about what to put
     // there — the catalogue is the Components tab's. So the point goes out as a prop.

@@ -120,7 +120,7 @@ export function createConnectionStore(
 
     return summaries.map((summary, index) => {
       const result = described[index]
-      if (!result || result.status !== 'fulfilled' || !result.value) return undescribed(summary)
+      if (result?.status !== 'fulfilled' || !result.value) return undescribed(summary)
       const { label, hint, status, type } = result.value
       return {
         ref: summary.ref,

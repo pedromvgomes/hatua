@@ -41,10 +41,15 @@ export function declareConnection(id: string, ref: string): EditCommand {
     label: `Add ${id}`,
     apply(document) {
       for (const { entry } of entriesOf(document, 'connections')) {
-        // Already bound. Declaring it twice would give one handle two names,
-        // and a field pointing at either would be equally correct — which is
-        // how a workflow ends up with connections nobody can tell apart.
-        if (entry.ref === ref) return
+        // Both refuse rather than no-op, and the ref one matters most: this
+        // command is composed with the one that points a field at `id`
+        // (`sequence`), so returning quietly would leave the field naming a
+        // Connection the workflow never declared — the `blocks: 'edit'` state
+        // `@hatua/model` says only a hand-edit can produce. A caller that finds
+        // the handle already bound wants the existing name, not a second one.
+        if (entry.ref === ref) {
+          throw new Error(`That connection is already declared as "${String(entry.id)}"`)
+        }
         if (entry.id === id) throw new Error(`A connection named "${id}" already exists`)
       }
 

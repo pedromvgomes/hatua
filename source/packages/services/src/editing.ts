@@ -496,6 +496,41 @@ export function createEditingStore(
   }
 
   /**
+   * One last write, for the edit made inside the autosave window.
+   *
+   * There is no Save button (ADR-0005), so the only thing standing between the
+   * user's last keystroke and the Host's copy is an 800ms timer — and every way
+   * of ending a session cancels that timer. Type, blur, navigate away, and the
+   * edit is gone from the Host's copy with nothing on screen to say so, because
+   * the tree that would have shown it is the one unmounting.
+   *
+   * Fire and forget, and it has to be: `dispose()` is a React effect cleanup
+   * and cannot await anything. Chained onto the queue rather than issued
+   * alongside it, so it cannot overtake a write already in flight — which would
+   * leave the Host holding the older of the two.
+   *
+   * Not called by `discard()`: that throws the Draft away, and writing to it
+   * first is work whose only possible effect is to lose a race with the delete.
+   */
+  const writeLastEdit = () => {
+    if (disposed || !document || !token || save.state === 'halted') return
+
+    let text: string
+    try {
+      text = document.toString()
+    } catch {
+      return
+    }
+    if (text === savedText) return
+
+    const held = token
+    const send = () => port.saveDraft(held, text)
+    // Both arms, so a failure earlier in the queue does not swallow this one —
+    // and the rejection is absorbed, because there is nobody left to report to.
+    void queue.then(send, send).catch(() => {})
+  }
+
+  /**
    * Publish, Release and Discard all end the session; none of them leaves
    * autosave running.
    *
@@ -653,6 +688,10 @@ export function createEditingStore(
 
     async release() {
       const held = requireToken()
+      // The Draft is kept for whoever picks it up next, so the last edit has to
+      // reach it — and awaited rather than fired off, so the Host records the
+      // write before it records the release.
+      await write()
       finish()
       return port.releaseDraft(held)
     },
@@ -664,6 +703,10 @@ export function createEditingStore(
     },
 
     dispose() {
+      // Before `disposed`, which every write checks: the point is to get the
+      // last edit out, and a store that has already marked itself disposed
+      // refuses to write anything.
+      writeLastEdit()
       disposed = true
       finish()
     },

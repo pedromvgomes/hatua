@@ -98,7 +98,20 @@ export function renameVariable(from: string, to: string): EditCommand {
   return {
     label: `Rename ${from}`,
     apply(document) {
-      setScalar(document, ['vars', locateVariable(document, from), 'key'], to)
+      const index = locateVariable(document, from)
+
+      // Two variables under one key is worse than a refused rename. Every
+      // reader here finds the FIRST match, so the second row's bin button
+      // deletes the first row and its value box edits the first row's value —
+      // and `{{ var.<key> }}` becomes a Reference with two answers and no
+      // diagnostic, because nothing in the model checks for a duplicate.
+      for (const other of entriesOf(document, 'vars')) {
+        if (other.index !== index && other.entry.key === to) {
+          throw new Error(`A variable named "${to}" already exists`)
+        }
+      }
+
+      setScalar(document, ['vars', index, 'key'], to)
     },
   }
 }
