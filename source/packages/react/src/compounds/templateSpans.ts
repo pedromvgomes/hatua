@@ -123,7 +123,9 @@ function repair(source: string): { template: TemplateNode; closed: string } | nu
  * parser still wins whenever it can, which is what keeps `{{ '{{' }}` drawn as
  * the one hole it is rather than as two.
  *
- * No `expr`, so nothing downstream mistakes a scanned hole for a Reference.
+ * Where the holes are is all this decides. What each one *holds* is still the
+ * parser's to say, hole by hole — so one unfinished `{{ s2. + }}` costs its own
+ * chip and not every chip in the field.
  */
 function scan(source: string): TemplateShape {
   const holes: HoleSpan[] = []
@@ -136,11 +138,24 @@ function scan(source: string): TemplateShape {
     if (close === -1) {
       return { holes, unclosed: { start: open, end: source.length }, parses: false }
     }
-    holes.push({ start: open, end: close + 2 })
+    holes.push({ start: open, end: close + 2, ...parsed(source.slice(open, close + 2)) })
     at = close + 2
   }
 
   return { holes, unclosed: null, parses: false }
+}
+
+/**
+ * What one hole holds, asked of the parser on its own.
+ *
+ * Absent when it does not parse, which is what keeps a half-written hole from
+ * being mistaken for a Reference.
+ */
+function parsed(hole: string): { expr?: Expression } {
+  const attempt = tryParseTemplate(hole)
+  if (!attempt.ok) return {}
+  const [only] = attempt.template.segments
+  return attempt.template.segments.length === 1 && only?.kind === 'Hole' ? { expr: only.expr } : {}
 }
 
 function spansOf(segments: readonly Segment[], text: string): HoleSpan[] {

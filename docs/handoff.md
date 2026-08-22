@@ -250,7 +250,17 @@ area rather than on the line — and every piece of that had to be made to behav
 mirror standing in for an `<input>`. Colour has no geometry, so there is nothing left to slide out of
 alignment or to clip.
 
-**At rest, a whole Reference is drawn as what it names, and where it is from.** A chip carries a
+**At rest, every hole that parsed is drawn as a chip.** A hole is a hole whether or not it names one
+value, and one drawn as bare text among the words around it is the only thing on the line that does
+not look like what it is. What differs is what the chip can *say*: a **Reference** names exactly one
+value, so its chip carries that value's source and its kind's mark; anything computed —
+`{{ s2.count + 1 }}` — has no single source to name, so its chip shows its own text, and the absence
+of a mark is what tells the two apart without inventing a symbol for "computed". A Reference whose
+path has gone stale falls to the same treatment, which keeps the path the checker will name on
+screen. A hole that does not parse at all keeps its characters, because they are the only thing that
+can be edited back into shape.
+
+**A Reference's chip says what it names, and where it is from.** A chip carries a
 mark for its kind, then the source in `--text-secondary` and the value in `--text-accent`:
 `▢ Fetch emails › count`, `≡ Variable › digest_to`. The source is always there, because a label
 alone loses the half that matters — `var.digest_to` reduced to "digest_to", and two chips reading

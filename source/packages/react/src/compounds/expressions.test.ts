@@ -323,6 +323,7 @@ describe('completing inside a call', () => {
 describe('what a Reference is called at rest', () => {
   it('reads as the Step, then the way down to the value', () => {
     expect(chipFor('s2.count', SCOPE)).toEqual({
+      of: 'reference',
       kind: 'step',
       source: 'Fetch emails',
       leaf: 'count',
@@ -336,11 +337,13 @@ describe('what a Reference is called at rest', () => {
    */
   it('supplies the kind as the source where the path names no entity', () => {
     expect(chipFor('var.digest_to', SCOPE)).toEqual({
+      of: 'reference',
       kind: 'var',
       source: 'Variable',
       leaf: 'digest_to',
     })
     expect(chipFor('run.tenant', SCOPE)).toEqual({
+      of: 'reference',
       kind: 'context',
       source: 'Run context',
       leaf: 'Tenant',
@@ -351,6 +354,7 @@ describe('what a Reference is called at rest', () => {
      anyone calls it. */
   it('never shows the grouping prefix itself', () => {
     expect(chipFor('triggers.nightly.triggered_at', SCOPE)).toEqual({
+      of: 'reference',
       kind: 'trigger',
       source: 'Nightly',
       leaf: 'triggered_at',
@@ -358,7 +362,8 @@ describe('what a Reference is called at rest', () => {
   })
 
   it('names a projection as each of its elements', () => {
-    expect(chipFor('s2.messages[].subject', SCOPE)?.leaf).toBe('messages each subject')
+    const chip = chipFor('s2.messages[].subject', SCOPE)
+    expect(chip?.of === 'reference' && chip.leaf).toBe('messages each subject')
   })
 
   /*

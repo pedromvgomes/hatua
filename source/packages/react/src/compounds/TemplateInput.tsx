@@ -549,21 +549,35 @@ function runsOf(piece: Piece): Run[] {
 }
 
 /**
- * What a hole is called when the field is at rest, or nothing.
+ * How a hole is drawn when the field is at rest.
  *
- * Two conditions, and both are the parser's to answer. The hole has to be a
- * **Reference** — `isReference()` reads the parsed shape, because a Reference
- * is a shape and not a syntax, and `{{ s2.count + 1 }}` names no single target
- * to put on a chip. And the path it names has to still be in scope, so a
- * Reference that has gone stale keeps showing the path the checker will name.
+ * **Every hole that parsed becomes a chip.** A hole is a hole whether or not it
+ * names one value, and one drawn as bare text among the words around it is the
+ * only thing on the line that does not look like what it is.
+ *
+ * What differs is what the chip can say. A **Reference** — which
+ * `isReference()` answers from the parsed shape, because a Reference is a shape
+ * and not a syntax — names exactly one value, so its chip carries that value's
+ * source and its own mark. Anything else computes, and `{{ s2.count + 1 }}` has
+ * no single source to name, so its chip shows its own text. A Reference whose
+ * path has gone stale falls to the same treatment, which is what keeps the path
+ * the checker will name on screen.
+ *
+ * A hole that did NOT parse gets no chip at all: its characters are the only
+ * thing that can be edited back into shape, so they stay.
  */
 function chipOf(
   hole: HoleSpan,
+  value: string,
   chip: ((path: string) => ChipParts | null) | null,
 ): ChipParts | undefined {
   if (!chip || !hole.expr) return undefined
+
   const path = referencePath(hole.expr)
-  return (path ? chip(path) : null) ?? undefined
+  const named = path ? chip(path) : null
+  if (named) return named
+
+  return { of: 'expression', text: value.slice(hole.start + 2, hole.end - 2).trim() }
 }
 
 /**
@@ -606,7 +620,7 @@ function paint({
       start: hole.start,
       className: hole === shape.unclosed ? styles.broken : styles.hole,
       unclosed: hole === shape.unclosed,
-      chip: chipOf(hole, chip),
+      chip: chipOf(hole, value, chip),
     })
     at = hole.end
   }
@@ -654,9 +668,15 @@ function paint({
       if (piece.chip) {
         return (
           <span key={piece.start} className={styles.chip} data-at={piece.start} data-hole="">
-            <KindMark kind={piece.chip.kind} />
-            <span className={styles.chipSource}>{piece.chip.source}</span>
-            <span className={styles.chipLeaf}>{piece.chip.leaf}</span>
+            {piece.chip.of === 'reference' ? (
+              <>
+                <KindMark kind={piece.chip.kind} />
+                <span className={styles.chipSource}>{piece.chip.source}</span>
+                <span className={styles.chipLeaf}>{piece.chip.leaf}</span>
+              </>
+            ) : (
+              <span className={styles.chipLeaf}>{piece.chip.text}</span>
+            )}
           </span>
         )
       }
@@ -816,7 +836,7 @@ function signatureAt(
  * the same value twice — so a screen reader reads the `<input>`, which holds
  * the path itself and needs no mark to explain it.
  */
-function KindMark({ kind }: { kind: ChipParts['kind'] }) {
+function KindMark({ kind }: { kind: ScopeEntry['kind'] }) {
   return (
     <svg
       className={styles.mark}

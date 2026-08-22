@@ -271,16 +271,28 @@ describe('at rest', () => {
     expect(chips()).toEqual(['Fetch emailscount'])
   })
 
-  /* A Reference is a shape, not a syntax: the moment something is computed
-     there is no single target to name. */
-  it('leaves an expression that computes something as its own characters', () => {
+  /*
+   * A hole is a hole whether or not it names one value, and one drawn as bare
+   * text among the words around it is the only thing on the line that does not
+   * look like what it is. What differs is what the chip can say: a Reference is
+   * a shape, not a syntax, and the moment something is computed there is no
+   * single source to name — so the chip shows its own text instead.
+   */
+  it('draws an expression that computes something as its own text', () => {
     mount({ value: '{{ s2.count + 1 }}' })
-    expect(chips()).toEqual([])
+    expect(chips()).toEqual(['s2.count + 1'])
   })
 
-  /* The path is what the checker names and what has to be edited. */
-  it('leaves a stale Reference showing its path', () => {
+  /* The path is what the checker names and what has to be edited, so a stale
+     Reference keeps showing it — and the missing source is the signal. */
+  it('draws a stale Reference as its path, with no source', () => {
     mount({ value: '{{ s9.gone }}' })
+    expect(chips()).toEqual(['s9.gone'])
+  })
+
+  /* Its characters are the only thing that can be edited back into shape. */
+  it('leaves a hole that does not parse as its own characters', () => {
+    mount({ value: '{{ s2. + }}' })
     expect(chips()).toEqual([])
   })
 

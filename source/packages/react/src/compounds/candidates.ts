@@ -326,14 +326,30 @@ export function ghostFor(prefix: string, candidates: readonly Candidate[]): stri
  * is "Run context", never "run", because `run` is how a Template spells a root
  * and not what anybody calls it.
  */
-export interface ChipParts {
-  /** Which of the four kinds, for the mark at the chip's leading edge. */
-  kind: ScopeEntry['kind']
-  /** Dimmed, and the answer to "where is this from". */
-  source: string
-  /** Accented, and the answer to "which value". */
-  leaf: string
-}
+export type ChipParts =
+  | {
+      of: 'reference'
+      /** Which of the four kinds, for the mark at the chip's leading edge. */
+      kind: ScopeEntry['kind']
+      /** Dimmed, and the answer to "where is this from". */
+      source: string
+      /** Accented, and the answer to "which value". */
+      leaf: string
+    }
+  /**
+   * Everything else a hole can hold.
+   *
+   * `{{ s2.count + 1 }}` is every bit as much a hole as `{{ s2.count }}` and has
+   * to look like one, but there is no single value behind it to name — which is
+   * exactly what makes it not a Reference. So it shows its own text, with no
+   * mark and no source, and the absence of both is what tells the two apart
+   * without inventing a symbol for "computed".
+   *
+   * A Reference whose path has gone stale lands here too, and that is the
+   * point: it keeps showing the path, and the missing source is the signal that
+   * nothing answers to it any more.
+   */
+  | { of: 'expression'; text: string }
 
 /**
  * Null when the path names nothing in scope. A Reference that has gone stale —
@@ -354,9 +370,16 @@ export function chipFor(path: string, scope: readonly ScopeEntry[]): ChipParts |
 
   // One named thing means the path stops at the entity itself and the entity's
   // own label IS the value, so the kind supplies the source instead.
-  if (rest.length === 0) return { kind, source: KIND_WORDS[kind], leaf: first.label }
+  if (rest.length === 0) {
+    return { of: 'reference', kind, source: KIND_WORDS[kind], leaf: first.label }
+  }
 
-  return { kind, source: first.label, leaf: rest.map((node) => node.label).join(' ') }
+  return {
+    of: 'reference',
+    kind,
+    source: first.label,
+    leaf: rest.map((node) => node.label).join(' '),
+  }
 }
 
 /**

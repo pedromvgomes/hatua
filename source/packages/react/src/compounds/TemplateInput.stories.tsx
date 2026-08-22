@@ -188,12 +188,16 @@ export const EveryKindOfSource: Story = {
 }
 
 /**
- * A Reference is a shape and not a syntax, so the moment something is computed
- * there is no single target to put on a chip — and a Reference that has gone
- * stale keeps showing the path the checker will name.
+ * Every hole that parsed is a chip; what differs is what the chip can say.
+ *
+ * A Reference names one value, so it carries that value's mark and source.
+ * Anything computed has no single source to name and shows its own text —
+ * as does a Reference whose path has gone stale, where the missing source is
+ * the signal. A hole that does not parse at all keeps its characters, because
+ * they are the only thing that can be edited back into shape.
  */
-export const NotEveryHoleIsAChip: Story = {
-  args: { value: '{{ s2.count + 1 }} · {{ s9.gone }}', expectedType: 'text' },
+export const NotEveryChipIsAReference: Story = {
+  args: { value: '{{ s2.count + 1 }} · {{ s9.gone }} · {{ s2. + }}', expectedType: 'text' },
 }
 
 /** The ordinary state of a Template halfway through being typed. */
