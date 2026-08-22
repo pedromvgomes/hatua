@@ -23,6 +23,26 @@ scenarios:
     context: { var: { digest_to: "me@dane.dev" } }
     value: "me@dane.dev"
 
+  - name: a Run Context value is addressed through `run`
+    template: "{{ run.tenant }}"
+    type: text
+    context: { run: { tenant: acme } }
+    value: acme
+
+  - name: >-
+      `run` is a root of its own, so a step called `run` does not shadow it and
+      is not shadowed by it
+    template: "{{ run.id }}"
+    type: text
+    context: { run: { id: r_814 }, steps: { run: { id: s_1 } } }
+    value: r_814
+
+  - name: a Run Context key the Host did not supply is an error by default
+    template: "{{ run.tenant }}"
+    type: text
+    context: { run: { id: r_814 } }
+    error: EVAL_MISSING_PATH
+
   - name: TRIGGER names which trigger fired
     template: "{{ TRIGGER }}"
     type: text

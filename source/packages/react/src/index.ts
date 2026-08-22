@@ -6,7 +6,17 @@
  * @hatua/react for the type of the thing it is being asked to write would be a
  * seam that exists only in our directory layout.
  */
-export type { Field, Manifest, Step, Trigger, Variable, WorkflowDefinition } from '@hatua/schema'
+export type {
+  ContextKey,
+  Field,
+  Manifest,
+  ManifestEntry,
+  RunContextManifest,
+  Step,
+  Trigger,
+  Variable,
+  WorkflowDefinition,
+} from '@hatua/schema'
 export type {
   ConnectionDescriber,
   ConnectionDescription,
@@ -53,8 +63,9 @@ export type {
   ToastProps,
   ToastTone,
   ToggleProps,
+  TooltipProps,
 } from './primitives'
-export { Button, ConfirmDialog, Input, Select, Toast, Toggle } from './primitives'
+export { Button, ConfirmDialog, Input, Select, Toast, Toggle, Tooltip } from './primitives'
 export type { Theme, ThemeSeed } from './theme/createTheme'
 export { createTheme } from './theme/createTheme'
 export type { ColorMode, HatuaProviderProps, HostPorts } from './theme/HatuaProvider'

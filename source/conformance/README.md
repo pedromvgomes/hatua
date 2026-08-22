@@ -24,9 +24,12 @@ definition/valid/*.yaml     must parse and validate clean
 definition/invalid/*.yaml   must fail; the expected diagnostic codes are in the
                             file's own `# expect:` header
 execution/*.yaml            must parse
-manifest/*.yaml             must parse; also served by the playground, which
-                            reads them at build time so its Library shows the
-                            same catalogue both SDKs are held to
+manifest/*.yaml             must parse; which schema a file is held to comes
+                            from its own `kind`, since a Run Context is a
+                            different file with a different shape. Also served
+                            by the playground, which reads them at build time so
+                            its Components tab shows the same catalogue both
+                            SDKs are held to
 expression/                 the {{ … }} language — see its own README
 ```
 

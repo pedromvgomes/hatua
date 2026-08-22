@@ -13,6 +13,11 @@ type ManifestKind string
 const (
 	KindComponent ManifestKind = "component"
 	KindTrigger   ManifestKind = "trigger"
+	// KindContext marks a Run Context Manifest, which is a different file and a
+	// different struct — see RunContextManifest. It is named here because the
+	// flat array a Host serves carries all three kinds, and a reader deciding
+	// what it is holding needs every value the discriminant can take.
+	KindContext ManifestKind = "context"
 )
 
 // MetadataRole decides how a reported value is aggregated. A measure is
@@ -51,6 +56,41 @@ type Manifest struct {
 // authoring and diffing, a catalogue suits serving.
 type Catalogue struct {
 	Components []Manifest `yaml:"components"`
+}
+
+// RunContextManifest declares the ambient values the Host hands its runner for
+// every execution — the run id, the tenant, when the run started. Addressed as
+// `run.<k>` from any Expression.
+//
+// Its own file rather than a fourth Kind inside the Component Manifest: a
+// Component Manifest requires Use, Name, Fields and Outputs, none of which a
+// Run Context has, and a conditional shape is what schemas/README.md keeps the
+// generator away from. There is exactly one per execution, so it declares keys
+// directly instead of naming a type someone instantiates — hence no Use, no
+// Name and no catalogue wrapper.
+//
+// Mirrors schemas/context-manifest.schema.yaml.
+type RunContextManifest struct {
+	Kind ManifestKind `yaml:"kind"`
+	Keys []ContextKey `yaml:"keys"`
+}
+
+// ContextKey is one ambient value the Host promises to supply.
+//
+// Spelled {k, label, t, of} exactly as an Output is, because the reference
+// tree, the completion list and the type checker read that shape already and a
+// second spelling for one idea is a second reader to keep in step. What it adds
+// is Description, for the sentence the completion list shows under the row.
+//
+// There is no `item` in T: item is the for-each escape hatch, resolved by
+// following a loop's list back to its source output, and a Run Context key is
+// not the output of anything.
+type ContextKey struct {
+	K           string       `yaml:"k"`
+	Label       string       `yaml:"label"`
+	T           string       `yaml:"t"`
+	Description string       `yaml:"description,omitempty"`
+	Of          []ContextKey `yaml:"of,omitempty"`
 }
 
 // Field is one configurable input. Label is always required — the key is never

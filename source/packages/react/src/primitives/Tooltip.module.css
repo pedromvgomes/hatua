@@ -1,0 +1,33 @@
+@layer hatua {
+  /*
+   * Fixed, so it is not clipped by whatever the anchor is scrolling inside —
+   * which for every caller here is a 304px panel with `overflow: auto`.
+   *
+   * Hidden rather than unmounted while closed: `aria-describedby` on the anchor
+   * points at this element, and an id naming nothing is a description a screen
+   * reader offers and then cannot find.
+   */
+  .tip {
+    position: fixed;
+    z-index: 60;
+    max-inline-size: 320px;
+    padding: 7px 10px;
+    border: 1px solid var(--hatua-border-subtle);
+    border-radius: var(--hatua-radius-md);
+    background: var(--hatua-surface-raised);
+    box-shadow: 0 10px 30px var(--hatua-shadow-color);
+    color: var(--hatua-text-primary);
+    font-size: 0.75rem;
+    line-height: 1.5;
+    /* Long values are the reason this exists, so they wrap rather than run on. */
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    /* Never in the way of the thing it describes. */
+    pointer-events: none;
+    visibility: hidden;
+  }
+
+  .tip[data-open="true"] {
+    visibility: visible;
+  }
+}

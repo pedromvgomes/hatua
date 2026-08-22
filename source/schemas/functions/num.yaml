@@ -1,12 +1,11 @@
 kind: function
 namespace: num
 summary: >-
-  Numbers. There is one numeric type and it is a 64-bit float, so `7 / 2` is
-  3.5 in both languages; rounding is half away from zero, so `round(-0.5)` is
-  -1 in both.
+  Numbers. Dividing always gives a decimal — 7 / 2 is 3.5 — and a half always
+  rounds away from zero, so -0.5 rounds to -1.
 functions:
   - name: round
-    summary: Nearest whole number, halves away from zero.
+    summary: The nearest whole number. A half rounds away from zero.
     params:
       - name: value
         type: number
@@ -14,7 +13,7 @@ functions:
     returns: number
 
   - name: floor
-    summary: Largest whole number not greater than the value.
+    summary: The nearest whole number at or below this one.
     params:
       - name: value
         type: number
@@ -22,7 +21,7 @@ functions:
     returns: number
 
   - name: ceil
-    summary: Smallest whole number not less than the value.
+    summary: The nearest whole number at or above this one.
     params:
       - name: value
         type: number
@@ -30,33 +29,33 @@ functions:
     returns: number
 
   - name: abs
-    summary: Magnitude.
+    summary: The number without its sign.
     params:
       - name: value
         type: number
-        description: The number whose magnitude is taken.
+        description: The number to take the sign off.
     returns: number
 
   - name: min
-    summary: Smallest of its arguments.
+    summary: The smallest of the numbers given.
     params:
       - name: values
         type: number
         variadic: true
-        description: The numbers to compare, as separate arguments.
+        description: The numbers to compare, each one its own argument.
     returns: number
 
   - name: max
-    summary: Largest of its arguments.
+    summary: The largest of the numbers given.
     params:
       - name: values
         type: number
         variadic: true
-        description: The numbers to compare, as separate arguments.
+        description: The numbers to compare, each one its own argument.
     returns: number
 
   - name: parse
-    summary: Read a number from text. This is the only text-to-number conversion; none is implicit.
+    summary: Read a number out of text. Text never becomes a number on its own, so this is how.
     params:
       - name: value
         type: text

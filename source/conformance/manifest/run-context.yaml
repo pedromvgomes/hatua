@@ -1,0 +1,39 @@
+# The Host's Run Context: the ambient values it hands its runner for every
+# execution, addressed as `run.<k>` from any Expression.
+#
+# Its own file rather than a fourth `kind:` inside the Component Manifest, and
+# no catalogue wrapper: there is exactly one Run Context per execution, so this
+# declares keys directly instead of naming a type someone instantiates.
+#
+# A key is spelled `{k, label, t}` — the same triple every declared output uses,
+# nesting through `of` the same way — so the reference tree, the completion list
+# and the type checker read one shape whether the value came from a component's
+# outputs or from here.
+kind: context
+keys:
+  - k: id
+    label: Run id
+    t: text
+    description: Identifies this execution in the Host's run history.
+  - k: started_at
+    label: Started at
+    t: datetime
+    description: When this execution began.
+  - k: caller_ip
+    label: Caller address
+    t: text
+    description: The address the request that started this run came from.
+  - k: tenant
+    label: Tenant
+    t: object
+    description: Who this execution belongs to.
+    of:
+      - { k: id, label: Tenant id, t: text }
+      - { k: name, label: Tenant name, t: text }
+  - k: triggered_by
+    label: Triggered by
+    t: object
+    description: The person or system that started this run.
+    of:
+      - { k: id, label: Id, t: text }
+      - { k: email, label: Email, t: text }

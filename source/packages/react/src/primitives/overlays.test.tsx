@@ -1,9 +1,11 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HatuaProvider } from '../theme/HatuaProvider'
 import { ConfirmDialog } from './ConfirmDialog'
+import { Input } from './Input'
 import { Toast } from './Toast'
+import { Tooltip } from './Tooltip'
 
 /**
  * ADR-0002's last consequence: an overlay portalled to document.body escapes
@@ -578,5 +580,97 @@ describe('ConfirmDialog', () => {
     )
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     expect(onCancel).not.toHaveBeenCalled()
+  })
+})
+
+describe('Tooltip', () => {
+  const Anchored = ({ enabled = true }: { enabled?: boolean }) => {
+    const anchor = useRef<HTMLButtonElement>(null)
+    return (
+      <HatuaProvider>
+        <button type="button" ref={anchor}>
+          Truncated…
+        </button>
+        <Tooltip anchor={anchor} enabled={enabled} content="The whole of it." />
+      </HatuaProvider>
+    )
+  }
+
+  const tip = () => screen.queryByRole('tooltip')
+
+  it('describes its anchor whether or not anything is on screen', () => {
+    // A screen reader is the one reader for whom hover means nothing, so
+    // waiting for a pointer would be waiting for ever.
+    render(<Anchored />)
+    const described = screen.getByRole('button').getAttribute('aria-describedby')
+    expect(described).not.toBeNull()
+    expect(document.getElementById(described as string)?.textContent).toBe('The whole of it.')
+  })
+
+  it('opens on focus, so a keyboard reaches it', () => {
+    render(<Anchored />)
+    expect(tip()?.getAttribute('data-open')).toBeNull()
+    fireEvent.focusIn(screen.getByRole('button'))
+    expect(tip()?.getAttribute('data-open')).toBe('true')
+  })
+
+  it('dismisses on Escape without taking the focus anywhere', () => {
+    render(<Anchored />)
+    const anchor = screen.getByRole('button')
+    fireEvent.focusIn(anchor)
+    fireEvent.keyDown(anchor, { key: 'Escape' })
+    expect(tip()?.getAttribute('data-open')).toBeNull()
+    expect(document.activeElement).not.toBe(tip())
+  })
+
+  /*
+   * Disabled is the ordinary state of a `revealOnOverflow` control whose value
+   * fits, and it must not merely hide the layer: a description pointing at text
+   * already fully visible reads it out twice.
+   */
+  it('describes nothing when there is nothing to say', () => {
+    render(<Anchored enabled={false} />)
+    expect(screen.getByRole('button').getAttribute('aria-describedby')).toBeNull()
+    expect(tip()).toBeNull()
+  })
+
+  /*
+   * Whether there is anything to say changes under a pointer that has not
+   * moved — choosing a shorter option and then a longer one again is exactly
+   * that. Listening only while enabled meant the `pointerenter` had already
+   * been and gone, and nothing appeared until the pointer left and came back.
+   */
+  it('is already open when it becomes worth showing under a resting pointer', () => {
+    const { rerender } = render(<Anchored enabled={false} />)
+    fireEvent.pointerEnter(screen.getByRole('button'))
+    expect(tip()).toBeNull()
+
+    rerender(<Anchored enabled />)
+    expect(tip()?.getAttribute('data-open')).toBe('true')
+  })
+})
+
+describe('revealOnOverflow', () => {
+  it('is opt-in, so a truncated value offers nothing unless asked', () => {
+    render(
+      <HatuaProvider>
+        <Input value="a value" readOnly aria-label="Plain" />
+      </HatuaProvider>,
+    )
+    expect(screen.getByLabelText('Plain').getAttribute('aria-describedby')).toBeNull()
+  })
+
+  /*
+   * jsdom lays nothing out, so every box measures zero and nothing ever
+   * overflows. What is checked here is the wiring: asking for it mounts the
+   * machinery, and the measurement decides at run time.
+   */
+  it('mounts without disturbing the control it is on', () => {
+    render(
+      <HatuaProvider>
+        <Input revealOnOverflow value="a value" readOnly aria-label="Revealing" />
+      </HatuaProvider>,
+    )
+    expect((screen.getByLabelText('Revealing') as HTMLInputElement).value).toBe('a value')
   })
 })

@@ -1,0 +1,351 @@
+@layer hatua {
+  .wrap {
+    position: relative;
+    inline-size: 100%;
+  }
+
+  /*
+   * The box the user sees. The input inside it is transparent and carries the
+   * caret and the selection; the mirror behind it carries the colour. Both are
+   * laid out identically, so "identical" is a property of these rules rather
+   * than of two components agreeing.
+   */
+  .box {
+    position: relative;
+    display: grid;
+    /*
+     * Centred, so the one line of a single-line field sits on the field's
+     * middle rather than at the top of whatever `min-block-size` leaves over.
+     */
+    align-content: center;
+    min-block-size: 40px;
+    /*
+     * Roomier on the leading edge than a plain text field needs, because the
+     * first thing in one of these is often a chip rather than a letter.
+     */
+    padding: 8px 44px 8px 12px;
+    border: 1px solid var(--hatua-border-strong);
+    border-radius: var(--hatua-radius-md);
+    background: var(--hatua-surface-card);
+    cursor: text;
+    transition:
+      border-color 120ms ease,
+      background 120ms ease;
+  }
+
+  .tall {
+    min-block-size: 76px;
+  }
+
+  .box:focus-within {
+    border-color: var(--hatua-border-accent);
+  }
+
+  .invalid {
+    border-color: var(--hatua-status-error);
+  }
+
+  .mirror,
+  .field {
+    grid-area: 1 / 1;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    font-family: var(--hatua-font-mono);
+    font-size: 0.8125rem;
+    /*
+     * One line that scrolls, exactly as an `<input>` does — a single-line field
+     * that grew a second line as you typed would be the only one on the screen
+     * that did, and the box changing height under the caret is the part that
+     * actually gets in the way. The textarea below opts back into wrapping.
+     */
+    white-space: pre;
+    letter-spacing: 0;
+    /* Roomy enough for a hole drawn as a pill not to touch the line above it. */
+    line-height: 1.7;
+  }
+
+  .mirror {
+    pointer-events: none;
+    color: var(--hatua-text-primary);
+    overflow: hidden;
+  }
+
+  .field {
+    appearance: none;
+    background: transparent;
+    resize: none;
+    /* Transparent text, opaque caret: the platform keeps selection, undo, IME
+       and autofill, and the mirror behind supplies the colour. */
+    color: transparent;
+    caret-color: var(--hatua-text-primary);
+    outline: none;
+    /*
+     * One line box exactly, rather than the intrinsic height a browser gives an
+     * `<input>` from its font.
+     *
+     * The two share a grid cell, so the taller sets the row — and an input a
+     * couple of pixels taller than the mirror's line box makes the half-leading
+     * above the text differ from the half-leading below it. A hole's fill is
+     * the font's content area, which is centred in the LINE-HEIGHT box and not
+     * in that row, so the pill came out two pixels above the middle of the
+     * field. Matching them makes it exact, and exact for whatever mono face a
+     * Host themes in rather than only for this one.
+     */
+    block-size: 1lh;
+  }
+
+  /* A textarea is many line boxes, and `rows` is what says how many. */
+  .field.tall {
+    block-size: auto;
+  }
+
+  /* Where there is more than one line to be had, long values wrap into them. */
+  .mirror.tall,
+  .field.tall {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  /*
+   * On one scrolling line a chip takes the room it needs and the line scrolls,
+   * rather than the source being trimmed to fit a width nothing is bounded by.
+   */
+  .box:not(.tall) .chip {
+    max-inline-size: none;
+  }
+
+  .field::placeholder {
+    color: var(--hatua-text-muted);
+  }
+
+  .field::selection {
+    background: var(--hatua-focus-ring);
+  }
+
+  /*
+   * A hole, while the characters are showing: colour, and nothing else.
+   *
+   * No fill and no border. Every editor anyone reaches for marks syntax by
+   * colouring it, and a box drawn round a token is noise the eye has to read
+   * past on the way to the text — which is the one thing this field exists to
+   * let someone edit. The strong mark for "this names a value" is the chip, and
+   * that is what shows whenever nobody is editing; a second one underneath it
+   * is emphasis paid for twice.
+   *
+   * It also retires an entire class of fault. A box has geometry — an overhang,
+   * a radius, a fill box centred on the font's content area rather than on the
+   * line — and every one of those had to be made to behave like a glyph in a
+   * mirror standing in for an `<input>`. Colour has no geometry at all, so
+   * there is nothing left to slide out of alignment or to clip.
+   */
+  .hole {
+    color: var(--hatua-text-accent);
+  }
+
+  /*
+   * A Reference at rest, drawn as what it names rather than as how it is
+   * spelled.
+   *
+   * Only while the field is unfocused, and that is the whole licence for it:
+   * with no caret to keep aligned the mirror is free to be a different width
+   * from the `<input>` behind it, which is exactly what showing a label instead
+   * of a path requires. Focus puts the characters back, so the text is still
+   * the editing surface whenever anyone is editing.
+   *
+   * Real padding here, for the same reason — nothing is standing in for a
+   * glyph, so nothing has to be cancelled.
+   *
+   * One unbreakable unit that moves to the next line whole. Left to wrap, a
+   * long chip broke through its own middle and `box-decoration-break: clone`
+   * drew a full pill around each half — so "Weekday mornings › triggered_at"
+   * read as two chips naming two different things.
+   */
+  .chip {
+    display: inline-flex;
+    align-items: baseline;
+    white-space: nowrap;
+    max-inline-size: 100%;
+    padding: 3px 8px;
+    /*
+     * Tighter than the line it sits in, so the chip fits inside the line box
+     * rather than growing it.
+     *
+     * At the field's own 1.7 the chip came out 28px tall against a 22px line —
+     * so the whole field was 12px taller at rest than it is with the characters
+     * showing, and focusing one made the layout jump. Two chips on consecutive
+     * lines also ended up with rects that touched, which is one pixel of
+     * ambiguity about which of them a click belongs to.
+     */
+    line-height: 1.2;
+    /*
+     * A little air on each side, so a chip in a sentence is a thing sitting in
+     * the line rather than a word with a box drawn round it.
+     */
+    margin: 0 2px;
+    border-radius: var(--hatua-radius-sm);
+    background: var(--hatua-accent-wash);
+    box-shadow: inset 0 0 0 1px var(--hatua-border-accent);
+  }
+
+  /* The kind mark: which of the four this value is from. */
+  .mark {
+    align-self: center;
+    flex: 0 0 auto;
+    margin-inline-end: 4px;
+    fill: none;
+    stroke: var(--hatua-text-muted);
+    stroke-width: 1.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  /*
+   * Where the value is from: present on every chip, and never the loud half.
+   *
+   * When there is not room for both, this is the half that gives way — it is
+   * the one a reader can most often infer from the sentence around it, and the
+   * leaf is the reason they are looking at the chip at all.
+   */
+  .chipSource {
+    flex: 0 1 auto;
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--hatua-text-secondary);
+  }
+
+  /* Which value, and the reason anyone is reading the chip. */
+  .chipLeaf {
+    flex: 0 0 auto;
+    color: var(--hatua-text-accent);
+    font-weight: 500;
+  }
+
+  /*
+   * A Reference named inside a computed chip.
+   *
+   * The same two tones as a chip of its own, and no mark: the outer chip has
+   * already said this is a hole, and a mark per Reference would turn one pill
+   * into a row of badges.
+   */
+  .chipRef {
+    display: inline-flex;
+    align-items: baseline;
+    white-space: nowrap;
+  }
+
+  /* The operators and literals between them, which are code and read as code. */
+  .chipCode {
+    color: var(--hatua-text-secondary);
+    white-space: pre;
+  }
+
+  /* Drawn rather than typed, so it cannot be selected or mistaken for part of
+     either name. */
+  .chipSource::after {
+    content: "›";
+    margin: 0 4px;
+    color: var(--hatua-text-muted);
+    font-weight: 400;
+  }
+
+  /*
+   * The delimiters, while the characters are showing.
+   *
+   * `{{` and `}}` are how a Template spells a hole and not part of what it
+   * names, so they step back and let the path read. Colour only: anything that
+   * changed their width would slide the mirror off the text it stands in for.
+   */
+  .brace {
+    color: var(--hatua-text-muted);
+  }
+
+  /*
+   * A hole nobody can read — missing its closing braces, or simply not
+   * parsing. Underlined rather than filled: it is still a hole, and the mark
+   * says what has to be fixed rather than shouting about it.
+   */
+  .broken {
+    text-decoration: underline wavy var(--hatua-status-error);
+    text-underline-offset: 3px;
+  }
+
+  /* Zero width, and the only thing the popovers are positioned against. */
+  .caret {
+    display: inline-block;
+    inline-size: 0;
+  }
+
+  .ghost {
+    color: var(--hatua-text-muted);
+  }
+
+  .spark {
+    position: absolute;
+    inset-block-start: 3px;
+    inset-inline-end: 3px;
+    display: grid;
+    place-items: center;
+    inline-size: 32px;
+    block-size: 32px;
+    appearance: none;
+    border: 0;
+    border-radius: var(--hatua-radius-sm);
+    background: transparent;
+    color: var(--hatua-text-muted);
+    cursor: pointer;
+  }
+
+  .spark:hover,
+  .spark:focus-visible {
+    background: var(--hatua-accent-wash);
+    color: var(--hatua-text-accent);
+    outline: none;
+  }
+
+  .spark svg {
+    fill: currentColor;
+  }
+
+  /*
+   * The value inside the tooltip: the same mirror, wrapped.
+   *
+   * Nothing is standing in for a glyph here, so it may take as many lines as it
+   * needs — which is the whole reason the tooltip exists.
+   */
+  .full {
+    display: block;
+    font-family: var(--hatua-font-mono);
+    font-size: 0.75rem;
+    line-height: 1.9;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .signature {
+    margin-block-start: 4px;
+    padding: 6px 9px;
+    background: var(--hatua-surface-sunken);
+    border-radius: var(--hatua-radius-sm);
+  }
+
+  .signatureLine {
+    margin: 0;
+    font-family: var(--hatua-font-mono);
+    font-size: 0.75rem;
+    color: var(--hatua-text-secondary);
+  }
+
+  .activeParam {
+    color: var(--hatua-text-accent);
+    font-weight: 600;
+  }
+
+  .signatureDoc {
+    margin: 3px 0 0;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: var(--hatua-text-secondary);
+  }
+}

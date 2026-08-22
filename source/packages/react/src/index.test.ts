@@ -26,6 +26,7 @@ describe('@hatua/react exports', () => {
       'TabbedPanel',
       'Toast',
       'Toggle',
+      'Tooltip',
       'TopBar',
       'Workflow',
       'createTheme',

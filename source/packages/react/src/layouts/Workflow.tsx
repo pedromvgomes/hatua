@@ -1,5 +1,13 @@
-import type { Diagnostic } from '@hatua/model'
-import type { Connection, Manifest, Trigger, Variable } from '@hatua/schema'
+import { type Diagnostic, type ScopeEntry, workflowScope } from '@hatua/model'
+import {
+  type Connection,
+  contextKeysIn,
+  type Manifest,
+  type ManifestEntry,
+  manifestsIn,
+  type Trigger,
+  type Variable,
+} from '@hatua/schema'
 import {
   addTrigger,
   addVariable,
@@ -22,9 +30,11 @@ import {
   type ReactNode,
   useEffect,
   useId,
+  useMemo,
   useState,
   useSyncExternalStore,
 } from 'react'
+import { TemplateInput } from '../compounds/TemplateInput'
 import { Button } from '../primitives/Button'
 import { cx } from '../primitives/classNames'
 import { Select } from '../primitives/Select'
@@ -91,7 +101,8 @@ const UNCONFIGURED = { status: 'unconfigured' } as const
 const OPENING = { status: 'opening' } as const
 const CATALOGUE_UNCONFIGURED = { status: 'unconfigured' } as const
 const CATALOGUE_LOADING = { status: 'loading' } as const
-const NO_MANIFESTS: Manifest[] = []
+const NO_ENTRIES: ManifestEntry[] = []
+const NO_SCOPE: readonly ScopeEntry[] = []
 const NO_PROBLEMS: ReadonlyMap<string, Diagnostic[]> = new Map()
 const UNCHECKED: ValidationState = {
   byStep: NO_PROBLEMS,
@@ -148,12 +159,30 @@ export function Workflow({ className, ...rest }: WorkflowProps) {
 
   const workflow = state.status === 'ready' ? state.workflow : null
   const definition = workflow?.definition ?? null
-  const served = catalogue.status === 'ready' ? catalogue.manifests : NO_MANIFESTS
+  // Split by kind, because the array a Host serves holds three. The Triggers
+  // section wants the Component Manifests; scope wants the Run Context keys.
+  const entries = catalogue.status === 'ready' ? catalogue.manifests : NO_ENTRIES
+  const served = useMemo(() => manifestsIn(entries), [entries])
+  const context = useMemo(() => contextKeysIn(entries), [entries])
   // Absent, not empty. "Not checked yet" and "checked and fine" must not look
   // the same: every Trigger is an unknown component until the manifests land,
   // so painting `byTrigger` before `ready` would mark a perfectly good workflow
   // on every load.
   const problems = checks.ready ? checks.byTrigger : NO_PROBLEMS
+
+  /**
+   * What a Template on this tab may read: Run Context, the Triggers and the
+   * variables, and never a Step's output.
+   *
+   * `workflowScope` and not `scopeFor`, because nothing here has a position in
+   * the tree. A variable's value is not reached by running anything, so no Step
+   * is guaranteed to have run by the time it is evaluated — offering one would
+   * express a mapping that cannot resolve.
+   */
+  const scope = useMemo(
+    () => (definition ? workflowScope(definition, served, context) : NO_SCOPE),
+    [definition, served, context],
+  )
 
   const liveMessage =
     state.status === 'opening'
@@ -228,6 +257,7 @@ export function Workflow({ className, ...rest }: WorkflowProps) {
                 }
                 onRemove={(id) => store?.apply(removeTrigger(id))}
                 connections={definition.connections ?? []}
+                scope={scope}
                 onName={(id, name) => store?.apply(setTriggerName(id, name))}
                 onField={(id, key, value) => store?.apply(setTriggerField(id, key, value))}
                 onDeclareConnection={(triggerId, key, name, ref) =>
@@ -244,6 +274,7 @@ export function Workflow({ className, ...rest }: WorkflowProps) {
               />
               <Variables
                 variables={definition.vars ?? []}
+                scope={scope}
                 onAdd={() => store?.apply(addVariable())}
                 onRemove={(key) => store?.apply(removeVariable(key))}
                 onRename={(from, to) => store?.apply(renameVariable(from, to))}
@@ -319,6 +350,7 @@ function Triggers({
   manifests,
   problems,
   connections,
+  scope,
   onAdd,
   onRemove,
   onName,
@@ -331,6 +363,7 @@ function Triggers({
   /** Diagnostics per Trigger id; a Trigger with none is absent. */
   problems: ReadonlyMap<string, Diagnostic[]>
   connections: readonly Connection[]
+  scope: readonly ScopeEntry[]
   onAdd: (manifest: Manifest) => void
   onRemove: (id: string) => void
   onName: (id: string, name: string) => void
@@ -356,6 +389,7 @@ function Triggers({
               manifest={byUse.get(trigger.use)}
               problems={problems.get(trigger.id)}
               connections={connections}
+              scope={scope}
               onRemove={onRemove}
               onName={onName}
               onField={onField}
@@ -442,6 +476,7 @@ function TriggerCard({
   manifest,
   problems,
   connections,
+  scope,
   onRemove,
   onName,
   onField,
@@ -451,6 +486,7 @@ function TriggerCard({
   manifest: Manifest | undefined
   problems?: Diagnostic[]
   connections: readonly Connection[]
+  scope: readonly ScopeEntry[]
   onRemove: (id: string) => void
   onName: (id: string, name: string) => void
   onField: (id: string, key: string, value: string | number | boolean) => void
@@ -518,6 +554,7 @@ function TriggerCard({
           manifest={manifest}
           values={values}
           connections={connections}
+          scope={scope}
           onChange={(key, next) => onField(trigger.id, key, next)}
           onDeclareConnection={(key, name, ref) => onDeclareConnection(trigger.id, key, name, ref)}
         />
@@ -549,12 +586,14 @@ function TriggerCard({
  */
 function Variables({
   variables,
+  scope,
   onAdd,
   onRemove,
   onRename,
   onValue,
 }: {
   variables: readonly Variable[]
+  scope: readonly ScopeEntry[]
   onAdd: () => void
   onRemove: (key: string) => void
   onRename: (from: string, to: string) => void
@@ -573,42 +612,48 @@ function Variables({
         <ul className={styles.variables}>
           {variables.map((variable) => (
             <li key={variable.key} className={styles.variable}>
-              <CommittedInput
-                label={`Name of ${variable.key}`}
-                className={styles.key}
-                value={variable.key}
-                mono
-                onCommit={(next) => next && next !== variable.key && onRename(variable.key, next)}
-              />
-              <CommittedInput
+              <div className={styles.variableHead}>
+                <CommittedInput
+                  label={`Name of ${variable.key}`}
+                  className={styles.key}
+                  value={variable.key}
+                  mono
+                  onCommit={(next) => next && next !== variable.key && onRename(variable.key, next)}
+                />
+                <button
+                  type="button"
+                  className={styles.remove}
+                  aria-label={`Remove ${variable.key}`}
+                  onClick={() => onRemove(variable.key)}
+                >
+                  <svg
+                    className={styles.icon}
+                    viewBox="0 0 16 16"
+                    width="14"
+                    height="14"
+                    focusable="false"
+                    aria-hidden="true"
+                  >
+                    <path d="M3 4.5h10M6.5 4.5V3.2a.7.7 0 0 1 .7-.7h1.6a.7.7 0 0 1 .7.7v1.3" />
+                    <path d="M4.4 4.5l.6 8a1 1 0 0 0 1 .9h4a1 1 0 0 0 1-.9l.6-8" />
+                    <path d="M6.8 7v3.6M9.2 7v3.6" />
+                  </svg>
+                </button>
+              </div>
+              <TemplateInput
                 label={`Value of ${variable.key}`}
                 value={
                   variable.value === undefined || variable.value === null
                     ? ''
                     : String(variable.value)
                 }
-                mono
+                scope={scope}
+                // No `expectedType`, and therefore no type marking. `varType`
+                // reads a variable's type *from* its value, so there is nothing
+                // to check it against — and a rail that is always green carries
+                // no more information than one that is never green.
                 onCommit={(next) => onValue(variable.key, next)}
               />
-              <button
-                type="button"
-                className={styles.remove}
-                aria-label={`Remove ${variable.key}`}
-                onClick={() => onRemove(variable.key)}
-              >
-                <svg
-                  className={styles.icon}
-                  viewBox="0 0 16 16"
-                  width="14"
-                  height="14"
-                  focusable="false"
-                  aria-hidden="true"
-                >
-                  <path d="M3 4.5h10M6.5 4.5V3.2a.7.7 0 0 1 .7-.7h1.6a.7.7 0 0 1 .7.7v1.3" />
-                  <path d="M4.4 4.5l.6 8a1 1 0 0 0 1 .9h4a1 1 0 0 0 1-.9l.6-8" />
-                  <path d="M6.8 7v3.6M9.2 7v3.6" />
-                </svg>
-              </button>
             </li>
           ))}
         </ul>

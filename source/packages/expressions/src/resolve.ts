@@ -52,6 +52,15 @@ export interface EvaluationContext {
   readonly triggers?: Readonly<Record<string, Value>>
   /** Workflow variables, addressed as `var.<key>`. */
   readonly var?: Readonly<Record<string, Value>>
+  /**
+   * The Host's ambient values for this execution, addressed as `run.<key>`.
+   *
+   * A root of its own rather than a reserved step id, for the reason `triggers`
+   * and `var` are: a step may legitimately be called `run`, and resolving one
+   * root by looking in two places is how a workflow starts depending on which
+   * of them the runner checked first.
+   */
+  readonly run?: Readonly<Record<string, Value>>
   /** Which Trigger fired. Needed when several are declared. */
   readonly TRIGGER?: string | null
   /**
@@ -278,6 +287,7 @@ function root(name: string, context: EvaluationContext): Raw {
   if (name === 'TRIGGER') return context.TRIGGER ? context.TRIGGER : MISSING
   if (name === 'triggers') return (context.triggers ?? {}) as Value
   if (name === 'var') return (context.var ?? {}) as Value
+  if (name === 'run') return (context.run ?? {}) as Value
   const steps = context.steps ?? {}
   return Object.hasOwn(steps, name) ? (steps[name] as Value) : MISSING
 }

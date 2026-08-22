@@ -1,0 +1,100 @@
+@layer hatua {
+  /*
+   * Fixed rather than absolute, so the list is not clipped by the scrolling
+   * panel the field sits in. `left`/`top` arrive already in viewport
+   * coordinates, measured from the caret.
+   */
+  .panel {
+    position: fixed;
+    z-index: 40;
+    min-width: 240px;
+    max-width: 360px;
+    background: var(--hatua-surface-raised);
+    border: 1px solid var(--hatua-border-subtle);
+    border-radius: var(--hatua-radius-md);
+    box-shadow: 0 10px 30px var(--hatua-shadow-color);
+    overflow: hidden;
+  }
+
+  .list {
+    margin: 0;
+    padding: 4px;
+    list-style: none;
+    max-height: 240px;
+    overflow-y: auto;
+  }
+
+  .row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    height: 30px;
+    padding: 0 8px 0 14px;
+    border-radius: var(--hatua-radius-sm);
+    cursor: pointer;
+  }
+
+  /*
+   * The left rail. A pseudo-element with its own geometry, because an inset
+   * box-shadow follows the row's border-radius and bows into a bracket instead
+   * of standing straight.
+   */
+  .row::before {
+    content: "";
+    position: absolute;
+    inset-block: 5px;
+    inset-inline-start: 5px;
+    inline-size: 2px;
+    border-radius: 1px;
+    background: var(--hatua-border-subtle);
+  }
+
+  /* Accented when the row produces the type the field declares. Nothing is ever
+     marked wrong: neutral covers "does not fit" and "cannot be judged" alike,
+     which is what keeps an `unknown` row from being painted as a mistake. */
+  .row[data-fits="true"]::before {
+    background: var(--hatua-status-ok);
+  }
+
+  .active {
+    background: var(--hatua-accent-wash);
+  }
+
+  .label {
+    font-family: var(--hatua-font-mono);
+    font-size: 0.75rem;
+    color: var(--hatua-text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .typed {
+    color: var(--hatua-text-accent);
+  }
+
+  .type {
+    font-size: 0.6875rem;
+    letter-spacing: 0.04em;
+    color: var(--hatua-text-muted);
+    flex: none;
+  }
+
+  .doc {
+    margin: 0;
+    padding: 7px 10px;
+    border-top: 1px solid var(--hatua-border-subtle);
+    background: var(--hatua-surface-sunken);
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: var(--hatua-text-secondary);
+  }
+
+  /* Held in the layout rather than unmounted, so the list does not jump as the
+     selection moves between a row with a sentence and one without. */
+  .silent {
+    visibility: hidden;
+  }
+}

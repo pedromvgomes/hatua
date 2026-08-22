@@ -1,4 +1,4 @@
-import type { Manifest } from '@hatua/schema'
+import type { Manifest, ManifestEntry } from '@hatua/schema'
 import type { ManifestState } from '@hatua/services'
 import {
   type ComponentPropsWithRef,
@@ -82,7 +82,7 @@ export function Components({ onSelect, defaultQuery = '', className, ...rest }: 
 
   const manifests = state.status === 'ready' ? state.manifests : NONE
   const components = useMemo(
-    () => manifests.filter((manifest) => kindOf(manifest) === 'component'),
+    () => manifests.filter((entry): entry is Manifest => kindOf(entry) === 'component'),
     [manifests],
   )
   const groups = useMemo(() => groupsOf(components, query), [components, query])
@@ -322,10 +322,22 @@ type CatalogueState = ManifestState | { status: 'unconfigured' }
 
 const UNCONFIGURED = { status: 'unconfigured' } as const
 const LOADING = { status: 'loading' } as const
-const NONE: Manifest[] = []
+const NONE: ManifestEntry[] = []
 
-/** The kinds a Component Manifest may declare. Anything else is a malformed catalogue. */
-const KINDS: ReadonlySet<string> = new Set<Manifest['kind']>(['component', 'trigger'])
+/**
+ * The kinds an entry may declare. Anything else is a malformed catalogue.
+ *
+ * `context` is in the set and is not a Component: the Host's Run Context
+ * declaration travels in the same flat array, and this region rendering nothing
+ * for it is correct rather than a mistake to report. What the set is for is
+ * telling *that* apart from an entry whose kind is a typo or absent, which no
+ * region can render and which names a fix only the integrator can make.
+ */
+const KINDS: ReadonlySet<string> = new Set<ManifestEntry['kind']>([
+  'component',
+  'trigger',
+  'context',
+])
 
 /**
  * An entry's `kind`, or undefined when the entry is not even an object.
@@ -339,10 +351,8 @@ const KINDS: ReadonlySet<string> = new Set<Manifest['kind']>(['component', 'trig
  * something this region files under "not a Component" and reports, never
  * something it dereferences.
  */
-const kindOf = (manifest: Manifest): string | undefined =>
-  manifest && typeof manifest === 'object' && typeof manifest.kind === 'string'
-    ? manifest.kind
-    : undefined
+const kindOf = (entry: ManifestEntry): string | undefined =>
+  entry && typeof entry === 'object' && typeof entry.kind === 'string' ? entry.kind : undefined
 
 /** The card's text, only where the Host actually supplied a string. */
 const textOf = (value: unknown): string | undefined =>

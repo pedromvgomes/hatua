@@ -1,4 +1,4 @@
-import type { Manifest } from '@hatua/schema'
+import type { ManifestEntry } from '@hatua/schema'
 import type { ManifestSource } from './ports'
 import type { Store } from './store'
 
@@ -14,8 +14,14 @@ import type { Store } from './store'
  * React through `useSyncExternalStore` rather than mirrored into component
  * state.
  *
- * `ManifestSource.loadManifests()` returns a flat `Manifest[]` and is
+ * `ManifestSource.loadManifests()` returns a flat `ManifestEntry[]` and is
  * deliberately not paged, so there is nothing to drain and no cursor to hold.
+ *
+ * Entries, not manifests: the array carries Component Manifests, Trigger
+ * Manifests and the Host's Run Context declaration together, each carrying its
+ * own `kind`. The store holds all of them and splits none, because which kinds
+ * a reader wants is the reader's question — `manifestsIn()` for the Components
+ * tab and the checker, `contextKeysIn()` for scope.
  */
 
 /**
@@ -28,7 +34,7 @@ import type { Store } from './store'
  */
 export type ManifestState =
   | { status: 'loading' }
-  | { status: 'ready'; manifests: Manifest[] }
+  | { status: 'ready'; manifests: ManifestEntry[] }
   | { status: 'failed'; error: Error }
 
 export interface ManifestStore extends Store<ManifestState> {
@@ -53,28 +59,53 @@ const asError = (cause: unknown): Error =>
  *
  * The rejection path normalises anything a Host throws, down to a bare string,
  * and the resolve path has to be just as sceptical: `loadManifests` is typed
- * `Promise<Manifest[]>`, but a type is a promise the Host makes and an endpoint
- * can break it. Serving the `components:` catalogue — the shape ports.ts warns
- * about by name, and the shape half the fixtures in conformance/manifest are
- * written in — resolves an object, and the Library would reach `.filter` on it
- * during render. A TypeError thrown from render takes down the Host's tree; a
- * `failed` state is a sentence in a panel with a Retry button next to it.
+ * `Promise<ManifestEntry[]>`, but a type is a promise the Host makes and an
+ * endpoint can break it. Serving the `components:` catalogue — the shape
+ * ports.ts warns about by name, and the shape half the fixtures in
+ * conformance/manifest are written in — resolves an object, and the Components
+ * tab would reach `.filter` on it during render. A TypeError thrown from render
+ * takes down the Host's tree; a `failed` state is a sentence in a panel with a
+ * Retry button next to it.
  *
- * Only the outer shape is checked. Validating each manifest against the schema
+ * Only the outer shape is checked. Validating each entry against the schema
  * would put zod in every consumer's bundle to re-check what the Host's own
  * publish step already validated, and would turn one malformed entry into an
- * empty Library rather than a mostly-working one.
+ * empty catalogue rather than a mostly-working one.
  */
-const received = (manifests: Manifest[]): ManifestState =>
-  Array.isArray(manifests)
-    ? { status: 'ready', manifests }
-    : {
-        status: 'failed',
-        error: new Error(
-          'loadManifests() must resolve a flat array of manifests. Use loadManifests() from ' +
-            '@hatua/sdk, which flattens a `components:` catalogue into one.',
-        ),
-      }
+const FLATTEN =
+  'loadManifests() must resolve a flat array of entries, each carrying a `kind`. Use ' +
+  'loadManifests() from @hatua/sdk, which flattens a `components:` catalogue into one.'
+
+const received = (entries: ManifestEntry[]): ManifestState => {
+  if (!Array.isArray(entries)) return { status: 'failed', error: new Error(FLATTEN) }
+
+  // The array arrived; its entries still have to be entries. A catalogue nested
+  // one level down — `[{ components: [...] }]` — is what the widened element
+  // type now refuses at the seam and what an endpoint can still send. Caught
+  // here it is a sentence with a Retry beside it; missed here it is a
+  // Components tab that loaded successfully and shows nothing, which reads as
+  // "this Host has declared nothing" and sends the integrator looking in the
+  // wrong place entirely.
+  if (
+    entries.some((entry) => entry !== null && typeof entry === 'object' && 'components' in entry)
+  ) {
+    return { status: 'failed', error: new Error(FLATTEN) }
+  }
+
+  // Nothing else. An entry this build cannot read — a `kind` from a newer
+  // contract, a name the Host left off, an outright `null` — is the reader's
+  // problem and not the load's: `manifests.ts` has always argued that
+  // validating every entry "would turn one malformed entry into an empty
+  // catalogue rather than a mostly-working one", and rejecting the payload over
+  // one bad row is that same trade made the wrong way. The Components tab
+  // renders what it can and names what it cannot.
+  //
+  // The check above is a different thing: it is about the shape of the whole
+  // payload, one array level off, which is the same mistake as the bare
+  // catalogue rejected on the line above it. Treating those two differently is
+  // what would be odd.
+  return { status: 'ready', manifests: entries }
+}
 
 const LOADING: ManifestState = { status: 'loading' }
 

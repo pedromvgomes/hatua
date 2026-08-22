@@ -10,7 +10,8 @@ export const functionNamespace = z.strictObject({
    */
   namespace: z.string().regex(/^[a-z][a-z0-9_]*$/),
   /**
-   * One sentence, shown as the group heading in the function picker.
+   * One sentence, shown beneath the namespace in the function picker.
+   * Written for the person building a workflow, who has never seen this file and cannot act on anything expressed in its terms. Say what the functions are for and what a user would be surprised by — that dividing gives a decimal, that changing case ignores their region — and never how any of it is implemented. "In both languages", "no lambdas in v1" and "at the slot boundary" are facts about this repository, not about the workflow someone is writing. See .agents/rules/rendered-copy-is-written-for-the-hosts-users.md.
    */
   summary: z.string().optional(),
   get functions() {
@@ -22,7 +23,7 @@ export type FunctionNamespace = z.infer<typeof functionNamespace>
 export const functionSpec = z.strictObject({
   name: z.string().regex(/^[a-z][a-z0-9_]*$/),
   /**
-   * One sentence, shown in the function picker.
+   * One sentence, shown in the function picker and under the focused row of the completion list. Written for the person building a workflow — see the namespace's own `summary`.
    */
   summary: z.string().optional(),
   get params() {
@@ -40,7 +41,8 @@ export const param = z.strictObject({
     return valueType
   },
   /**
-   * One sentence saying what this parameter is for, shown beside its input in the function builder and as signature help while the call is being typed. Optional here so an existing Host manifest keeps validating; Hatua's own `schemas/functions/*.yaml` are held to a stricter rule by the generator, which refuses to build without one.
+   * One sentence saying what this parameter is for, shown beside its input in the function builder and as signature help while the call is being typed. Written for the person building a workflow — see the namespace's own `summary`.
+   * Optional here so an existing Host manifest keeps validating; Hatua's own `schemas/functions/*.yaml` are held to a stricter rule by the generator, which refuses to build without one.
    */
   description: z.string().optional(),
   /**

@@ -312,6 +312,8 @@ func scenarioContext(t *testing.T, scenario evalScenario) Context {
 			ctx.Triggers = decodeValue(raw).(map[string]Value)
 		case "var":
 			ctx.Vars = decodeValue(raw).(map[string]Value)
+		case "run":
+			ctx.Run = decodeValue(raw).(map[string]Value)
 		case "TRIGGER":
 			ctx.Trigger = raw.(string)
 		default:

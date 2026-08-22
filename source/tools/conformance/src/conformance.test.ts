@@ -1,7 +1,12 @@
 /** biome-ignore-all lint/correctness/noNodejsModules: a Node test reading fixtures from disk; nothing here ships to a browser. */
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { componentManifest, workflowDefinition, workflowExecution } from '@hatua/schema'
+import {
+  componentManifest,
+  runContextManifest,
+  workflowDefinition,
+  workflowExecution,
+} from '@hatua/schema'
 import { describe, expect, it } from 'vitest'
 import { parse } from 'yaml'
 
@@ -54,7 +59,16 @@ describe('conformance · execution', () => {
 describe('conformance · manifest', () => {
   for (const { file, source } of read('manifest')) {
     it(`accepts ${file}`, () => {
-      const result = componentManifest.safeParse(parse(source))
+      const document = parse(source)
+      // Which schema a fixture is held to comes from the fixture, because that
+      // is what a Host's reader does too: `kind` is the discriminant the flat
+      // array carries, and a Run Context is a different file with a different
+      // shape rather than a fourth branch of the Component Manifest.
+      const schema =
+        (document as { kind?: unknown } | null)?.kind === 'context'
+          ? runContextManifest
+          : componentManifest
+      const result = schema.safeParse(document)
       expect(result.error?.issues).toBeUndefined()
       expect(result.success).toBe(true)
     })

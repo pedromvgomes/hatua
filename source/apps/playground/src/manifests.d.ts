@@ -4,8 +4,10 @@
  * parse does not happen in the browser.
  */
 declare module 'virtual:hatua/manifests' {
-  import type { Manifest } from '@hatua/react'
+  import type { ManifestEntry } from '@hatua/react'
 
-  export const CATALOGUE: Manifest[]
-  export const EMPTY: Manifest[]
+  /** Components, Triggers and the Host's Run Context, in the one flat array the port returns. */
+  export const CATALOGUE: ManifestEntry[]
+  /** A fresh Host: nothing declared at all, not even a Run Context. */
+  export const EMPTY: ManifestEntry[]
 }

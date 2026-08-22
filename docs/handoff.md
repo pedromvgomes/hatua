@@ -189,13 +189,31 @@ The Host declares the shape; Hatua never invents one. Same bargain as ADR-0007 (
 ADR-0010 (functions): a declared shape Hatua reads so the builder can offer and type-check it, and
 values the Host's runner supplies. Hatua still never executes.
 
-**Delivered as a third manifest kind** — `kind: context`, its own schema file, served through the
-existing `ManifestSource` alongside components and triggers. Its own *file*, not a third `kind:`
-inside the Component Manifest: `function-manifest.schema.yaml` explains why a conditional manifest
-shape would need the JSON-Schema-to-zod generator to grow `if`/`then`, which ADR-0006 keeps
-deliberately narrow. Its own *port* was the alternative and buys nothing — a second store, second
-loading and failure states, second wiring — for a payload that is a handful of typed keys, when
-`ManifestSource` already returns a flat array whose entries carry `kind`.
+**Delivered as a fourth manifest kind** — `kind: context`, its own schema file, served through the
+existing `ManifestSource` alongside components, triggers and functions. Settled in
+[ADR-0012](adr/0012-run-context-is-a-fourth-manifest-kind.md), which extends ADR-0010's argument
+rather than passing over it; the shape it settles on is
+
+```yaml
+kind: context
+keys:
+  - { k: id,     label: Run id, t: text,   description: Identifies this execution. }
+  - { k: tenant, label: Tenant, t: object, of: [{ k: name, label: Tenant name, t: text }] }
+```
+
+A key is `{k, label, t}` with `of` nesting the same way an output's does — the spelling the reference
+tree, the completion list and the type checker already read — plus `description`, the sentence the
+completion list shows under the focused row. No `use`, no `name` and no catalogue wrapper: there is
+exactly one Run Context per execution, so the file declares keys directly rather than naming a type
+someone instantiates.
+
+Its own *file*, not a fourth `kind:` inside the Component Manifest: a conditional manifest shape
+would need the JSON-Schema-to-zod generator to grow `if`/`then`, which ADR-0006 keeps deliberately
+narrow. Its own *port* was the alternative and buys nothing — a second store, second loading and
+failure states, second wiring — for a payload that is a handful of typed keys, when `ManifestSource`
+already returns a flat array whose entries carry `kind`. The port's element type widens to
+`ManifestEntry`, a union every arm of which carries a required literal `kind`; the hazard `ports.ts`
+names is an *undiscriminated container arm*, which this does not have.
 
 ---
 
@@ -214,18 +232,75 @@ Three places hold a Template, and all three use the same widget:
 ### The Template input
 
 `min-height` 40px (76px for textarea), `--radius-md`, 1px `--border-strong`, `--surface-card`,
-`padding: 8px 10px`, `cursor: text`, mono. Border `--border-accent` while focused or on drag-over
+`padding: 8px 10px`, `cursor: text`, mono. A single-line field holds one line and scrolls, exactly as
+an `<input>` does; only the textarea wraps. **Its height belongs to the field kind, never to the
+value** — a manifest declaring `kind: text` gets a 40px control and `kind: textarea` gets 76px, and a
+field that resized itself from its content would take that decision away from the declaration and
+hand it to whatever somebody happened to type.
+
+That leaves a long value with most of itself out of reach, and at rest there is no focus with which
+to scroll it, so the whole value is offered through a `Tooltip` — showing the same chips, wrapped
+over as many lines as it takes, because re-describing them as raw text answers a different question
+from the one the chips were asked. A field that grew a second line as you typed would be the
+only one on the screen that did, and the box changing height under the caret is the part that gets in
+the way. Border `--border-accent` while focused or on drag-over
 (fill `--accent-wash`), `--status-error` when the field has an issue.
 
-The text is the editing surface. `{{ … }}` is highlighted in place — `--accent-wash` fill, 1px
-`--border-accent`, `--text-accent` — and an unclosed hole takes a wavy `--status-error` underline. It
-is never replaced by a widget you cannot type through.
+The text is the editing surface, and while it is showing it is marked the way every editor anyone
+reaches for marks syntax: **by colour, with no box.** The path takes `--text-accent`; `{{` and `}}`
+take `--text-muted`, because they are how a Template *spells* a hole rather than part of what it
+names, and they step back to let the path read. A hole nobody can read takes a wavy `--status-error` underline —
+whether it is missing its closing braces or simply does not parse, because the two are the same fact
+to whoever has to fix it. Except the one being written: `{{ s2.` is not a mistake, it is the third
+keystroke of a path, and marking it while the completion list is open offering the rest of that path
+teaches people to stop looking at marks. It is never replaced by a widget you cannot type through.
+
+A fill and a border were specified here and are gone. The strong mark for *this names a value* is the
+chip below, which is what shows whenever nobody is editing — a box under it while editing is emphasis
+paid for twice, and a border drawn round a token is something the eye reads past on the way to the
+text this field exists to let someone edit. It also retires a class of fault rather than fixing
+instances of it: a box has geometry — an overhang, a radius, a fill box centred on the font's content
+area rather than on the line — and every piece of that had to be made to behave like a glyph inside a
+mirror standing in for an `<input>`. Colour has no geometry, so there is nothing left to slide out of
+alignment or to clip.
+
+**At rest, every hole that parsed is drawn as a chip.** A hole is a hole whether or not it names one
+value, and one drawn as bare text among the words around it is the only thing on the line that does
+not look like what it is. What differs is what the chip can *say*: a **Reference** names exactly one
+value, so its chip carries that value's source and its kind's mark; anything computed —
+`{{ s2.count + 1 }}` — has no single source to name, so its chip shows its own text, and the absence
+of a mark is what tells the two apart without inventing a symbol for "computed". **The References
+inside it are still named**: `s2` is a Step's id, and one field showing "Fetch emails › count" beside
+a raw `s2.count` is two vocabularies at once, of which the raw one is the half nobody chose. They are
+substituted by span and only where the source agrees character for character — rebuilding the
+expression from its tree would be AST→text, which is ADR-0008's argument in another costume. A Reference whose
+path has gone stale falls to the same treatment, which keeps the path the checker will name on
+screen. A hole that does not parse at all keeps its characters, because they are the only thing that
+can be edited back into shape.
+
+**A Reference's chip says what it names, and where it is from.** A chip carries a
+mark for its kind, then the source in `--text-secondary` and the value in `--text-accent`:
+`▢ Fetch emails › count`, `≡ Variable › digest_to`. The source is always there, because a label
+alone loses the half that matters — `var.digest_to` reduced to "digest_to", and two chips reading
+"digest_to" and "count" say nothing about where either value is from. Where the path passes through
+a named entity that entity supplies the source; where it does not, the kind's own word does, so
+`run.id` reads "Run context" and never "run". Unfocused there is no caret to keep
+aligned, so the mirror painting the highlight is free to be a different width from the field behind
+it — which is precisely what showing `Fetch emails count` in place of `{{ s2.count }}` requires.
+Focus puts every character back, braces and all, so the sentence above holds wherever it means
+anything — and a click at rest is translated through the visible text rather than through the
+characters behind it, or the word after a chip would put the caret several characters earlier,
+inside the hole. Clicking a chip itself lands at the end of its expression, which is where an edit
+starts. Two conditions, both the parser's to answer: the hole is a **Reference** (`isReference()`
+reads the parsed shape, and `{{ s2.count + 1 }}` names no single target), and the path is still in
+scope — a stale one keeps showing the path, because that is what the checker names and what has to
+be edited.
 
 ### Four ways in, one set of candidates
 
 | Trigger | What opens |
 | --- | --- |
-| Typing `{{` | Inline completion — ghost text plus a list, anchored at the caret |
+| Typing `{{` | The hole closes itself, and inline completion opens — ghost text plus a list, anchored at the caret. Typing the closing brace steps back over the closer, which is one keystroke instead of three arrow presses |
 | `Ctrl`+`Space` **inside** a hole | The same completion list |
 | `Ctrl`+`Space` **outside** a hole | The picker, anchored at the caret |
 | The ⚡ button (40px, right of the field) | The picker, anchored to the button |
@@ -335,6 +410,16 @@ A **left rail** on every row in the completion list and both picker tabs, neutra
   `border-radius` and bows into a bracket.
 - **Exact match only.** ADR-0009 forbids coercion outright — `1 == '1'` is false — so there is no
   assignability lattice to consult.
+- **It judges the hole, not the field.** A hole that is the whole value resolves to the field's
+  value and keeps the expression's own type, so the field's declared type is what it must produce. A
+  hole inside mixed text is concatenated into a sentence, so it has only to render — which is
+  `text`, and `match()` already spells that out as *any scalar fits*. This is what `validate` already
+  does: for a Template with more than one segment, `checkTemplate` infers each hole and then judges
+  *the template* as text, saying nothing about what any individual hole produces. Marking such a hole
+  against the field's type would withhold the rail from rows the checker is perfectly happy with, and
+  the rail's only signal is that a row fits **here**. It is not a loosening to nothing: a list or an
+  object in a sentence stays unmarked, which is ADR-0009's own line that softness "does not extend to
+  non-scalars".
 - **Nothing is ever marked wrong.** Neutral covers *does not fit* and *cannot be judged* alike, which
   keeps `unknown` from being painted red. ADR-0009's line — errors block Publish, never editing —
   applies to the picker too. It guides; it does not refuse.
@@ -407,7 +492,7 @@ positions.
 
 | Port | Serves |
 | --- | --- |
-| `ManifestSource` | Components, Triggers, and now Run Context declarations — one flat array, entries carry `kind` |
+| `ManifestSource` | Components, Triggers, and Run Context declarations — one flat array of `ManifestEntry`, every entry carrying `kind` |
 | `WorkflowStore` | The Draft, its lease, versions, publish/release/discard |
 
 Every field on `HostPorts` is optional and a region whose port is missing degrades rather than
@@ -460,12 +545,12 @@ Recorded here so the two documents cannot disagree quietly. ADR-0011 already lis
 
 ## Open
 
-- **The Run Context schema.** The shape of `kind: context` — a flat list of `{key, type, description}`
-  is the obvious reading, and it should be settled against a real Host's needs before it is written.
-- **Host-declared Functions** need a port. Deferred until the completion list ships and gives it a
-  reader.
-- **Mixed text and the type marking.** ADR-0009 keeps interpolation soft, so a scalar of any type
-  renders into mixed text. The marking currently judges against the field's declared type, which is
-  right for a whole-value Template and stricter than necessary for a hole inside a sentence.
+- **Host-declared Functions** need a port. The completion list ships reading `CORE_FUNCTIONS` and
+  `CORE_NAMESPACES`; a Host's own namespaces have no route in yet, and that is the PR that justifies
+  the port's shape.
 - **`Ctrl`+`Space`** conflicts with input-source switching for multilingual macOS users. `Ctrl`+`.` is
   the fallback if it bites.
+
+Two that were open here are now settled and recorded above: the **Run Context schema**, in
+[ADR-0012](adr/0012-run-context-is-a-fourth-manifest-kind.md) and under [Run Context](#run-context);
+and **mixed text and the type marking**, under [The type marking](#the-type-marking).

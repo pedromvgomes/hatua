@@ -62,6 +62,11 @@ excluded — nothing in the grammar blocks adding them.
 **No free-form date or number format strings.** A format string is a second language to keep two
 implementations agreeing on. `dt` is RFC 3339 only.
 
+**A fourth kind followed.** Run Context — the ambient values a **Host** supplies to every execution —
+is declared the same way, in a file of its own, for the reason given here about functions. See
+[ADR-0012](0012-run-context-is-a-fourth-manifest-kind.md), which extends this argument rather than
+restating it. The count in this decision's title is the count at the time it was written.
+
 ## Consequences
 
 - **Hatua never implements a Host's function.** It reads the signature so the builder can offer it,

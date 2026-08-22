@@ -1,6 +1,7 @@
+import type { ContextKey } from '@hatua/schema'
 import { describe, expect, it } from 'vitest'
-import { DOC } from './fixtures'
-import { scopeFor, upstreamOf } from './scope'
+import { DOC, MANIFESTS } from './fixtures'
+import { scopeFor, upstreamOf, workflowScope } from './scope'
 import { walkSteps } from './tree'
 
 describe('tree traversal', () => {
@@ -48,5 +49,80 @@ describe('scopeFor', () => {
     const paths = scopeFor(DOC, 's7').map((e) => e.path)
     expect(paths).toContain('s2')
     expect(paths).not.toContain('s5')
+  })
+})
+
+describe('workflowScope', () => {
+  const CONTEXT: ContextKey[] = [
+    { k: 'id', label: 'Run id', t: 'text', description: 'Identifies this execution.' },
+    {
+      k: 'tenant',
+      label: 'Tenant',
+      t: 'object',
+      of: [{ k: 'name', label: 'Tenant name', t: 'text' }],
+    },
+  ]
+
+  /*
+   * The reason it exists: a variable's value has no position in the tree, so
+   * there is no Step to ask `scopeFor` about — and no Step is guaranteed to
+   * have run by the time the value is evaluated either.
+   */
+  it('offers no step output at all, whatever the document holds', () => {
+    const paths = workflowScope(DOC).map((entry) => entry.path)
+    expect(paths).not.toContain('s2')
+    expect(paths).toContain('var.digest_to')
+    expect(paths).toContain('triggers.nightly')
+    expect(paths).toContain('TRIGGER')
+  })
+
+  it('offers the Host Run Context as `run.<key>`', () => {
+    const paths = workflowScope(DOC, [], CONTEXT).map((entry) => entry.path)
+    expect(paths).toContain('run.id')
+    expect(paths).toContain('run.tenant')
+  })
+
+  it('files Run Context under its own kind, so the tree can group it apart', () => {
+    const entry = workflowScope(DOC, [], CONTEXT).find((candidate) => candidate.path === 'run.id')
+    expect(entry?.kind).toBe('context')
+    expect(entry?.label).toBe('Run id')
+    expect(entry?.description).toBe('Identifies this execution.')
+  })
+
+  it('nests a key through `of`, the way a manifest output nests', () => {
+    const entry = workflowScope(DOC, [], CONTEXT).find(
+      (candidate) => candidate.path === 'run.tenant',
+    )
+    expect(entry?.type).toEqual({ type: 'object', members: { name: { type: 'text' } } })
+  })
+
+  /*
+   * Nothing stops a Host assembling its array from several sources, and two
+   * `run.tenant` entries are two rows in the completion list and two siblings
+   * under one React key in the reference tree.
+   */
+  it('takes the first of a repeated key, the way every other lookup here does', () => {
+    const twice: ContextKey[] = [
+      { k: 'tenant', label: 'Tenant', t: 'text' },
+      { k: 'tenant', label: 'Tenant again', t: 'number' },
+    ]
+    const found = workflowScope(DOC, [], twice).filter((entry) => entry.path === 'run.tenant')
+    expect(found).toHaveLength(1)
+    expect(found[0]?.label).toBe('Tenant')
+  })
+
+  it('declares nothing when the Host declared nothing', () => {
+    expect(workflowScope(DOC).some((entry) => entry.kind === 'context')).toBe(false)
+  })
+
+  /*
+   * The whole reason it is extracted rather than copied: two readers, one
+   * definition of the unpositioned half.
+   */
+  it('is exactly the part of scopeFor that has no position', () => {
+    const unpositioned = workflowScope(DOC, MANIFESTS, CONTEXT)
+    const positioned = scopeFor(DOC, 's5', MANIFESTS, CONTEXT)
+    expect(positioned.slice(0, unpositioned.length)).toEqual(unpositioned)
+    expect(positioned.slice(unpositioned.length).every((entry) => entry.kind === 'step')).toBe(true)
   })
 })

@@ -1,4 +1,4 @@
-import type { Manifest, WorkflowExecution } from '@hatua/schema'
+import type { ManifestEntry, WorkflowExecution } from '@hatua/schema'
 
 /**
  * What the Host implements. Hatua stores nothing and runs nothing, so every
@@ -86,19 +86,47 @@ export interface WorkflowStore {
 }
 
 /**
- * Deliberately NOT paged. The Library groups and searches across the whole
- * catalogue, so paging would break search — and a manifest set is bounded by
- * design in a way run history is not.
+ * Deliberately NOT paged. The Components tab groups and searches across the
+ * whole catalogue, so paging would break search — and a manifest set is bounded
+ * by design in a way run history is not.
+ *
+ * ## One port, three kinds
+ *
+ * Component Manifests, Trigger Manifests and the Host's Run Context all arrive
+ * here, in one flat array whose entries carry `kind`. They answer the same
+ * question — *what has this Host declared?* — and a port of its own for Run
+ * Context would buy a second store, a second loading state and a second failure
+ * state for a payload that is a handful of typed keys.
+ *
+ * ## Why widening the element type does not reopen the hazard below
+ *
+ * The comment on `loadManifests` used to warn against a union here, and the
+ * warning still stands — for the union it was about. `ComponentManifest` is
+ * "one manifest OR a `components:` catalogue", and its second arm is a
+ * container: an object with no `kind` at all. That is what makes
+ * `[{ components: [...] }]` typecheck and then vanish, because every consumer
+ * reaches for `.kind` and finds nothing.
+ *
+ * `ManifestEntry` is a different construction. Every arm is an entry, every arm
+ * carries a required literal `kind`, and the catalogue shape satisfies none of
+ * them — so the compiler refuses it at the seam instead of a screen going empty
+ * three frames later. The rule the hazard actually names is *no undiscriminated
+ * container arm*, not *no union*, and this keeps it.
+ *
+ * The runtime half is `createManifestStore`, which still checks: a type is a
+ * promise the Host makes and an endpoint can break it.
  */
 export interface ManifestSource {
   /**
-   * Flat manifests, never a catalogue. `ComponentManifest` — the parse-time
-   * type — is a union of "one manifest" and "a `components:` catalogue", so
-   * typing this with it would let a Host return `[{ components: [...] }]`,
-   * which typechecks and is then silently dropped by every consumer. Use
-   * `loadManifests()` from @hatua/sdk, which flattens.
+   * Flat entries, never a catalogue. Use `loadManifests()` from @hatua/sdk,
+   * which flattens a `components:` catalogue into one — and concatenate the
+   * Run Context declaration onto the result if the Host serves one.
+   *
+   * Absent and declared-empty are different answers and both are legitimate: a
+   * Host with no Run Context simply returns no `kind: context` entry, which is
+   * not the same as returning one whose `keys` are empty.
    */
-  loadManifests(): Promise<Manifest[]>
+  loadManifests(): Promise<ManifestEntry[]>
 }
 
 export interface ExecutionSummary {

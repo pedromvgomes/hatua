@@ -855,6 +855,29 @@ describe('variables', () => {
     expect(source.writes[0]).toContain('{{ triggers.t1.from }}')
   })
 
+  /*
+   * The round-trip promise, through the widget rather than through the command.
+   * A Workflow Definition lives in the Host's repository and may be hand-written
+   * with comments all over it (ADR-0001), so a value box is not allowed to cost
+   * anyone their file.
+   */
+  it('keeps the comments, the key order and the quoting around what it edited', async () => {
+    const source = host()
+    mount(source)
+
+    type(await screen.findByLabelText('Value of digest_to'), '{{ run.tenant }}')
+    await waitFor(() => expect(source.writes).toHaveLength(1), AUTOSAVED)
+
+    const written = source.writes[0] as string
+    expect(written).toContain('# Runs before anyone is awake.')
+    expect(written).toContain('  # Where the digest goes.')
+    expect(written).toContain('name: "Morning inbox triage"')
+    // Untouched keys keep their order and their own quoting.
+    expect(written).toContain('      at: "0 6 * * 1-5"')
+    expect(written.indexOf('key: digest_to')).toBeLessThan(written.indexOf('key: threshold'))
+    expect(written).toContain('{{ run.tenant }}')
+  })
+
   it('says so when there are none, and still offers to add one', async () => {
     mount(host('id: wf\nname: n\nversion: 1\nstatus: draft\nsteps: []\n'))
     expect(await screen.findByText('No variables yet.')).toBeDefined()

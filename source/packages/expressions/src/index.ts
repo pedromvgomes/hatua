@@ -1,4 +1,10 @@
-export { CORE_FUNCTIONS, type FunctionSpec, type ParamSpec } from '#generated/builtins.js'
+export {
+  CORE_FUNCTIONS,
+  CORE_NAMESPACES,
+  type FunctionSpec,
+  type NamespaceSpec,
+  type ParamSpec,
+} from '#generated/builtins.js'
 export type * from './ast.js'
 export * from './errors.js'
 export {

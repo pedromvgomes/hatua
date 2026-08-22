@@ -41,24 +41,6 @@
     font-size: 0.75rem;
   }
 
-  .textarea {
-    inline-size: 100%;
-    min-block-size: 76px;
-    padding: 8px 10px;
-    border: 1px solid var(--hatua-border-strong);
-    border-radius: var(--hatua-radius-md);
-    background: var(--hatua-surface-card);
-    color: var(--hatua-text-primary);
-    line-height: 1.5;
-    resize: vertical;
-  }
-
-  .textarea:focus-visible {
-    outline: 2px solid var(--hatua-focus-ring);
-    outline-offset: -1px;
-    border-color: var(--hatua-border-accent);
-  }
-
   /* A field this form shows and does not edit. It reads as a value rather than
      as a control, because there is nothing here to operate — but it is drawn,
      since a field rendered as empty space cannot be told from one nothing knows

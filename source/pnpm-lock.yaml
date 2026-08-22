@@ -94,6 +94,9 @@ importers:
 
   packages/react:
     dependencies:
+      '@hatua/expressions':
+        specifier: workspace:*
+        version: link:../expressions
       '@hatua/layout':
         specifier: workspace:*
         version: link:../layout

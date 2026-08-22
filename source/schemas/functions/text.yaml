@@ -1,9 +1,12 @@
 kind: function
 namespace: text
-summary: Strings. Case mapping is full Unicode and language-neutral, never locale-sensitive.
+summary: >-
+  Text. Change its case, trim it, split it, join it, and test what it holds.
+  Changing case works the same everywhere and never depends on a language or
+  region.
 functions:
   - name: upper
-    summary: Uppercase.
+    summary: The text in upper case.
     params:
       - name: value
         type: text
@@ -11,7 +14,7 @@ functions:
     returns: text
 
   - name: lower
-    summary: Lowercase.
+    summary: The text in lower case.
     params:
       - name: value
         type: text
@@ -19,7 +22,7 @@ functions:
     returns: text
 
   - name: trim
-    summary: Remove leading and trailing whitespace.
+    summary: The text with any spaces at either end removed.
     params:
       - name: value
         type: text
@@ -27,100 +30,100 @@ functions:
     returns: text
 
   - name: concat
-    summary: Join values end to end. There is no `+` for text.
+    summary: Join values end to end. `+` adds numbers and never joins text, so this is how text is joined.
     params:
       - name: parts
         type: text
         variadic: true
-        description: The pieces to join, in order, as separate arguments.
+        description: The pieces to join, in order, each one its own argument.
     returns: text
 
   - name: split
-    summary: Split on a separator.
+    summary: Break text into a list wherever a separator appears.
     params:
       - name: value
         type: text
-        description: The text to split.
+        description: The text to break up.
       - name: separator
         type: text
-        description: The text to split on. It does not appear in the result.
+        description: Where to break. It does not appear in the result.
     returns: list
 
   - name: join
-    summary: Join a list with a separator.
+    summary: Join a list into one piece of text, with a separator between the items.
     params:
       - name: values
         type: list
-        description: The list whose elements are joined.
+        description: The list whose items are joined.
       - name: separator
         type: text
-        description: Placed between elements. Not added before the first or after the last.
+        description: Goes between items, and never before the first or after the last.
     returns: text
 
   - name: replace
-    summary: Replace every occurrence.
+    summary: Replace every occurrence, not only the first.
     params:
       - name: value
         type: text
         description: The text to search in.
       - name: search
         type: text
-        description: The text to look for. Every occurrence is replaced, not just the first.
+        description: The text to look for. Every occurrence is replaced.
       - name: replacement
         type: text
         description: What each occurrence becomes.
     returns: text
 
   - name: contains
-    summary: Whether the value contains the search string.
+    summary: Whether the text holds this piece somewhere inside it.
     params:
       - name: value
         type: text
         description: The text to search in.
       - name: search
         type: text
-        description: The text to look for.
+        description: The piece to look for.
     returns: boolean
 
   - name: starts_with
-    summary: Whether the value begins with the prefix.
+    summary: Whether the text begins with this piece.
     params:
       - name: value
         type: text
         description: The text to test.
       - name: prefix
         type: text
-        description: The prefix to test for.
+        description: The piece it should begin with.
     returns: boolean
 
   - name: ends_with
-    summary: Whether the value ends with the suffix.
+    summary: Whether the text ends with this piece.
     params:
       - name: value
         type: text
         description: The text to test.
       - name: suffix
         type: text
-        description: The suffix to test for.
+        description: The piece it should end with.
     returns: boolean
 
   - name: slice
-    summary: Characters from start up to but not including end. Counted in code points.
+    summary: The characters from one position up to, but not including, another.
     params:
       - name: value
         type: text
         description: The text to take characters from.
       - name: start
         type: number
-        description: Index of the first code point kept, counting from zero.
+        description: Position of the first character kept, counting from zero.
       - name: end
         type: number
         optional: true
-        description: Index to stop before. Omitted, the slice runs to the end.
+        description: Position to stop before. Leave it out to run to the end.
     returns: text
 
   - name: len
-    summary: Length in code points.
+    summary: How many characters the text holds.
     params:
       - name: value
         type: text

@@ -1,10 +1,11 @@
 import { render, screen } from '@testing-library/react'
-import { createRef } from 'react'
+import { createRef, useRef } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { Button } from './Button'
 import { Input } from './Input'
 import { Select } from './Select'
 import { Toggle } from './Toggle'
+import { useOverflowing, useTextOverflowing } from './useOverflowing'
 
 describe('Button', () => {
   it('defaults to type=button, so one inside a Host form does not submit it', () => {
@@ -91,5 +92,49 @@ describe('Toggle', () => {
     render(<Toggle checked={false} onCheckedChange={() => {}} label="Parallel" />)
     // getByRole with a name only resolves if the <label for> found its control.
     expect(screen.getByRole('switch', { name: 'Parallel' })).toBeDefined()
+  })
+})
+
+describe('useOverflowing', () => {
+  /*
+   * jsdom lays nothing out, so every box measures zero and nothing ever
+   * overflows. What can be checked here is the shape of the answer and the
+   * paths that do not depend on layout — the rest is verified in a browser,
+   * which is where three faults in this hid from the suite.
+   */
+  const Watched = ({ text }: { text: string }) => {
+    const ref = useRef<HTMLDivElement>(null)
+    const wide = useOverflowing(ref)
+    const long = useTextOverflowing(ref, text)
+    return (
+      <div ref={ref} data-wide={String(wide)} data-long={String(long)}>
+        {text}
+      </div>
+    )
+  }
+
+  it('reports nothing where nothing has been laid out', () => {
+    render(<Watched text="anything" />)
+    const el = screen.getByText('anything')
+    expect(el.getAttribute('data-wide')).toBe('false')
+    expect(el.getAttribute('data-long')).toBe('false')
+  })
+
+  it('survives an environment with no ResizeObserver', () => {
+    const saved = globalThis.ResizeObserver
+    // @ts-expect-error — removing it is the point of the check.
+    globalThis.ResizeObserver = undefined
+    try {
+      render(<Watched text="no observer" />)
+      expect(screen.getByText('no observer')).toBeDefined()
+    } finally {
+      globalThis.ResizeObserver = saved
+    }
+  })
+
+  it('offers nothing where the text cannot be measured at all', () => {
+    // No canvas, as here: guessing would be worse than staying quiet.
+    render(<Watched text="unmeasurable" />)
+    expect(screen.getByText('unmeasurable').getAttribute('data-long')).toBe('false')
   })
 })

@@ -33,7 +33,10 @@ every structural change back through the store as a command against the document
 (ADR-0001). `Workflow` is the first region other than validation to read *both*,
 because the document says which Triggers a workflow declares and only the
 catalogue says what a Trigger's fields are — and a third, `ConnectionStore`,
-because a `conn` field offers what the Host says it has established.
+because a `conn` field offers what the Host says it has established. It reads
+the catalogue twice over: the Component Manifests decide which Trigger types can
+be added, and the Run Context declaration in the same flat array decides what a
+Template on the tab may read.
 
 `TabbedPanel` still owns no data. It gained a controlled `tabId`, which is a
 different thing: the tab that is open is still chrome, and lifting it into a
@@ -91,6 +94,11 @@ Manifest's fields, over one set of values. A Trigger's fields and a Step's are
 the same shape declared by the same schema, differing only in which key of the
 document they are written back to — so `Workflow` mounts it today and the step
 editor mounts the same component when it lands.
+
+Every mappable field kind in it gets `<TemplateInput>` from `compounds/`. What
+this tier contributes is the two things that widget cannot work out for itself:
+what the field may read — `workflowScope` here, `scopeFor` in the step editor —
+and what its value has to produce.
 
 That is the point worth keeping: **which surface edits a thing is a rendering
 decision, not a document one.** Clicking the canvas's derived start node can

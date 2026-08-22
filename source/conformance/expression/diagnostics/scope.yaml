@@ -21,6 +21,8 @@ scenarios:
             triggered_at: { type: datetime }
       - path: var.digest_to
         type: { type: text }
+      - path: run.tenant
+        type: { type: text }
       - path: TRIGGER
         type: { type: text }
     expect: []
@@ -55,6 +57,22 @@ scenarios:
 
   - name: an unknown variable is refused
     template: "{{ var.nothing }}"
+    type: text
+    scope: *wide
+    expect:
+      - { code: EXPR_UNKNOWN_REFERENCE, severity: error }
+
+  - name: >-
+      a Run Context key. It is an ordinary dotted scope entry — `run` alone is a
+      prefix, exactly as `triggers` and `var` are — so nothing in the checker
+      knows the difference
+    template: "{{ run.tenant }}"
+    type: text
+    scope: *wide
+    expect: []
+
+  - name: a Run Context key the Host never declared is refused
+    template: "{{ run.caller_ip }}"
     type: text
     scope: *wide
     expect:

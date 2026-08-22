@@ -2,6 +2,8 @@ import {
   type ComponentManifest,
   componentManifest,
   type Manifest,
+  type RunContextManifest,
+  runContextManifest,
   type WorkflowDefinition,
   type WorkflowExecution,
   workflowDefinition,
@@ -52,3 +54,16 @@ export function loadManifests(yaml: string): Manifest[] {
   const parsed = load<ComponentManifest>(yaml, componentManifest, 'Component Manifest')
   return 'components' in parsed ? parsed.components : [parsed]
 }
+
+/**
+ * Parse a Run Context Manifest: the ambient values the Host supplies to every
+ * execution, addressed as `run.<k>`.
+ *
+ * No catalogue variant to unwrap, unlike `loadManifests`. There is exactly one
+ * Run Context per execution, so the file declares keys directly and a second
+ * declaration is a mistake rather than a longer list — which is also what keeps
+ * this return type a single object instead of an array nobody would know how to
+ * merge.
+ */
+export const loadRunContext = (yaml: string): RunContextManifest =>
+  load(yaml, runContextManifest, 'Run Context Manifest')
