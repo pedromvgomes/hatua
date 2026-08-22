@@ -1,4 +1,5 @@
 import type { WorkflowDocument } from '@hatua/document'
+import type { BoardId, StepRef } from '@hatua/model'
 import type { Step } from '@hatua/schema'
 import { asObject, detachNode, insertNode, type Path } from './ast'
 import type { EditCommand } from './command'
@@ -25,7 +26,17 @@ import type { EditCommand } from './command'
 /** A position among a list of sibling Steps, named in domain terms rather than YAML paths. */
 export interface InsertPoint {
   /**
-   * The container Step whose children receive it. Absent for the workflow's
+   * Which Board the position is on: a Block's id, or absent for the root.
+   *
+   * Every path below is rooted here rather than at `['steps']`. That single
+   * parameter is what makes an edit on a Block's Board the same command as an
+   * edit on the root's — which is the property the extract-into-a-block gesture
+   * needs, and what keeps a Block built on the canvas and one hand-written in
+   * Text Mode the same document.
+   */
+  board?: BoardId
+  /**
+   * The container Step whose children receive it. Absent for the Board's
    * root sequence.
    */
   parentId?: string
@@ -92,11 +103,43 @@ function* walk(
   }
 }
 
-function locate(document: WorkflowDocument, id: string): Located | undefined {
-  for (const found of walk(asObject(document).steps, ['steps'])) {
-    if (found.step.id === id) return { listPath: found.listPath, index: found.index }
+/**
+ * The YAML path of a Board's root sequence.
+ *
+ * A Block is found by id rather than by index, because the index is a fact
+ * about the file that a concurrent edit changes, and a command resolves its
+ * paths against the document it is applied to.
+ */
+export function boardPath(document: WorkflowDocument, board: BoardId | undefined): Path {
+  if (board === undefined || board === null) return ['steps']
+
+  const blocks = asObject(document).blocks
+  const list = Array.isArray(blocks) ? blocks : []
+  const index = list.findIndex(
+    (entry) =>
+      entry && typeof entry === 'object' && (entry as Record<string, unknown>).id === board,
+  )
+  if (index === -1) throw new Error(`No block with id "${board}"`)
+
+  return ['blocks', index, 'steps']
+}
+
+function locate(document: WorkflowDocument, ref: StepRef): Located | undefined {
+  const root = boardPath(document, ref.board)
+  for (const found of walk(readList(document, root), root)) {
+    if (found.step.id === ref.id) return { listPath: found.listPath, index: found.index }
   }
   return undefined
+}
+
+/** The loose projection of one sequence, addressed by path. */
+function readList(document: WorkflowDocument, path: Path): unknown {
+  let value: unknown = asObject(document)
+  for (const part of path) {
+    if (value === null || typeof value !== 'object') return undefined
+    value = (value as Record<string | number, unknown>)[part as string]
+  }
+  return value
 }
 
 /**
@@ -107,9 +150,10 @@ function locate(document: WorkflowDocument, id: string): Located | undefined {
  * see the second one's indices shifted by the first.
  */
 function listPathOf(document: WorkflowDocument, point: InsertPoint): Path {
-  if (point.parentId === undefined) return ['steps']
+  const root = boardPath(document, point.board)
+  if (point.parentId === undefined) return root
 
-  const parent = locate(document, point.parentId)
+  const parent = locate(document, { board: point.board ?? null, id: point.parentId })
   if (!parent) throw new Error(`No Step with id "${point.parentId}"`)
 
   const parentPath = [...parent.listPath, parent.index]
@@ -124,9 +168,13 @@ function listPathOf(document: WorkflowDocument, point: InsertPoint): Path {
  * keeps a diff in the Host's repository readable. `s1`, `s2`… matching the
  * convention the fixtures and the design handoff both use.
  */
-function mintId(document: WorkflowDocument): string {
+function mintId(document: WorkflowDocument, board: BoardId | undefined): string {
+  const root = boardPath(document, board)
   const taken = new Set<string>()
-  for (const { step } of walk(asObject(document).steps, ['steps'])) {
+  // Ids are Board-local, so only this Board's are taken. Minting against the
+  // whole document would make a block's first step `s7` because the root has
+  // six, which is a name nobody chose about a tree nobody is looking at.
+  for (const { step } of walk(readList(document, root), root)) {
     if (typeof step.id === 'string') taken.add(step.id)
   }
   for (let n = 1; ; n++) {
@@ -147,7 +195,7 @@ export function addStep(step: NewStep, at: InsertPoint): EditCommand {
     label: `Add ${step.name ?? step.use}`,
     apply(document) {
       const listPath = listPathOf(document, at)
-      const id = step.id ?? mintId(document)
+      const id = step.id ?? mintId(document, at.board)
 
       // Written key by key rather than spread from an object literal so the
       // order in the file is the order the schema documents — `id`, `use`,
@@ -167,12 +215,12 @@ export function addStep(step: NewStep, at: InsertPoint): EditCommand {
  * with it, which is the only coherent reading — a Branch has no meaning without
  * the Fork that holds it, and the schema gives it nowhere else to live.
  */
-export function removeStep(id: string): EditCommand {
+export function removeStep(ref: StepRef): EditCommand {
   return {
-    label: `Remove ${id}`,
+    label: `Remove ${ref.id}`,
     apply(document) {
-      const found = locate(document, id)
-      if (!found) throw new Error(`No Step with id "${id}"`)
+      const found = locate(document, ref)
+      if (!found) throw new Error(`No Step with id "${ref.id}"`)
       detachNode(document, found.listPath, found.index)
     },
   }
@@ -183,12 +231,12 @@ export function removeStep(id: string): EditCommand {
  * loop. The node itself is moved, so the comment a user wrote above the Step
  * travels with it.
  */
-export function moveStep(id: string, to: InsertPoint): EditCommand {
+export function moveStep(ref: StepRef, to: InsertPoint): EditCommand {
   return {
-    label: `Move ${id}`,
+    label: `Move ${ref.id}`,
     apply(document) {
-      const found = locate(document, id)
-      if (!found) throw new Error(`No Step with id "${id}"`)
+      const found = locate(document, ref)
+      if (!found) throw new Error(`No Step with id "${ref.id}"`)
 
       // Resolved twice, against the tree before the move and against the tree
       // after it, because a YAML path is only valid for the tree that produced
@@ -218,7 +266,7 @@ export function moveStep(id: string, to: InsertPoint): EditCommand {
         targetBefore.length > ownPath.length &&
         samePath(targetBefore.slice(0, ownPath.length), ownPath)
       ) {
-        throw new Error(`Cannot move Step "${id}" inside itself`)
+        throw new Error(`Cannot move Step "${ref.id}" inside itself`)
       }
 
       const node = detachNode(document, found.listPath, found.index)
@@ -245,8 +293,8 @@ export function moveStep(id: string, to: InsertPoint): EditCommand {
  * project", and a caller appending at that index would prepend instead. This
  * reads the same loose projection every command reads.
  */
-export const rootStepCount = (document: WorkflowDocument): number => {
-  const steps = asObject(document).steps
+export const rootStepCount = (document: WorkflowDocument, board?: BoardId): number => {
+  const steps = readList(document, boardPath(document, board))
   return Array.isArray(steps) ? steps.length : 0
 }
 

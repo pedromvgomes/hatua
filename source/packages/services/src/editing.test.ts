@@ -313,7 +313,7 @@ describe('getSnapshot stability', () => {
     const first = store.getSnapshot()
     expect(store.getSnapshot()).toBe(first)
 
-    store.apply(removeStep('s1'))
+    store.apply(removeStep({ board: null, id: 's1' }))
     expect(store.getSnapshot()).not.toBe(first)
     expect(store.getSnapshot()).toBe(store.getSnapshot())
   })
@@ -330,7 +330,7 @@ describe('getSnapshot stability', () => {
 
     stop()
     const before = seen.mock.calls.length
-    store.apply(removeStep('s1'))
+    store.apply(removeStep({ board: null, id: 's1' }))
     expect(seen.mock.calls.length).toBe(before)
   })
 })
@@ -460,7 +460,7 @@ describe('commands', () => {
 
   it('removes a Step, and a container takes its subtree with it', async () => {
     const { store } = await open()
-    store.apply(removeStep('s2'))
+    store.apply(removeStep({ board: null, id: 's2' }))
 
     const steps = ready(store).definition?.steps ?? []
     expect(steps.map((step) => step.id)).toEqual(['s1', 's4'])
@@ -469,7 +469,7 @@ describe('commands', () => {
 
   it('removes a nested Step without touching its siblings', async () => {
     const { store } = await open()
-    store.apply(removeStep('s3'))
+    store.apply(removeStep({ board: null, id: 's3' }))
 
     const fork = ready(store).definition?.steps.find((step) => step.id === 's2')
     expect(fork?.branches?.[0]?.steps).toEqual([])
@@ -480,13 +480,13 @@ describe('commands', () => {
     // Detaching shifts everything after it down one, so "move s1 to index 2"
     // means "after s2" and lands at index 1 once the list is a step shorter.
     const { store } = await open()
-    store.apply(moveStep('s1', { index: 2 }))
+    store.apply(moveStep({ board: null, id: 's1' }, { index: 2 }))
     expect(ready(store).definition?.steps.map((step) => step.id)).toEqual(['s2', 's1', 's4'])
   })
 
   it('moves a Step out of a Branch and up to the root', async () => {
     const { store } = await open()
-    store.apply(moveStep('s3', { index: 0 }))
+    store.apply(moveStep({ board: null, id: 's3' }, { index: 0 }))
 
     const steps = ready(store).definition?.steps ?? []
     expect(steps.map((step) => step.id)).toEqual(['s3', 's1', 's2', 's4'])
@@ -505,7 +505,7 @@ describe('commands', () => {
      * dragged Step lands inside a node nobody wrote.
      */
     const { store } = await open()
-    store.apply(moveStep('s1', { parentId: 's2', branchIndex: 1, index: 0 }))
+    store.apply(moveStep({ board: null, id: 's1' }, { parentId: 's2', branchIndex: 1, index: 0 }))
 
     const snapshot = ready(store)
     expect(snapshot.invalid).toBeNull()
@@ -521,7 +521,7 @@ describe('commands', () => {
 
   it('moves a Step out of a loop that sits after it once the list has closed up', async () => {
     const { store } = await open()
-    store.apply(moveStep('s1', { parentId: 's4', index: 0 }))
+    store.apply(moveStep({ board: null, id: 's1' }, { parentId: 's4', index: 0 }))
 
     const snapshot = ready(store)
     expect(snapshot.invalid).toBeNull()
@@ -541,7 +541,7 @@ describe('commands', () => {
     store.open()
     await settle()
 
-    store.apply(removeStep('s2'))
+    store.apply(removeStep({ board: null, id: 's2' }))
     expect(ready(store).text).toContain('id: s1')
     expect(ready(store).text).not.toContain('id: s2')
   })
@@ -552,14 +552,14 @@ describe('commands', () => {
     // the document with no error anywhere.
     const { store } = await open()
     const before = ready(store).text
-    store.apply(moveStep('s2', { parentId: 's2', branchIndex: 0, index: 0 }))
+    store.apply(moveStep({ board: null, id: 's2' }, { parentId: 's2', branchIndex: 0, index: 0 }))
     expect(ready(store).text).toBe(before)
   })
 
   it('treats a command that cannot find its Step as a no-op, not half an edit', async () => {
     const { store } = await open()
     const before = ready(store).text
-    store.apply(removeStep('s99'))
+    store.apply(removeStep({ board: null, id: 's99' }))
 
     expect(ready(store).text).toBe(before)
     expect(ready(store).undoLabel).toBeNull()
@@ -619,7 +619,7 @@ describe('round trip', () => {
     store.open()
     await settle()
 
-    store.apply(moveStep('s2', { index: 0 }))
+    store.apply(moveStep({ board: null, id: 's2' }, { index: 0 }))
     const text = ready(store).text
     expect(text).toContain('# why this one is second')
     expect(text.indexOf('# why this one is second')).toBeLessThan(text.indexOf('id: s1'))
@@ -637,7 +637,7 @@ describe('undo and redo', () => {
 
   it('restores the previous text exactly, comments included', async () => {
     const { store } = await open()
-    store.apply(removeStep('s2'))
+    store.apply(removeStep({ board: null, id: 's2' }))
     expect(ready(store).text).not.toBe(SOURCE)
 
     store.undo()
@@ -659,7 +659,7 @@ describe('undo and redo', () => {
 
   it('redoes what it undid', async () => {
     const { store } = await open()
-    store.apply(removeStep('s1'))
+    store.apply(removeStep({ board: null, id: 's1' }))
     const after = ready(store).text
 
     store.undo()
@@ -669,8 +669,8 @@ describe('undo and redo', () => {
 
   it('walks several edits back in order', async () => {
     const { store } = await open()
-    store.apply(removeStep('s1'))
-    store.apply(removeStep('s4'))
+    store.apply(removeStep({ board: null, id: 's1' }))
+    store.apply(removeStep({ board: null, id: 's4' }))
     expect(ready(store).definition?.steps.map((step) => step.id)).toEqual(['s2'])
 
     store.undo()
@@ -681,11 +681,11 @@ describe('undo and redo', () => {
 
   it('drops the redo stack once a new edit makes it unreachable', async () => {
     const { store } = await open()
-    store.apply(removeStep('s1'))
+    store.apply(removeStep({ board: null, id: 's1' }))
     store.undo()
     expect(ready(store).redoLabel).not.toBeNull()
 
-    store.apply(removeStep('s4'))
+    store.apply(removeStep({ board: null, id: 's4' }))
     expect(ready(store).redoLabel).toBeNull()
   })
 
@@ -694,7 +694,7 @@ describe('undo and redo', () => {
     // sits. The command finds its target and throws nothing — it simply has no
     // work to do — so there must be nothing to undo either.
     const { store } = await open()
-    store.apply(moveStep('s1', { index: 0 }))
+    store.apply(moveStep({ board: null, id: 's1' }, { index: 0 }))
 
     expect(ready(store).text).toBe(SOURCE)
     expect(ready(store).undoLabel).toBeNull()
@@ -748,7 +748,7 @@ describe('autosave', () => {
 
   it('writes after the quiet period, with no Save button anywhere', async () => {
     const { host, store } = await open()
-    store.apply(removeStep('s1'))
+    store.apply(removeStep({ board: null, id: 's1' }))
     expect(ready(store).save).toEqual({ state: 'pending' })
     expect(host.writes).toHaveLength(0)
 
@@ -759,16 +759,16 @@ describe('autosave', () => {
 
   it('writes the document’s text, not a re-serialisation of the projection', async () => {
     const { host, store } = await open()
-    store.apply(removeStep('s1'))
+    store.apply(removeStep({ board: null, id: 's1' }))
     await vi.advanceTimersByTimeAsync(500)
     expect(host.writes[0]).toContain('# Triage the overnight inbox before standup.')
   })
 
   it('coalesces a burst of edits into one write', async () => {
     const { host, store } = await open()
-    store.apply(removeStep('s1'))
+    store.apply(removeStep({ board: null, id: 's1' }))
     await vi.advanceTimersByTimeAsync(200)
-    store.apply(removeStep('s4'))
+    store.apply(removeStep({ board: null, id: 's4' }))
     await vi.advanceTimersByTimeAsync(200)
     expect(host.writes).toHaveLength(0)
 
@@ -778,7 +778,7 @@ describe('autosave', () => {
 
   it('writes an undo too, because undoing is an edit like any other', async () => {
     const { host, store } = await open()
-    store.apply(removeStep('s1'))
+    store.apply(removeStep({ board: null, id: 's1' }))
     await vi.advanceTimersByTimeAsync(500)
     store.undo()
     await vi.advanceTimersByTimeAsync(500)
@@ -792,7 +792,7 @@ describe('autosave', () => {
     // the text is what was last accepted. Writing it would be a round trip to
     // say nothing, and reporting `pending` afterwards would be a lie.
     const { host, store } = await open()
-    store.apply(removeStep('s1'))
+    store.apply(removeStep({ board: null, id: 's1' }))
     await vi.advanceTimersByTimeAsync(200)
     store.undo()
 
@@ -803,14 +803,14 @@ describe('autosave', () => {
 
   it('does not write when nothing changed', async () => {
     const { host, store } = await open()
-    store.apply(removeStep('s99'))
+    store.apply(removeStep({ board: null, id: 's99' }))
     await vi.advanceTimersByTimeAsync(2000)
     expect(host.writes).toHaveLength(0)
   })
 
   it('flush() writes now rather than waiting the delay out', async () => {
     const { host, store } = await open()
-    store.apply(removeStep('s1'))
+    store.apply(removeStep({ board: null, id: 's1' }))
     await store.flush()
     expect(host.writes).toHaveLength(1)
   })
@@ -827,12 +827,12 @@ describe('autosave', () => {
   describe('when the Host rejects a write', () => {
     it('halts, and stays halted through later edits', async () => {
       const { host, store } = await open({ rejectSave: new Error('Lease expired.') })
-      store.apply(removeStep('s1'))
+      store.apply(removeStep({ board: null, id: 's1' }))
       await vi.advanceTimersByTimeAsync(500)
 
       expect(ready(store).save).toEqual({ state: 'halted', error: new Error('Lease expired.') })
 
-      store.apply(removeStep('s4'))
+      store.apply(removeStep({ board: null, id: 's4' }))
       await vi.advanceTimersByTimeAsync(10_000)
       expect(host.writes).toHaveLength(0)
       expect(ready(store).save).toMatchObject({ state: 'halted' })
@@ -849,21 +849,21 @@ describe('autosave', () => {
       store.open()
       await settle()
 
-      store.apply(removeStep('s1'))
+      store.apply(removeStep({ board: null, id: 's1' }))
       await vi.advanceTimersByTimeAsync(60_000)
       expect(attempts).toHaveLength(1)
     })
 
     it('keeps the in-memory document, and keeps it editable', async () => {
       const { store } = await open({ rejectSave: new Error('Lease expired.') })
-      store.apply(removeStep('s1'))
+      store.apply(removeStep({ board: null, id: 's1' }))
       await vi.advanceTimersByTimeAsync(500)
 
       // Not reverted to what the Host last accepted...
       expect(ready(store).definition?.steps.map((s) => s.id)).toEqual(['s2', 's4'])
 
       // ...and still an editor, not a read-only view of lost work.
-      store.apply(removeStep('s4'))
+      store.apply(removeStep({ board: null, id: 's4' }))
       expect(ready(store).definition?.steps.map((s) => s.id)).toEqual(['s2'])
       store.undo()
       expect(ready(store).definition?.steps.map((s) => s.id)).toEqual(['s2', 's4'])
@@ -891,9 +891,9 @@ describe('autosave', () => {
     store.open()
     await settle()
 
-    store.apply(removeStep('s1'))
+    store.apply(removeStep({ board: null, id: 's1' }))
     await vi.advanceTimersByTimeAsync(500)
-    store.apply(removeStep('s4'))
+    store.apply(removeStep({ board: null, id: 's4' }))
 
     const flushed = store.flush()
     release?.()
@@ -923,13 +923,13 @@ describe('autosave', () => {
     const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 500 })
     store.open()
     await settle()
-    store.apply(removeStep('s1'))
+    store.apply(removeStep({ board: null, id: 's1' }))
     await vi.advanceTimersByTimeAsync(500)
     expect(host.writes).toHaveLength(0)
 
     store.reopen()
     await settle()
-    store.apply(removeStep('s4'))
+    store.apply(removeStep({ board: null, id: 's4' }))
     await vi.advanceTimersByTimeAsync(500)
 
     expect(host.writes).toHaveLength(1)
@@ -957,12 +957,12 @@ describe('autosave', () => {
     store.open()
     await settle()
 
-    store.apply(removeStep('s1'))
+    store.apply(removeStep({ board: null, id: 's1' }))
     await vi.advanceTimersByTimeAsync(500)
 
     store.reopen()
     await settle()
-    store.apply(removeStep('s4'))
+    store.apply(removeStep({ board: null, id: 's4' }))
     await vi.advanceTimersByTimeAsync(500)
     expect(ready(store).save).toEqual({ state: 'saved' })
 
@@ -992,9 +992,9 @@ describe('autosave', () => {
     store.open()
     await settle()
 
-    store.apply(removeStep('s1'))
+    store.apply(removeStep({ board: null, id: 's1' }))
     await vi.advanceTimersByTimeAsync(500)
-    store.apply(removeStep('s4'))
+    store.apply(removeStep({ board: null, id: 's4' }))
 
     const first = store.flush()
     const second = store.flush()
@@ -1028,9 +1028,9 @@ describe('autosave', () => {
     store.open()
     await settle()
 
-    store.apply(removeStep('s1'))
+    store.apply(removeStep({ board: null, id: 's1' }))
     await vi.advanceTimersByTimeAsync(500)
-    store.apply(removeStep('s4'))
+    store.apply(removeStep({ board: null, id: 's4' }))
     await vi.advanceTimersByTimeAsync(500)
 
     expect(peak).toBe(1)
@@ -1067,11 +1067,11 @@ describe('autosave', () => {
     store.open()
     await settle()
 
-    store.apply(removeStep('s1'))
+    store.apply(removeStep({ board: null, id: 's1' }))
     await vi.advanceTimersByTimeAsync(500)
     expect(ready(store).save).toEqual({ state: 'saving' })
 
-    store.apply(removeStep('s4'))
+    store.apply(removeStep({ board: null, id: 's4' }))
     release?.()
     await settle()
     expect(ready(store).save).toEqual({ state: 'pending' })
@@ -1154,7 +1154,7 @@ describe('ending the session', () => {
     // Autosave may still be pending. Publishing a version that silently omits
     // the user's last edit is worse than a rejected publish.
     const { host, store } = await open()
-    store.apply(removeStep('s1'))
+    store.apply(removeStep({ board: null, id: 's1' }))
     await store.publish()
 
     expect(host.published).toHaveLength(1)
@@ -1183,7 +1183,7 @@ describe('ending the session', () => {
       const { host, store } = await open()
       await store[end]()
 
-      store.apply(removeStep('s1'))
+      store.apply(removeStep({ board: null, id: 's1' }))
       await vi.advanceTimersByTimeAsync(10_000)
       expect(host.writes, end).toHaveLength(0)
     }
@@ -1197,7 +1197,7 @@ describe('ending the session', () => {
    */
   it('writes the edit still waiting out the autosave delay before releasing', async () => {
     const { host, store } = await open()
-    store.apply(removeStep('s1'))
+    store.apply(removeStep({ board: null, id: 's1' }))
     expect(ready(store).save).toEqual({ state: 'pending' })
 
     await store.release()
@@ -1210,7 +1210,7 @@ describe('ending the session', () => {
   it('does not write before discarding, because the Draft is being thrown away', async () => {
     // The only possible effect would be to lose a race with the delete.
     const { host, store } = await open()
-    store.apply(removeStep('s1'))
+    store.apply(removeStep({ board: null, id: 's1' }))
     await store.discard()
 
     expect(host.writes).toHaveLength(0)
@@ -1222,7 +1222,7 @@ describe('ending the session', () => {
     // Host unmounting the designer on a route change. Fire and forget, because
     // an effect cleanup cannot await — and there is nobody left to report to.
     const { host, store } = await open()
-    store.apply(removeStep('s1'))
+    store.apply(removeStep({ board: null, id: 's1' }))
 
     store.dispose()
     await settle()
@@ -1246,7 +1246,7 @@ describe('ending the session', () => {
     store.open()
     await settle()
 
-    store.apply(removeStep('s1'))
+    store.apply(removeStep({ board: null, id: 's1' }))
     await vi.advanceTimersByTimeAsync(2000)
     expect(ready(store).save).toMatchObject({ state: 'halted' })
 
@@ -1261,7 +1261,7 @@ describe('ending the session', () => {
     // going nowhere — indistinguishable from "about to be written".
     const { store } = await open()
     await store.release()
-    store.apply(removeStep('s1'))
+    store.apply(removeStep({ board: null, id: 's1' }))
 
     expect(ready(store).save).toMatchObject({ state: 'halted' })
     expect((ready(store).save as { error: Error }).error.message).toMatch(/session has ended/)
@@ -1274,7 +1274,7 @@ describe('ending the session', () => {
     const { host, store } = await open()
     await store.release()
 
-    store.apply(removeStep('s1'))
+    store.apply(removeStep({ board: null, id: 's1' }))
     await vi.advanceTimersByTimeAsync(10_000)
     expect(host.writes).toHaveLength(0)
     // Still an editor, though — the document was not taken away.
@@ -1318,7 +1318,7 @@ describe('ending the session', () => {
     await expect(store.publish()).rejects.toThrow(/Someone else published/)
 
     // Still editing, and still being saved.
-    store.apply(removeStep('s1'))
+    store.apply(removeStep({ board: null, id: 's1' }))
     await vi.advanceTimersByTimeAsync(2000)
     expect(host.writes).toHaveLength(1)
     expect(ready(store).save).toEqual({ state: 'saved' })
@@ -1344,7 +1344,7 @@ describe('ending the session', () => {
     // reading `pending` is promising one that nothing can deliver. Discard,
     // because release writes the pending edit out rather than abandoning it.
     const { store } = await open()
-    store.apply(removeStep('s1'))
+    store.apply(removeStep({ board: null, id: 's1' }))
     expect(ready(store).save).toEqual({ state: 'pending' })
 
     await store.discard()
