@@ -166,10 +166,17 @@ there is never a spelling whose meaning depends on where the reader is standing.
 also what make a Block copyable between documents, which is the same portability its scope rule
 already promises.
 
-**A Block synthesizes a document-local Component Manifest**, which is why a call site costs no new
-UI: the parameters are ordinary Slots in an ordinary `with:` map, and round-trip, undo and the
-Template input need nothing new. The one bridge that has to be built is a `t` → field-`kind` mapping,
-since a manifest field carries a UI kind and no type, while a parameter carries a type and no kind.
+**A call site's Slots are typed by the declaration itself**, which is why it costs no new UI: the
+parameters are ordinary Slots in an ordinary `with:` map, so round-trip, undo and the Template input
+need nothing new.
+
+Routing them through a *synthesized Component Manifest* was the first draft and is refused. A
+manifest field carries a rendering `kind` and no type, so `slotsFor` recovers the expected type from
+`FIELD_KIND_TYPES` — and that vocabulary cannot express "a Template that must produce a boolean" at
+all, because `bool` holds a literal rather than a Template. Synthesizing a manifest would have
+discarded exactly the half of the contract a call site exists to check. A declaration's `t` **is** the
+expected type, which is what a Slot has always been: a Template together with the type it must
+produce. The rendering kind is a screen's problem, derived where the screen is.
 
 ## `core.return`, and when a path must reach one
 
