@@ -127,6 +127,7 @@ export function TemplateInput({
   id,
 }: TemplateInputProps) {
   const listId = useId()
+  const wrap = useRef<HTMLDivElement>(null)
   const field = useRef<HTMLInputElement & HTMLTextAreaElement>(null)
   const mirror = useRef<HTMLDivElement>(null)
   const caretMark = useRef<HTMLSpanElement>(null)
@@ -137,6 +138,11 @@ export function TemplateInput({
   const [open, setOpen] = useState<OpenSurface>('none')
   const [active, setActive] = useState(0)
   const [at, setAt] = useState({ left: 0, top: 0 })
+  /**
+   * Whether `at` has been measured yet. A popup drawn before it has is a popup
+   * in the corner of the window for one frame.
+   */
+  const [placed, setPlaced] = useState(false)
   const [anchor, setAnchor] = useState({ left: 0, top: 0, bottom: 0 })
   const [focused, setFocused] = useState(false)
   /**
@@ -205,6 +211,7 @@ export function TemplateInput({
 
     const list = { left: rect.left, top: rect.bottom + 4 }
     setAt((current) => (current.left === list.left && current.top === list.top ? current : list))
+    setPlaced(true)
 
     // The picker anchors to the caret across, and to the whole field down: it
     // is tall, and one starting mid-field would cover the text it is being used
@@ -379,7 +386,7 @@ export function TemplateInput({
       <style href="hatua-template-input" precedence="hatua">
         {css}
       </style>
-      <div className={styles.wrap}>
+      <div className={styles.wrap} ref={wrap}>
         <div
           className={cx(styles.box, multiline && styles.tall, invalid && styles.invalid)}
           /*
@@ -415,7 +422,11 @@ export function TemplateInput({
             a screen reader reads the input, and this exists only so the holes
             can be painted where they actually sit.
           */}
-          <div className={styles.mirror} ref={mirror} aria-hidden="true">
+          <div
+            className={cx(styles.mirror, multiline && styles.tall)}
+            ref={mirror}
+            aria-hidden="true"
+          >
             {paint({
               value: draft,
               shape,
@@ -423,10 +434,20 @@ export function TemplateInput({
               ghost,
               mark: caretMark,
               scope,
-              // At rest there is no caret to keep aligned, so a hole that names
-              // one value may be drawn as what it is rather than as how it is
-              // spelled. See `chipOf`.
-              chip: focused ? null : (path) => chipFor(path, scope),
+              /*
+               * At rest there is no caret to keep aligned, so a hole that names
+               * one value may be drawn as what it is rather than as how it is
+               * spelled. See `chipOf`.
+               *
+               * An open popup counts as editing whether or not the field still
+               * holds the focus — the picker takes it into its own controls.
+               * Both are anchored to this field and are being used to write
+               * into it, so the characters they will land among have to be the
+               * ones on screen. It is also what puts a caret marker in the
+               * mirror, which is the only thing either of them can be
+               * positioned against.
+               */
+              chip: focused || open !== 'none' ? null : (path) => chipFor(path, scope),
             })}
             {/* A trailing newline collapses in a block box, so the mirror comes
                 up one line short of the textarea it is behind. */}
@@ -457,6 +478,14 @@ export function TemplateInput({
             onFocus={() => setFocused(true)}
             onBlur={(event) => {
               setFocused(false)
+              setPlaced(false)
+              /*
+               * The completion list belongs to the caret, so it goes when the
+               * caret does — unless focus merely moved within this widget,
+               * which is what happens when a row is taken or the picker's own
+               * controls are used.
+               */
+              if (!wrap.current?.contains(event.relatedTarget)) setOpen('none')
               commit(event.currentTarget.value)
             }}
             onScroll={(event) => {
@@ -503,7 +532,7 @@ export function TemplateInput({
         {signature ? <SignatureHelp spec={signature.spec} active={signature.active} /> : null}
       </div>
 
-      {open === 'completion' && candidates.length > 0 ? (
+      {open === 'completion' && placed && candidates.length > 0 ? (
         <CompletionList
           id={listId}
           candidates={candidates}
@@ -516,7 +545,7 @@ export function TemplateInput({
         />
       ) : null}
 
-      {open === 'picker' ? (
+      {open === 'picker' && placed ? (
         <ExpressionPicker
           scope={scope}
           expected={expected}
@@ -670,11 +699,24 @@ function paint({
   let at = 0
 
   for (const hole of [...shape.holes, ...(shape.unclosed ? [shape.unclosed] : [])]) {
+    /*
+     * A hole nobody can read takes the wavy underline — whether it is missing
+     * its closing braces or simply does not parse, because the two are the same
+     * fact to whoever has to fix it.
+     *
+     * Except the one being written. `{{ s2.` is not a mistake, it is the third
+     * keystroke of a path, and marking it while the completion list is open
+     * offering the rest of that path is the kind of noise that teaches people
+     * to stop looking at marks. Leave the hole and it says so.
+     */
+    const editing = chip === null && caret >= hole.start && caret <= hole.end
+    const broken = !hole.expr && !editing
+
     pieces.push({ text: value.slice(at, hole.start), start: at })
     pieces.push({
       text: value.slice(hole.start, hole.end),
       start: hole.start,
-      className: hole === shape.unclosed ? styles.broken : styles.hole,
+      className: broken ? styles.broken : styles.hole,
       unclosed: hole === shape.unclosed,
       chip: chipOf(hole, value, scope, chip),
     })

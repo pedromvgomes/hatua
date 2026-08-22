@@ -232,14 +232,20 @@ Three places hold a Template, and all three use the same widget:
 ### The Template input
 
 `min-height` 40px (76px for textarea), `--radius-md`, 1px `--border-strong`, `--surface-card`,
-`padding: 8px 10px`, `cursor: text`, mono. Border `--border-accent` while focused or on drag-over
+`padding: 8px 10px`, `cursor: text`, mono. A single-line field holds one line and scrolls, exactly as
+an `<input>` does; only the textarea wraps. A field that grew a second line as you typed would be the
+only one on the screen that did, and the box changing height under the caret is the part that gets in
+the way. Border `--border-accent` while focused or on drag-over
 (fill `--accent-wash`), `--status-error` when the field has an issue.
 
 The text is the editing surface, and while it is showing it is marked the way every editor anyone
 reaches for marks syntax: **by colour, with no box.** The path takes `--text-accent`; `{{` and `}}`
 take `--text-muted`, because they are how a Template *spells* a hole rather than part of what it
-names, and they step back to let the path read. An unclosed hole takes a wavy `--status-error`
-underline. It is never replaced by a widget you cannot type through.
+names, and they step back to let the path read. A hole nobody can read takes a wavy `--status-error` underline —
+whether it is missing its closing braces or simply does not parse, because the two are the same fact
+to whoever has to fix it. Except the one being written: `{{ s2.` is not a mistake, it is the third
+keystroke of a path, and marking it while the completion list is open offering the rest of that path
+teaches people to stop looking at marks. It is never replaced by a widget you cannot type through.
 
 A fill and a border were specified here and are gone. The strong mark for *this names a value* is the
 chip below, which is what shows whenever nobody is editing — a box under it while editing is emphasis

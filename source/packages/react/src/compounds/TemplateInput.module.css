@@ -53,8 +53,13 @@
     border: 0;
     font-family: var(--hatua-font-mono);
     font-size: 0.8125rem;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
+    /*
+     * One line that scrolls, exactly as an `<input>` does — a single-line field
+     * that grew a second line as you typed would be the only one on the screen
+     * that did, and the box changing height under the caret is the part that
+     * actually gets in the way. The textarea below opts back into wrapping.
+     */
+    white-space: pre;
     letter-spacing: 0;
     /* Roomy enough for a hole drawn as a pill not to touch the line above it. */
     line-height: 1.7;
@@ -93,6 +98,21 @@
   /* A textarea is many line boxes, and `rows` is what says how many. */
   .field.tall {
     block-size: auto;
+  }
+
+  /* Where there is more than one line to be had, long values wrap into them. */
+  .mirror.tall,
+  .field.tall {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  /*
+   * On one scrolling line a chip takes the room it needs and the line scrolls,
+   * rather than the source being trimmed to fit a width nothing is bounded by.
+   */
+  .box:not(.tall) .chip {
+    max-inline-size: none;
   }
 
   .field::placeholder {
@@ -241,8 +261,11 @@
     color: var(--hatua-text-muted);
   }
 
-  /* A `{{` with no `}}` after it: the ordinary state of a Template halfway
-     through being typed, so it is underlined rather than filled. */
+  /*
+   * A hole nobody can read — missing its closing braces, or simply not
+   * parsing. Underlined rather than filled: it is still a hole, and the mark
+   * says what has to be fixed rather than shouting about it.
+   */
   .broken {
     text-decoration: underline wavy var(--hatua-status-error);
     text-underline-offset: 3px;

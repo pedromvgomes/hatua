@@ -63,7 +63,7 @@ const typeInto = (input: HTMLInputElement, text: string) => {
   input.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
-type Route = 'typing' | 'shortcut-inside' | 'shortcut-outside' | 'button' | 'caret'
+type Route = 'typing' | 'shortcut-inside' | 'shortcut-outside' | 'button' | 'caret' | 'focus'
 
 /**
  * Opens one of the surfaces the way a user would reach it, once, after mount.
@@ -85,7 +85,16 @@ function Driven({
     const input = host.current?.querySelector('input, textarea') as HTMLInputElement | null
     if (!input || !route) return
 
-    input.focus()
+    /*
+     * Deliberately no `focus()`.
+     *
+     * Each story is rendered twice, once per colour mode, and only one element
+     * in a document can hold focus — so focusing here means the second panel
+     * takes it from the first, the first blurs, and its popup closes. Nothing
+     * below needs focus: a selection can be set on an unfocused input, and an
+     * open popup is itself what puts the characters and the caret marker in the
+     * mirror.
+     */
     if (caret !== undefined) input.setSelectionRange(caret, caret)
 
     if (route === 'typing') {
@@ -98,6 +107,10 @@ function Driven({
     }
     if (route === 'caret') {
       input.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      return
+    }
+    if (route === 'focus') {
+      input.focus()
       return
     }
     const spark = host.current?.querySelector('button')
@@ -163,13 +176,15 @@ export const MixedText: Story = {
 /**
  * The same value with the field focused: the characters come back, braces and
  * all, because the text is the editing surface whenever anyone is editing.
+ *
+ * The one story that genuinely needs focus, so only one of the two panels can
+ * show it — the other stays at rest, which is the comparison anyway.
  */
 export const MixedTextWhileEditing: Story = {
   args: {
     value: 'Inbox digest · {{ s2.count }} messages for {{ run.id }}',
     expectedType: 'text',
-    route: 'caret',
-    caret: 20,
+    route: 'focus',
   },
 }
 
