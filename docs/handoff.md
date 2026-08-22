@@ -233,7 +233,15 @@ Three places hold a Template, and all three use the same widget:
 
 `min-height` 40px (76px for textarea), `--radius-md`, 1px `--border-strong`, `--surface-card`,
 `padding: 8px 10px`, `cursor: text`, mono. A single-line field holds one line and scrolls, exactly as
-an `<input>` does; only the textarea wraps. A field that grew a second line as you typed would be the
+an `<input>` does; only the textarea wraps. **Its height belongs to the field kind, never to the
+value** — a manifest declaring `kind: text` gets a 40px control and `kind: textarea` gets 76px, and a
+field that resized itself from its content would take that decision away from the declaration and
+hand it to whatever somebody happened to type.
+
+That leaves a long value with most of itself out of reach, and at rest there is no focus with which
+to scroll it, so the whole value is offered through a `Tooltip` — showing the same chips, wrapped
+over as many lines as it takes, because re-describing them as raw text answers a different question
+from the one the chips were asked. A field that grew a second line as you typed would be the
 only one on the screen that did, and the box changing height under the caret is the part that gets in
 the way. Border `--border-accent` while focused or on drag-over
 (fill `--accent-wash`), `--status-error` when the field has an issue.

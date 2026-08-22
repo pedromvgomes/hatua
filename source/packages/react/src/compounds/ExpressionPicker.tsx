@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react'
 import { Button } from '../primitives/Button'
 import { cx } from '../primitives/classNames'
 import { Input } from '../primitives/Input'
+import { type Anchor, place } from '../primitives/placement'
 import { Select } from '../primitives/Select'
 import {
   type Candidate,
@@ -40,7 +41,7 @@ export interface ExpressionPickerProps {
   /** What an insertion here has to produce, or undefined where nothing declares one. */
   expected: ValueType | undefined
   /** The caret's or the button's rect, in viewport coordinates. */
-  anchor: { left: number; top: number; bottom: number }
+  anchor: Anchor
   /** A Reference path, or a composed call. The caller decides the delimiters. */
   onChoose: (insert: string) => void
   onClose: () => void
@@ -122,44 +123,28 @@ export function ExpressionPicker({
 }
 
 /**
- * Where the panel goes.
+ * Where the panel goes, and how much of it scrolls.
  *
- * It flips above when there is less room below **and** more above — not on a
- * fixed threshold. A fixed one flipped it above a button with 460px of space
- * beneath and ran it off the top of the viewport. Either way the body is capped
- * to the room that actually exists, so the panel is scrollable rather than
- * clipped.
+ * `place` answers the first half for every floating layer here. The second is
+ * this panel's own: its head and tab strip sit outside the scrolling body, so
+ * the body gets the room that is left.
  *
- * Horizontally it is clamped to the viewport for the same reason in the other
- * axis: the anchor is a caret or a button near the right edge of a 304px panel,
- * and 392px of picker hung off it lands half of itself outside the window.
+ * The ceiling is generous on purpose. Set close to what the panel usually
+ * holds, it turns "the content happens to be a pixel over" into a full-height
+ * scrollbar with nothing behind it, which reads as broken rather than as full.
  */
-function placement(anchor: { left: number; top: number; bottom: number }) {
-  const height = typeof window === 'undefined' ? 800 : window.innerHeight
-  const width = typeof window === 'undefined' ? 1280 : window.innerWidth
-  const below = height - anchor.bottom - 12
-  const above = anchor.top - 12
-  const flip = below < 260 && above > below
-  const left = Math.max(12, Math.min(anchor.left, width - PANEL - 12))
-
+function placement(anchor: Anchor) {
+  const at = place(anchor, PANEL)
   return {
-    style: flip ? { left, bottom: height - anchor.top + 6 } : { left, top: anchor.bottom + 6 },
-    /*
-     * The room that exists, less the head and the padding outside the scrolling
-     * body — and a ceiling only so a browsable panel does not become the height
-     * of a tall screen.
-     *
-     * The ceiling is generous on purpose. Set close to what the panel usually
-     * holds, it turns "the content happens to be a pixel over" into a
-     * full-height scrollbar with nothing behind it, which reads as broken
-     * rather than as full.
-     */
-    maxHeight: Math.max(160, Math.min(560, (flip ? above : below) - 72)),
+    style: { left: at.left, ...(at.top === undefined ? { bottom: at.bottom } : { top: at.top }) },
+    maxHeight: Math.max(160, Math.min(560, at.space - HEAD)),
   }
 }
 
-/** Matches `.panel`'s `inline-size`; the clamp above needs it as a number. */
+/** Matches `.panel`'s `inline-size`; the clamp needs it as a number. */
 const PANEL = 392
+/** The head, the tab strip and the panel's own padding, none of which scrolls. */
+const HEAD = 72
 
 /**
  * Both tabs open with the same control in the same place — a source `<select>`,

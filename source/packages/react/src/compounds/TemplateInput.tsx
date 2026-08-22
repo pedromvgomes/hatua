@@ -14,6 +14,8 @@ import {
   useState,
 } from 'react'
 import { cx } from '../primitives/classNames'
+import { Tooltip } from '../primitives/Tooltip'
+import { useOverflowing } from '../primitives/useOverflowing'
 import { CompletionList, rowId } from './CompletionList'
 import {
   type Candidate,
@@ -128,7 +130,10 @@ export function TemplateInput({
 }: TemplateInputProps) {
   const listId = useId()
   const wrap = useRef<HTMLDivElement>(null)
+  const box = useRef<HTMLDivElement>(null)
   const field = useRef<HTMLInputElement & HTMLTextAreaElement>(null)
+  /** The tooltip's copy anchors nothing, so its marker ref goes nowhere. */
+  const unanchored = useRef<HTMLSpanElement>(null)
   const mirror = useRef<HTMLDivElement>(null)
   const caretMark = useRef<HTMLSpanElement>(null)
 
@@ -160,6 +165,17 @@ export function TemplateInput({
   }
 
   const shape = useMemo(() => templateShape(draft), [draft])
+
+  /*
+   * A single-line field holds one line and scrolls, and at rest nothing has the
+   * focus that would let anyone scroll it — so a long value has most of itself
+   * out of reach with no way in. The tooltip is that way in.
+   *
+   * Measured on the mirror rather than on the input, because the mirror is what
+   * is on screen: chips are wider than the characters they stand for, so the
+   * value that fits and the value that reads are not the same value.
+   */
+  const overflowing = useOverflowing(mirror)
   const context = useMemo(() => caretContext(draft, caret), [draft, caret])
   const candidates = useMemo(
     () => (open === 'completion' ? completionsAt(context.prefix, scope) : []),
@@ -388,6 +404,7 @@ export function TemplateInput({
       </style>
       <div className={styles.wrap} ref={wrap}>
         <div
+          ref={box}
           className={cx(styles.box, multiline && styles.tall, invalid && styles.invalid)}
           /*
            * At rest the mirror shows different characters from the ones the
@@ -530,6 +547,29 @@ export function TemplateInput({
         </div>
 
         {signature ? <SignatureHelp spec={signature.spec} active={signature.active} /> : null}
+
+        {/*
+          The same rendering, given room to wrap. Re-describing it as raw text
+          would answer a different question from the one the chips were asked:
+          what this value IS, in the words the chips already use.
+        */}
+        <Tooltip
+          anchor={box}
+          enabled={overflowing && !focused}
+          content={
+            <span className={styles.full}>
+              {paint({
+                value: draft,
+                shape,
+                caret: -1,
+                ghost: '',
+                mark: unanchored,
+                scope,
+                chip: (path) => chipFor(path, scope),
+              })}
+            </span>
+          }
+        />
       </div>
 
       {open === 'completion' && placed && candidates.length > 0 ? (

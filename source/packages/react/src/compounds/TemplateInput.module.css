@@ -308,6 +308,21 @@
     fill: currentColor;
   }
 
+  /*
+   * The value inside the tooltip: the same mirror, wrapped.
+   *
+   * Nothing is standing in for a glyph here, so it may take as many lines as it
+   * needs — which is the whole reason the tooltip exists.
+   */
+  .full {
+    display: block;
+    font-family: var(--hatua-font-mono);
+    font-size: 0.75rem;
+    line-height: 1.9;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
   .signature {
     margin-block-start: 4px;
     padding: 6px 9px;

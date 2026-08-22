@@ -63,8 +63,9 @@ export type {
   ToastProps,
   ToastTone,
   ToggleProps,
+  TooltipProps,
 } from './primitives'
-export { Button, ConfirmDialog, Input, Select, Toast, Toggle } from './primitives'
+export { Button, ConfirmDialog, Input, Select, Toast, Toggle, Tooltip } from './primitives'
 export type { Theme, ThemeSeed } from './theme/createTheme'
 export { createTheme } from './theme/createTheme'
 export type { ColorMode, HatuaProviderProps, HostPorts } from './theme/HatuaProvider'
