@@ -168,6 +168,40 @@ describe('TemplateInput', () => {
     expect((field as HTMLInputElement).value).toBe('{{  }}')
   })
 
+  /*
+   * Asked of the two characters before the caret alone, the auto-close fires on
+   * the way out as well as on the way in: backspacing through `{{ s2.count }}`
+   * reaches a caret sitting just after a `{{`, and every further press added
+   * another `}}`.
+   */
+  it('does not close the hole again on the way back out of one', () => {
+    const { field } = mount({ value: '{{ s2.count }}' })
+    const input = field as HTMLInputElement
+    fireEvent.focus(field)
+
+    // Backspace, character by character, from just after `s2.count`.
+    for (let caret = 11; caret > 2; caret--) {
+      fireEvent.change(field, {
+        target: {
+          value: input.value.slice(0, caret - 1) + input.value.slice(caret),
+          selectionStart: caret - 1,
+          selectionEnd: caret - 1,
+        },
+      })
+    }
+    expect(input.value).toBe('{{ }}')
+  })
+
+  /* A pasted Template is already closed; closing it again is the same fault
+     with a different trigger. */
+  it('does not close a `{{` that arrived by paste', () => {
+    const { field } = mount()
+    fireEvent.change(field, {
+      target: { value: '{{ s2.count }}', selectionStart: 14, selectionEnd: 14 },
+    })
+    expect((field as HTMLInputElement).value).toBe('{{ s2.count }}')
+  })
+
   it('commits on blur, not on every keystroke', () => {
     const { field, onCommit } = mount()
     type(field, '{{var.digest_to')

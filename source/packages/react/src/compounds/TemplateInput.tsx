@@ -294,11 +294,23 @@ export function TemplateInput({
     const next = element.value
     const to = element.selectionStart ?? next.length
 
-    // A `{{` is a hole and nothing else, so it is closed on the user's behalf
-    // with the caret left between. Left open, every completion accepted into it
-    // lands in text that does not parse — so the highlight stays off and the
-    // checker has nothing to say until two more characters are typed by hand.
-    if (next.slice(Math.max(0, to - 2), to) === '{{') {
+    /*
+     * A `{{` is a hole and nothing else, so it is closed on the user's behalf
+     * with the caret left between. Left open, every completion accepted into it
+     * lands in text that does not parse — so the highlight stays off and the
+     * checker has nothing to say until two more characters are typed by hand.
+     *
+     * Only when a brace was just TYPED, which is what `grew` is for. Asked of
+     * the two characters before the caret alone, it fires on the way out as
+     * well as on the way in: backspacing through `{{ s2.count }}` reaches a
+     * caret sitting just after a `{{`, and every further backspace added
+     * another `}}` — `{{ s2.count }}{{  }} }} }} }}`.
+     *
+     * One character, not two or more: a pasted `{{ x }}` is already closed, and
+     * closing it again would be the same fault with a different trigger.
+     */
+    const grew = next.length === draft.length + 1
+    if (grew && to >= 2 && next.slice(to - 2, to) === '{{') {
       write(spliceAt(next, to, to, '  }}', 1))
       setDismissed(false)
       setOpen('completion')
