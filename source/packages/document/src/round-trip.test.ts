@@ -31,6 +31,65 @@ describe('workflow document round trip', () => {
   })
 })
 
+/*
+ * A block is a whole second Board in one file, and the deepest structure a
+ * Workflow Definition holds: a mapping of lists of mappings, with a nested `of:`
+ * inside a declaration. If anything is going to be reformatted on the way
+ * through, it is this.
+ */
+const WITH_BLOCKS = `id: wf_morning
+name: "Morning inbox triage"
+version: 9
+status: draft
+
+blocks:
+  # Called from two places, which is the whole point of declaring it once.
+  - id: archive_entry
+    name: Archive an entry
+    params:
+      - k: entry
+        label: Entry
+        t: object
+        of:
+          - { k: headline, label: Headline, t: text }   # nested a level down
+    outputs:
+      - { k: url, label: "Archive URL", t: text }
+    vars:
+      - key: attempt_note
+        value: ""
+    steps:
+      - id: put
+        use: component.s3.upload
+      - id: ret
+        use: core.return
+        with:
+          url: "{{ steps.put.location }}"
+
+steps:
+  - id: audit_1
+    use: block.archive_entry
+    with:
+      entry: "{{ steps.s8 }}"
+`
+
+describe('a document with blocks', () => {
+  it('reproduces it byte for byte, flow entries and comments included', () => {
+    expect(parseWorkflow(WITH_BLOCKS).toString()).toBe(WITH_BLOCKS)
+  })
+
+  it('projects both boards, with ids scoped to the one they are on', () => {
+    const doc = parseWorkflow(WITH_BLOCKS).toJSON()
+    expect(doc.blocks[0].id).toBe('archive_entry')
+    expect(doc.blocks[0].steps.map((step: { id: string }) => step.id)).toEqual(['put', 'ret'])
+    expect(doc.steps.map((step: { id: string }) => step.id)).toEqual(['audit_1'])
+  })
+
+  it('keeps a declaration’s nested shape, which is what types a member', () => {
+    const doc = parseWorkflow(WITH_BLOCKS).toJSON()
+    expect(doc.blocks[0].params[0].of).toEqual([{ k: 'headline', label: 'Headline', t: 'text' }])
+  })
+})
+
 describe('yaml layer fidelity', () => {
   // Pins the reason @hatua/document keeps the CST rather than the Document API
   // alone. If a future yaml release makes the AST byte-exact, this test fails
