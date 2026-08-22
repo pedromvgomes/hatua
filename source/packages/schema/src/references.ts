@@ -89,7 +89,7 @@ export const manifestsIn = (entries: readonly ManifestEntry[]): Manifest[] =>
  * a Host assembling its array from several sources, and one declaration
  * silently winning over another is the failure a `use` collision would be.
  * Keys are addressed as `run.<k>`, so a duplicate `k` is the Host's to resolve;
- * `workflowScope` takes the first, the way every other lookup here does.
+ * `boardScope` takes the first, the way every other lookup here does.
  */
 export const contextKeysIn = (entries: readonly ManifestEntry[]): ContextKey[] =>
   entries.flatMap((entry) =>

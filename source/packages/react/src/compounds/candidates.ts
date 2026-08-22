@@ -130,8 +130,9 @@ export function referenceTree(scope: readonly ScopeEntry[]): RefNode[] {
 const PREFIX_LABELS: Readonly<Record<string, string>> = {
   run: 'Run context',
   triggers: 'Triggers',
+  params: 'Parameters',
   steps: 'Steps',
-  var: 'Workflow variables',
+  var: 'Variables',
 }
 
 function nodeFor(
@@ -415,6 +416,7 @@ export function chipFor(path: string, scope: readonly ScopeEntry[]): ChipParts |
 const KIND_WORDS: Readonly<Record<ScopeEntry['kind'], string>> = {
   step: 'Step',
   trigger: 'Trigger',
+  param: 'Parameter',
   var: 'Variable',
   context: 'Run context',
   builtin: 'Built-in',

@@ -51,7 +51,7 @@ export interface FieldsProps extends Omit<ComponentPropsWithRef<'div'>, 'onChang
    * Everything a Template in this form may read.
    *
    * A prop rather than something this form works out, because scope is a
-   * question about a *position* — `scopeFor` for a Step, `workflowScope` for a
+   * question about a *position* — `scopeFor` for a Step, `boardScope` for a
    * Trigger — and which of those applies is exactly what "one form, wherever
    * the thing being edited lives" means this form must not know.
    *
