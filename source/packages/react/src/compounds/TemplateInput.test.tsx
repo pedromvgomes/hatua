@@ -1,5 +1,6 @@
 import type { ScopeEntry } from '@hatua/model'
 import { fireEvent, render, screen } from '@testing-library/react'
+import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { REFERENCE_MIME } from './insertion'
 import { TemplateInput } from './TemplateInput'
@@ -266,9 +267,19 @@ describe('TemplateInput', () => {
    * the hole.
    */
   it('steps over a paren inside a text literal', () => {
-    const { field } = mount({ value: "{{ text.join(items, '(') }} after" })
-    fireEvent.click(field, { target: { selectionStart: 30 } })
+    const value = "{{ text.join(items, '(') }}"
+    const { field } = mount({ value })
+    // Inside the hole and past the `)` that closed the call — outside it, this
+    // would pass for the wrong reason, because nothing is counted there at all.
+    expect(value[23]).toBe(')')
+    fireEvent.click(field, { target: { selectionStart: 24 } })
     expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it('still finds the call when a literal holds a paren', () => {
+    const { field } = mount({ value: "{{ text.join(items, '(') }}" })
+    fireEvent.click(field, { target: { selectionStart: 20 } })
+    expect(screen.getByRole('status').textContent).toContain('text.join(')
   })
 
   it('shows signature help while the caret is inside a call', () => {
@@ -455,5 +466,92 @@ describe('how the mirror is built', () => {
       const at = Number(run.getAttribute('data-at'))
       expect(value.slice(at, at + (run.textContent?.length ?? 0))).toBe(run.textContent)
     }
+  })
+})
+
+describe('the rest of the ways through', () => {
+  it('accepts the ghost with ArrowRight at the end of the value', () => {
+    const { field } = mount()
+    const input = field as HTMLInputElement
+    type(field, '{{run.te')
+    // The list has narrowed to one, so the ghost completes the rest of it.
+    fireEvent.keyDown(field, { key: 'ArrowRight', target: { selectionStart: input.value.length } })
+    expect(input.value).toContain('run.tenant')
+  })
+
+  it('restores the committed value on Escape with nothing open', () => {
+    const { field, onCommit } = mount({ value: 'kept' })
+    const input = field as HTMLInputElement
+    fireEvent.change(field, { target: { value: 'thrown away', selectionStart: 11 } })
+    fireEvent.keyDown(field, { key: 'Escape' })
+    expect(input.value).toBe('kept')
+    expect(onCommit).not.toHaveBeenCalled()
+  })
+
+  /*
+   * The whole value out, not the caret position: a picker choice is a finished
+   * edit rather than something still being typed, so it commits at once.
+   *
+   * The box does not keep it here, and that is the contract rather than a
+   * fault: the parent below ignores the event, so the field follows the
+   * document straight back — which is exactly what an undo does.
+   */
+  it('commits what the picker chose', () => {
+    const { onCommit } = mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Insert into To' }))
+    const row = screen
+      .getAllByRole('button')
+      .find((button) => button.textContent?.startsWith('s2.count')) as HTMLElement
+    fireEvent.click(row)
+    expect(onCommit).toHaveBeenCalledWith('{{ s2.count }}')
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('keeps what the picker chose once the document accepts it', () => {
+    const Held = () => {
+      const [value, setValue] = useState('')
+      return <TemplateInput label="To" value={value} scope={SCOPE} onCommit={setValue} />
+    }
+    render(<Held />)
+    fireEvent.click(screen.getByRole('button', { name: 'Insert into To' }))
+    const row = screen
+      .getAllByRole('button')
+      .find((button) => button.textContent?.startsWith('s2.count')) as HTMLElement
+    fireEvent.click(row)
+    expect((screen.getByRole('combobox', { name: 'To' }) as HTMLInputElement).value).toBe(
+      '{{ s2.count }}',
+    )
+  })
+
+  it('leaves a click alone once the characters are showing', () => {
+    // With the text back, the platform is measuring what is actually on screen
+    // and does it better than this can.
+    const { field } = mount({ value: 'Hi {{ s2.count }}' })
+    fireEvent.focus(field)
+    const event = fireEvent.mouseDown(field, { clientX: 10, clientY: 10 })
+    expect(event).toBe(true)
+  })
+
+  it('draws a mark for every kind a value can come from', () => {
+    mount({ value: '{{ s2.count }} {{ var.digest_to }} {{ run.tenant }}' })
+    const marks = [...document.querySelectorAll('svg')].filter((svg) =>
+      svg.className.baseVal.startsWith('_mark'),
+    )
+    expect(marks).toHaveLength(3)
+    // Each kind draws a different shape, or the mark says nothing.
+    const shapes = marks.map((mark) => mark.innerHTML)
+    expect(new Set(shapes).size).toBe(3)
+  })
+
+  it('renders a textarea where the field kind asks for one', () => {
+    mount({ multiline: true, value: 'line one\nline two' })
+    expect(screen.getByLabelText('To').tagName).toBe('TEXTAREA')
+  })
+
+  it('follows the input sideways, so the highlight stays on the text', () => {
+    const { field } = mount({ value: 'a'.repeat(200) })
+    const mirror = document.querySelector('[aria-hidden="true"]') as HTMLDivElement
+    fireEvent.scroll(field, { target: { scrollLeft: 42 } })
+    expect(mirror.scrollLeft).toBe(42)
   })
 })
