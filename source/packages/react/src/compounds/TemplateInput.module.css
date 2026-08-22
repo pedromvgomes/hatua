@@ -148,6 +148,17 @@
     max-inline-size: 100%;
     padding: 3px 8px;
     /*
+     * Tighter than the line it sits in, so the chip fits inside the line box
+     * rather than growing it.
+     *
+     * At the field's own 1.7 the chip came out 28px tall against a 22px line —
+     * so the whole field was 12px taller at rest than it is with the characters
+     * showing, and focusing one made the layout jump. Two chips on consecutive
+     * lines also ended up with rects that touched, which is one pixel of
+     * ambiguity about which of them a click belongs to.
+     */
+    line-height: 1.2;
+    /*
      * A little air on each side, so a chip in a sentence is a thing sitting in
      * the line rather than a word with a box drawn round it.
      */

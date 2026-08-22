@@ -1,51 +1,53 @@
 kind: function
 namespace: dt
-summary: Instants. RFC 3339 only — there are no free-form format strings in v1.
+summary: >-
+  Dates and times. Read them, move them forwards or backwards, and measure how
+  far apart two of them are.
 functions:
   - name: now
-    summary: The current instant, read from the caller-supplied clock.
+    summary: The date and time this run started.
     params: []
     returns: datetime
 
   - name: parse
-    summary: Read an RFC 3339 timestamp.
+    summary: Read a date and time from text, written like `2026-08-22T05:14:00Z`.
     params:
       - name: value
         type: text
-        description: The timestamp to read, in RFC 3339 form.
+        description: The date and time to read, written like `2026-08-22T05:14:00Z`.
     returns: datetime
 
   - name: iso
-    summary: Render an instant as RFC 3339 in UTC.
+    summary: Write a date and time as text, in UTC.
     params:
       - name: value
         type: datetime
-        description: The instant to render.
+        description: The date and time to write.
     returns: text
 
   - name: add
-    summary: Shift an instant. Unit is one of seconds, minutes, hours, days.
+    summary: Move a date and time forwards or backwards.
     params:
       - name: value
         type: datetime
-        description: The instant to shift.
+        description: The date and time to move.
       - name: amount
         type: number
-        description: How many units to add. A negative amount shifts backwards.
+        description: How many units to move by. A negative amount moves backwards.
       - name: unit
         type: text
         description: One of seconds, minutes, hours or days.
     returns: datetime
 
   - name: diff
-    summary: Whole units from the second instant to the first, truncated toward zero.
+    summary: How many whole units separate two dates and times. Anything left over is dropped.
     params:
       - name: a
         type: datetime
-        description: The instant measured to.
+        description: The date and time measured to.
       - name: b
         type: datetime
-        description: The instant measured from. Later than a gives a negative result.
+        description: The date and time measured from. Later than the first gives a negative answer.
       - name: unit
         type: text
         description: One of seconds, minutes, hours or days.

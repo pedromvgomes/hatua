@@ -25,26 +25,28 @@ export interface NamespaceSpec {
 export const CORE_NAMESPACES: readonly NamespaceSpec[] = [
   {
     namespace: 'dt',
-    summary: 'Instants. RFC 3339 only — there are no free-form format strings in v1.',
+    summary:
+      'Dates and times. Read them, move them forwards or backwards, and measure how far apart two of them are.',
   },
   {
     namespace: 'json',
     summary:
-      'The escape hatch for opaque payloads. `json.parse` returns `unknown`, which is what makes `json.parse(s2.output).count` a warning rather than an error at design time — and a runtime type check at the slot boundary.',
+      'JSON text. Read a value out of it when something arrives as JSON, or write one back to it.',
   },
   {
     namespace: 'list',
     summary:
-      'Lists. There are no lambdas in v1, so no `filter` or `map` — closures would mean implementing scoping and capture twice. `[]` projection and `core.for_each` cover the common cases.',
+      'Lists. Count one, take a piece out of it, sort it, or join it into text. To do something to every item in turn, use a loop step rather than a function.',
   },
   {
     namespace: 'num',
     summary:
-      'Numbers. There is one numeric type and it is a 64-bit float, so `7 / 2` is 3.5 in both languages; rounding is half away from zero, so `round(-0.5)` is -1 in both.',
+      'Numbers. Dividing always gives a decimal — 7 / 2 is 3.5 — and a half always rounds away from zero, so -0.5 rounds to -1.',
   },
   {
     namespace: 'text',
-    summary: 'Strings. Case mapping is full Unicode and language-neutral, never locale-sensitive.',
+    summary:
+      'Text. Change its case, trim it, split it, join it, and test what it holds. Changing case works the same everywhere and never depends on a language or region.',
   },
 ] as const
 
@@ -67,19 +69,19 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     namespace: 'dt',
     name: 'add',
     qualified: 'dt.add',
-    summary: 'Shift an instant. Unit is one of seconds, minutes, hours, days.',
+    summary: 'Move a date and time forwards or backwards.',
     params: [
       {
         name: 'value',
         type: 'datetime',
-        description: 'The instant to shift.',
+        description: 'The date and time to move.',
         optional: false,
         variadic: false,
       },
       {
         name: 'amount',
         type: 'number',
-        description: 'How many units to add. A negative amount shifts backwards.',
+        description: 'How many units to move by. A negative amount moves backwards.',
         optional: false,
         variadic: false,
       },
@@ -97,19 +99,20 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     namespace: 'dt',
     name: 'diff',
     qualified: 'dt.diff',
-    summary: 'Whole units from the second instant to the first, truncated toward zero.',
+    summary: 'How many whole units separate two dates and times. Anything left over is dropped.',
     params: [
       {
         name: 'a',
         type: 'datetime',
-        description: 'The instant measured to.',
+        description: 'The date and time measured to.',
         optional: false,
         variadic: false,
       },
       {
         name: 'b',
         type: 'datetime',
-        description: 'The instant measured from. Later than a gives a negative result.',
+        description:
+          'The date and time measured from. Later than the first gives a negative answer.',
         optional: false,
         variadic: false,
       },
@@ -127,12 +130,12 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     namespace: 'dt',
     name: 'iso',
     qualified: 'dt.iso',
-    summary: 'Render an instant as RFC 3339 in UTC.',
+    summary: 'Write a date and time as text, in UTC.',
     params: [
       {
         name: 'value',
         type: 'datetime',
-        description: 'The instant to render.',
+        description: 'The date and time to write.',
         optional: false,
         variadic: false,
       },
@@ -143,7 +146,7 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     namespace: 'dt',
     name: 'now',
     qualified: 'dt.now',
-    summary: 'The current instant, read from the caller-supplied clock.',
+    summary: 'The date and time this run started.',
     params: [],
     returns: 'datetime',
   },
@@ -151,12 +154,12 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     namespace: 'dt',
     name: 'parse',
     qualified: 'dt.parse',
-    summary: 'Read an RFC 3339 timestamp.',
+    summary: 'Read a date and time from text, written like `2026-08-22T05:14:00Z`.',
     params: [
       {
         name: 'value',
         type: 'text',
-        description: 'The timestamp to read, in RFC 3339 form.',
+        description: 'The date and time to read, written like `2026-08-22T05:14:00Z`.',
         optional: false,
         variadic: false,
       },
@@ -167,12 +170,12 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     namespace: 'json',
     name: 'parse',
     qualified: 'json.parse',
-    summary: 'Read a JSON document.',
+    summary: 'Read a value from JSON text.',
     params: [
       {
         name: 'value',
         type: 'text',
-        description: 'The JSON document, as text.',
+        description: 'The JSON text to read.',
         optional: false,
         variadic: false,
       },
@@ -183,12 +186,12 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     namespace: 'json',
     name: 'stringify',
     qualified: 'json.stringify',
-    summary: 'Render a value as compact JSON.',
+    summary: 'Write a value as JSON text.',
     params: [
       {
         name: 'value',
         type: 'unknown',
-        description: 'The value to render. Lists and objects are rendered whole.',
+        description: 'The value to write. Lists and objects are written out whole.',
         optional: false,
         variadic: false,
       },
@@ -199,7 +202,8 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     namespace: 'list',
     name: 'contains',
     qualified: 'list.contains',
-    summary: 'Whether the list holds a value equal to the needle, by the same rule as `==`.',
+    summary:
+      'Whether the list holds this value. Two values match only when they are the same type.',
     params: [
       {
         name: 'value',
@@ -222,7 +226,7 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     namespace: 'list',
     name: 'first',
     qualified: 'list.first',
-    summary: 'First element, or null when empty.',
+    summary: 'The first item, or null when the list is empty.',
     params: [
       {
         name: 'value',
@@ -238,19 +242,19 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     namespace: 'list',
     name: 'join',
     qualified: 'list.join',
-    summary: 'Render each element as text and join with a separator.',
+    summary: 'Write every item as text, with a separator between them.',
     params: [
       {
         name: 'value',
         type: 'list',
-        description: 'The list whose elements are rendered and joined.',
+        description: 'The list whose items are written out and joined.',
         optional: false,
         variadic: false,
       },
       {
         name: 'separator',
         type: 'text',
-        description: 'Placed between elements. Not added before the first or after the last.',
+        description: 'Goes between items, and never before the first or after the last.',
         optional: false,
         variadic: false,
       },
@@ -261,7 +265,7 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     namespace: 'list',
     name: 'last',
     qualified: 'list.last',
-    summary: 'Last element, or null when empty.',
+    summary: 'The last item, or null when the list is empty.',
     params: [
       {
         name: 'value',
@@ -277,7 +281,7 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     namespace: 'list',
     name: 'len',
     qualified: 'list.len',
-    summary: 'Number of elements.',
+    summary: 'How many items the list holds.',
     params: [
       {
         name: 'value',
@@ -293,26 +297,26 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     namespace: 'list',
     name: 'slice',
     qualified: 'list.slice',
-    summary: 'Elements from start up to but not including end.',
+    summary: 'The items from one position up to, but not including, another.',
     params: [
       {
         name: 'value',
         type: 'list',
-        description: 'The list to take elements from.',
+        description: 'The list to take items from.',
         optional: false,
         variadic: false,
       },
       {
         name: 'start',
         type: 'number',
-        description: 'Index of the first element kept, counting from zero.',
+        description: 'Position of the first item kept, counting from zero.',
         optional: false,
         variadic: false,
       },
       {
         name: 'end',
         type: 'number',
-        description: 'Index to stop before. Omitted, the slice runs to the end.',
+        description: 'Position to stop before. Leave it out to run to the end.',
         optional: true,
         variadic: false,
       },
@@ -323,7 +327,7 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     namespace: 'list',
     name: 'sort',
     qualified: 'list.sort',
-    summary: 'Ascending. Every element must be the same comparable type.',
+    summary: 'The list in ascending order. Every item has to be the same kind of value.',
     params: [
       {
         name: 'value',
@@ -339,12 +343,12 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     namespace: 'list',
     name: 'unique',
     qualified: 'list.unique',
-    summary: 'Elements with later duplicates removed, order preserved.',
+    summary: 'The list with repeats removed, keeping the first of each and the original order.',
     params: [
       {
         name: 'value',
         type: 'list',
-        description: 'The list to remove duplicates from.',
+        description: 'The list to remove repeats from.',
         optional: false,
         variadic: false,
       },
@@ -355,12 +359,12 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     namespace: 'num',
     name: 'abs',
     qualified: 'num.abs',
-    summary: 'Magnitude.',
+    summary: 'The number without its sign.',
     params: [
       {
         name: 'value',
         type: 'number',
-        description: 'The number whose magnitude is taken.',
+        description: 'The number to take the sign off.',
         optional: false,
         variadic: false,
       },
@@ -371,7 +375,7 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     namespace: 'num',
     name: 'ceil',
     qualified: 'num.ceil',
-    summary: 'Smallest whole number not less than the value.',
+    summary: 'The nearest whole number at or above this one.',
     params: [
       {
         name: 'value',
@@ -387,7 +391,7 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     namespace: 'num',
     name: 'floor',
     qualified: 'num.floor',
-    summary: 'Largest whole number not greater than the value.',
+    summary: 'The nearest whole number at or below this one.',
     params: [
       {
         name: 'value',
@@ -403,12 +407,12 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     namespace: 'num',
     name: 'max',
     qualified: 'num.max',
-    summary: 'Largest of its arguments.',
+    summary: 'The largest of the numbers given.',
     params: [
       {
         name: 'values',
         type: 'number',
-        description: 'The numbers to compare, as separate arguments.',
+        description: 'The numbers to compare, each one its own argument.',
         optional: false,
         variadic: true,
       },
@@ -419,12 +423,12 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     namespace: 'num',
     name: 'min',
     qualified: 'num.min',
-    summary: 'Smallest of its arguments.',
+    summary: 'The smallest of the numbers given.',
     params: [
       {
         name: 'values',
         type: 'number',
-        description: 'The numbers to compare, as separate arguments.',
+        description: 'The numbers to compare, each one its own argument.',
         optional: false,
         variadic: true,
       },
@@ -435,8 +439,7 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     namespace: 'num',
     name: 'parse',
     qualified: 'num.parse',
-    summary:
-      'Read a number from text. This is the only text-to-number conversion; none is implicit.',
+    summary: 'Read a number out of text. Text never becomes a number on its own, so this is how.',
     params: [
       {
         name: 'value',
@@ -452,7 +455,7 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     namespace: 'num',
     name: 'round',
     qualified: 'num.round',
-    summary: 'Nearest whole number, halves away from zero.',
+    summary: 'The nearest whole number. A half rounds away from zero.',
     params: [
       {
         name: 'value',
@@ -468,12 +471,13 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     namespace: 'text',
     name: 'concat',
     qualified: 'text.concat',
-    summary: 'Join values end to end. There is no `+` for text.',
+    summary:
+      'Join values end to end. `+` adds numbers and never joins text, so this is how text is joined.',
     params: [
       {
         name: 'parts',
         type: 'text',
-        description: 'The pieces to join, in order, as separate arguments.',
+        description: 'The pieces to join, in order, each one its own argument.',
         optional: false,
         variadic: true,
       },
@@ -484,7 +488,7 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     namespace: 'text',
     name: 'contains',
     qualified: 'text.contains',
-    summary: 'Whether the value contains the search string.',
+    summary: 'Whether the text holds this piece somewhere inside it.',
     params: [
       {
         name: 'value',
@@ -496,7 +500,7 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
       {
         name: 'search',
         type: 'text',
-        description: 'The text to look for.',
+        description: 'The piece to look for.',
         optional: false,
         variadic: false,
       },
@@ -507,7 +511,7 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     namespace: 'text',
     name: 'ends_with',
     qualified: 'text.ends_with',
-    summary: 'Whether the value ends with the suffix.',
+    summary: 'Whether the text ends with this piece.',
     params: [
       {
         name: 'value',
@@ -519,7 +523,7 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
       {
         name: 'suffix',
         type: 'text',
-        description: 'The suffix to test for.',
+        description: 'The piece it should end with.',
         optional: false,
         variadic: false,
       },
@@ -530,19 +534,19 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     namespace: 'text',
     name: 'join',
     qualified: 'text.join',
-    summary: 'Join a list with a separator.',
+    summary: 'Join a list into one piece of text, with a separator between the items.',
     params: [
       {
         name: 'values',
         type: 'list',
-        description: 'The list whose elements are joined.',
+        description: 'The list whose items are joined.',
         optional: false,
         variadic: false,
       },
       {
         name: 'separator',
         type: 'text',
-        description: 'Placed between elements. Not added before the first or after the last.',
+        description: 'Goes between items, and never before the first or after the last.',
         optional: false,
         variadic: false,
       },
@@ -553,7 +557,7 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     namespace: 'text',
     name: 'len',
     qualified: 'text.len',
-    summary: 'Length in code points.',
+    summary: 'How many characters the text holds.',
     params: [
       {
         name: 'value',
@@ -569,7 +573,7 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     namespace: 'text',
     name: 'lower',
     qualified: 'text.lower',
-    summary: 'Lowercase.',
+    summary: 'The text in lower case.',
     params: [
       {
         name: 'value',
@@ -585,7 +589,7 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     namespace: 'text',
     name: 'replace',
     qualified: 'text.replace',
-    summary: 'Replace every occurrence.',
+    summary: 'Replace every occurrence, not only the first.',
     params: [
       {
         name: 'value',
@@ -597,7 +601,7 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
       {
         name: 'search',
         type: 'text',
-        description: 'The text to look for. Every occurrence is replaced, not just the first.',
+        description: 'The text to look for. Every occurrence is replaced.',
         optional: false,
         variadic: false,
       },
@@ -615,7 +619,7 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     namespace: 'text',
     name: 'slice',
     qualified: 'text.slice',
-    summary: 'Characters from start up to but not including end. Counted in code points.',
+    summary: 'The characters from one position up to, but not including, another.',
     params: [
       {
         name: 'value',
@@ -627,14 +631,14 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
       {
         name: 'start',
         type: 'number',
-        description: 'Index of the first code point kept, counting from zero.',
+        description: 'Position of the first character kept, counting from zero.',
         optional: false,
         variadic: false,
       },
       {
         name: 'end',
         type: 'number',
-        description: 'Index to stop before. Omitted, the slice runs to the end.',
+        description: 'Position to stop before. Leave it out to run to the end.',
         optional: true,
         variadic: false,
       },
@@ -645,19 +649,19 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     namespace: 'text',
     name: 'split',
     qualified: 'text.split',
-    summary: 'Split on a separator.',
+    summary: 'Break text into a list wherever a separator appears.',
     params: [
       {
         name: 'value',
         type: 'text',
-        description: 'The text to split.',
+        description: 'The text to break up.',
         optional: false,
         variadic: false,
       },
       {
         name: 'separator',
         type: 'text',
-        description: 'The text to split on. It does not appear in the result.',
+        description: 'Where to break. It does not appear in the result.',
         optional: false,
         variadic: false,
       },
@@ -668,7 +672,7 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     namespace: 'text',
     name: 'starts_with',
     qualified: 'text.starts_with',
-    summary: 'Whether the value begins with the prefix.',
+    summary: 'Whether the text begins with this piece.',
     params: [
       {
         name: 'value',
@@ -680,7 +684,7 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
       {
         name: 'prefix',
         type: 'text',
-        description: 'The prefix to test for.',
+        description: 'The piece it should begin with.',
         optional: false,
         variadic: false,
       },
@@ -691,7 +695,7 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     namespace: 'text',
     name: 'trim',
     qualified: 'text.trim',
-    summary: 'Remove leading and trailing whitespace.',
+    summary: 'The text with any spaces at either end removed.',
     params: [
       {
         name: 'value',
@@ -707,7 +711,7 @@ export const CORE_FUNCTIONS: readonly FunctionSpec[] = [
     namespace: 'text',
     name: 'upper',
     qualified: 'text.upper',
-    summary: 'Uppercase.',
+    summary: 'The text in upper case.',
     params: [
       {
         name: 'value',

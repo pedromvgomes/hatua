@@ -177,14 +177,39 @@ export function TemplateInput({
     field.current?.setSelectionRange(to, to)
   })
 
+  /*
+   * Where the popups sit, re-measured after every render and published only
+   * when the marker has actually moved.
+   *
+   * No dependency list, because there is no value to list: the marker moves
+   * whenever the mirror re-renders — a keystroke, an arrow key, a wrap — and
+   * none of that is readable from here. Anchored once, when the list opened, it
+   * stays where the caret *was*, which on a Template that wraps is a whole line
+   * away from where it is.
+   *
+   * The equality guard is what makes that safe rather than a loop: a fresh
+   * object per render would be new state per render for ever.
+   */
   useLayoutEffect(() => {
     if (open === 'none') return
     const rect = caretMark.current?.getBoundingClientRect()
     const box = field.current?.getBoundingClientRect()
     if (!rect || !box) return
-    setAt({ left: rect.left, top: rect.bottom + 4 })
-    if (open === 'picker') setAnchor({ left: rect.left, top: rect.top, bottom: box.bottom })
-  }, [open])
+
+    const list = { left: rect.left, top: rect.bottom + 4 }
+    setAt((current) => (current.left === list.left && current.top === list.top ? current : list))
+
+    // The picker anchors to the caret across, and to the whole field down: it
+    // is tall, and one starting mid-field would cover the text it is being used
+    // to write.
+    if (open !== 'picker') return
+    const panel = { left: rect.left, top: rect.top, bottom: box.bottom }
+    setAnchor((current) =>
+      current.left === panel.left && current.top === panel.top && current.bottom === panel.bottom
+        ? current
+        : panel,
+    )
+  })
 
   const commit = (next: string) => {
     if (next === committed) return
@@ -688,7 +713,10 @@ function offsetAtPoint(
   // user just clicked on.
   for (const element of mirror.querySelectorAll('[data-hole]')) {
     const box = element.getBoundingClientRect()
-    if (x < box.left || x > box.right || y < box.top || y > box.bottom) continue
+    // Half-open, so a point on the edge between two chips belongs to exactly
+    // one of them. Closed on both sides, the one earlier in the document won
+    // every tie — and on a wrapped Template that is the chip on the line above.
+    if (x < box.left || x >= box.right || y < box.top || y >= box.bottom) continue
     const start = Number(element.getAttribute('data-at'))
     const hole = holes.find((candidate) => candidate.start === start)
     return hole ? expressionEnd(value, hole) : start

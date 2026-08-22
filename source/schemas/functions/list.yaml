@@ -1,12 +1,11 @@
 kind: function
 namespace: list
 summary: >-
-  Lists. There are no lambdas in v1, so no `filter` or `map` — closures would
-  mean implementing scoping and capture twice. `[]` projection and
-  `core.for_each` cover the common cases.
+  Lists. Count one, take a piece out of it, sort it, or join it into text. To do
+  something to every item in turn, use a loop step rather than a function.
 functions:
   - name: len
-    summary: Number of elements.
+    summary: How many items the list holds.
     params:
       - name: value
         type: list
@@ -14,7 +13,7 @@ functions:
     returns: number
 
   - name: first
-    summary: First element, or null when empty.
+    summary: The first item, or null when the list is empty.
     params:
       - name: value
         type: list
@@ -22,7 +21,7 @@ functions:
     returns: unknown
 
   - name: last
-    summary: Last element, or null when empty.
+    summary: The last item, or null when the list is empty.
     params:
       - name: value
         type: list
@@ -30,22 +29,22 @@ functions:
     returns: unknown
 
   - name: slice
-    summary: Elements from start up to but not including end.
+    summary: The items from one position up to, but not including, another.
     params:
       - name: value
         type: list
-        description: The list to take elements from.
+        description: The list to take items from.
       - name: start
         type: number
-        description: Index of the first element kept, counting from zero.
+        description: Position of the first item kept, counting from zero.
       - name: end
         type: number
         optional: true
-        description: Index to stop before. Omitted, the slice runs to the end.
+        description: Position to stop before. Leave it out to run to the end.
     returns: list
 
   - name: contains
-    summary: Whether the list holds a value equal to the needle, by the same rule as `==`.
+    summary: Whether the list holds this value. Two values match only when they are the same type.
     params:
       - name: value
         type: list
@@ -56,26 +55,26 @@ functions:
     returns: boolean
 
   - name: join
-    summary: Render each element as text and join with a separator.
+    summary: Write every item as text, with a separator between them.
     params:
       - name: value
         type: list
-        description: The list whose elements are rendered and joined.
+        description: The list whose items are written out and joined.
       - name: separator
         type: text
-        description: Placed between elements. Not added before the first or after the last.
+        description: Goes between items, and never before the first or after the last.
     returns: text
 
   - name: unique
-    summary: Elements with later duplicates removed, order preserved.
+    summary: The list with repeats removed, keeping the first of each and the original order.
     params:
       - name: value
         type: list
-        description: The list to remove duplicates from.
+        description: The list to remove repeats from.
     returns: list
 
   - name: sort
-    summary: Ascending. Every element must be the same comparable type.
+    summary: The list in ascending order. Every item has to be the same kind of value.
     params:
       - name: value
         type: list
