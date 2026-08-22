@@ -46,19 +46,23 @@ type Slot struct {
 	ExpectedType ValueType
 }
 
-// Context is everything an expression can see.
+// Context is everything an expression can see: one bucket per root, and
+// nothing resolves outside one.
+//
+// That is what makes root() a table rather than a table with a fallback — a
+// name it does not recognise is missing, not a step id to go looking for.
+// ADR-0014 is the reason a step id is never at the root: `steps.run` and
+// `run.id` are different buckets, so neither can shadow the other and no
+// resolution order can decide which wins.
 type Context struct {
-	// Steps holds step outputs, keyed by step id.
+	// Steps holds step outputs, keyed by step id, addressed as `steps.<id>.…`.
 	Steps map[string]Value
 	// Triggers holds trigger payloads, addressed as `triggers.<id>.…`.
 	Triggers map[string]Value
 	// Vars holds workflow variables, addressed as `var.<key>`.
 	Vars map[string]Value
 	// Run holds the Host's ambient values for this execution, addressed as
-	// `run.<key>`. A root of its own rather than a reserved step id, for the
-	// reason `triggers` and `var` are: a step may legitimately be called `run`,
-	// and resolving one root by looking in two places is how a workflow starts
-	// depending on which of them the runner checked first.
+	// `run.<key>`.
 	Run map[string]Value
 	// Trigger names which Trigger fired. Empty means none was supplied.
 	Trigger string
@@ -270,7 +274,7 @@ func evaluateRaw(node Expression, ctx Context) any {
 	case *Index:
 		// The index is evaluated *inside* step, so a missing object or an empty
 		// projection short-circuits before it runs. Hoisting it out — as this
-		// once did — made `{{ s1.absent[1/0] }}` a division error here and a
+		// once did — made `{{ steps.s1.absent[1/0] }}` a division error here and a
 		// missing path in TypeScript.
 		return step(evaluateRaw(n.Object, ctx), func(target Value) any {
 			return indexInto(target, Evaluate(n.Index, ctx), n.At)
@@ -328,9 +332,8 @@ func root(name string, ctx Context) any {
 		return asObject(ctx.Vars)
 	case "run":
 		return asObject(ctx.Run)
-	}
-	if value, ok := ctx.Steps[name]; ok {
-		return value
+	case "steps":
+		return asObject(ctx.Steps)
 	}
 	return missing{}
 }

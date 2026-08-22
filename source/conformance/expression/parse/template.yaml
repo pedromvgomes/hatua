@@ -15,8 +15,8 @@ scenarios:
     sexp: "(template)"
 
   - name: a template that is exactly one hole
-    template: "{{ s2.count }}"
-    sexp: "(template (hole (. s2 count)))"
+    template: "{{ steps.s2.count }}"
+    sexp: "(template (hole (. (. steps s2) count)))"
 
   - name: text, hole, text
     template: "Hi {{ user.name }}!"
@@ -56,8 +56,8 @@ scenarios:
       the legacy spelling — an operator outside the braces — is text, not a
       comparison. It parses, which is the problem: only the type checker can
       refuse it.
-    template: "{{s2.count}} > 0"
-    sexp: '(template (hole (. s2 count)) (text " > 0"))'
+    template: "{{steps.s2.count}} > 0"
+    sexp: '(template (hole (. (. steps s2) count)) (text " > 0"))'
 
   - name: >-
       literal text is rendered as itself even when it looks like the printer's

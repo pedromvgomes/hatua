@@ -47,8 +47,8 @@ describe('scopeFor', () => {
 
   it('still constrains steps by tree position', () => {
     const paths = scopeFor(DOC, 's7').map((e) => e.path)
-    expect(paths).toContain('s2')
-    expect(paths).not.toContain('s5')
+    expect(paths).toContain('steps.s2')
+    expect(paths).not.toContain('steps.s5')
   })
 })
 

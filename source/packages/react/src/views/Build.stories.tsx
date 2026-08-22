@@ -43,7 +43,7 @@ const GLYPH = {
 const CATALOGUE: Manifest[] = [
   {
     kind: 'trigger',
-    use: 'email.received',
+    use: 'component.email.received',
     name: 'When mail arrives',
     group: 'Email',
     icon: icon(GLYPH.inbox),
@@ -53,7 +53,7 @@ const CATALOGUE: Manifest[] = [
   },
   {
     kind: 'component',
-    use: 'email.send',
+    use: 'component.email.send',
     name: 'Send email',
     group: 'Email',
     icon: icon(GLYPH.mail),
@@ -63,7 +63,7 @@ const CATALOGUE: Manifest[] = [
   },
   {
     kind: 'component',
-    use: 'agent.act',
+    use: 'component.agent.act',
     name: 'Run agent',
     group: 'Intelligence',
     icon: icon(GLYPH.zap),

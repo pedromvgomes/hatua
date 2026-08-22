@@ -18,13 +18,13 @@ import { createValidationStore } from './validation'
 const token = 'tok_v' as EditToken
 const lease: Lease = { token, expiresAt: '2099-01-01T00:00:00.000Z' }
 
-const VALID = `id: wf\nname: n\nversion: 1\nstatus: draft\nsteps:\n  - id: s1\n    use: email.send\n    with:\n      to: a@b.c\n`
-const MISSING = `id: wf\nname: n\nversion: 1\nstatus: draft\nsteps:\n  - id: s1\n    use: email.send\n  - id: s2\n    use: email.send\n`
+const VALID = `id: wf\nname: n\nversion: 1\nstatus: draft\nsteps:\n  - id: s1\n    use: component.email.send\n    with:\n      to: a@b.c\n`
+const MISSING = `id: wf\nname: n\nversion: 1\nstatus: draft\nsteps:\n  - id: s1\n    use: component.email.send\n  - id: s2\n    use: component.email.send\n`
 
 const CATALOGUE: Manifest[] = [
   {
     kind: 'component',
-    use: 'email.send',
+    use: 'component.email.send',
     name: 'Send email',
     fields: [{ k: 'to', label: 'To', kind: 'text', req: true }],
     outputs: [],

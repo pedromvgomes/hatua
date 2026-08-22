@@ -6,10 +6,10 @@ about: >-
 
 scenarios:
   - name: a step in scope resolves
-    template: "{{ s2.count }}"
+    template: "{{ steps.s2.count }}"
     type: number
     scope: &wide
-      - path: s2
+      - path: steps.s2
         type:
           type: object
           members:
@@ -28,7 +28,7 @@ scenarios:
     expect: []
 
   - name: a step that is not in scope is refused
-    template: "{{ s9.count }}"
+    template: "{{ steps.s9.count }}"
     type: number
     scope: *wide
     expect:
@@ -85,7 +85,7 @@ scenarios:
     expect: []
 
   - name: an undeclared member of a step is a warning, not an error
-    template: "{{ s2.total }}"
+    template: "{{ steps.s2.total }}"
     type: number
     scope: *wide
     expect:
@@ -105,20 +105,20 @@ scenarios:
       any other undeclared member. Reading `members.constructor` without an
       own-property check made TypeScript conclude the expression "produces
       undefined" and block publish, while Go warned and allowed it.
-    template: "{{ s2.constructor }}"
+    template: "{{ steps.s2.constructor }}"
     type: text
     scope: *wide
     expect:
       - { code: EXPR_TYPE_UNKNOWN, severity: warning }
 
   - name: and so are the other two
-    template: "{{ s2.__proto__ }}{{ s2.prototype }}"
+    template: "{{ steps.s2.__proto__ }}{{ steps.s2.prototype }}"
     type: text
     scope: *wide
     expect: []
 
   - name: several problems are all reported, not just the first
-    template: "{{ s9.a }} and {{ s8.b }}"
+    template: "{{ steps.s9.a }} and {{ steps.s8.b }}"
     type: text
     scope: *wide
     expect:

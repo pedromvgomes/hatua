@@ -41,7 +41,7 @@ describe('createManifestStore', () => {
   })
 
   it('loads once however many consumers ask', async () => {
-    const loadManifests = vi.fn(async () => [manifest('email.send')])
+    const loadManifests = vi.fn(async () => [manifest('component.email.send')])
     const store = createManifestStore({ loadManifests })
 
     store.load()
@@ -52,7 +52,7 @@ describe('createManifestStore', () => {
     expect(loadManifests).toHaveBeenCalledTimes(1)
     expect(store.getSnapshot()).toEqual({
       status: 'ready',
-      manifests: [manifest('email.send')],
+      manifests: [manifest('component.email.send')],
     })
   })
 
@@ -94,7 +94,7 @@ describe('createManifestStore', () => {
   it('refuses a resolved value that is not an array, rather than passing it on', async () => {
     const store = createManifestStore({
       loadManifests: async () =>
-        ({ components: [manifest('email.send')] }) as unknown as Manifest[],
+        ({ components: [manifest('component.email.send')] }) as unknown as Manifest[],
     })
     store.load()
     await settle()
@@ -147,7 +147,7 @@ describe('createManifestStore', () => {
     const store = createManifestStore({
       loadManifests: (): Promise<Manifest[]> => {
         if (!configured) throw new TypeError('not configured')
-        return Promise.resolve([manifest('email.send')])
+        return Promise.resolve([manifest('component.email.send')])
       },
     })
 
@@ -158,7 +158,10 @@ describe('createManifestStore', () => {
     configured = true
     expect(() => store.reload()).not.toThrow()
     await settle()
-    expect(store.getSnapshot()).toEqual({ status: 'ready', manifests: [manifest('email.send')] })
+    expect(store.getSnapshot()).toEqual({
+      status: 'ready',
+      manifests: [manifest('component.email.send')],
+    })
   })
 
   it('returns to loading on reload, and recovers', async () => {
@@ -167,7 +170,7 @@ describe('createManifestStore', () => {
       loadManifests: async () => {
         attempt += 1
         if (attempt === 1) throw new Error('502')
-        return [manifest('agent.act')]
+        return [manifest('component.agent.act')]
       },
     })
 
@@ -178,7 +181,10 @@ describe('createManifestStore', () => {
     store.reload()
     expect(store.getSnapshot()).toEqual({ status: 'loading' })
     await settle()
-    expect(store.getSnapshot()).toEqual({ status: 'ready', manifests: [manifest('agent.act')] })
+    expect(store.getSnapshot()).toEqual({
+      status: 'ready',
+      manifests: [manifest('component.agent.act')],
+    })
   })
 
   /*

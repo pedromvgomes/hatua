@@ -40,7 +40,7 @@ export interface InsertPoint {
 
 /** Enough to write a Step; everything else is the Inspector's to fill in later. */
 export interface NewStep {
-  /** The manifest verb, e.g. `email.send`. */
+  /** The manifest verb, e.g. `component.email.send`. */
   use: string
   name?: string
   /** Minted from the ids already in the document when omitted. */

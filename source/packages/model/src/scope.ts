@@ -162,7 +162,7 @@ export function scopeFor(
     ...workflowScope(doc, manifests, context),
     ...upstreamOf(doc, stepId).map(
       (step): ScopeEntry => ({
-        path: step.id,
+        path: `steps.${step.id}`,
         kind: 'step',
         label: step.name ?? step.id,
         type: stepOutputType(step, byUse.get(step.use)),
@@ -190,7 +190,7 @@ function varType(value: unknown): ValueType {
 /**
  * A step's outputs, as a type.
  *
- * `data.map` is the one component whose outputs a manifest cannot declare,
+ * `core.map` is the one component whose outputs a manifest cannot declare,
  * because they are whatever the user named. It is the third verb Hatua
  * interprets structurally, alongside `core.fork` and `core.for_each` — and the
  * only one that does so by reading a field's *value* rather than its position

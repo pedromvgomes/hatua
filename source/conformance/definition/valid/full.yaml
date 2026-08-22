@@ -2,7 +2,7 @@
 # expression var, a condition fork with a fallback branch, a mapping step, and a
 # nested loop.
 #
-# The `when:` below reads `{{ s2.count > 0 }}`, not `{{s2.count}} > 0`. That is a
+# The `when:` below reads `{{ steps.s2.count > 0 }}`, not `{{steps.s2.count}} > 0`. That is a
 # contract edit rather than a typo fix: the second is a *text* template, and a
 # branch condition is declared boolean, so the builder refuses to publish it. It
 # would otherwise reach a runner as the string "24 > 0" and be mistaken for
@@ -28,7 +28,7 @@ triggers:
       cron: "0 7 * * 1-5"
       catchup: false
   - id: on_mail
-    use: email.received
+    use: component.email.received
     name: When mail arrives
     with:
       connection: mailbox
@@ -41,7 +41,7 @@ vars:
 
 steps:
   - id: s2
-    use: email.fetch
+    use: component.email.fetch
     name: Fetch emails
     with:
       connection: mailbox
@@ -54,45 +54,45 @@ steps:
       mode: condition
     branches:
       - label: Has new mail
-        when: "{{ s2.count > 0 }}"
+        when: "{{ steps.s2.count > 0 }}"
         steps:
           - id: s4
             use: core.for_each
             name: For each message
             with:
-              list: "{{s2.messages}}"
+              list: "{{steps.s2.messages}}"
               concurrency: 1
             steps:
               - id: s5
-                use: agent.act
+                use: component.agent.act
                 name: Triage message
                 with:
                   connection: brain
-                  instruction: "Classify {{s4.item.subject}}."
+                  instruction: "Classify {{steps.s4.item.subject}}."
           - id: s6
-            use: email.send
+            use: component.email.send
             name: Send digest
             with:
               connection: mailbox
       - label: Otherwise
         steps: []
   - id: s8
-    use: data.map
+    use: core.map
     name: Shape the digest
     with:
-      # data.map is the third verb interpreted structurally: its outputs are
+      # core.map is the third verb interpreted structurally: its outputs are
       # whatever these entries name, which no manifest can declare in advance.
-      # A downstream step addresses them as `{{s8.headline}}` with the type
+      # A downstream step addresses them as `{{steps.s8.headline}}` with the type
       # declared here.
       entries:
         - key: headline
-          value: "Inbox digest · {{ s2.count }} messages"
+          value: "Inbox digest · {{ steps.s2.count }} messages"
           type: text
         - key: unread
-          value: "{{ s2.count }}"
+          value: "{{ steps.s2.count }}"
           type: number
         - key: busy
-          value: "{{ s2.count > 20 }}"
+          value: "{{ steps.s2.count > 20 }}"
           type: boolean
   - id: s9
     use: core.end

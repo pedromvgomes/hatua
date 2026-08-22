@@ -25,7 +25,7 @@ func TestParseTemplateLiteralText(t *testing.T) {
 }
 
 func TestParseTemplateHoleOffset(t *testing.T) {
-	template, err := ParseTemplate("{{ s2.count }}")
+	template, err := ParseTemplate("{{ steps.s2.count }}")
 	if err != nil {
 		t.Fatalf("parsing: %v", err)
 	}

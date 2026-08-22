@@ -422,9 +422,9 @@ export function TemplateInput({
      *
      * Only when a brace was just TYPED, which is what `grew` is for. Asked of
      * the two characters before the caret alone, it fires on the way out as
-     * well as on the way in: backspacing through `{{ s2.count }}` reaches a
+     * well as on the way in: backspacing through `{{ steps.s2.count }}` reaches a
      * caret sitting just after a `{{`, and every further backspace added
-     * another `}}` — `{{ s2.count }}{{  }} }} }} }}`.
+     * another `}}` — `{{ steps.s2.count }}{{  }} }} }} }}`.
      *
      * One character, not two or more: a pasted `{{ x }}` is already closed, and
      * closing it again would be the same fault with a different trigger.
@@ -787,7 +787,7 @@ function runsOf(piece: Piece): Run[] {
  * What differs is what the chip can say. A **Reference** — which
  * `isReference()` answers from the parsed shape, because a Reference is a shape
  * and not a syntax — names exactly one value, so its chip carries that value's
- * source and its own mark. Anything else computes, and `{{ s2.count + 1 }}` has
+ * source and its own mark. Anything else computes, and `{{ steps.s2.count + 1 }}` has
  * no single source to name, so its chip shows its own text. A Reference whose
  * path has gone stale falls to the same treatment, which is what keeps the path
  * the checker will name on screen.

@@ -29,17 +29,17 @@ status: draft
 triggers:
   # Every weekday at six.
   - id: t1
-    use: schedule.cron
+    use: component.schedule.cron
     name: "Every morning"
     with:
       at: "0 6 * * 1-5"
   - id: t2
-    use: email.received
+    use: component.email.received
     name: "When mail arrives"
 
 steps:
   - id: s1
-    use: email.fetch
+    use: component.email.fetch
 `
 
 const apply = (yaml: string, ...commands: EditCommand[]): WorkflowDocument => {
@@ -116,7 +116,7 @@ describe('addTrigger', () => {
 
   it('creates `triggers:` in its schema position when the document has none', () => {
     const bare = 'id: wf\nname: n\nversion: 1\nstatus: draft\nsteps: []\n'
-    const text = apply(bare, addTrigger({ use: 'schedule.cron' })).toString()
+    const text = apply(bare, addTrigger({ use: 'component.schedule.cron' })).toString()
 
     expect(text.indexOf('triggers:')).toBeGreaterThan(text.indexOf('status:'))
     expect(text.indexOf('triggers:')).toBeLessThan(text.indexOf('steps:'))
@@ -127,7 +127,7 @@ describe('addTrigger', () => {
     // Half-typed, not absent. Replacing it would discard text the user is in
     // the middle of writing.
     const half = 'id: wf\nname: n\nversion: 1\nstatus: draft\ntriggers: tomorrow\nsteps: []\n'
-    expect(() => apply(half, addTrigger({ use: 'schedule.cron' }))).toThrow(/not a list/)
+    expect(() => apply(half, addTrigger({ use: 'component.schedule.cron' }))).toThrow(/not a list/)
   })
 
   it('refuses a `triggers:` key written as a mapping, and leaves it intact', () => {
@@ -137,7 +137,9 @@ describe('addTrigger', () => {
     const mapping = 'id: wf\nname: n\nversion: 1\nstatus: draft\ntriggers:\n  cron: daily\n'
     const document = parseWorkflow(mapping)
 
-    expect(() => addTrigger({ use: 'schedule.cron' }).apply(document)).toThrow(/not a list/)
+    expect(() => addTrigger({ use: 'component.schedule.cron' }).apply(document)).toThrow(
+      /not a list/,
+    )
     expect(document.toString()).toBe(mapping)
   })
 
@@ -207,7 +209,7 @@ describe('a document that does not project', () => {
    * are trying to edit their way out of it. Every command reads the loose
    * projection instead.
    */
-  const HALF = 'name: half written\ntriggers:\n  - id: t1\n    use: schedule.cron\n'
+  const HALF = 'name: half written\ntriggers:\n  - id: t1\n    use: component.schedule.cron\n'
 
   it('still finds a Trigger', () => {
     expect(parseWorkflow(HALF).validate().success).toBe(false)
@@ -216,7 +218,7 @@ describe('a document that does not project', () => {
   })
 
   it('still adds and removes one', () => {
-    const added = apply(HALF, addTrigger({ use: 'email.received' })).toString()
+    const added = apply(HALF, addTrigger({ use: 'component.email.received' })).toString()
     expect(added).toContain('id: t2')
     expect(apply(added, removeTrigger('t1')).toString()).not.toContain('id: t1')
   })
@@ -225,7 +227,7 @@ describe('a document that does not project', () => {
     // A null item is what a user halfway through typing has, and the index a
     // command uses has to stay the index the document holds — filtering the
     // list first renumbers everything after the hole and removes the wrong one.
-    const hole = 'triggers:\n  -\n  - id: t1\n    use: schedule.cron\n'
+    const hole = 'triggers:\n  -\n  - id: t1\n    use: component.schedule.cron\n'
     const text = apply(hole, removeTrigger('t1')).toString()
     expect(text).toMatch(/^ {2}- ?$/m)
     expect(text).not.toContain('id: t1')

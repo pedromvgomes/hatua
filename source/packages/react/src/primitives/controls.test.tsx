@@ -47,7 +47,7 @@ describe('Select', () => {
   it('renders a native select carrying its options', () => {
     render(
       <Select defaultValue="b" aria-label="Component">
-        <option value="a">email.send</option>
+        <option value="a">component.email.send</option>
         <option value="b">core.fork</option>
       </Select>,
     )

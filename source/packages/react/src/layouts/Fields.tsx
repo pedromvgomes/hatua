@@ -405,7 +405,7 @@ function FieldRow({
  * A `map` field, shown and not edited.
  *
  * A `map` holds a list of `{key, value, type}` entries the user builds, and it
- * decides a Step's outputs — `data.map` is the component it exists for, and
+ * decides a Step's outputs — `core.map` is the component it exists for, and
  * editing one is the step editor's own widget rather than a row in this form.
  * What it must not do is render nothing: a field drawn as an empty space is
  * indistinguishable from one this form does not know about, and a required one
