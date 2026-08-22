@@ -1,19 +1,19 @@
-import { type ComponentPropsWithRef, useRef } from 'react'
+import { type ComponentPropsWithRef, useEffect, useRef, useState } from 'react'
 import { cx } from './classNames'
 import styles from './Select.module.css'
 import css from './Select.module.css?inline'
 import { Tooltip } from './Tooltip'
-import { useOverflowing } from './useOverflowing'
+import { useTextOverflowing } from './useOverflowing'
 
 export interface SelectProps extends ComponentPropsWithRef<'select'> {
   /**
    * Offer the whole of the chosen option when the box is showing less than it
    * holds. Opt-in, for the reason `InputProps.revealOnOverflow` gives.
    *
-   * Approximate here in a way it is not on an input: the closed box is drawn by
-   * the platform and does not always report the width of the option inside it,
-   * so a long name may go unnoticed. A miss costs a tooltip nobody was offered,
-   * never a wrong one.
+   * Measured differently from an input's, and it has to be: a `<select>`
+   * reports the same scrollWidth as clientWidth however long the chosen option
+   * is, because the closed box is chrome rather than content it lays out. The
+   * text is measured against the room inside the padding instead.
    */
   revealOnOverflow?: boolean
 }
@@ -25,8 +25,27 @@ export interface SelectProps extends ComponentPropsWithRef<'select'> {
  */
 export function Select({ className, children, revealOnOverflow, ref, ...rest }: SelectProps) {
   const own = useRef<HTMLSelectElement>(null)
-  const overflowing = useOverflowing(own)
-  const chosen = own.current?.selectedOptions?.[0]?.text ?? ''
+
+  /*
+   * The chosen option's text, held in state and read from the element after
+   * every render.
+   *
+   * Not read during render: the ref is null on the first pass, and nothing
+   * about a ref filling in later causes a second one — so the text stayed empty
+   * for ever and the box never looked like it was showing less than it holds.
+   * Not derived from `children` either, which are arbitrary nodes and would
+   * make this guess at markup a caller owns.
+   *
+   * The equality guard is what keeps a dependency-free effect from being a
+   * loop, and it settles in one extra render.
+   */
+  const [chosen, setChosen] = useState('')
+  useEffect(() => {
+    const text = own.current?.selectedOptions?.[0]?.text ?? ''
+    setChosen((current) => (current === text ? current : text))
+  })
+
+  const overflowing = useTextOverflowing(own, chosen)
 
   return (
     <>

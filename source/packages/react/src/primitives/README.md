@@ -30,6 +30,13 @@ scrolling part.
 on every truncated string is noise nobody reads — turn it on where the value is
 one someone has to be able to check.
 
+The two are measured differently, and have to be. An `<input>` lays out its own
+content, so `scrollWidth > clientWidth` is exact. A `<select>` does not: the
+closed box is chrome, and it reports the same scrollWidth as clientWidth however
+long the chosen option is — measured on a real one, an option 391px wide in a
+238px box reported 238 against 238. So its text is measured in the element's own
+font against the room inside its padding.
+
 `Tooltip` attaches to an element by ref rather than wrapping one: wrapping means
 either a box in the middle of somebody's layout or `cloneElement` onto a
 component whose props it cannot see, and every control here already holds a ref
