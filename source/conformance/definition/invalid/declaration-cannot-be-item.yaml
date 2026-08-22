@@ -1,0 +1,16 @@
+# expect: SCHEMA_INVALID
+#
+# `item` is the for-each escape hatch, resolved by following a loop's `list`
+# back to its source output. A block's parameter is not the output of anything,
+# so `item` could never resolve — refused by the schema rather than warned about
+# at run time.
+id: wf
+name: W
+version: 1
+status: draft
+blocks:
+  - id: archive
+    params:
+      - { k: entry, label: Entry, t: item }
+    steps: []
+steps: []

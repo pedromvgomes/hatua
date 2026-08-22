@@ -1,0 +1,123 @@
+# Blocks: a reusable sequence declared once and invoked as `use: block.<id>`.
+#
+# `archive_entry` is called from two places — from the root, and from inside
+# another block — which is the deduplication a call buys and the reason the
+# model is still a tree: the call is a cross-link with a contract, not an edge.
+#
+# Every id inside a block is scoped to that block. Both blocks below have a step
+# called `ret`, and `{{steps.ret}}` in either one means that block's.
+id: wf_morning_inbox_triage
+name: Morning inbox triage
+version: 9
+status: draft
+
+triggers:
+  - id: nightly
+    use: core.schedule
+    with:
+      cron: "0 7 * * 1-5"
+
+vars:
+  - key: digest_to
+    value: me@dane.dev
+
+blocks:
+  - id: archive_entry
+    name: Archive an entry
+    params:
+      - k: entry
+        label: Entry
+        t: object
+        of:
+          - { k: headline, label: Headline, t: text }
+          - { k: unread, label: Unread, t: number }
+      - { k: at, label: Archived at, t: datetime }
+    outputs:
+      - { k: url, label: Archive URL, t: text }
+    steps:
+      - id: put
+        use: component.s3.upload
+        name: Upload the JSON
+        with:
+          key: "archive/{{ params.at }}/{{ params.entry.headline }}.json"
+          body: "{{ params.entry }}"
+      - id: ret
+        use: core.return
+        with:
+          url: "{{ steps.put.location }}"
+
+  - id: notify_and_archive
+    name: Notify, then archive
+    # A block's own variables are rebuilt on every invocation, so a block called
+    # twice starts clean both times. The workflow's `digest_to` is NOT in scope
+    # here: anything a block needs from the call site arrives as a parameter.
+    vars:
+      - key: subject_line
+        value: "Digest: {{ params.entry.headline }}"
+    params:
+      - k: entry
+        label: Entry
+        t: object
+        of:
+          - { k: headline, label: Headline, t: text }
+      - { k: to, label: Recipient, t: text }
+    outputs:
+      - { k: url, label: Archive URL, t: text }
+    steps:
+      - id: mail
+        use: component.email.send
+        name: Send the digest
+        with:
+          to: "{{ params.to }}"
+          subject: "{{ var.subject_line }}"
+      - id: kept
+        use: block.archive_entry
+        name: Archive it
+        with:
+          entry: "{{ params.entry }}"
+          # Run Context is the one thing that crosses a block boundary: nothing
+          # in the document declares it, so it is exact on every path of every
+          # board with no intersection to compute.
+          at: "{{ run.started_at }}"
+      - id: ret
+        use: core.return
+        with:
+          url: "{{ steps.kept.url }}"
+
+steps:
+  - id: s2
+    use: component.email.fetch
+    name: Fetch emails
+    with:
+      max: 50
+
+  - id: s8
+    use: core.map
+    name: Shape the digest
+    with:
+      entries:
+        - key: headline
+          value: "Inbox digest · {{ steps.s2.count }} messages"
+          type: text
+
+  # A call is an ordinary Step: its `with:` holds the block's declared
+  # parameters, and downstream reads its declared outputs as `{{steps.<id>.<k>}}`.
+  - id: send_1
+    use: block.notify_and_archive
+    name: Send and archive the digest
+    with:
+      entry: "{{ steps.s8 }}"
+      to: "{{ var.digest_to }}"
+
+  - id: audit_1
+    use: block.archive_entry
+    name: Archive an audit copy
+    with:
+      entry: "{{ steps.s8 }}"
+      at: "{{ run.started_at }}"
+
+  - id: s9
+    use: core.end
+    name: End workflow
+    with:
+      status: "ok · {{ steps.send_1.url }}"

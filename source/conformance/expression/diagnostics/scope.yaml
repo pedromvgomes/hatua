@@ -42,6 +42,79 @@ scenarios:
     scope: *wide
     expect: []
 
+  # ---- a block's board ------------------------------------------------------
+  #
+  # A block reads only what it declares, plus the Run Context. Scope arrives as
+  # an argument, so these state a block's board directly rather than building a
+  # whole Workflow Definition to imply one — but the scope below is exactly what
+  # ScopeFor emits for a step inside a block, in both languages.
+
+  - name: a block's parameter resolves, and nests through its declared shape
+    template: "{{ params.entry.headline }}"
+    type: text
+    scope: &board
+      - path: params.entry
+        type:
+          type: object
+          members:
+            headline: { type: text }
+      - path: var.attempt_note
+        type: { type: text }
+      - path: run.tenant
+        type: { type: text }
+      - path: steps.put
+        type:
+          type: object
+          members:
+            location: { type: text }
+    expect: []
+
+  - name: so does a step on the same board
+    template: "{{ steps.put.location }}"
+    type: text
+    scope: *board
+    expect: []
+
+  - name: >-
+      a step OUTSIDE the block is refused — this is the contract, and if it ever
+      resolves then scope has stopped being an exact walk
+    template: "{{ steps.s2.count }}"
+    type: number
+    scope: *board
+    expect:
+      - { code: EXPR_UNKNOWN_REFERENCE, severity: error }
+
+  - name: the workflow's variables are the call site's, not the block's
+    template: "{{ var.digest_to }}"
+    type: text
+    scope: *board
+    expect:
+      - { code: EXPR_UNKNOWN_REFERENCE, severity: error }
+
+  - name: >-
+      and neither are its Triggers — a block that needs to know what started the
+      run takes it as a parameter
+    template: "{{ triggers.nightly.triggered_at }}"
+    type: datetime
+    scope: *board
+    expect:
+      - { code: EXPR_UNKNOWN_REFERENCE, severity: error }
+
+  - name: >-
+      Run Context crosses, because nothing in the document declares it: the Host
+      supplies it to every execution, so it is exact on every path of every board
+    template: "{{ run.tenant }}"
+    type: text
+    scope: *board
+    expect: []
+
+  - name: an undeclared parameter is refused like any other unknown root member
+    template: "{{ params.missing }}"
+    type: text
+    scope: *board
+    expect:
+      - { code: EXPR_UNKNOWN_REFERENCE, severity: error }
+
   - name: an unknown trigger is refused
     template: "{{ triggers.hourly.triggered_at }}"
     type: datetime

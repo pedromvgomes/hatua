@@ -1,0 +1,11 @@
+# expect: SCHEMA_INVALID
+#
+# A step is addressed as `{{steps.<id>}}`, one segment below a reserved root, so
+# an id the grammar cannot parse is a step no Reference can ever name.
+id: wf
+name: W
+version: 1
+status: draft
+steps:
+  - id: fetch-mail
+    use: component.email.fetch
