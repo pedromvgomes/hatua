@@ -70,10 +70,10 @@ describe('the package surface', () => {
     // Every command carries a label, and it is the one thing about a command a
     // caller reads rather than applies.
     const commands = [
-      api.addStep({ use: 'email.send', name: 'Reply' }, { index: 0 }),
+      api.addStep({ use: 'component.email.send', name: 'Reply' }, { index: 0 }),
       api.removeStep('s1'),
       api.moveStep('s1', { index: 1 }),
-      api.addTrigger({ use: 'schedule.cron' }),
+      api.addTrigger({ use: 'component.schedule.cron' }),
       api.removeTrigger('t1'),
       api.setTriggerName('t1', 'Nightly'),
       api.setTriggerField('t1', 'at', '0 6 * * *'),

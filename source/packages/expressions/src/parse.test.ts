@@ -19,7 +19,7 @@ describe('parseTemplate', () => {
   })
 
   it('reads a Reference as a path', () => {
-    const template = parseTemplate('{{ s2.count }}')
+    const template = parseTemplate('{{ steps.s2.count }}')
     expect(template.segments).toHaveLength(1)
     expect(template.segments[0]).toMatchObject({ kind: 'Hole', at: 3 })
   })

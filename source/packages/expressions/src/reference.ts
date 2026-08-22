@@ -3,12 +3,12 @@
  *
  * There is no `expr:` sigil and no marker of any kind: what makes a Reference
  * special is that it names a value and nothing more, which is exactly what lets
- * the builder draw it as a pill the user can retarget. `{{ s2.count }}` is a
- * Reference; `{{ s2.count + 1 }}` is the same language and is not.
+ * the builder draw it as a pill the user can retarget. `{{ steps.s2.count }}` is a
+ * Reference; `{{ steps.s2.count + 1 }}` is the same language and is not.
  *
  * Answered from the parsed shape rather than by a regex. A pattern would be a
  * second definition of what a Reference is, and two definitions of one thing
- * disagree eventually — one loose enough to match `{{ s2.count }}` also matches
+ * disagree eventually — one loose enough to match `{{ steps.s2.count }}` also matches
  * `{{ a + b }}` and calls it a reference.
  */
 import type { Expression, TemplateNode } from './ast.js'
@@ -45,7 +45,7 @@ export function referencePath(node: Expression): string | null {
  * The Reference a whole Template holds, when it holds exactly one and nothing
  * else — which is the case the builder renders as a pill.
  *
- * `Hi {{ s2.name }}` is not one: it is text with a hole in it, and the pill
+ * `Hi {{ steps.s2.name }}` is not one: it is text with a hole in it, and the pill
  * belongs inside the field rather than instead of it.
  */
 export function templateReference(template: TemplateNode): string | null {

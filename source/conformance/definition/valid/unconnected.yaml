@@ -12,6 +12,6 @@ triggers:
     use: core.manual
 steps:
   - id: s1
-    use: email.send
+    use: component.email.send
     with:
       connection: mailbox

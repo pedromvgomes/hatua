@@ -123,8 +123,8 @@ export function insertNode(
 
   // `steps: []` is flow style, and splicing into it keeps flow style — so the
   // first Step added to an empty Branch re-serialises the whole subtree onto
-  // one line as `[ { id: s3, use: email.send } ]`, beside siblings written in
-  // block. Only an EMPTY sequence is converted: a list the user wrote in flow
+  // one line as `[ { id: s3, use: component.email.send } ]`, beside siblings
+  // written in block. Only an EMPTY sequence is converted: a list the user wrote in flow
   // style with items in it is a formatting choice, and Hatua does not own the
   // file's formatting (ADR-0001).
   if (seq.items.length === 0) seq.flow = false

@@ -6,19 +6,19 @@ about: >-
 
 scenarios:
   - name: text around a hole survives verbatim
-    template: "Hi {{ s2.name }}, welcome."
+    template: "Hi {{ steps.s2.name }}, welcome."
     type: text
     context: { steps: { s2: { name: Dane } } }
     value: "Hi Dane, welcome."
 
   - name: several holes
-    template: "{{ s2.a }}-{{ s2.b }}"
+    template: "{{ steps.s2.a }}-{{ steps.s2.b }}"
     type: text
     context: { steps: { s2: { a: one, b: two } } }
     value: "one-two"
 
   - name: a null renders as empty rather than failing
-    template: "Hi {{ s2.name }}!"
+    template: "Hi {{ steps.s2.name }}!"
     type: text
     context: { steps: { s2: { name: null } } }
     value: "Hi !"
@@ -26,25 +26,25 @@ scenarios:
   - name: >-
       that softness is interpolation's alone — the same null in a single-hole
       template stays null rather than becoming empty text
-    template: "{{ s2.name }}"
+    template: "{{ steps.s2.name }}"
     type: text
     context: { steps: { s2: { name: null } } }
     value: null
 
   - name: a missing path is still missing, softness notwithstanding
-    template: "Hi {{ s9.name }}!"
+    template: "Hi {{ steps.s9.name }}!"
     type: text
     context: { steps: {} }
     error: EVAL_MISSING_PATH
 
   - name: a number interpolates through the shared rendering
-    template: "You have {{ s2.count }} messages"
+    template: "You have {{ steps.s2.count }} messages"
     type: text
     context: { steps: { s2: { count: 24 } } }
     value: "You have 24 messages"
 
   - name: a boolean interpolates as its literal spelling
-    template: "urgent: {{ s2.urgent }}"
+    template: "urgent: {{ steps.s2.urgent }}"
     type: text
     context: { steps: { s2: { urgent: false } } }
     value: "urgent: false"
@@ -52,13 +52,13 @@ scenarios:
   - name: >-
       a list does not interpolate. A text template is a rendering context, not a
       serialisation one; json.stringify is how a payload becomes text.
-    template: "ids: {{ s2.ids }}"
+    template: "ids: {{ steps.s2.ids }}"
     type: text
     context: { steps: { s2: { ids: [1, 2] } } }
     error: EVAL_TYPE_MISMATCH
 
   - name: json.stringify is how it is done instead
-    template: "ids: {{ json.stringify(s2.ids) }}"
+    template: "ids: {{ json.stringify(steps.s2.ids) }}"
     type: text
     context: { steps: { s2: { ids: [1, 2] } } }
     value: "ids: [1,2]"

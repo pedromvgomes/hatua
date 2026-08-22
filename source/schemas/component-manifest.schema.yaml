@@ -41,7 +41,11 @@ $defs:
       use:
         type: string
         minLength: 1
-        description: The YAML verb a step or trigger writes, e.g. `email.send`.
+        description: >-
+          The YAML verb a step or trigger writes. A Host's own verbs sit under `component.`, which
+          is what leaves the Host's namespace below it entirely unconstrained: `component.email.send`,
+          `component.block.render`. `core.` is Hatua's and `block.` names a Block declared in a
+          Workflow Definition, so neither is a name a manifest may claim (ADR-0014).
       name:
         type: string
         minLength: 1
@@ -115,7 +119,7 @@ $defs:
           literals only. `ref` holds exactly one expression and replaces rather than appends.
 
           `map` is a list of named, typed entries the user builds — the shape a component like
-          `data.map` needs, where the outputs are not fixed by the manifest but by what the user
+          `core.map` needs, where the outputs are not fixed by the manifest but by what the user
           wrote into the field. It is the third field kind Hatua interprets structurally, alongside
           the two control-flow verbs, and the only one whose value decides a step's outputs.
       conn_type:

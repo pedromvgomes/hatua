@@ -113,7 +113,9 @@ $defs:
       use:
         type: string
         minLength: 1
-        description: The manifest verb, e.g. `core.schedule` or a Host-supplied `email.received`.
+        description: >-
+          The manifest verb, e.g. `core.schedule` or a Host-supplied `component.email.received`.
+          See `step.use` for what the three roots mean.
       name:
         type: string
         description: Display name.
@@ -143,21 +145,26 @@ $defs:
         type: string
         minLength: 1
         description: >-
-          Stable, and what References point at. This is why renaming a step never breaks a mapping.
+          Stable, and what References point at, addressed as `{{steps.<id>.<field>}}`. This is why
+          renaming a step never breaks a mapping.
       use:
         type: string
         minLength: 1
         description: >-
-          The manifest verb, e.g. `email.send`. Hatua treats most of these as opaque, but interprets
-          three structurally: `core.fork` creates branches, `core.for_each` nests and exposes
-          `item`, and `data.map` derives its outputs from its own `entries` field rather than from
-          its manifest. The first two drive reference scope and derived layout; the third drives
-          reference scope alone.
+          The manifest verb. Its root says who declares it and there are only three: `core.` is
+          Hatua's, `component.` is the Host's, `block.` names a Block in this document. Nothing
+          sits at the root itself, so a Host may declare `component.block.render` and collide with
+          nothing — see ADR-0014.
 
-          `data.map` is the one component whose outputs a manifest cannot declare, because they are
+          Hatua treats most verbs as opaque, but interprets three structurally: `core.fork` creates
+          branches, `core.for_each` nests and exposes `item`, and `core.map` derives its outputs
+          from its own `entries` field rather than from its manifest. The first two drive reference
+          scope and derived layout; the third drives reference scope alone.
+
+          `core.map` is the one component whose outputs a manifest cannot declare, because they are
           whatever the user named. Its `with.entries` is a list of `{key, value, type}`, and a
-          downstream step addresses them as `{{<id>.<key>}}` with the declared type — which is what
-          lets the type checker treat a mapping step exactly like any other.
+          downstream step addresses them as `{{steps.<id>.<key>}}` with the declared type — which is
+          what lets the type checker treat a mapping step exactly like any other.
       name:
         type: string
       with:
@@ -195,7 +202,7 @@ $defs:
       document round-trips and a step can be renamed without breaking a mapping.
 
       A `map` field holds a list of `{key, value, type}` objects rather than a scalar — see
-      `data.map` on `use`. That shape is deliberately NOT declared as a `$def` here: which key holds
+      `core.map` on `use`. That shape is deliberately NOT declared as a `$def` here: which key holds
       a map field is decided by the Component Manifest, not by this schema, so JSON Schema cannot
       reach it. It is checked where the manifest is known, in `@hatua/model` and the Go SDK, and an
       unreferenced definition would be a promise this file does not keep.

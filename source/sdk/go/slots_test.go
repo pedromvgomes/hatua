@@ -9,12 +9,12 @@ import (
 // The bridge between a manifest and the expression language. The TypeScript
 // half is packages/model/src/slots.test.ts, and these check the same two places
 // the mapping is easy to get wrong: a `map` field, whose value is a list of
-// separately-typed entries, and data.map, whose *outputs* come from that same
+// separately-typed entries, and core.map, whose *outputs* come from that same
 // list rather than from any manifest.
 
 var emailSend = Manifest{
 	Kind: KindComponent,
-	Use:  "email.send",
+	Use:  "component.email.send",
 	Name: "Send email",
 	Fields: []Field{
 		{K: "connection", Label: "Mailbox", Kind: "conn"},
@@ -25,13 +25,13 @@ var emailSend = Manifest{
 
 var mapper = Manifest{
 	Kind:   KindComponent,
-	Use:    "data.map",
+	Use:    "core.map",
 	Name:   "Map values",
 	Fields: []Field{{K: "entries", Label: "Entries", Kind: "map"}},
 }
 
 func TestSlotsForCarriesTheDeclaredType(t *testing.T) {
-	step := Step{ID: "s6", Use: "email.send", With: map[string]any{
+	step := Step{ID: "s6", Use: "component.email.send", With: map[string]any{
 		"connection": "mailbox",
 		"to":         "{{ var.digest_to }}",
 		"retries":    "{{ 1 + 1 }}",
@@ -50,10 +50,10 @@ func TestSlotsForCarriesTheDeclaredType(t *testing.T) {
 }
 
 func TestSlotsForGivesEachMapEntryItsOwnType(t *testing.T) {
-	step := Step{ID: "s8", Use: "data.map", With: map[string]any{
+	step := Step{ID: "s8", Use: "core.map", With: map[string]any{
 		"entries": []any{
-			map[string]any{"key": "subject", "value": "{{ s2.subject }}", "type": "text"},
-			map[string]any{"key": "count", "value": "{{ s2.count }}", "type": "number"},
+			map[string]any{"key": "subject", "value": "{{ steps.s2.subject }}", "type": "text"},
+			map[string]any{"key": "count", "value": "{{ steps.s2.count }}", "type": "number"},
 		},
 	}}
 
@@ -70,7 +70,7 @@ func TestSlotsForGivesEachMapEntryItsOwnType(t *testing.T) {
 }
 
 func TestSlotsForIgnoresAMalformedEntry(t *testing.T) {
-	step := Step{ID: "s8", Use: "data.map", With: map[string]any{
+	step := Step{ID: "s8", Use: "core.map", With: map[string]any{
 		"entries": []any{map[string]any{"key": "subject"}, "nonsense"},
 	}}
 	if slots := SlotsFor(step, mapper); len(slots) != 0 {
@@ -81,19 +81,19 @@ func TestSlotsForIgnoresAMalformedEntry(t *testing.T) {
 // A branch condition is boolean, which is the whole reason the legacy spelling
 // can be refused at design time rather than misread at run time.
 func TestWhenSlotIsBoolean(t *testing.T) {
-	slot := WhenSlot("{{s2.count}} > 0")
+	slot := WhenSlot("{{steps.s2.count}} > 0")
 	if slot.ExpectedType != expressions.TypeBoolean {
 		t.Fatalf("expected a boolean slot, got %s", slot.ExpectedType)
 	}
 
 	doc := Definition{
 		Steps: []Step{
-			{ID: "s2", Use: "email.fetch"},
+			{ID: "s2", Use: "component.email.fetch"},
 			{ID: "s3", Use: "core.fork"},
 		},
 	}
 	manifests := []Manifest{{
-		Kind: KindComponent, Use: "email.fetch", Name: "Fetch",
+		Kind: KindComponent, Use: "component.email.fetch", Name: "Fetch",
 		Outputs: []Output{{K: "count", Label: "Count", T: "number"}},
 	}}
 
@@ -111,17 +111,17 @@ func TestWhenSlotIsBoolean(t *testing.T) {
 func TestScopeForDerivesMappingOutputsFromTheStepItself(t *testing.T) {
 	doc := Definition{
 		Steps: []Step{
-			{ID: "s1", Use: "data.map", With: map[string]any{
+			{ID: "s1", Use: "core.map", With: map[string]any{
 				"entries": []any{
 					map[string]any{"key": "count", "value": "0", "type": "number"},
 				},
 			}},
-			{ID: "s2", Use: "email.send"},
+			{ID: "s2", Use: "component.email.send"},
 		},
 	}
 
 	scope := ScopeFor(doc, "s2", []Manifest{mapper}, nil)
-	if len(scope) != 1 || scope[0].Path != "s1" {
+	if len(scope) != 1 || scope[0].Path != "steps.s1" {
 		t.Fatalf("unexpected scope %#v", scope)
 	}
 	if scope[0].Type.Members["count"].Type != expressions.TypeNumber {
@@ -130,10 +130,10 @@ func TestScopeForDerivesMappingOutputsFromTheStepItself(t *testing.T) {
 
 	// And those outputs then type-check downstream like any other step's.
 	ctx := expressions.CheckContext{Scope: scope}
-	if found := expressions.Validate("{{ s1.count > 0 }}", expressions.TypeBoolean, ctx); len(found) != 0 {
+	if found := expressions.Validate("{{ steps.s1.count > 0 }}", expressions.TypeBoolean, ctx); len(found) != 0 {
 		t.Fatalf("expected a clean check, got %#v", found)
 	}
-	if found := expressions.Validate("{{ s1.count }}", expressions.TypeBoolean, ctx); len(found) != 1 {
+	if found := expressions.Validate("{{ steps.s1.count }}", expressions.TypeBoolean, ctx); len(found) != 1 {
 		t.Fatalf("expected the type conflict to be caught, got %#v", found)
 	}
 }
@@ -141,9 +141,9 @@ func TestScopeForDerivesMappingOutputsFromTheStepItself(t *testing.T) {
 func TestUpstreamOfExcludesSiblingBranches(t *testing.T) {
 	doc := Definition{
 		Steps: []Step{
-			{ID: "s2", Use: "email.fetch"},
+			{ID: "s2", Use: "component.email.fetch"},
 			{ID: "s3", Use: "core.fork", Branches: []Branch{
-				{Label: "Has mail", Steps: []Step{{ID: "s4", Use: "agent.act"}}},
+				{Label: "Has mail", Steps: []Step{{ID: "s4", Use: "component.agent.act"}}},
 				{Label: "Otherwise", Steps: []Step{{ID: "s7", Use: "core.end"}}},
 			}},
 		},
@@ -174,9 +174,9 @@ func TestUpstreamOfExcludesSiblingBranches(t *testing.T) {
 // the SDK exists to prevent.
 func TestWorkflowScopeOffersRunContextAndNoStepOutput(t *testing.T) {
 	doc := Definition{
-		Triggers: []Trigger{{ID: "nightly", Use: "schedule.cron"}},
+		Triggers: []Trigger{{ID: "nightly", Use: "component.schedule.cron"}},
 		Vars:     []Variable{{Key: "digest_to", Value: "ops@example.com"}},
-		Steps:    []Step{{ID: "s1", Use: "email.fetch"}, {ID: "s2", Use: "email.send"}},
+		Steps:    []Step{{ID: "s1", Use: "component.email.fetch"}, {ID: "s2", Use: "component.email.send"}},
 	}
 	context := []ContextKey{
 		{K: "id", Label: "Run id", T: "text"},
@@ -207,8 +207,8 @@ func TestWorkflowScopeOffersRunContextAndNoStepOutput(t *testing.T) {
 // definition of the unpositioned half, two readers.
 func TestScopeForIsWorkflowScopePlusTheSteps(t *testing.T) {
 	doc := Definition{
-		Triggers: []Trigger{{ID: "nightly", Use: "schedule.cron"}},
-		Steps:    []Step{{ID: "s1", Use: "email.fetch"}, {ID: "s2", Use: "email.send"}},
+		Triggers: []Trigger{{ID: "nightly", Use: "component.schedule.cron"}},
+		Steps:    []Step{{ID: "s1", Use: "component.email.fetch"}, {ID: "s2", Use: "component.email.send"}},
 	}
 	context := []ContextKey{{K: "id", Label: "Run id", T: "text"}}
 
@@ -223,14 +223,15 @@ func TestScopeForIsWorkflowScopePlusTheSteps(t *testing.T) {
 			t.Fatalf("scope %d diverged: %q vs %q", i, positioned[i].Path, entry.Path)
 		}
 	}
-	if positioned[len(unpositioned)].Path != "s1" {
-		t.Fatalf("expected s1 last, got %q", positioned[len(unpositioned)].Path)
+	if positioned[len(unpositioned)].Path != "steps.s1" {
+		t.Fatalf("expected steps.s1 last, got %q", positioned[len(unpositioned)].Path)
 	}
 }
 
-// The `run` root resolves out of its own map, not out of the steps: a step may
-// legitimately be called `run`, and resolving one root by looking in two places
-// is how a workflow starts depending on which of them the runner checked first.
+// A step called `run` does not shadow the Run Context and is not shadowed by
+// it. Every root is a bucket of its own (ADR-0014), so `run.tenant` and
+// `steps.run.tenant` name different values and no resolution order can decide
+// which of them a workflow means.
 func TestRunContextResolvesFromItsOwnRoot(t *testing.T) {
 	value, err := expressions.Resolve(expressions.Context{
 		Run:   map[string]expressions.Value{"tenant": "acme"},

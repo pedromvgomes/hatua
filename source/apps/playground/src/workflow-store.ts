@@ -64,14 +64,14 @@ connections:
 
 triggers:
   - id: overnight
-    use: email.received
+    use: component.email.received
     name: "When mail arrives"
     with:
       connection: mailbox
 
 steps:
   - id: s1
-    use: agent.act
+    use: component.agent.act
     name: "Sort by urgency"
     # The Model connection is deliberately left empty: the Flow tab marks a
     # Step that is not filled in, and a workflow where nothing is wrong shows
@@ -81,10 +81,10 @@ steps:
     name: "How much came in?"
     branches:
       - label: A lot
-        when: "{{ s1.result }}"
+        when: "{{ steps.s1.result }}"
         steps:
           - id: s3
-            use: email.send
+            use: component.email.send
             name: "Warn the team"
             with:
               connection: mailbox
@@ -98,7 +98,7 @@ steps:
       items: "{{ overnight.message }}"
     steps:
       - id: s5
-        use: email.send
+        use: component.email.send
         name: "Send the digest"
         with:
           connection: mailbox

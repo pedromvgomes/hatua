@@ -31,17 +31,17 @@ status: draft
 
 steps:
   - id: s1
-    use: email.fetch
+    use: component.email.fetch
     name: "Fetch mail"
   - id: s2
     use: core.fork
     name: "How urgent?"
     branches:
       - label: Urgent
-        when: "{{ s1.count > 10 }}"
+        when: "{{ steps.s1.count > 10 }}"
         steps:
           - id: s3
-            use: chat.post
+            use: component.chat.post
             name: "Ping the channel"
       - label: Otherwise
         steps: []
@@ -50,7 +50,7 @@ steps:
     name: "Archive each"
     steps:
       - id: s5
-        use: email.archive
+        use: component.email.archive
         name: "Archive"
 `
 
@@ -185,7 +185,7 @@ describe('StepList', () => {
     expect(screen.getByText('if')).toBeDefined()
     expect(screen.getByText('else')).toBeDefined()
     expect(screen.getByText('loop')).toBeDefined()
-    expect(screen.getByText('{{ s1.count > 10 }}')).toBeDefined()
+    expect(screen.getByText('{{ steps.s1.count > 10 }}')).toBeDefined()
   })
 
   it('says what makes a Step structural', async () => {
@@ -507,10 +507,10 @@ steps:
     name: "Each message"
     steps:
       - id: s2
-        use: email.send
+        use: component.email.send
         name: "Send email"
       - id: s3
-        use: email.send
+        use: component.email.send
         name: "Send digest"
 `,
     )
@@ -617,13 +617,13 @@ describe('marking a Step that is not filled in', () => {
   const CATALOGUE: Manifest[] = [
     {
       kind: 'component',
-      use: 'email.fetch',
+      use: 'component.email.fetch',
       name: 'Fetch',
       fields: [{ k: 'folder', label: 'Folder', kind: 'text', req: true }],
       outputs: [],
     },
-    { kind: 'component', use: 'chat.post', name: 'Post', fields: [], outputs: [] },
-    { kind: 'component', use: 'email.archive', name: 'Archive', fields: [], outputs: [] },
+    { kind: 'component', use: 'component.chat.post', name: 'Post', fields: [], outputs: [] },
+    { kind: 'component', use: 'component.email.archive', name: 'Archive', fields: [], outputs: [] },
     { kind: 'component', use: 'core.fork', name: 'Fork', fields: [], outputs: [] },
     { kind: 'component', use: 'core.for_each', name: 'Loop', fields: [], outputs: [] },
   ]
@@ -683,7 +683,7 @@ describe('marking a Step that is not filled in', () => {
   })
 
   it('marks nothing once the Step is filled in', async () => {
-    const yaml = `id: wf\nname: n\nversion: 1\nstatus: draft\nsteps:\n  - id: s1\n    use: email.fetch\n    name: "Done"\n    with:\n      folder: INBOX\n`
+    const yaml = `id: wf\nname: n\nversion: 1\nstatus: draft\nsteps:\n  - id: s1\n    use: component.email.fetch\n    name: "Done"\n    with:\n      folder: INBOX\n`
     mount(host(yaml), {}, CATALOGUE)
     await screen.findByText('Done')
     expect(reports()).toHaveLength(0)

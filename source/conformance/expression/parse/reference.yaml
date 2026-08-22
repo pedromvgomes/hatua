@@ -9,9 +9,9 @@ about: >-
 
 scenarios:
   - name: a bare step output
-    template: "{{ s2.count }}"
-    sexp: "(template (hole (. s2 count)))"
-    reference: "s2.count"
+    template: "{{ steps.s2.count }}"
+    sexp: "(template (hole (. (. steps s2) count)))"
+    reference: "steps.s2.count"
 
   - name: a trigger payload
     template: "{{ triggers.nightly.triggered_at }}"
@@ -29,30 +29,30 @@ scenarios:
     reference: "TRIGGER"
 
   - name: projection still names one value
-    template: "{{ s2.messages[].subject }}"
-    sexp: "(template (hole (. (project (. s2 messages)) subject)))"
-    reference: "s2.messages[].subject"
+    template: "{{ steps.s2.messages[].subject }}"
+    sexp: "(template (hole (. (project (. (. steps s2) messages)) subject)))"
+    reference: "steps.s2.messages[].subject"
 
   - name: so does indexing with a literal
-    template: "{{ s2.messages[0].subject }}"
-    sexp: "(template (hole (. ([] (. s2 messages) 0) subject)))"
-    reference: "s2.messages[…].subject"
+    template: "{{ steps.s2.messages[0].subject }}"
+    sexp: "(template (hole (. ([] (. (. steps s2) messages) 0) subject)))"
+    reference: "steps.s2.messages[…].subject"
 
   - name: >-
       a computed index does not — there is no fixed target to retarget once the
       index is itself an expression
-    template: "{{ s2.messages[s2.count].subject }}"
-    sexp: "(template (hole (. ([] (. s2 messages) (. s2 count)) subject)))"
+    template: "{{ steps.s2.messages[steps.s2.count].subject }}"
+    sexp: "(template (hole (. ([] (. (. steps s2) messages) (. (. steps s2) count)) subject)))"
     reference: false
 
   - name: arithmetic is not a Reference, though it is the same language
-    template: "{{ s2.count + 1 }}"
-    sexp: "(template (hole (+ (. s2 count) 1)))"
+    template: "{{ steps.s2.count + 1 }}"
+    sexp: "(template (hole (+ (. (. steps s2) count) 1)))"
     reference: false
 
   - name: neither is a call
-    template: "{{ text.upper(s2.subject) }}"
-    sexp: "(template (hole (call (. text upper) (. s2 subject))))"
+    template: "{{ text.upper(steps.s2.subject) }}"
+    sexp: "(template (hole (call (. text upper) (. (. steps s2) subject))))"
     reference: false
 
   - name: nor a conditional
@@ -68,8 +68,8 @@ scenarios:
   - name: >-
       text around the hole makes it not a whole-field Reference — the pill
       belongs inside the field rather than instead of it
-    template: "Hi {{ s2.name }}"
-    sexp: '(template (text "Hi ") (hole (. s2 name)))'
+    template: "Hi {{ steps.s2.name }}"
+    sexp: '(template (text "Hi ") (hole (. (. steps s2) name)))'
     reference: false
 
   - name: two holes are not one Reference either

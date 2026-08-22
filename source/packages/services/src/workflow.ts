@@ -63,7 +63,7 @@ export function declareConnection(id: string, ref: string): EditCommand {
 
 /** Enough to write a Trigger; its `with:` values are the Workflow tab's to fill in. */
 export interface NewTrigger {
-  /** The manifest verb, e.g. `schedule.cron`. */
+  /** The manifest verb, e.g. `component.schedule.cron`. */
   use: string
   name?: string
   /** Minted from the ids already in the document when omitted. */
@@ -117,7 +117,7 @@ function locateTrigger(document: WorkflowDocument, id: string): number {
  * Ids are minted rather than random, so the same edits produce the same
  * document twice — which is what makes the round-trip tests assertable and
  * keeps a diff in the Host's repository readable. `t1`, `t2`… beside the `s1`,
- * `s2` a Step gets, because `{{ triggers.t1.at }}` and `{{ s1.count }}` are
+ * `s2` a Step gets, because `{{ triggers.t1.at }}` and `{{ steps.s1.count }}` are
  * read side by side.
  */
 function mintTriggerId(document: WorkflowDocument): string {

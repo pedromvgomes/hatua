@@ -124,7 +124,7 @@ function repair(source: string): { template: TemplateNode; closed: string } | nu
  * the one hole it is rather than as two.
  *
  * Where the holes are is all this decides. What each one *holds* is still the
- * parser's to say, hole by hole — so one unfinished `{{ s2. + }}` costs its own
+ * parser's to say, hole by hole — so one unfinished `{{ steps.s2. + }}` costs its own
  * chip and not every chip in the field.
  */
 function scan(source: string): TemplateShape {

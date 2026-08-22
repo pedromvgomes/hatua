@@ -12,7 +12,7 @@ const respond = (body: unknown, init: ResponseInit = {}) =>
   vi.fn(async () => new Response(JSON.stringify(body), { status: 200, ...init }))
 
 const MANIFESTS = [
-  { kind: 'component', use: 'email.send', name: 'Send email', fields: [], outputs: [] },
+  { kind: 'component', use: 'component.email.send', name: 'Send email', fields: [], outputs: [] },
 ]
 
 describe('createApiManifestSource', () => {

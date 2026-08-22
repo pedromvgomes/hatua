@@ -87,7 +87,7 @@ const manifestFixtures = (): Plugin => {
  * a dev-server middleware and, for a built playground, a static file emitted
  * next to the pages. What it faithfully reproduces is the only part Hatua can
  * see: the manifests are not in the page's JavaScript, and the page has to ask.
- * `grep` the built chunks for `email.send` — main and host have it, api does
+ * `grep` the built chunks for `component.email.send` — main and host have it, api does
  * not.
  *
  * Deliberately NOT part of `ManifestSource`: fetching is the Host's, all of it.

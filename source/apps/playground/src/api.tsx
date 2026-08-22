@@ -33,7 +33,7 @@ import { createLocalWorkflowStore } from './workflow-store'
  *     and theme.html all load, and this page does not. That is the difference
  *     between build time and run time, in the output rather than in a comment.
  *
- *     Grep a manifest's display NAME, not a verb. `email.send` was the marker
+ *     Grep a manifest's display NAME, not a verb. `component.email.send` was the marker
  *     until this playground gained a seed workflow, and a Workflow Definition
  *     names the same verbs its catalogue declares — so the verb is now in the
  *     workflow store's chunk, which this page does load. Only a manifest has a

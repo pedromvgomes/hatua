@@ -101,7 +101,7 @@ describe('Build wires the Components tab to the Flow tab', () => {
   const CATALOGUE: Manifest[] = [
     {
       kind: 'component',
-      use: 'email.send',
+      use: 'component.email.send',
       name: 'Send email',
       blurb: 'Send a message.',
       fields: [],
@@ -201,7 +201,7 @@ describe('Build wires the Components tab to the Flow tab', () => {
     // not enough headroom on a machine running every suite at once.
     await waitFor(() => expect(writes).toHaveLength(1), { timeout: 5000 })
     const text = writes[0] as string
-    expect(text.indexOf('use: a')).toBeLessThan(text.indexOf('use: email.send'))
+    expect(text.indexOf('use: a')).toBeLessThan(text.indexOf('use: component.email.send'))
   })
 
   it('forgets the pending point when the user navigates away instead of picking', async () => {

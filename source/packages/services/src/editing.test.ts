@@ -31,7 +31,7 @@ status: draft
 
 steps:
   - id: s1
-    use: email.fetch
+    use: component.email.fetch
     name: "Fetch mail"
     with:
       folder: INBOX      # not Archive
@@ -39,17 +39,17 @@ steps:
     use: core.fork
     branches:
       - label: Urgent
-        when: "{{ s1.count > 10 }}"
+        when: "{{ steps.s1.count > 10 }}"
         steps:
           - id: s3
-            use: email.send
+            use: component.email.send
       - label: Otherwise
         steps: []
   - id: s4
     use: core.for_each
     steps:
       - id: s5
-        use: agent.classify
+        use: component.agent.classify
 `
 
 const token = 'tok_1' as EditToken
@@ -360,7 +360,7 @@ describe('a command that cannot be applied', () => {
     const { store, host } = await open(MAPPING)
     const before = ready(store).text
 
-    store.apply(addStep({ use: 'email.send' }, { index: 0 }))
+    store.apply(addStep({ use: 'component.email.send' }, { index: 0 }))
 
     expect(ready(store).text).toBe(before)
     expect(ready(store).undoLabel).toBeNull()
@@ -370,7 +370,7 @@ describe('a command that cannot be applied', () => {
 
   it('does not throw out of apply, because a click handler is what calls it', async () => {
     const { store } = await open(MAPPING)
-    expect(() => store.apply(addStep({ use: 'email.send' }, { index: 0 }))).not.toThrow()
+    expect(() => store.apply(addStep({ use: 'component.email.send' }, { index: 0 }))).not.toThrow()
   })
 
   it('leaves the store usable, rather than poisoned for the rest of the session', async () => {
@@ -378,7 +378,7 @@ describe('a command that cannot be applied', () => {
     // one command that left it unserialisable would take all of them with it
     // and only `reopen()` would recover.
     const { store, host } = await open(MAPPING)
-    store.apply(addStep({ use: 'email.send' }, { index: 0 }))
+    store.apply(addStep({ use: 'component.email.send' }, { index: 0 }))
 
     expect(() => store.undo()).not.toThrow()
     expect(() => ready(store).text).not.toThrow()
@@ -424,16 +424,16 @@ describe('commands', () => {
 
   it('adds a Step at the root, minting the next free id', async () => {
     const { store } = await open()
-    store.apply(addStep({ use: 'email.send', name: 'Reply' }, { index: 1 }))
+    store.apply(addStep({ use: 'component.email.send', name: 'Reply' }, { index: 1 }))
 
     const steps = ready(store).definition?.steps ?? []
     expect(steps.map((step) => step.id)).toEqual(['s1', 's6', 's2', 's4'])
-    expect(steps[1]?.use).toBe('email.send')
+    expect(steps[1]?.use).toBe('component.email.send')
   })
 
   it('appends when the index is past the end', async () => {
     const { store } = await open()
-    store.apply(addStep({ use: 'email.send' }, { index: 99 }))
+    store.apply(addStep({ use: 'component.email.send' }, { index: 99 }))
     expect(ready(store).definition?.steps.at(-1)?.id).toBe('s6')
   })
 
@@ -442,7 +442,9 @@ describe('commands', () => {
     // not filled in may have no `steps:` key at all, and the first drop into it
     // has to work either way.
     const { store } = await open()
-    store.apply(addStep({ use: 'email.send' }, { parentId: 's2', branchIndex: 1, index: 0 }))
+    store.apply(
+      addStep({ use: 'component.email.send' }, { parentId: 's2', branchIndex: 1, index: 0 }),
+    )
 
     const fork = ready(store).definition?.steps.find((step) => step.id === 's2')
     expect(fork?.branches?.[1]?.steps.map((step) => step.id)).toEqual(['s6'])
@@ -450,7 +452,7 @@ describe('commands', () => {
 
   it('adds into a loop’s own steps, which take no branch wrapper', async () => {
     const { store } = await open()
-    store.apply(addStep({ use: 'email.send' }, { parentId: 's4', index: 1 }))
+    store.apply(addStep({ use: 'component.email.send' }, { parentId: 's4', index: 1 }))
 
     const loop = ready(store).definition?.steps.find((step) => step.id === 's4')
     expect(loop?.steps?.map((step) => step.id)).toEqual(['s5', 's6'])
@@ -578,7 +580,7 @@ describe('round trip', () => {
     const store = createEditingStore(host.port, 'wf_morning')
     store.open()
     await settle()
-    store.apply(addStep({ use: 'email.send', name: 'Reply' }, { index: 1 }))
+    store.apply(addStep({ use: 'component.email.send', name: 'Reply' }, { index: 1 }))
     return { host, store }
   }
 
@@ -599,7 +601,7 @@ describe('round trip', () => {
   it('keeps the author’s quoting', async () => {
     const { store } = await edited()
     expect(ready(store).text).toContain('name: "Morning inbox triage"')
-    expect(ready(store).text).toContain('when: "{{ s1.count > 10 }}"')
+    expect(ready(store).text).toContain('when: "{{ steps.s1.count > 10 }}"')
   })
 
   it('leaves an untouched document byte-identical', async () => {
@@ -646,7 +648,7 @@ describe('undo and redo', () => {
     const { store } = await open()
     expect(ready(store).undoLabel).toBeNull()
 
-    store.apply(addStep({ use: 'email.send', name: 'Reply' }, { index: 0 }))
+    store.apply(addStep({ use: 'component.email.send', name: 'Reply' }, { index: 0 }))
     expect(ready(store).undoLabel).toBe('Add Reply')
     expect(ready(store).redoLabel).toBeNull()
 

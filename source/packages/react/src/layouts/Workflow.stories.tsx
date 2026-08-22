@@ -43,13 +43,13 @@ connections:
 
 triggers:
   - id: t1
-    use: schedule.cron
+    use: component.schedule.cron
     name: "Every morning"
     with:
       at: "0 6 * * 1-5"
       zone: utc
   - id: t2
-    use: email.received
+    use: component.email.received
     name: "When mail arrives"
     with:
       folder: INBOX
@@ -67,7 +67,7 @@ vars:
 
 steps:
   - id: s1
-    use: email.fetch
+    use: component.email.fetch
 `
 
 const BARE = `id: wf_new
@@ -77,12 +77,12 @@ status: draft
 steps: []
 `
 
-const HALF_WRITTEN = 'name: half written\nsteps:\n  - use: email.send\n'
+const HALF_WRITTEN = 'name: half written\nsteps:\n  - use: component.email.send\n'
 
 const CATALOGUE: Manifest[] = [
   {
     kind: 'trigger',
-    use: 'schedule.cron',
+    use: 'component.schedule.cron',
     name: 'On a schedule',
     blurb: 'Starts the workflow at a time you choose.',
     fields: [
@@ -102,7 +102,7 @@ const CATALOGUE: Manifest[] = [
   },
   {
     kind: 'trigger',
-    use: 'email.received',
+    use: 'component.email.received',
     name: 'When mail arrives',
     blurb: 'Starts the workflow when a message arrives.',
     fields: [
@@ -113,7 +113,7 @@ const CATALOGUE: Manifest[] = [
     ],
     outputs: [],
   },
-  { kind: 'component', use: 'email.fetch', name: 'Fetch mail', fields: [], outputs: [] },
+  { kind: 'component', use: 'component.email.fetch', name: 'Fetch mail', fields: [], outputs: [] },
 ]
 
 const token = 'tok_story' as EditToken

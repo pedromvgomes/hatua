@@ -18,7 +18,7 @@ import (
 // The TypeScript half is packages/model/src/slots.ts and scope.ts.
 
 // MappingVerb is the component whose outputs come from its own configuration.
-const MappingVerb = "data.map"
+const MappingVerb = "core.map"
 
 // FieldKindTypes says what each mappable field kind's value must produce. The
 // kinds absent from it hold literal values, not Templates.
@@ -86,7 +86,7 @@ func SlotsFor(step Step, manifest Manifest) []expressions.Slot {
 //
 // Separate from SlotsFor because a branch is not a step and has no manifest —
 // and because its type is not declared anywhere: a condition is a boolean, and
-// that is the whole reason `when: "{{s2.count}} > 0"` can be refused at design
+// that is the whole reason `when: "{{steps.s2.count}} > 0"` can be refused at design
 // time rather than misread at run time.
 func WhenSlot(when string) expressions.Slot {
 	return expressions.Slot{Name: "when", Template: when, ExpectedType: expressions.TypeBoolean}
@@ -222,7 +222,7 @@ func ScopeFor(doc Definition, stepID string, manifests []Manifest, context []Con
 	for _, step := range UpstreamOf(doc, stepID) {
 		manifest := byUse[step.Use]
 		entries = append(entries, expressions.ScopeEntry{
-			Path: step.ID,
+			Path: "steps." + step.ID,
 			Type: stepOutputType(step, manifest),
 		})
 	}
@@ -280,7 +280,7 @@ func varType(value any) expressions.ValueType {
 
 // stepOutputType reports a step's outputs as a type.
 //
-// data.map is the one component whose outputs a manifest cannot declare, because
+// core.map is the one component whose outputs a manifest cannot declare, because
 // they are whatever the user named. It is the third verb Hatua interprets
 // structurally, alongside core.fork and core.for_each — and the only one that
 // does so by reading a field's value rather than its position in the tree.

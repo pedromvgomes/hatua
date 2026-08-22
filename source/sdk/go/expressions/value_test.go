@@ -31,14 +31,14 @@ func TestDecodedYAMLIsNormalizedIntoTheValueSpace(t *testing.T) {
 	ctx := Context{Steps: map[string]Value{"s2": decoded}, Functions: CoreFunctions()}
 
 	for _, tc := range []struct{ template, expected string }{
-		{"{{ s2.count }}", "24"},
-		{"{{ s2.count + 1 }}", "25"},
-		{"Hi {{ s2.count }}", "Hi 24"},
-		{"{{ s2.ratio }}", "0.5"},
-		{"{{ list.len(s2.ids) }}", "2"},
-		{"{{ list.join(s2.ids, ',') }}", "1,2"},
-		{"{{ s2.meta.n + 1 }}", "4"},
-		{"{{ json.stringify(s2.meta) }}", `{"n":3}`},
+		{"{{ steps.s2.count }}", "24"},
+		{"{{ steps.s2.count + 1 }}", "25"},
+		{"Hi {{ steps.s2.count }}", "Hi 24"},
+		{"{{ steps.s2.ratio }}", "0.5"},
+		{"{{ list.len(steps.s2.ids) }}", "2"},
+		{"{{ list.join(steps.s2.ids, ',') }}", "1,2"},
+		{"{{ steps.s2.meta.n + 1 }}", "4"},
+		{"{{ json.stringify(steps.s2.meta) }}", `{"n":3}`},
 	} {
 		value, err := Resolve(ctx, Slot{Name: "f", Template: tc.template, ExpectedType: TypeText})
 		if err != nil {
@@ -57,7 +57,7 @@ func TestDecodedIntegersCompareAsNumbers(t *testing.T) {
 	}
 	ctx := Context{Steps: map[string]Value{"s2": decoded}, Functions: CoreFunctions()}
 
-	value, err := Resolve(ctx, Slot{Name: "when", Template: "{{ s2.count > 0 }}", ExpectedType: TypeBoolean})
+	value, err := Resolve(ctx, Slot{Name: "when", Template: "{{ steps.s2.count > 0 }}", ExpectedType: TypeBoolean})
 	if err != nil {
 		t.Fatalf("resolving: %v", err)
 	}
@@ -77,13 +77,13 @@ func TestHostSuppliedInstantsRenderAtMillisecondPrecision(t *testing.T) {
 		Functions: CoreFunctions(),
 	}
 
-	for _, template := range []string{"{{ s2.at }}", "{{ dt.iso(s2.at) }}", "at {{ s2.at }}"} {
+	for _, template := range []string{"{{ steps.s2.at }}", "{{ dt.iso(steps.s2.at) }}", "at {{ steps.s2.at }}"} {
 		value, err := Resolve(ctx, Slot{Name: "f", Template: template, ExpectedType: TypeText})
 		if err != nil {
 			t.Fatalf("%s: %v", template, err)
 		}
 		expected := "2026-08-18T07:00:00.123Z"
-		if template == "at {{ s2.at }}" {
+		if template == "at {{ steps.s2.at }}" {
 			expected = "at " + expected
 		}
 		if value != expected {
@@ -109,7 +109,7 @@ func TestCaseMappingIsSafeUnderConcurrency(t *testing.T) {
 			defer group.Done()
 			value, err := Resolve(ctx, Slot{
 				Name:         "f",
-				Template:     "{{ text.upper(s2.subject) }}",
+				Template:     "{{ text.upper(steps.s2.subject) }}",
 				ExpectedType: TypeText,
 			})
 			if err != nil || value != "STRASSE" {

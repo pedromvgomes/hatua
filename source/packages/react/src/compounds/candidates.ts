@@ -79,6 +79,11 @@ export interface RefNode {
  * dot becomes a grouping node that is itself unaddressable. `{{ triggers }}` is
  * not a value, which is exactly what `walkName` reports as a prefix rather than
  * a reference.
+ *
+ * Every root is a grouping prefix, because ADR-0014 leaves nothing else at the
+ * root: a Step groups under `steps` exactly as a Trigger groups under
+ * `triggers`, and the source select offers a handful of sources that do not
+ * grow with the workflow rather than one per Step.
  */
 export function referenceTree(scope: readonly ScopeEntry[]): RefNode[] {
   const roots: RefNode[] = []
@@ -125,6 +130,7 @@ export function referenceTree(scope: readonly ScopeEntry[]): RefNode[] {
 const PREFIX_LABELS: Readonly<Record<string, string>> = {
   run: 'Run context',
   triggers: 'Triggers',
+  steps: 'Steps',
   var: 'Workflow variables',
 }
 
@@ -342,7 +348,7 @@ export type ChipParts =
   /**
    * Everything else a hole can hold.
    *
-   * `{{ s2.count + 1 }}` is every bit as much a hole as `{{ s2.count }}` and has
+   * `{{ steps.s2.count + 1 }}` is every bit as much a hole as `{{ steps.s2.count }}` and has
    * to look like one, but there is no single value behind it to name — which is
    * exactly what makes it not a Reference. So it shows its own text, with no
    * mark, and the absence of one is what tells the two apart without inventing

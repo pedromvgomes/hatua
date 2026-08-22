@@ -33,13 +33,13 @@ status: draft
 
 steps:
   - id: s1
-    use: email.fetch
+    use: component.email.fetch
     name: "Fetch mail"
   - id: s2
-    use: agent.classify
+    use: component.agent.classify
     name: "Sort by urgency"
   - id: s3
-    use: email.send
+    use: component.email.send
     name: "Send digest"
 `
 
@@ -50,30 +50,30 @@ status: draft
 
 steps:
   - id: s1
-    use: email.fetch
+    use: component.email.fetch
     name: "Fetch mail"
   - id: s2
     use: core.fork
     name: "How urgent?"
     branches:
       - label: Urgent
-        when: "{{ s1.count > 10 }}"
+        when: "{{ steps.s1.count > 10 }}"
         steps:
           - id: s3
-            use: chat.post
+            use: component.chat.post
             name: "Ping the channel"
           - id: s4
             use: core.for_each
             name: "Each message"
             steps:
               - id: s5
-                use: agent.classify
+                use: component.agent.classify
                 name: "Classify"
       - label: Quiet
-        when: "{{ s1.count > 0 }}"
+        when: "{{ steps.s1.count > 0 }}"
         steps:
           - id: s6
-            use: email.send
+            use: component.email.send
             name: "Send digest"
       - label: Otherwise
         steps: []
@@ -84,25 +84,25 @@ steps:
       - label: Email
         steps:
           - id: s8
-            use: email.send
+            use: component.email.send
             name: "Mail the team"
       - label: Chat
         steps:
           - id: s9
-            use: chat.post
+            use: component.chat.post
             name: "Post to chat"
   - id: s10
     use: core.for_each
     name: "Archive each"
     steps:
       - id: s11
-        use: email.archive
+        use: component.email.archive
         name: "Archive"
 `
 
 const EMPTY = `id: wf_empty\nname: "Nothing yet"\nversion: 1\nstatus: draft\nsteps: []\n`
 
-const HALF_WRITTEN = `name: half written\nsteps:\n  - use: email.send\n`
+const HALF_WRITTEN = `name: half written\nsteps:\n  - use: component.email.send\n`
 
 const token = 'tok_story' as EditToken
 

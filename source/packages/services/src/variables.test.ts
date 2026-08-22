@@ -30,7 +30,7 @@ vars:
 
 steps:
   - id: s1
-    use: email.fetch
+    use: component.email.fetch
 `
 
 const apply = (yaml: string, ...commands: ReturnType<typeof addVariable>[]) => {

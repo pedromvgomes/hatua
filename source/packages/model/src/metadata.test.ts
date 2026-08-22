@@ -41,7 +41,7 @@ const RUN: WorkflowExecution = {
 }
 
 const descriptors = descriptorsByUse(MANIFESTS)
-const useOf = (stepId: string) => (stepId === 's5' ? 'agent.act' : 'core.for_each')
+const useOf = (stepId: string) => (stepId === 's5' ? 'component.agent.act' : 'core.for_each')
 
 describe('totals', () => {
   it('sums a measure across every loop iteration', () => {
@@ -89,12 +89,12 @@ describe('pivot correctness', () => {
       ...RUN,
       steps: [
         ...RUN.steps,
-        // email.send declares no metadata at all, so this must not count.
+        // component.email.send declares no metadata at all, so this must not count.
         { id: 's6', status: 'succeeded', metadata: { tokens: 999, model: 'ghost' } },
       ],
     }
     const useFor = (id: string) =>
-      id === 's5' ? 'agent.act' : id === 's6' ? 'email.send' : 'core.for_each'
+      id === 's5' ? 'component.agent.act' : id === 's6' ? 'component.email.send' : 'core.for_each'
 
     expect(totals(withStray, descriptors, useFor)[0]?.total).toBe(5500)
     const rows = pivot(withStray, descriptors, useFor, 'tokens', 'model')?.rows ?? []

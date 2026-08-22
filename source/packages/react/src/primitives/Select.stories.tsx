@@ -10,7 +10,7 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 // Component ids, because a Select in Hatua nearly always picks one.
-const options = ['email.send', 'core.fork', 'core.for_each', 'data.map']
+const options = ['component.email.send', 'core.fork', 'core.for_each', 'core.map']
 
 export const States: Story = {
   render: (args) => (
@@ -22,8 +22,8 @@ export const States: Story = {
           </option>
         ))}
       </Select>
-      <Select {...args} aria-label="Disabled" disabled defaultValue="email.send">
-        <option value="email.send">email.send</option>
+      <Select {...args} aria-label="Disabled" disabled defaultValue="component.email.send">
+        <option value="component.email.send">component.email.send</option>
       </Select>
     </div>
   ),
