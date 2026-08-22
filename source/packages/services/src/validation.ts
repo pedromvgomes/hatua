@@ -1,4 +1,4 @@
-import { type Diagnostic, indexManifests, validateSteps } from '@hatua/model'
+import { type Diagnostic, indexManifests, validateDefinition } from '@hatua/model'
 import { manifestsIn } from '@hatua/schema'
 import type { EditingStore } from './editing'
 import type { ManifestStore } from './manifests'
@@ -95,7 +95,7 @@ export function createValidationStore(
     if (document.status !== 'ready' || !document.workflow.definition) return PENDING
     if (catalogue.status !== 'ready') return PENDING
 
-    const validity = validateSteps(
+    const validity = validateDefinition(
       document.workflow.definition,
       // Only the Component Manifests: a Run Context declares no `use`, so
       // indexing it would file it under `undefined` and make every Step whose

@@ -1,4 +1,4 @@
-import { type Diagnostic, type ScopeEntry, workflowScope } from '@hatua/model'
+import { boardScope, type Diagnostic, type ScopeEntry } from '@hatua/model'
 import {
   type Connection,
   contextKeysIn,
@@ -174,13 +174,13 @@ export function Workflow({ className, ...rest }: WorkflowProps) {
    * What a Template on this tab may read: Run Context, the Triggers and the
    * variables, and never a Step's output.
    *
-   * `workflowScope` and not `scopeFor`, because nothing here has a position in
+   * `boardScope` and not `scopeFor`, because nothing here has a position in
    * the tree. A variable's value is not reached by running anything, so no Step
    * is guaranteed to have run by the time it is evaluated — offering one would
    * express a mapping that cannot resolve.
    */
   const scope = useMemo(
-    () => (definition ? workflowScope(definition, served, context) : NO_SCOPE),
+    () => (definition ? boardScope(definition, null, served, context) : NO_SCOPE),
     [definition, served, context],
   )
 

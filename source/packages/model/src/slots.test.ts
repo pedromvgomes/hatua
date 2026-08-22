@@ -106,14 +106,14 @@ describe('whenSlot', () => {
     const slot = whenSlot('{{steps.s2.count}} > 0')
     expect(slot.expectedType).toBe('boolean')
 
-    const scope = scopeFor(DOC, 's4', MANIFESTS)
+    const scope = scopeFor(DOC, { board: null, id: 's4' }, MANIFESTS)
     const found = validate(slot.template, slot.expectedType, { scope, functions: new Map() })
     expect(found.map((d) => d.code)).toEqual(['EXPR_TYPE_MISMATCH'])
     expect(found[0]?.severity).toBe('error')
   })
 
   it('accepts the same condition written the way the language means it', () => {
-    const scope = scopeFor(DOC, 's4', MANIFESTS)
+    const scope = scopeFor(DOC, { board: null, id: 's4' }, MANIFESTS)
     expect(
       validate('{{ steps.s2.count > 0 }}', 'boolean', { scope, functions: new Map() }),
     ).toEqual([])
@@ -122,7 +122,9 @@ describe('whenSlot', () => {
 
 describe('scopeFor with manifests', () => {
   it('gives each step the shape its manifest declares', () => {
-    const entry = scopeFor(DOC, 's4', MANIFESTS).find((e) => e.path === 'steps.s2')
+    const entry = scopeFor(DOC, { board: null, id: 's4' }, MANIFESTS).find(
+      (e) => e.path === 'steps.s2',
+    )
     expect(entry?.type).toEqual({ type: 'object', members: { count: { type: 'number' } } })
   })
 
@@ -143,7 +145,9 @@ describe('scopeFor with manifests', () => {
         ],
       },
     ]
-    const entry = scopeFor(DOC, 's4', manifests).find((e) => e.path === 'steps.s2')
+    const entry = scopeFor(DOC, { board: null, id: 's4' }, manifests).find(
+      (e) => e.path === 'steps.s2',
+    )
     expect(entry?.type).toEqual({
       type: 'object',
       members: { messages: { type: 'list', members: { subject: { type: 'text' } } } },
@@ -168,7 +172,9 @@ describe('scopeFor with manifests', () => {
       ],
     }
 
-    const entry = scopeFor(doc, 's2', [MAPPER]).find((e) => e.path === 'steps.s1')
+    const entry = scopeFor(doc, { board: null, id: 's2' }, [MAPPER]).find(
+      (e) => e.path === 'steps.s1',
+    )
     expect(entry?.type).toEqual({
       type: 'object',
       members: { subject: { type: 'text' }, count: { type: 'number' } },
@@ -187,7 +193,7 @@ describe('scopeFor with manifests', () => {
         { id: 's2', use: 'component.email.send' },
       ],
     }
-    const scope = scopeFor(doc, 's2', [MAPPER])
+    const scope = scopeFor(doc, { board: null, id: 's2' }, [MAPPER])
 
     expect(
       validate('{{ steps.s1.count > 0 }}', 'boolean', { scope, functions: new Map() }),

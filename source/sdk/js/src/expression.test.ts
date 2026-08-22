@@ -119,7 +119,7 @@ describe('a runner resolving a step', () => {
 
 describe('a builder checking a step', () => {
   it('accepts what the manifests say is well typed', () => {
-    const scope = scopeFor(DOC, 's6', MANIFESTS)
+    const scope = scopeFor(DOC, { board: null, id: 's6' }, MANIFESTS)
     const context = { scope, functions: coreFunctions() }
 
     for (const slot of slotsFor(DOC.steps[1]!, manifestFor('component.email.send'))) {
@@ -128,7 +128,7 @@ describe('a builder checking a step', () => {
   })
 
   it('refuses the legacy condition, which is a text template in a boolean slot', () => {
-    const scope = scopeFor(DOC, 's6', MANIFESTS)
+    const scope = scopeFor(DOC, { board: null, id: 's6' }, MANIFESTS)
     const slot = whenSlot('{{steps.s2.count}} > 0')
     const found = validate(slot.template, slot.expectedType, { scope, functions: coreFunctions() })
 
@@ -136,7 +136,7 @@ describe('a builder checking a step', () => {
   })
 
   it('resolves a projection through the manifest’s declared element shape', () => {
-    const scope = scopeFor(DOC, 's6', MANIFESTS)
+    const scope = scopeFor(DOC, { board: null, id: 's6' }, MANIFESTS)
     expect(
       validate('{{ steps.s2.messages[].subject }}', 'list', { scope, functions: coreFunctions() }),
     ).toEqual([])

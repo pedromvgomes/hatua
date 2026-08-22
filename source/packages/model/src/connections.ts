@@ -19,6 +19,15 @@ export interface Diagnostic {
    * Trigger id happens to match a Step's — painted on that Step's row.
    */
   triggerId?: string
+  /**
+   * Which Board the subject sits on: a Block's id, or absent for the root.
+   *
+   * Set ALONGSIDE `stepId`, not instead of it, because a step id alone no longer
+   * names one Step — ids are Board-local, so two Blocks may each hold a `ret`.
+   * Set on its own when the subject is the Block itself: "a path through this
+   * block can finish without returning" belongs to no Step in it.
+   */
+  blockId?: string
   connectionId?: string
   fieldKey?: string
 }

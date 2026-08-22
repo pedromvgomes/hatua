@@ -1,8 +1,17 @@
 import type { TypeNode, ValueType } from '@hatua/expressions'
-import type { ContextKey, Manifest, Output, Step, WorkflowDefinition } from '@hatua/schema'
+import type {
+  Block,
+  ContextKey,
+  Declaration,
+  Manifest,
+  Output,
+  Step,
+  WorkflowDefinition,
+} from '@hatua/schema'
 import { TRIGGER_BUILTIN } from '@hatua/schema'
+import { blockIdOf, blockOf } from './blocks'
 import { MAPPING_VERB, mapEntries } from './slots'
-import { walkSteps } from './tree'
+import { type BoardId, boardOf, type StepRef } from './tree'
 
 /**
  * What a step may reference. The reference tree is built from this, which is
@@ -10,7 +19,13 @@ import { walkSteps } from './tree'
  */
 
 export interface ScopeEntry {
-  /** The token root, e.g. `s2`, `triggers.nightly`, `var.digest_to`, `run.tenant`, `TRIGGER`. */
+  /**
+   * The whole addressable path, e.g. `steps.s2`, `triggers.nightly`,
+   * `var.digest_to`, `params.entry`, `run.tenant`, `TRIGGER`.
+   *
+   * Always below a root, never at one — which is what lets a Step be called
+   * `run` and a parameter be called `steps` (ADR-0014).
+   */
   path: string
   /**
    * Where the value comes from, which is what the reference tree groups by and
@@ -21,7 +36,7 @@ export interface ScopeEntry {
    * because it is neither: nothing in the document declares it, and unlike a
    * variable it cannot be edited from the builder at all.
    */
-  kind: 'step' | 'trigger' | 'var' | 'context' | 'builtin'
+  kind: 'step' | 'trigger' | 'param' | 'var' | 'context' | 'builtin'
   label: string
   /**
    * One sentence about the value, shown under the focused row in the completion
@@ -45,9 +60,14 @@ export interface ScopeEntry {
  * The steps a given step may reference: its ancestors and the earlier siblings
  * of every ancestor. Sibling branches are deliberately out of scope, so a user
  * cannot express a mapping that could not resolve at run time.
+ *
+ * The walk is rooted at the Step's own Board and never leaves it. A Block's
+ * steps do not see the call site's ancestry, which is the whole reason a call is
+ * a cross-link with a contract and a jump is not (ADR-0013).
  */
-export function upstreamOf(doc: WorkflowDefinition, id: string): Step[] {
-  return collectUpstream(doc.steps, id, []) ?? []
+export function upstreamOf(doc: WorkflowDefinition, ref: StepRef): Step[] {
+  const board = boardOf(doc, ref.board)
+  return board ? (collectUpstream(board.steps, ref.id, []) ?? []) : []
 }
 
 function collectUpstream(steps: readonly Step[], id: string, ancestors: Step[]): Step[] | null {
@@ -66,26 +86,42 @@ function collectUpstream(steps: readonly Step[], id: string, ancestors: Step[]):
 }
 
 /**
- * Everything addressable with no position in the tree: Run Context, the
- * Triggers, the TRIGGER built-in, and the workflow's variables.
+ * Everything a Board offers with no position in its tree.
  *
  * **Never a Step's output.** A variable's value has no position — it is not
  * reached by running anything — so no Step is guaranteed to have run by the
  * time it is evaluated, and offering one would express a mapping that cannot
  * resolve. Everything here is available unconditionally for the mirror-image
  * reason: a workflow cannot run without a Trigger firing, the Host supplies Run
- * Context to every execution, and a variable is workflow-scoped rather than
- * positional.
+ * Context to every execution, a parameter is filled by the caller before the
+ * Block starts, and a variable is Board-scoped rather than positional.
  *
- * It exists as its own function because the Workflow tab needs scope without a
+ * The two Boards offer different things, and the difference IS the contract:
+ *
+ * | | root Board | a Block's |
+ * | --- | --- | --- |
+ * | `run.*` | Run Context | the same — the one thing that crosses |
+ * | `triggers.*`, `TRIGGER` | the parameter contract | absent |
+ * | `params.*` | absent | the parameter contract |
+ * | `var.*` | the workflow's | the Block's, rebuilt per call |
+ *
+ * A Block cannot read the workflow's variables or ask which Trigger fired.
+ * Run Context is the single exception because nothing in the document declares
+ * it: the Host supplies it to every execution, so it is exact on every path of
+ * every Board with no intersection to compute (ADR-0013).
+ *
+ * It exists as its own function because the Board panel needs scope without a
  * Step to ask about. `scopeFor` is this plus the upstream Steps, so the two
  * readers share one definition of the unpositioned half rather than drifting.
  */
-export function workflowScope(
+export function boardScope(
   doc: WorkflowDefinition,
+  board: BoardId = null,
   manifests: readonly Manifest[] = [],
   context: readonly ContextKey[] = [],
 ): ScopeEntry[] {
+  const block = board === null ? undefined : blockOf(doc, board)
+  if (board !== null && !block) return []
   const byUse = new Map(manifests.map((manifest) => [manifest.use, manifest]))
   const entries: ScopeEntry[] = []
 
@@ -111,27 +147,47 @@ export function workflowScope(
     })
   }
 
-  for (const trigger of doc.triggers ?? []) {
-    entries.push({
-      path: `triggers.${trigger.id}`,
-      kind: 'trigger',
-      label: trigger.name ?? trigger.id,
-      type: outputsToType(byUse.get(trigger.use)?.outputs ?? []),
-    })
+  if (block) {
+    for (const param of block.params ?? []) {
+      entries.push({
+        path: `params.${param.k}`,
+        kind: 'param',
+        label: param.label,
+        type: declarationToType(param),
+      })
+    }
+  } else {
+    for (const trigger of doc.triggers ?? []) {
+      entries.push({
+        path: `triggers.${trigger.id}`,
+        kind: 'trigger',
+        label: trigger.name ?? trigger.id,
+        type: outputsToType(byUse.get(trigger.use)?.outputs ?? []),
+      })
+    }
+
+    /*
+     * Needed because several triggers may declare different payloads, so an
+     * expression has to be able to branch on which one started this run.
+     *
+     * Absent on a Block's Board for the reason `triggers.` is: a Block cannot
+     * ask which Trigger fired, because it cannot see the Triggers at all. A
+     * Block that needs to know takes it as a parameter.
+     */
+    if ((doc.triggers?.length ?? 0) > 1) {
+      entries.push({
+        path: TRIGGER_BUILTIN,
+        kind: 'builtin',
+        label: 'Which trigger fired',
+        type: { type: 'text' },
+      })
+    }
   }
 
-  // Needed because several triggers may declare different payloads, so an
-  // expression has to be able to branch on which one started this run.
-  if ((doc.triggers?.length ?? 0) > 1) {
-    entries.push({
-      path: TRIGGER_BUILTIN,
-      kind: 'builtin',
-      label: 'Which trigger fired',
-      type: { type: 'text' },
-    })
-  }
-
-  for (const variable of doc.vars ?? []) {
+  // The Board's own variables: the workflow's at the root, the Block's inside
+  // one. A Block called twice starts clean both times, because these are
+  // rebuilt per invocation rather than carried.
+  for (const variable of block ? (block.vars ?? []) : (doc.vars ?? [])) {
     entries.push({
       path: `var.${variable.key}`,
       kind: 'var',
@@ -152,23 +208,52 @@ export function workflowScope(
  */
 export function scopeFor(
   doc: WorkflowDefinition,
-  stepId: string,
+  ref: StepRef,
   manifests: readonly Manifest[] = [],
   context: readonly ContextKey[] = [],
 ): ScopeEntry[] {
   const byUse = new Map(manifests.map((manifest) => [manifest.use, manifest]))
 
   return [
-    ...workflowScope(doc, manifests, context),
-    ...upstreamOf(doc, stepId).map(
+    ...boardScope(doc, ref.board, manifests, context),
+    ...upstreamOf(doc, ref).map(
       (step): ScopeEntry => ({
         path: `steps.${step.id}`,
         kind: 'step',
         label: step.name ?? step.id,
-        type: stepOutputType(step, byUse.get(step.use)),
+        type: stepOutputType(doc, step, byUse.get(step.use)),
       }),
     ),
   ]
+}
+
+/**
+ * What a Block's outputs are, as a scope entry's type at the call site.
+ *
+ * Read where the Block is declared rather than from a manifest, which is what
+ * makes a call type-check before its body is written: the declaration is the
+ * contract, and `core.return` only binds values to it.
+ */
+export function blockOutputType(block: Block | undefined): TypeNode {
+  const members: Record<string, TypeNode> = {}
+  for (const output of block?.outputs ?? []) members[output.k] = declarationToType(output)
+  return { type: 'object', members }
+}
+
+/**
+ * A declaration's type. Spelled `{k, label, t, of}`, so this is three lines
+ * rather than a second traversal — the same shape a manifest output and a Run
+ * Context key carry, read by the same tree, checker and completion list.
+ */
+function declarationToType(declaration: Declaration): TypeNode {
+  const members = declaration.of ? declarationMembers(declaration.of) : undefined
+  return { type: declaration.t, ...(members ? { members } : {}) }
+}
+
+const declarationMembers = (declarations: readonly Declaration[]): Record<string, TypeNode> => {
+  const members: Record<string, TypeNode> = {}
+  for (const declaration of declarations) members[declaration.k] = declarationToType(declaration)
+  return members
 }
 
 /**
@@ -190,14 +275,25 @@ function varType(value: unknown): ValueType {
 /**
  * A step's outputs, as a type.
  *
- * `core.map` is the one component whose outputs a manifest cannot declare,
+ * `core.map` is one of two components whose outputs a manifest cannot declare,
  * because they are whatever the user named. It is the third verb Hatua
  * interprets structurally, alongside `core.fork` and `core.for_each` — and the
  * only one that does so by reading a field's *value* rather than its position
  * in the tree.
+ *
+ * A `block.*` call is the other, and it reads neither: its outputs are declared
+ * once, where the Block is, and every call site shares that one declaration.
  */
-function stepOutputType(step: Step, manifest: Manifest | undefined): TypeNode {
+function stepOutputType(
+  doc: WorkflowDefinition,
+  step: Step,
+  manifest: Manifest | undefined,
+): TypeNode {
   if (step.use === MAPPING_VERB) return mappingOutputType(step)
+
+  const called = blockIdOf(step.use)
+  if (called !== null) return blockOutputType(blockOf(doc, called))
+
   return outputsToType(manifest?.outputs ?? [])
 }
 
@@ -240,9 +336,4 @@ function outputToType(output: Output): TypeNode {
   // one shape for both, which is exactly what a TypeNode carries.
   const members = output.of ? outputsToType(output.of).members : undefined
   return { type: output.t, ...(members ? { members } : {}) }
-}
-
-/** Every step id in the document, for detecting references to steps that vanished. */
-export function stepIds(doc: WorkflowDefinition): Set<string> {
-  return new Set([...walkSteps(doc.steps)].map((s) => s.id))
 }

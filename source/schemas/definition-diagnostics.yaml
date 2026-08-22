@@ -1,0 +1,124 @@
+# Diagnostic codes for the Workflow Definition itself — and what each one blocks.
+#
+# Separate from `diagnostics.yaml`, which is the expression language's. That file
+# is generated into the expressions subtree of both languages, and the expressions
+# package is deliberately ignorant of manifests, documents and Boards — a code
+# about a Fork's branches has no business being emitted there. Its `phase:` also
+# means something else: design-time-vs-run-time for one Template, where every code
+# here is about the whole document at design time.
+#
+# What IS shared is the reason both files exist. `blocks:` is part of the
+# contract, not a per-language choice: a code that blocks Publish in TypeScript
+# and merely informs in Go would let a workflow publish from one builder and not
+# another.
+#
+#   publish  blocks Publish. Never blocks editing — ADR-0009.
+#   edit     also blocks editing. Reserved for what ordinary building cannot
+#            produce, so a half-filled Step never trips one.
+#
+# `message` is a template. `{name}` holes are filled from the diagnostic's own
+# fields by the same two-line formatter the expression codes use.
+
+codes:
+  # ---- a step against its manifest -----------------------------------------
+
+  - code: FIELD_REQUIRED
+    blocks: publish
+    message: "{label} is required."
+    summary: >-
+      A required, visible field with nothing in it. Publish-blocking rather than
+      edit-blocking because this is what every Step looks like a second after it
+      is added.
+
+  - code: COMPONENT_UNKNOWN
+    blocks: edit
+    message: 'Nothing declares "{use}". It may no longer be available.'
+    summary: >-
+      A `component.*` or `core.*` verb no manifest declares. Blocks editing
+      because building cannot produce it: the catalogue only offers what it
+      declares, so this is a hand-edit or a Host that dropped a component.
+
+  # ---- the structural verbs ------------------------------------------------
+
+  - code: FORK_HAS_NO_BRANCHES
+    blocks: publish
+    message: "This fork has no branches. Add the two paths it chooses between."
+    summary: >-
+      Separate from FORK_NEEDS_TWO_BRANCHES because the two are different
+      mistakes and the fix differs: an empty fork was never configured, while a
+      one-branch fork is half-built and the sentence should say which half.
+
+  - code: FORK_NEEDS_TWO_BRANCHES
+    blocks: publish
+    message: "A fork needs at least two branches — add the other path."
+    summary: >-
+      One branch is not a fork; it is the same path with a condition on it,
+      which is not a thing a runner can do anything useful with.
+
+  - code: BRANCH_UNREACHABLE_AFTER
+    blocks: publish
+    message: >-
+      "{label}" has no condition, so nothing after it can ever run. Only the last
+      branch may be unconditional.
+    summary: >-
+      A condition fork is first-match-wins, so an unconditional branch before the
+      end swallows every branch behind it.
+
+  - code: LOOP_HAS_NO_BODY
+    blocks: publish
+    message: "This loop repeats nothing. Add at least one Step inside it."
+    summary: A `core.for_each` with no children.
+
+  # ---- blocks ---------------------------------------------------------------
+
+  - code: BLOCK_UNKNOWN
+    blocks: publish
+    message: 'No block called "{name}" is declared in this workflow.'
+    summary: >-
+      A `block.*` verb naming nothing under `blocks:`. Publish-blocking and NOT
+      edit-blocking, unlike COMPONENT_UNKNOWN: a local name goes stale the moment
+      someone renames the block or deletes it, which is ordinary building, and
+      the message says the block is missing rather than that the Host withdrew a
+      component.
+
+  - code: BLOCK_RECURSION
+    blocks: publish
+    message: '"{name}" calls itself, directly or through another block.'
+    summary: >-
+      ADR-0013 refuses recursion, because unbounded recursion is the jump problem
+      wearing a contract's clothes. A design-time answer rather than a depth limit
+      a runner discovers, so both builders refuse the same document.
+
+  - code: RETURN_OUTSIDE_BLOCK
+    blocks: publish
+    message: "`core.return` publishes a block's outputs, and this is not inside a block."
+    summary: >-
+      The root Board declares no outputs, so there is nothing to bind, and
+      `core.end` already means "stop the workflow". Publish-blocking rather than
+      edit-blocking because moving a Step from a block to the root is ordinary
+      building.
+
+  - code: BLOCK_PATH_WITHOUT_RETURN
+    blocks: publish
+    message: '"{name}" declares outputs, but a path through it can finish without returning.'
+    summary: >-
+      A path returns via a `core.return` at the Board's root level, or a
+      root-level fork whose every branch returns. A return inside a loop exits
+      the block early and is legal, but never discharges the obligation: the list
+      may be empty and the body may never run — the same reasoning that keeps
+      sibling branches out of scope, applied to time instead of to paths.
+
+  - code: STEP_AFTER_RETURN
+    blocks: publish
+    message: "Nothing after `core.return` can run."
+    summary: >-
+      The same failure as an unconditional branch that swallows the ones behind
+      it, and reported the same way.
+
+  - code: STEP_ID_DUPLICATE
+    blocks: publish
+    message: 'More than one step on this board is called "{name}".'
+    summary: >-
+      Ids are scoped to a Board, so two blocks may each hold a step called `ret`.
+      Two on ONE board make `{{steps.ret}}` name two things, which is the one
+      case a Board cannot disambiguate.

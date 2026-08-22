@@ -39,13 +39,13 @@ export {
   validate,
 } from '@hatua/expressions'
 export {
+  boardScope,
   findStep,
   scopeFor,
   slotsFor,
   upstreamOf,
   walkSteps,
   whenSlot,
-  workflowScope,
 } from '@hatua/model'
 export * from '@hatua/schema'
 export { loadDefinition, loadExecution, loadManifests, loadRunContext } from './load'

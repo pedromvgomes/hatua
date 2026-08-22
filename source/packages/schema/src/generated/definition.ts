@@ -3,6 +3,75 @@
 // Regenerate: pnpm codegen
 import { z } from 'zod'
 
+/**
+ * A name that has to survive being a path segment. Every user-chosen name sits one segment below a reserved root — `steps.<id>`, `triggers.<id>`, `var.<key>`, `block.<id>` — so a name the expression grammar cannot parse is a name nothing can ever address. Refused here rather than accepted into a file and reported as a broken Reference on every use of it.
+ */
+export const identifier = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/)
+export type Identifier = z.infer<typeof identifier>
+
+/**
+ * One Board: a step tree whose root is this contract rather than the workflow's triggers.
+ * Step ids are scoped to the block, so `{{steps.put}}` inside one names that block's `put` and two blocks may each have a step by the same name. A block's `vars` are its own and are rebuilt on every invocation, which is why a block called twice carries nothing between calls.
+ */
+export const block = z.strictObject({
+  /**
+   * The slug a call writes as `use: block.<id>`. Renaming it does not follow the call sites: they go stale and are reported, exactly as a renamed var key's References are.
+   */
+  get id() {
+    return identifier
+  },
+  /**
+   * Display name.
+   */
+  name: z.string().optional(),
+  /**
+   * What the block takes, read inside it as `{{params.<k>}}`. Spelled exactly as a manifest output is, so `outputsToType` types `{{params.entry.headline}}` with no new code and `params.` is a precise mirror of `triggers.` on the root Board.
+   * It is also what a call site's fields are derived from, which is why a call needs no UI of its own: each parameter becomes a Slot in the calling step's `with:`.
+   */
+  get params() {
+    return z.array(declaration).optional()
+  },
+  /**
+   * What the block publishes, read at the call site as `{{steps.<call id>.<k>}}`. Declared rather than inferred, because the call site must type-check before the body is written — that is the whole difference between a call and a jump.
+   * `core.return` binds the values; the declaration is the contract.
+   */
+  get outputs() {
+    return z.array(declaration).optional()
+  },
+  /**
+   * The block's own variables, read as `{{var.<key>}}` inside it and written by `data.set_var`. Rebuilt on every invocation, and invisible outside the block — the workflow's `vars` are a different set that a block cannot see.
+   */
+  get vars() {
+    return z.array(variable).optional()
+  },
+  get steps() {
+    return z.array(step)
+  },
+})
+export type Block = z.infer<typeof block>
+
+/**
+ * One parameter or one output. Spelled `{k, label, t, of}` exactly as a Component Manifest's output and a Run Context key are — ADR-0012 rejected inventing a second spelling for an idea the contract already has one of, and the reasoning holds here unchanged.
+ */
+export const declaration = z.strictObject({
+  k: z.string().min(1),
+  /**
+   * Friendly name, shown in the reference tree and on the call site's field.
+   */
+  label: z.string().min(1),
+  /**
+   * `item` is deliberately absent. It is the for-each escape hatch, resolved by following a loop's `list` back to its source output, and a block's parameter is not the output of anything — so it could never resolve. Refused by the schema rather than warned about at run time.
+   */
+  t: z.enum(['text', 'number', 'boolean', 'datetime', 'object', 'list']),
+  /**
+   * Shape of each list element or object member.
+   */
+  get of() {
+    return z.array(declaration).optional()
+  },
+})
+export type Declaration = z.infer<typeof declaration>
+
 export const connection = z.strictObject({
   /**
    * Workflow-local name. Steps reference this, never the ref.
@@ -21,7 +90,9 @@ export const trigger = z.strictObject({
   /**
    * Addressed as `{{triggers.<id>.<field>}}`, and matched by the `TRIGGER` built-in.
    */
-  id: z.string().min(1),
+  get id() {
+    return identifier
+  },
   /**
    * The manifest verb, e.g. `core.schedule` or a Host-supplied `component.email.received`. See `step.use` for what the three roots mean.
    */
@@ -40,7 +111,9 @@ export type Trigger = z.infer<typeof trigger>
  * A list of key/value objects rather than a map, so a `type` or `label` can be added later without a breaking change to every existing file.
  */
 export const variable = z.strictObject({
-  key: z.string().min(1),
+  get key() {
+    return identifier
+  },
   /**
    * A literal, or an expression evaluated by the SDK's shared evaluator.
    */
@@ -51,8 +124,11 @@ export type Variable = z.infer<typeof variable>
 export const step = z.strictObject({
   /**
    * Stable, and what References point at, addressed as `{{steps.<id>.<field>}}`. This is why renaming a step never breaks a mapping.
+   * Unique within its Board, not within the document: a block's steps are its own, so two blocks may each hold a step called `ret` and `{{steps.ret}}` means the one on the Board it is written on.
    */
-  id: z.string().min(1),
+  get id() {
+    return identifier
+  },
   /**
    * The manifest verb. Its root says who declares it and there are only three: `core.` is Hatua's, `component.` is the Host's, `block.` names a Block in this document. Nothing sits at the root itself, so a Host may declare `component.block.render` and collide with nothing — see ADR-0014.
    * Hatua treats most verbs as opaque, but interprets three structurally: `core.fork` creates branches, `core.for_each` nests and exposes `item`, and `core.map` derives its outputs from its own `entries` field rather than from its manifest. The first two drive reference scope and derived layout; the third drives reference scope alone.
@@ -139,7 +215,14 @@ export const workflowDefinition = z.strictObject({
     return z.array(variable).optional()
   },
   /**
-   * The root sequence. Every step is an instance of a Component declared by a manifest.
+   * Named, reusable sequences of steps, each invoked as `use: block.<id>`. A block declares what it takes and what it publishes, and reads NOTHING else from the call site — not the workflow's triggers, not its vars. That contract is what lets a block be reached from many call sites while scope stays an exact walk rather than an intersection over paths; see ADR-0013.
+   * A list of objects rather than a map, for the reason `vars` is one: a field can be added later without a breaking change to every existing file.
+   */
+  get blocks() {
+    return z.array(block).optional()
+  },
+  /**
+   * The root sequence — the root Board. Every step is an instance of a Component declared by a manifest, or a call to a block declared above.
    */
   get steps() {
     return z.array(step)

@@ -5,7 +5,7 @@ import {
   malformedContainers,
   missingRequiredFields,
   unknownComponents,
-  validateSteps,
+  validateDefinition,
 } from './validity'
 
 /**
@@ -320,9 +320,9 @@ describe('the two structural verbs', () => {
   })
 })
 
-describe('validateSteps', () => {
+describe('validateDefinition', () => {
   it('indexes every rule by the Step it belongs to', () => {
-    const { byStep } = validateSteps(
+    const { byStep } = validateDefinition(
       workflow([
         { id: 's1', use: 'component.email.send', with: { to: 'a' } },
         { id: 's2', use: 'core.fork', branches: [{ label: 'only', steps: [] }] },
@@ -340,7 +340,7 @@ describe('validateSteps', () => {
   })
 
   it('collects several problems on one Step', () => {
-    const { byStep } = validateSteps(
+    const { byStep } = validateDefinition(
       workflow([{ id: 's1', use: 'component.email.send' }]),
       CATALOGUE,
     )
@@ -348,7 +348,7 @@ describe('validateSteps', () => {
   })
 
   it('is empty for a workflow with nothing wrong', () => {
-    const validity = validateSteps(
+    const validity = validateDefinition(
       workflow([{ id: 's1', use: 'component.email.send', with: { to: 'a', subject: 'b' } }]),
       CATALOGUE,
     )
@@ -372,7 +372,7 @@ describe('validateSteps', () => {
       ],
     }
 
-    const { byStep, byTrigger, all } = validateSteps(doc, CATALOGUE)
+    const { byStep, byTrigger, all } = validateDefinition(doc, CATALOGUE)
 
     expect(byStep.size).toBe(0)
     expect([...byTrigger.keys()].sort()).toEqual(['s1', 't1'])
