@@ -1,4 +1,4 @@
-import { type ComponentPropsWithRef, useEffect, useRef, useState } from 'react'
+import { type ComponentPropsWithRef, useCallback, useEffect, useRef, useState } from 'react'
 import { cx } from './classNames'
 import styles from './Select.module.css'
 import css from './Select.module.css?inline'
@@ -27,8 +27,7 @@ export function Select({ className, children, revealOnOverflow, ref, ...rest }: 
   const own = useRef<HTMLSelectElement>(null)
 
   /*
-   * The chosen option's text, held in state and read from the element after
-   * every render.
+   * The chosen option's text, read from the element rather than from props.
    *
    * Not read during render: the ref is null on the first pass, and nothing
    * about a ref filling in later causes a second one — so the text stayed empty
@@ -40,10 +39,24 @@ export function Select({ className, children, revealOnOverflow, ref, ...rest }: 
    * loop, and it settles in one extra render.
    */
   const [chosen, setChosen] = useState('')
-  useEffect(() => {
+  const read = useCallback(() => {
     const text = own.current?.selectedOptions?.[0]?.text ?? ''
     setChosen((current) => (current === text ? current : text))
-  })
+  }, [])
+
+  useEffect(read)
+
+  /*
+   * And on the element's own `change`, because an uncontrolled `<select>`
+   * changes without anything re-rendering — so a reveal left over from the
+   * previous option would sit there describing a value no longer chosen.
+   */
+  useEffect(() => {
+    const element = own.current
+    if (!element) return
+    element.addEventListener('change', read)
+    return () => element.removeEventListener('change', read)
+  }, [read])
 
   const overflowing = useTextOverflowing(own, chosen)
 

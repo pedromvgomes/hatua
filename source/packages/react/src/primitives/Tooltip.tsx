@@ -55,9 +55,17 @@ export function Tooltip({ anchor, content, enabled = true, id }: TooltipProps) {
   // One id per mounted tooltip, so `aria-describedby` names something real.
   const [described] = useState(() => id ?? `hatua-tip-${Math.random().toString(36).slice(2, 9)}`)
 
+  /*
+   * Listening happens whether or not there is anything to say.
+   *
+   * Gated on `enabled`, the listeners came and went with it — so a pointer
+   * already resting on the control when it became worth describing had already
+   * sent its `pointerenter`, and nothing would appear until it left and came
+   * back. Choosing a short option and then a long one again is exactly that.
+   */
   useEffect(() => {
     const element = anchor.current
-    if (!element || !enabled) return
+    if (!element) return
 
     const show = () => setOpen(true)
     const hide = () => setOpen(false)
@@ -78,7 +86,7 @@ export function Tooltip({ anchor, content, enabled = true, id }: TooltipProps) {
       element.removeEventListener('keydown', onKeyDown)
       setOpen(false)
     }
-  }, [anchor, enabled])
+  }, [anchor])
 
   /*
    * Described whenever there is something to say, not only while the layer is
@@ -94,13 +102,16 @@ export function Tooltip({ anchor, content, enabled = true, id }: TooltipProps) {
 
   // Measured on open rather than held: the anchor may have scrolled, and a
   // position from the last time it was shown is a layer somewhere else.
+  // `enabled` is a dependency because it can turn on while the pointer is
+  // already resting on the anchor, and the layer is about to be shown from a
+  // position measured before it had one.
   useEffect(() => {
-    if (!open) return setAt(null)
+    if (!open || !enabled) return setAt(null)
     const box = anchor.current?.getBoundingClientRect()
     if (!box) return
     const { left, top, bottom } = place(box, WIDTH, { wants: 120 })
     setAt({ left, top, bottom })
-  }, [open, anchor])
+  }, [open, enabled, anchor])
 
   if (!enabled || !container) return null
 

@@ -633,6 +633,21 @@ describe('Tooltip', () => {
     expect(screen.getByRole('button').getAttribute('aria-describedby')).toBeNull()
     expect(tip()).toBeNull()
   })
+
+  /*
+   * Whether there is anything to say changes under a pointer that has not
+   * moved — choosing a shorter option and then a longer one again is exactly
+   * that. Listening only while enabled meant the `pointerenter` had already
+   * been and gone, and nothing appeared until the pointer left and came back.
+   */
+  it('is already open when it becomes worth showing under a resting pointer', () => {
+    const { rerender } = render(<Anchored enabled={false} />)
+    fireEvent.pointerEnter(screen.getByRole('button'))
+    expect(tip()).toBeNull()
+
+    rerender(<Anchored enabled />)
+    expect(tip()?.getAttribute('data-open')).toBe('true')
+  })
 })
 
 describe('revealOnOverflow', () => {
