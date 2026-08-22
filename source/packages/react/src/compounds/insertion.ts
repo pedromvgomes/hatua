@@ -125,7 +125,7 @@ function tokenStart(written: string): number {
  *   saying nothing at all about what any individual hole produces. Marking such
  *   a hole against the field's declared type would paint rows red-in-effect
  *   that the checker is perfectly happy with — a `number` field holding
- *   `Order {{ steps.s2.ref }}` is a text template either way, and whether `s2.ref` is
+ *   `Order {{ steps.s2.ref }}` is a text template either way, and whether `steps.s2.ref` is
  *   text or a number changes nothing about it.
  *
  * So a hole in mixed text is judged against `text`, which `match()` already

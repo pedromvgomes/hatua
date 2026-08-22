@@ -195,8 +195,8 @@ runs because of where it nests. Reuse is a **Block**, not an edge into a shared 
 **"Block" the domain term vs `blocks/` the React layer** — `packages/react/src/blocks/` holds
 presentational units (NodeCard, StepRow, Connector) and has nothing to do with a **Block**. That is
 the *Flow tab* / `FlowMap` collision again: one word, two meanings, in one repo. Resolution: the
-domain term wins and the React layer is renamed. Until it is, never call a presentational unit a
-block.
+domain term wins — a presentational unit is never called a block, whatever the directory holding
+one is named, and `packages/react/src/blocks/` is misnamed.
 See [ADR-0013](docs/adr/0013-control-flow-nests.md), which also corrects ADR-0001's reason for the
 constraint: cross-links break exact static scope, not derived layout.
 

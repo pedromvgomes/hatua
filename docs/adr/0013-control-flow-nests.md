@@ -187,11 +187,13 @@ building — `validity.ts` reserves `blocks: 'edit'` for what building cannot pr
 
 **A Block declaring no outputs needs no return.** Blocks used for their effects alone declare nothing
 and return nothing, and the rule only bites once `outputs:` is non-empty. A return that fills only
-some declared outputs needs no rule of its own either: the synthesized manifest marks them required,
-so it is the ordinary missing-field diagnostic.
+some declared outputs needs no rule of its own either: every declared output is required, so it is
+the ordinary missing-field diagnostic.
 
-**A path returns if there is a return at the Board's root level, or a root-level `core.fork` whose
-every branch returns.** A return inside a `core.for_each` body exits the Block early and is perfectly
+**A path returns if there is a return at the Board's root level, or an exhaustive root-level
+`core.fork` whose every branch returns.** Exhaustive means the last branch carries no `when`: a
+condition fork is first-match-wins, so one whose every branch is conditional can match none of them
+and fall straight through. A return inside a `core.for_each` body exits the Block early and is perfectly
 legal, but it never discharges the obligation, because the list may be empty and the body may never
 run. That is the same reasoning that keeps sibling branches out of scope, applied to time instead of
 to paths. Steps sitting after a return on the same path can never run, and are reported the way an
@@ -201,10 +203,10 @@ unconditional Branch that swallows the ones behind it already is.
 
 A repeated region usually has to carry something backwards — the reviewer's feedback reaching the
 draft step that runs before it. Nothing positional can do that: the writer runs after the reader, so
-it is not in scope. **`data.set_var` is the mechanism**, because a `var` is scoped to its **Board**
+it is not in scope. **`core.set_var` is the mechanism**, because a `var` is scoped to its **Board**
 and readable anywhere on it regardless of where it was written.
 
-A **Block** therefore declares `vars:` of its own, and `data.set_var` inside one writes those and can
+A **Block** therefore declares `vars:` of its own, and `core.set_var` inside one writes those and can
 never reach out of the Board it is on. That is not a second concept: it is the same rule stated once,
 where "the Board" is the root for a Step in `steps:` and the Block for a Step inside one.
 

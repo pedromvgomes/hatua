@@ -1,7 +1,7 @@
 import type { WorkflowDocument } from '@hatua/document'
 import type { BoardId, StepRef } from '@hatua/model'
 import type { Step } from '@hatua/schema'
-import { asObject, detachNode, insertNode, type Path } from './ast'
+import { asObject, detachNode, insertNode, type Path, readAt } from './ast'
 import type { EditCommand } from './command'
 
 /**
@@ -126,20 +126,10 @@ export function boardPath(document: WorkflowDocument, board: BoardId | undefined
 
 function locate(document: WorkflowDocument, ref: StepRef): Located | undefined {
   const root = boardPath(document, ref.board)
-  for (const found of walk(readList(document, root), root)) {
+  for (const found of walk(readAt(document, root), root)) {
     if (found.step.id === ref.id) return { listPath: found.listPath, index: found.index }
   }
   return undefined
-}
-
-/** The loose projection of one sequence, addressed by path. */
-function readList(document: WorkflowDocument, path: Path): unknown {
-  let value: unknown = asObject(document)
-  for (const part of path) {
-    if (value === null || typeof value !== 'object') return undefined
-    value = (value as Record<string | number, unknown>)[part as string]
-  }
-  return value
 }
 
 /**
@@ -174,7 +164,7 @@ function mintId(document: WorkflowDocument, board: BoardId | undefined): string 
   // Ids are Board-local, so only this Board's are taken. Minting against the
   // whole document would make a block's first step `s7` because the root has
   // six, which is a name nobody chose about a tree nobody is looking at.
-  for (const { step } of walk(readList(document, root), root)) {
+  for (const { step } of walk(readAt(document, root), root)) {
     if (typeof step.id === 'string') taken.add(step.id)
   }
   for (let n = 1; ; n++) {
@@ -294,7 +284,7 @@ export function moveStep(ref: StepRef, to: InsertPoint): EditCommand {
  * reads the same loose projection every command reads.
  */
 export const rootStepCount = (document: WorkflowDocument, board?: BoardId): number => {
-  const steps = readList(document, boardPath(document, board))
+  const steps = readAt(document, boardPath(document, board))
   return Array.isArray(steps) ? steps.length : 0
 }
 

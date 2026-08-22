@@ -193,7 +193,16 @@ func BoardScope(doc Definition, board BoardID, manifests []Manifest, context []C
 
 	// First, because it is the only part of scope no document declares: it is
 	// there before a workflow has a trigger, a var or a step.
+	//
+	// The first of any repeated key wins, the way every other lookup here
+	// resolves one: nothing stops a Host assembling its list from several
+	// sources, and the TypeScript half resolves a repeat the same way.
+	declared := make(map[string]bool, len(context))
 	for _, key := range context {
+		if declared[key.K] {
+			continue
+		}
+		declared[key.K] = true
 		entries = append(entries, expressions.ScopeEntry{
 			Path: "run." + key.K,
 			Type: contextKeyType(key),
@@ -260,13 +269,23 @@ func ScopeFor(doc Definition, ref StepRef, manifests []Manifest, context []Conte
 		byUse[manifest.Use] = manifest
 	}
 
+	// Indexed once, beside byUse, for the reason byUse is: stepOutputType asks
+	// for a block on every upstream step that is a call, and a linear scan there
+	// makes one ScopeFor quadratic in a document with many blocks.
+	byID := make(map[string]*Block, len(doc.Blocks))
+	for i := range doc.Blocks {
+		if _, held := byID[doc.Blocks[i].ID]; !held {
+			byID[doc.Blocks[i].ID] = &doc.Blocks[i]
+		}
+	}
+
 	entries := BoardScope(doc, ref.Board, manifests, context)
 
 	for _, step := range UpstreamOf(doc, ref) {
 		manifest := byUse[step.Use]
 		entries = append(entries, expressions.ScopeEntry{
 			Path: "steps." + step.ID,
-			Type: stepOutputType(doc, step, manifest),
+			Type: stepOutputType(byID, step, manifest),
 		})
 	}
 
@@ -359,9 +378,9 @@ func varType(value any) expressions.ValueType {
 // they are whatever the user named. It is the third verb Hatua interprets
 // structurally, alongside core.fork and core.for_each — and the only one that
 // does so by reading a field's value rather than its position in the tree.
-func stepOutputType(doc Definition, step Step, manifest Manifest) expressions.TypeNode {
+func stepOutputType(blocks map[string]*Block, step Step, manifest Manifest) expressions.TypeNode {
 	if called, ok := BlockIDOf(step.Use); ok {
-		return blockOutputType(BlockOf(doc, called))
+		return blockOutputType(blocks[called])
 	}
 	if step.Use == MappingVerb {
 		members := map[string]expressions.TypeNode{}

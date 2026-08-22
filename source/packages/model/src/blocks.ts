@@ -29,8 +29,8 @@ export const blockOf = (doc: WorkflowDefinition, id: string): Block | undefined 
  * The Slots a call's `with:` map resolves into: one per declared parameter,
  * typed by the declaration.
  *
- * Deliberately NOT routed through a synthesized Component Manifest, which was
- * the first draft. A manifest field carries a rendering `kind` and no type, so
+ * Deliberately NOT routed through a synthesized Component Manifest. A manifest
+ * field carries a rendering `kind` and no type, so
  * `slotsFor` recovers the expected type from `FIELD_KIND_TYPES` — and that
  * vocabulary cannot express "a Template that must produce a boolean" at all,
  * because `bool` holds a literal rather than a Template. Synthesizing a manifest
@@ -100,8 +100,15 @@ export function callsOf(steps: readonly Step[]): string[] {
  * depth-first walk answers both without a second traversal.
  */
 export function cyclicBlocks(doc: WorkflowDefinition): Set<string> {
+  // First-wins, matching `blockOf` — `Map.set` would let the LAST block under a
+  // repeated id decide what the call graph is while every other reader acts on
+  // the first, so recursion would be analysed against one block's steps and
+  // reported against another's.
   const edges = new Map<string, string[]>()
-  for (const block of doc.blocks ?? []) edges.set(block.id, callsOf(block.steps))
+  for (const block of doc.blocks ?? []) {
+    if (edges.has(block.id)) continue
+    edges.set(block.id, callsOf(block.steps))
+  }
 
   const cyclic = new Set<string>()
   const visiting = new Set<string>()

@@ -10,7 +10,7 @@ import {
 } from './blocks'
 import type { EditCommand } from './command'
 import { addStep, moveStep, removeStep } from './steps'
-import { addVariable, setVariableValue } from './variables'
+import { addVariable, removeVariable, renameVariable, setVariableValue } from './variables'
 
 /**
  * The Block commands against a document directly.
@@ -287,6 +287,41 @@ describe('a block’s own variables', () => {
     const out = apply(SOURCE, addBlock({ id: 'archive' }), addVariable('note', 'archive'))
     const block = out.slice(out.indexOf('blocks:'), out.indexOf('\nsteps:'))
     expect(block.indexOf('vars:')).toBeLessThan(block.indexOf('steps:'))
+  })
+
+  it('renames one inside the block, leaving the workflow’s alone', () => {
+    const built = apply(SOURCE, addBlock({ id: 'archive' }), addVariable('attempt_note', 'archive'))
+    const out = apply(built, renameVariable('attempt_note', 'note', 'archive'))
+
+    expect(projected(out).blocks?.[0]?.vars?.map((v) => v.key)).toEqual(['note'])
+    expect(projected(out).vars?.map((v) => v.key)).toEqual(['digest_to'])
+  })
+
+  it('refuses a rename onto a key the same block already holds', () => {
+    const built = apply(
+      SOURCE,
+      addBlock({ id: 'archive' }),
+      addVariable('one', 'archive'),
+      addVariable('two', 'archive'),
+    )
+    expect(() => apply(built, renameVariable('one', 'two', 'archive'))).toThrow(/already exists/)
+  })
+
+  /* The workflow's own key is a different set, so it is not a collision. */
+  it('allows a block variable to take a key the workflow also uses', () => {
+    const built = apply(SOURCE, addBlock({ id: 'archive' }), addVariable('note', 'archive'))
+    const out = apply(built, renameVariable('note', 'digest_to', 'archive'))
+
+    expect(projected(out).blocks?.[0]?.vars?.map((v) => v.key)).toEqual(['digest_to'])
+    expect(projected(out).vars?.map((v) => v.key)).toEqual(['digest_to'])
+  })
+
+  it('removes one from the block, leaving the workflow’s alone', () => {
+    const built = apply(SOURCE, addBlock({ id: 'archive' }), addVariable('attempt_note', 'archive'))
+    const out = apply(built, removeVariable('attempt_note', 'archive'))
+
+    expect(projected(out).blocks?.[0]?.vars).toEqual([])
+    expect(projected(out).vars?.map((v) => v.key)).toEqual(['digest_to'])
   })
 
   it('still edits the workflow’s variables when no board is named', () => {

@@ -19,6 +19,7 @@ export type DefinitionCode =
   | 'RETURN_OUTSIDE_BLOCK'
   | 'BLOCK_PATH_WITHOUT_RETURN'
   | 'STEP_AFTER_RETURN'
+  | 'BLOCK_ID_DUPLICATE'
   | 'STEP_ID_DUPLICATE'
 
 export interface DefinitionDiagnosticSpec {
@@ -85,6 +86,11 @@ export const DEFINITION_DIAGNOSTICS: Record<DefinitionCode, DefinitionDiagnostic
     code: 'STEP_AFTER_RETURN',
     blocks: 'publish',
     message: 'Nothing after `core.return` can run.',
+  },
+  BLOCK_ID_DUPLICATE: {
+    code: 'BLOCK_ID_DUPLICATE',
+    blocks: 'publish',
+    message: 'More than one block is called "{name}".',
   },
   STEP_ID_DUPLICATE: {
     code: 'STEP_ID_DUPLICATE',

@@ -59,6 +59,11 @@ type Context struct {
 	Steps map[string]Value
 	// Triggers holds trigger payloads, addressed as `triggers.<id>.…`.
 	Triggers map[string]Value
+	// Params holds the values a block was called with, addressed as
+	// `params.<k>`. Supplied per invocation rather than per run: a block called
+	// twice is called with different arguments, and its parameters are the only
+	// part of scope that changes between two calls of the same block.
+	Params map[string]Value
 	// Vars holds workflow variables, addressed as `var.<key>`.
 	Vars map[string]Value
 	// Run holds the Host's ambient values for this execution, addressed as
@@ -273,9 +278,9 @@ func evaluateRaw(node Expression, ctx Context) any {
 		return step(evaluateRaw(n.Object, ctx), func(target Value) any { return read(target, n.Name) })
 	case *Index:
 		// The index is evaluated *inside* step, so a missing object or an empty
-		// projection short-circuits before it runs. Hoisting it out — as this
-		// once did — made `{{ steps.s1.absent[1/0] }}` a division error here and a
-		// missing path in TypeScript.
+		// projection short-circuits before it runs. Evaluating it outside step
+		// makes `{{ steps.s1.absent[1/0] }}` a division error here and a missing
+		// path in TypeScript.
 		return step(evaluateRaw(n.Object, ctx), func(target Value) any {
 			return indexInto(target, Evaluate(n.Index, ctx), n.At)
 		})
@@ -334,6 +339,8 @@ func root(name string, ctx Context) any {
 		return asObject(ctx.Run)
 	case "steps":
 		return asObject(ctx.Steps)
+	case "params":
+		return asObject(ctx.Params)
 	}
 	return missing{}
 }

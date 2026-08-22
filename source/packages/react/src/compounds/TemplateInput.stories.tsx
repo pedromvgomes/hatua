@@ -268,7 +268,7 @@ export const CompletionByTyping: Story = {
 
 /** Way in #2: `Ctrl`+`Space` inside a hole. */
 export const CompletionByShortcut: Story = {
-  args: { value: '{{ steps.s2. }}', expectedType: 'text', route: 'shortcut-inside', caret: 6 },
+  args: { value: '{{ steps.s2. }}', expectedType: 'text', route: 'shortcut-inside', caret: 12 },
 }
 
 /** After a namespace's dot: that namespace's Functions, and no scope at all. */
@@ -285,7 +285,7 @@ export const CompletionThroughAProjection: Story = {
     value: '{{ steps.s2.messages[]. }}',
     expectedType: 'text',
     route: 'shortcut-inside',
-    caret: 17,
+    caret: 23,
   },
 }
 
@@ -299,7 +299,7 @@ export const RetargetByDoubleClick: Story = {
     value: 'Inbox digest · {{ steps.s2.count }} messages',
     expectedType: 'text',
     route: 'retarget',
-    caret: 22,
+    caret: 28,
   },
 }
 

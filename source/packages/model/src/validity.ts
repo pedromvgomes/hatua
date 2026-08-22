@@ -31,7 +31,9 @@ type ManifestIndex = ReadonlyMap<string, Manifest>
 
 /** The declared message, with its `{name}` holes filled. */
 const message = (code: DefinitionCode, fields: Record<string, string> = {}): string =>
-  DEFINITION_DIAGNOSTICS[code].message.replace(/\{(\w+)\}/g, (whole, name) => fields[name] ?? whole)
+  DEFINITION_DIAGNOSTICS[code].message.replace(/\{(\w+)\}/g, (whole, name) =>
+    Object.hasOwn(fields, name) ? (fields[name] ?? whole) : whole,
+  )
 
 /** One diagnostic, taking `blocks` from the declaration rather than restating it. */
 const raise = (
@@ -263,8 +265,20 @@ function alwaysReturns(steps: readonly Step[]): boolean {
   return steps.some((step) => {
     if (step.use === RETURN_VERB) return true
     if (step.use !== 'core.fork') return false
+
     const branches = step.branches ?? []
-    return branches.length > 0 && branches.every((branch) => alwaysReturns(branch.steps))
+    if (branches.length === 0) return false
+
+    // A condition fork is first-match-wins, so one whose every branch carries a
+    // `when` can match none of them and fall straight through. Only an
+    // unconditional last branch — the fallback — makes it exhaustive, and the
+    // schema says that branch MAY be unconditional rather than must be. Without
+    // this the obligation is discharged by a fork that can skip every path, and
+    // a Step legitimately placed after such a fork is refused publish as
+    // unreachable.
+    if (branches.at(-1)?.when !== undefined) return false
+
+    return branches.every((branch) => alwaysReturns(branch.steps))
   })
 }
 
@@ -279,6 +293,17 @@ function alwaysReturns(steps: readonly Step[]): boolean {
  */
 export function blockRules(doc: WorkflowDefinition): Diagnostic[] {
   const out: Diagnostic[] = []
+
+  const declared = new Set<string>()
+  for (const block of doc.blocks ?? []) {
+    // A call resolves to the first block under an id, so a second is
+    // unreachable — and every other reader would have to agree about which one
+    // `block.x` meant. Reported rather than silently resolved.
+    if (declared.has(block.id)) {
+      out.push(raise('BLOCK_ID_DUPLICATE', { blockId: block.id }, { name: block.id }))
+    }
+    declared.add(block.id)
+  }
 
   for (const id of cyclicBlocks(doc)) {
     out.push(raise('BLOCK_RECURSION', { blockId: id }, { name: id }))

@@ -66,7 +66,7 @@ properties:
   vars:
     type: array
     description: >-
-      Mutable workflow-scoped state, readable as `{{var.<key>}}` and written by `data.set_var`.
+      Mutable workflow-scoped state, readable as `{{var.<key>}}` and written by `core.set_var`.
       Distinct from trigger payloads, which arrive from outside. A value may be a literal or an
       expression, so a var can normalise differently-shaped trigger payloads into one shape.
     items: { $ref: "#/$defs/variable" }
@@ -143,7 +143,7 @@ $defs:
         type: array
         description: >-
           The block's own variables, read as `{{var.<key>}}` inside it and written by
-          `data.set_var`. Rebuilt on every invocation, and invisible outside the block — the
+          `core.set_var`. Rebuilt on every invocation, and invisible outside the block — the
           workflow's `vars` are a different set that a block cannot see.
         items: { $ref: "#/$defs/variable" }
       steps:
@@ -159,7 +159,12 @@ $defs:
       output and a Run Context key are — ADR-0012 rejected inventing a second spelling for an idea
       the contract already has one of, and the reasoning holds here unchanged.
     properties:
-      k: { type: string, minLength: 1 }
+      k:
+        $ref: "#/$defs/identifier"
+        description: >-
+          Read inside the block as `{{params.<k>}}` and, for an output, at the call site as
+          `{{steps.<call id>.<k>}}` — a path segment like every other user-chosen name, and held to
+          the same rule.
       label:
         type: string
         minLength: 1

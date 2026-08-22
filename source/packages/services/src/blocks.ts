@@ -8,6 +8,7 @@ import {
   insertNode,
   listIn,
   type Path,
+  readAt,
   setScalar,
   topLevelList,
 } from './ast'
@@ -154,8 +155,13 @@ export function addDeclaration(
       }
       if (declaration.of) value.of = declaration.of
 
-      const held = [...entriesOf(document, listPath)]
-      insertNode(document, listPath, held.length, document.ast.createNode(value))
+      // The raw sequence length, not `entriesOf`'s count: that generator skips a
+      // malformed entry, so a list holding a bare `-` would splice the new
+      // declaration above whatever follows the hole — the reordering this
+      // command exists to avoid.
+      const held = readAt(document, listPath)
+      const index = Array.isArray(held) ? held.length : 0
+      insertNode(document, listPath, index, document.ast.createNode(value))
     },
   }
 }

@@ -17,6 +17,29 @@ scenarios:
     context: { triggers: { nightly: { triggered_at: "07:00" } } }
     value: "07:00"
 
+  - name: >-
+      a block's parameter is addressed through `params` — the root a call fills
+      in, and the only part of a block's scope that differs between two calls of
+      the same block
+    template: "{{ params.entry.headline }}"
+    type: text
+    context: { params: { entry: { headline: "Inbox digest" } } }
+    value: "Inbox digest"
+
+  - name: >-
+      `params` is a root of its own, so a step called `params` neither shadows it
+      nor is shadowed by it
+    template: "{{ params.at }}"
+    type: text
+    context: { params: { at: "07:00" }, steps: { params: { at: "nope" } } }
+    value: "07:00"
+
+  - name: a parameter the caller did not supply is an error by default
+    template: "{{ params.missing }}"
+    type: text
+    context: { params: { entry: {} } }
+    error: EVAL_MISSING_PATH
+
   - name: a workflow variable is addressed through `var`
     template: "{{ var.digest_to }}"
     type: text
