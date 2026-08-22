@@ -30,9 +30,10 @@ identity and its typed input and output contract. Hatua treats these as given an
 _Avoid_: node type, block, plugin, component spec
 
 **Canvas Mode**:
-Editing a **Workflow Definition** graphically — dragging steps, drawing connections, mapping outputs
-to inputs.
-_Avoid_: visual mode, graph editor, builder
+Editing a **Workflow Definition** graphically — adding, moving and configuring **Steps** on the flow
+map, and mapping outputs to inputs. There is nothing to connect: reachability is nesting, so the
+canvas has no exit handles and draws no edge a user can attach. Connectors are chrome.
+_Avoid_: visual mode, graph editor, builder, drawing connections
 
 **Text Mode**:
 Editing the same **Workflow Definition** as raw YAML text inside Hatua's own UI.
@@ -94,6 +95,14 @@ its **Component Manifest** declares. It is the third verb Hatua interprets struc
 position in the tree. Each entry is a key, a **Template** and a declared type, so a downstream
 **Step** addresses `{{s8.headline}}` and type-checks against it like any other output.
 _Avoid_: transform, set variables, assign, formula step
+
+**Block**:
+A named, reusable sequence of **Steps** declared once in a **Workflow Definition** and invoked with
+`core.call`, taking declared parameters and publishing declared outputs. It is what serves reuse and
+what keeps a deep workflow readable — extracting one flattens the tree exactly as extracting a
+function does. A **Block** is reachable from many call sites without making the model a graph,
+because it reads only what it declares.
+_Avoid_: subflow, subroutine, group, macro, function
 
 **Fork**:
 A container **Step** (`core.fork`) holding two or more **Branches**, in either `condition` mode
@@ -161,6 +170,13 @@ Execution** is only ever read. Never say "the YAML" without naming which.
 **"We don't own the file"** — means Hatua does not own its *formatting or lifecycle*, not that it
 never writes. Hatua does write **Workflow Definitions**; it must return them with the **Host**'s and
 the user's comments, key order and style intact.
+
+**"Drawing connections"** — the **Canvas Mode** entry described a graph editor, contradicting **Step**
+and **Derived Layout** in this same file. Resolution: there are no connections to draw. Control flow
+is expressed by containers — `core.fork`, `core.for_each`, `core.repeat`, `core.call`, `core.try` —
+and a **Step** runs because of where it nests. Reuse is a **Block**, not an edge into a shared node.
+See [ADR-0013](docs/adr/0013-control-flow-nests.md), which also corrects ADR-0001's reason for the
+constraint: cross-links break exact static scope, not derived layout.
 
 **"Tumika" vs "Hatua"** — the design handoff names the product *Tumika workflow builder* and its
 design system *Tumika*. Tumika is a self-hostable personal assistant that runs scheduled routines;
