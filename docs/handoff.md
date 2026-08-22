@@ -235,12 +235,20 @@ Three places hold a Template, and all three use the same widget:
 `padding: 8px 10px`, `cursor: text`, mono. Border `--border-accent` while focused or on drag-over
 (fill `--accent-wash`), `--status-error` when the field has an issue.
 
-The text is the editing surface. `{{ … }}` is highlighted in place — `--accent-wash` fill, 1px
-`--border-accent`, `--text-accent` — and an unclosed hole takes a wavy `--status-error` underline. It
-is never replaced by a widget you cannot type through. The delimiters themselves take
-`--text-muted`: `{{` and `}}` are how a Template *spells* a hole rather than part of what it names,
-so they step back and let the path read. Colour only — anything that changed their width would slide
-the mirror off the text it stands in for.
+The text is the editing surface, and while it is showing it is marked the way every editor anyone
+reaches for marks syntax: **by colour, with no box.** The path takes `--text-accent`; `{{` and `}}`
+take `--text-muted`, because they are how a Template *spells* a hole rather than part of what it
+names, and they step back to let the path read. An unclosed hole takes a wavy `--status-error`
+underline. It is never replaced by a widget you cannot type through.
+
+A fill and a border were specified here and are gone. The strong mark for *this names a value* is the
+chip below, which is what shows whenever nobody is editing — a box under it while editing is emphasis
+paid for twice, and a border drawn round a token is something the eye reads past on the way to the
+text this field exists to let someone edit. It also retires a class of fault rather than fixing
+instances of it: a box has geometry — an overhang, a radius, a fill box centred on the font's content
+area rather than on the line — and every piece of that had to be made to behave like a glyph inside a
+mirror standing in for an `<input>`. Colour has no geometry, so there is nothing left to slide out of
+alignment or to clip.
 
 **At rest, a whole Reference is drawn as what it names, and where it is from.** A chip carries a
 mark for its kind, then the source in `--text-secondary` and the value in `--text-accent`:

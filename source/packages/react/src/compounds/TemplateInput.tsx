@@ -40,7 +40,7 @@ import { type HoleSpan, templateShape } from './templateSpans'
  * ## The text is the editing surface
  *
  * `{{ … }}` is highlighted **in place** — never replaced by a widget you cannot
- * type through. A pill you have to delete and re-add to fix one character makes
+ * type through. A token you have to delete and re-add to fix one character makes
  * an existing Template harder to edit than to write, and the same reasoning is
  * what makes the inserter's one-way street acceptable: editing an existing call
  * means editing text, and the text is always there.
@@ -488,8 +488,9 @@ interface Piece {
  *
  * A hole is three of these — `{{`, the expression, `}}` — because the
  * delimiters are how a Template spells a hole rather than part of what it
- * names, and they step back so the path can read. The pill is drawn around all
- * three by the piece that owns them.
+ * names, and they step back so the path can read. The piece that owns the three
+ * colours them; nothing draws a box, because while the characters are showing
+ * this field marks syntax the way an editor does.
  *
  * Every run carries `data-at`, and that is not decoration: `offsetAtPoint`
  * translates a click into an offset by finding the run under it and adding the
@@ -548,11 +549,11 @@ function chipOf(
  * Measuring a caret inside an `<input>` has no API; measuring a span in a box
  * with the same font, padding and wrapping does, and the mirror already exists.
  *
- * **The marker and the ghost go INSIDE the run they fall in.** A hole is drawn
- * as one pill; splitting it to seat the caret between two siblings draws two
- * pills with a seam down the middle, and a ghost appended after everything
- * completes `{{ ru }}` as `{{ ru }}n` — outside the hole it belongs to, after
- * the closing braces, in the place the eye least expects it.
+ * **The marker and the ghost go INSIDE the run they fall in.** A ghost appended
+ * after the runs completes `{{ ru }}` as `{{ ru }}n` — outside the hole it
+ * belongs to, after the closing braces, in the place the eye least expects it.
+ * A marker seated between two siblings splits whatever is drawn around them,
+ * which is how a chip ends up with a seam down its middle.
  */
 function paint({
   value,
@@ -635,7 +636,7 @@ function paint({
         )
       }
       // A plain stretch of text is one run and needs no wrapper; a hole needs
-      // one to draw the pill around its three.
+      // one to carry the colour across its three.
       if (!piece.className) return draw(runs[0] as Run)
       return (
         <span key={piece.start} className={piece.className}>

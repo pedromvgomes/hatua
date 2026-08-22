@@ -20,12 +20,10 @@
     align-content: center;
     min-block-size: 40px;
     /*
-     * Most of the leading inset, with the last 2px given to the mirror and the
-     * input themselves — see their own rule. Roomier than a plain text field
-     * needs, because the first thing in one of these is often a pill rather
-     * than a letter, and a pill is painted wider than its text.
+     * Roomier on the leading edge than a plain text field needs, because the
+     * first thing in one of these is often a chip rather than a letter.
      */
-    padding: 8px 42px 8px 10px;
+    padding: 8px 44px 8px 12px;
     border: 1px solid var(--hatua-border-strong);
     border-radius: var(--hatua-radius-md);
     background: var(--hatua-surface-card);
@@ -51,16 +49,7 @@
   .field {
     grid-area: 1 / 1;
     margin: 0;
-    /*
-     * The last 2px of the field's inset, held here rather than on the box.
-     *
-     * A pill overhangs its own text by 2px on each side, and the mirror clips
-     * at its PADDING box — so with the whole inset on the box, the overhang
-     * fell outside the mirror and `overflow: hidden` sliced the pill's left cap
-     * clean off. Two pixels of padding is exactly the room it needs. Applied to
-     * both, so the two stay glyph-for-glyph aligned.
-     */
-    padding: 0 2px;
+    padding: 0;
     border: 0;
     font-family: var(--hatua-font-mono);
     font-size: 0.8125rem;
@@ -115,32 +104,23 @@
   }
 
   /*
-   * A hole, drawn as a pill and highlighted in place — never replaced by a
-   * widget you cannot type through.
+   * A hole, while the characters are showing: colour, and nothing else.
    *
-   * The inline padding is cancelled by an equal negative margin, and that is
-   * the whole trick: the pill is painted a few pixels wider than its text
-   * while every glyph after it stays exactly where the `<input>` behind puts
-   * it. Real padding would slide the mirror off the text it stands in for, and
-   * the caret would then sit a few pixels from where it appears to be.
+   * No fill and no border. Every editor anyone reaches for marks syntax by
+   * colouring it, and a box drawn round a token is noise the eye has to read
+   * past on the way to the text — which is the one thing this field exists to
+   * let someone edit. The strong mark for "this names a value" is the chip, and
+   * that is what shows whenever nobody is editing; a second one underneath it
+   * is emphasis paid for twice.
    *
-   * Block padding needs no cancelling — inline padding does not affect a line
-   * box — so it simply grows the fill towards the height of the line.
+   * It also retires an entire class of fault. A box has geometry — an overhang,
+   * a radius, a fill box centred on the font's content area rather than on the
+   * line — and every one of those had to be made to behave like a glyph in a
+   * mirror standing in for an `<input>`. Colour has no geometry at all, so
+   * there is nothing left to slide out of alignment or to clip.
    */
   .hole {
-    padding: 2px;
-    margin: 0 -2px;
-    background: var(--hatua-accent-wash);
-    box-shadow: inset 0 0 0 1px var(--hatua-border-accent);
-    /*
-     * The small radius, not the medium one. A pill this short takes the medium
-     * radius as very nearly half its height, and the end caps then read as a
-     * `(` and a `)` sitting either side of the `{{` and `}}` already there.
-     */
-    border-radius: var(--hatua-radius-sm);
     color: var(--hatua-text-accent);
-    /* A hole that wraps is two halves of one pill, not one pill cut in half. */
-    box-decoration-break: clone;
   }
 
   /*
@@ -155,55 +135,32 @@
    *
    * Real padding here, for the same reason — nothing is standing in for a
    * glyph, so nothing has to be cancelled.
+   *
+   * One unbreakable unit that moves to the next line whole. Left to wrap, a
+   * long chip broke through its own middle and `box-decoration-break: clone`
+   * drew a full pill around each half — so "Weekday mornings › triggered_at"
+   * read as two chips naming two different things.
    */
   .chip {
+    display: inline-flex;
+    align-items: baseline;
+    white-space: nowrap;
+    max-inline-size: 100%;
     padding: 3px 8px;
     /*
      * A little air on each side, so a chip in a sentence is a thing sitting in
-     * the line rather than a word with a box drawn round it — and so one at the
-     * very start does not lean on the field's border.
+     * the line rather than a word with a box drawn round it.
      */
     margin: 0 2px;
     border-radius: var(--hatua-radius-sm);
     background: var(--hatua-accent-wash);
     box-shadow: inset 0 0 0 1px var(--hatua-border-accent);
-    /*
-     * One unbreakable unit that moves to the next line whole.
-     *
-     * Left to wrap, a long chip broke through its own middle and
-     * `box-decoration-break: clone` drew a full pill around each half — so
-     * "Weekday mornings › triggered_at" read as two chips naming two different
-     * things. `inline-flex` is safe here in a way it would not be anywhere the
-     * mirror has to stand in for a glyph: at rest nothing is aligned to the
-     * text behind it.
-     */
-    display: inline-flex;
-    align-items: baseline;
-    white-space: nowrap;
-    max-inline-size: 100%;
   }
 
-  /*
-   * When there is not room for both halves, the source gives way.
-   *
-   * It is the half a reader can most often infer from the rest of the sentence,
-   * and the leaf is the reason they are looking at the chip at all — so
-   * truncating from the other end would keep the context and lose the answer.
-   */
-  .chipSource {
-    flex: 0 1 auto;
-    min-inline-size: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .chipLeaf {
-    flex: 0 0 auto;
-  }
-
-  /* The kind mark. Stroked, not filled, except the two shapes that read as
-     solid at 11px. */
+  /* The kind mark: which of the four this value is from. */
   .mark {
+    align-self: center;
+    flex: 0 0 auto;
     margin-inline-end: 4px;
     fill: none;
     stroke: var(--hatua-text-muted);
@@ -212,24 +169,30 @@
     stroke-linejoin: round;
   }
 
-  /* Where the value is from: present on every chip, and never the loud half. */
+  /*
+   * Where the value is from: present on every chip, and never the loud half.
+   *
+   * When there is not room for both, this is the half that gives way — it is
+   * the one a reader can most often infer from the sentence around it, and the
+   * leaf is the reason they are looking at the chip at all.
+   */
   .chipSource {
+    flex: 0 1 auto;
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
     color: var(--hatua-text-secondary);
   }
 
   /* Which value, and the reason anyone is reading the chip. */
   .chipLeaf {
+    flex: 0 0 auto;
     color: var(--hatua-text-accent);
     font-weight: 500;
   }
 
-  .mark {
-    align-self: center;
-    flex: 0 0 auto;
-  }
-
-  /* The separator is drawn rather than typed, so it cannot be selected or
-     mistaken for part of either name. */
+  /* Drawn rather than typed, so it cannot be selected or mistaken for part of
+     either name. */
   .chipSource::after {
     content: "›";
     margin: 0 4px;
