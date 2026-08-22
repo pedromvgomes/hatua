@@ -32,7 +32,8 @@ _Avoid_: node type, block, plugin, component spec
 **Canvas Mode**:
 Editing a **Workflow Definition** graphically — adding, moving and configuring **Steps** on the flow
 map, and mapping outputs to inputs. There is nothing to connect: reachability is nesting, so the
-canvas has no exit handles and draws no edge a user can attach. Connectors are chrome.
+canvas has no exit handles and draws no edge a user can attach. Connectors are chrome. One **Board**
+is drawn at a time; a **Block** call is a doorway into another, never its body expanded in place.
 _Avoid_: visual mode, graph editor, builder, drawing connections
 
 **Text Mode**:
@@ -40,14 +41,24 @@ Editing the same **Workflow Definition** as raw YAML text inside Hatua's own UI.
 _Avoid_: code mode, source view, raw editor
 
 **Step**:
-One node of a **Workflow Definition** — an instance of a **Component**, carrying a stable `id`, a
-display name, and its field values under `with:`. Steps form a *tree*, nesting through branches and
-loops; they are never an arbitrary graph.
+One node of a **Workflow Definition** — an instance of a **Component**, carrying an `id` that is
+stable and unique within its **Board**, a display name, and its field values under `with:`. Steps
+form a *tree*, nesting through branches and loops; they are never an arbitrary graph.
 _Avoid_: node, task, action, block
 
+**Board**:
+One drawable **Step** tree together with the root that gives it its parameters — the *root Board*,
+whose root is the **Triggers**, or a **Block**'s, whose root is its declared contract. A
+**Workflow Definition** holds one root Board plus one per **Block**. A Board is the unit scope is
+computed against: a **Step** sees only what its own Board offers, plus the **Run Context**, which is
+the one thing every Board shares. **Canvas Mode** draws one at a time.
+_Avoid_: canvas, graph, sheet, scope
+
 **Component**:
-A step *type* declared by a **Component Manifest** — `email.send`, `core.fork`. A **Step** is an
-instance of one. Adding a component is adding a manifest entry; no screen-level code follows.
+A step *type*, addressed by a verb whose root says who declares it — `core.fork` is Hatua's,
+`component.email.send` is a **Host**'s, `block.archive_entry` is this document's. A **Step** is an
+instance of one. Adding a Host component is adding a **Component Manifest** entry; no screen-level
+code follows.
 _Avoid_: block, plugin, node type, activity
 
 **Template**:
@@ -63,8 +74,11 @@ _Avoid_: formula, script, code, binding
 
 **Reference**:
 An **Expression** that is exactly one path, reading an earlier **Step**'s output, a **Trigger**'s
-payload, or a workflow variable — `{{s2.messages[].subject}}`, `{{triggers.nightly.triggered_at}}`,
-`{{var.digest_to}}`. Stored verbatim in the YAML, so a **Step** can be renamed without breaking one.
+payload, or a variable — `{{steps.s2.messages[].subject}}`, `{{triggers.nightly.triggered_at}}`,
+`{{var.digest_to}}`. Every path begins with one of six roots — `run.`, `triggers.`, `params.`,
+`steps.`, `var.` and the built-in `TRIGGER` — so a name a user chooses always sits below a root and
+can never collide with one. Stored verbatim in the YAML, so a **Step** can be renamed without
+breaking one.
 It is a *shape*, not a syntax: no marker distinguishes one, so what makes a **Reference** special is
 that it names a value and nothing more — which is exactly what lets the builder draw it as a pill
 the user can retarget. There is no "workflow input": a **Trigger**'s declared outputs are the
@@ -89,19 +103,21 @@ from the expression.
 _Avoid_: binding, target, assignment, field value
 
 **Mapping**:
-A **Step** (`data.map`) whose outputs are the entries the user wrote into it rather than anything
+A **Step** (`core.map`) whose outputs are the entries the user wrote into it rather than anything
 its **Component Manifest** declares. It is the third verb Hatua interprets structurally, alongside
 `core.fork` and `core.for_each` — and the only one read from a field's *value* rather than from its
 position in the tree. Each entry is a key, a **Template** and a declared type, so a downstream
-**Step** addresses `{{s8.headline}}` and type-checks against it like any other output.
+**Step** addresses `{{steps.s8.headline}}` and type-checks against it like any other output.
 _Avoid_: transform, set variables, assign, formula step
 
 **Block**:
-A named, reusable sequence of **Steps** declared once in a **Workflow Definition** and invoked with
-`core.call`, taking declared parameters and publishing declared outputs. It is what serves reuse and
-what keeps a deep workflow readable — extracting one flattens the tree exactly as extracting a
-function does. A **Block** is reachable from many call sites without making the model a graph,
-because it reads only what it declares.
+A named, reusable sequence of **Steps** declared once in a **Workflow Definition** under `blocks:`
+and invoked as `use: block.<slug>`, taking declared parameters and publishing declared outputs via
+`core.return`. It is what serves reuse and what keeps a deep workflow readable — extracting one
+flattens the tree exactly as extracting a function does. A **Block** is reachable from many call
+sites without making the model a graph, because it reads only what it declares: its own **Board**
+and the **Run Context**, never the workflow's **Triggers** or variables. A Block may call a Block;
+recursion is refused.
 _Avoid_: subflow, subroutine, group, macro, function
 
 **Fork**:
@@ -173,8 +189,14 @@ the user's comments, key order and style intact.
 
 **"Drawing connections"** — the **Canvas Mode** entry described a graph editor, contradicting **Step**
 and **Derived Layout** in this same file. Resolution: there are no connections to draw. Control flow
-is expressed by containers — `core.fork`, `core.for_each`, `core.repeat`, `core.call`, `core.try` —
-and a **Step** runs because of where it nests. Reuse is a **Block**, not an edge into a shared node.
+is expressed by containers — `core.fork`, `core.for_each`, `core.repeat`, `core.try` — and a **Step**
+runs because of where it nests. Reuse is a **Block**, not an edge into a shared node.
+
+**"Block" the domain term vs `blocks/` the React layer** — `packages/react/src/blocks/` holds
+presentational units (NodeCard, StepRow, Connector) and has nothing to do with a **Block**. That is
+the *Flow tab* / `FlowMap` collision again: one word, two meanings, in one repo. Resolution: the
+domain term wins and the React layer is renamed. Until it is, never call a presentational unit a
+block.
 See [ADR-0013](docs/adr/0013-control-flow-nests.md), which also corrects ADR-0001's reason for the
 constraint: cross-links break exact static scope, not derived layout.
 
