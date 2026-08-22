@@ -282,6 +282,11 @@ export function expressionEnd(value: string, hole: HoleSpan): number {
  * retargets.
  *
  * The caret lands at the end of the new expression, where an edit starts.
+ *
+ * The span must be one `templateShape` found. `caretContext` is not a source of
+ * one: it reports `end` as the next `}}` ANYWHERE, so an unterminated `{{`
+ * borrows the closer of a later hole — and splicing that range away takes the
+ * later hole and everything between with it.
  */
 export function replaceHole(value: string, hole: HoleSpan, insert: string): Edit {
   const written = `{{ ${insert} }}`

@@ -7,6 +7,8 @@ import {
 import type { ScopeEntry } from '@hatua/model'
 import {
   type KeyboardEvent as ReactKeyboardEvent,
+  useCallback,
+  useEffect,
   useId,
   useLayoutEffect,
   useMemo,
@@ -117,6 +119,9 @@ export interface TemplateInputProps {
 
 type OpenSurface = 'none' | 'completion' | 'picker'
 
+/** Matches the picker panel's `inline-size`; right-aligning to the ⚡ needs it as a number. */
+const PANEL = 392
+
 export function TemplateInput({
   value,
   onCommit,
@@ -132,6 +137,7 @@ export function TemplateInput({
   const listId = useId()
   const wrap = useRef<HTMLDivElement>(null)
   const box = useRef<HTMLDivElement>(null)
+  const spark = useRef<HTMLButtonElement>(null)
   const field = useRef<HTMLInputElement & HTMLTextAreaElement>(null)
   /** The tooltip's copy anchors nothing, so its marker ref goes nowhere. */
   const unanchored = useRef<HTMLSpanElement>(null)
@@ -149,15 +155,20 @@ export function TemplateInput({
    * in the corner of the window for one frame.
    */
   const [placed, setPlaced] = useState(false)
+
   const [anchor, setAnchor] = useState({ left: 0, top: 0, bottom: 0 })
   const [focused, setFocused] = useState(false)
   /**
-   * The hole a double-click named, which the next choice replaces outright.
+   * Where the hole a double-click named begins, which the next choice replaces
+   * outright. Null for every other way into the picker, where the choice lands
+   * at the caret instead.
    *
-   * Null for every other way into the picker, where the choice lands at the
-   * caret instead.
+   * An offset rather than the span, because the span goes stale: the picker
+   * does not take the focus, so the text can be edited from under it, and a
+   * range captured before that lands somewhere else entirely. This is looked up
+   * again against the current shape at the moment it is used.
    */
-  const [replacing, setReplacing] = useState<HoleSpan | null>(null)
+  const [replacing, setReplacing] = useState<number | null>(null)
   /**
    * What the picker is hanging off.
    *
@@ -167,6 +178,16 @@ export function TemplateInput({
    * rather than off the side of a 304px column.
    */
   const [anchoredTo, setAnchoredTo] = useState<'caret' | 'button'>('caret')
+
+  /**
+   * The ⚡ button's rect, with the panel right-aligned to it: the button sits at
+   * the field's trailing edge, so the panel hangs under the field rather than
+   * off the side of the 304px column it lives in.
+   */
+  const sparkRect = useCallback(() => {
+    const button = spark.current?.getBoundingClientRect()
+    return button && { left: button.right - PANEL, top: button.top, bottom: button.bottom }
+  }, [])
   /**
    * Escape means "not now", and it has to outlast the keystroke that follows.
    * Cleared when the caret leaves the hole, or by asking for the list again.
@@ -223,40 +244,62 @@ export function TemplateInput({
     field.current?.setSelectionRange(to, to)
   })
 
-  /*
-   * Where the popups sit, re-measured after every render and published only
-   * when the marker has actually moved.
+  /**
+   * Where the popups sit.
    *
-   * No dependency list, because there is no value to list: the marker moves
-   * whenever the mirror re-renders — a keystroke, an arrow key, a wrap — and
-   * none of that is readable from here. Anchored once, when the list opened, it
-   * stays where the caret *was*, which on a Template that wraps is a whole line
-   * away from where it is.
-   *
-   * The equality guard is what makes that safe rather than a loop: a fresh
-   * object per render would be new state per render for ever.
+   * Published only when it has actually moved: a fresh object per render would
+   * be new state per render for ever.
    */
-  useLayoutEffect(() => {
-    if (open === 'none') return
+  const measure = useCallback(() => {
     const rect = caretMark.current?.getBoundingClientRect()
-    const box = field.current?.getBoundingClientRect()
-    if (!rect || !box) return
+    const field = box.current?.getBoundingClientRect()
+    if (!rect || !field) return
 
     const list = { left: rect.left, top: rect.bottom + 4 }
     setAt((current) => (current.left === list.left && current.top === list.top ? current : list))
     setPlaced(true)
 
-    // The picker anchors to the caret across, and to the whole field down: it
-    // is tall, and one starting mid-field would cover the text it is being used
-    // to write.
-    if (open !== 'picker' || anchoredTo !== 'caret') return
-    const panel = { left: rect.left, top: rect.top, bottom: box.bottom }
+    /*
+     * The picker anchors across to whatever it was hung from, and down to the
+     * whole field: it is tall, and one starting mid-field would cover the text
+     * it is being used to write.
+     */
+    const from = anchoredTo === 'button' ? sparkRect() : rect
+    if (!from) return
+    const panel = { left: from.left, top: from.top, bottom: field.bottom }
     setAnchor((current) =>
       current.left === panel.left && current.top === panel.top && current.bottom === panel.bottom
         ? current
         : panel,
     )
+  }, [anchoredTo, sparkRect])
+
+  /*
+   * After every render, because the marker moves with every keystroke and every
+   * arrow key and there is no value to name that in a dependency list.
+   */
+  useLayoutEffect(() => {
+    if (open !== 'none') measure()
   })
+
+  /*
+   * And when the field moves without re-rendering at all.
+   *
+   * A popup is a fixed-position layer holding viewport coordinates, so a Host
+   * scrolling its own page — or the window being resized — leaves it where the
+   * field used to be, and nothing about React notices. Captured, so an ancestor
+   * scrolling counts and not only the window: every one of these fields lives
+   * in a panel that scrolls.
+   */
+  useEffect(() => {
+    if (open === 'none') return
+    window.addEventListener('scroll', measure, true)
+    window.addEventListener('resize', measure)
+    return () => {
+      window.removeEventListener('scroll', measure, true)
+      window.removeEventListener('resize', measure)
+    }
+  }, [open, measure])
 
   const commit = (next: string) => {
     if (next === committed) return
@@ -397,6 +440,9 @@ export function TemplateInput({
 
     setDraft(next)
     setCaret(to)
+    // Typing is a change of mind: whatever a double-click named is not what is
+    // being edited any more.
+    setReplacing(null)
 
     /*
      * **Completion follows typing, never caret placement.** Clicking into a
@@ -451,10 +497,21 @@ export function TemplateInput({
              */
             if (event.detail >= 2) {
               const at = field.current?.selectionStart ?? caret
-              const hole = caretContext(draft, at).hole
+              /*
+               * A hole that PARSED, which is a stricter thing than one with a
+               * `}}` after it. Both `caretContext` and the scanner pair an
+               * opening brace with the next closer anywhere, so a stray `{{`
+               * swallows the hole after it — and replacing that span takes the
+               * good hole and the prose between them away. Reading it is the
+               * same condition a chip is drawn under, which is the right one:
+               * retargeting something nobody can read means nothing.
+               */
+              const hole = shape.holes.find(
+                (candidate) => candidate.expr && at >= candidate.start && at <= candidate.end,
+              )
               if (!hole) return
               event.preventDefault()
-              setReplacing(hole)
+              setReplacing(hole.start)
               setAnchoredTo('caret')
               setDismissed(false)
               setOpen('picker')
@@ -574,13 +631,8 @@ export function TemplateInput({
             type="button"
             className={styles.spark}
             aria-label={`Insert into ${label}`}
-            onClick={(event) => {
-              const box = event.currentTarget.getBoundingClientRect()
-              // Right-aligned to the button, which is at the field's trailing
-              // edge — so the panel hangs under the field rather than off the
-              // side of the 304px column it lives in. `placement` clamps it to
-              // the viewport from there.
-              setAnchor({ left: box.right - 392, top: box.top, bottom: box.bottom })
+            ref={spark}
+            onClick={() => {
               setAnchoredTo('button')
               setReplacing(null)
               setOpen('picker')
@@ -641,10 +693,20 @@ export function TemplateInput({
             setOpen('none')
           }}
           onChoose={(insert) => {
-            // Scoped to a hole, the choice takes its place; opened any other
-            // way, it lands at the caret.
-            const edit = replacing
-              ? replaceHole(draft, replacing, insert)
+            /*
+             * Scoped to a hole, the choice takes its place; opened any other
+             * way, it lands at the caret.
+             *
+             * Looked up again rather than trusted: the picker holds no focus,
+             * so the text may have moved since the gesture that named it. A
+             * hole that is no longer there is no longer the target.
+             */
+            const hole =
+              replacing === null
+                ? undefined
+                : shape.holes.find((candidate) => candidate.expr && candidate.start === replacing)
+            const edit = hole
+              ? replaceHole(draft, hole, insert)
               : insertCandidate(draft, context, caret, insert)
             write(edit)
             commit(edit.value)

@@ -594,6 +594,55 @@ describe('double-clicking a hole', () => {
     expect(onCommit).toHaveBeenCalledWith('{{ dt.now() }}')
   })
 
+  /*
+   * `caretContext` reports a hole's end as the next `}}` ANYWHERE, so an
+   * unterminated `{{` borrows the closer of a later hole — and replacing that
+   * range took the later hole and the prose between it away. A hole worth
+   * retargeting is one the shape found, which means one that is genuinely
+   * closed.
+   */
+  it('refuses to retarget where a stray brace has swallowed the hole after it', () => {
+    const { field, onCommit } = mount({ value: 'Hi {{ oops, then {{ s2.count }} end' })
+    retarget(field, 24)
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(onCommit).not.toHaveBeenCalled()
+  })
+
+  it('retargets a hole that parsed, beside one that did not', () => {
+    const { field, onCommit } = mount({ value: '{{ a. }}{{ s2.count }}' })
+    retarget(field, 14)
+    const row = screen
+      .getAllByRole('button')
+      .find((button) => button.textContent?.startsWith('var.digest_to')) as HTMLElement
+    fireEvent.click(row)
+    expect(onCommit).toHaveBeenCalledWith('{{ a. }}{{ var.digest_to }}')
+  })
+
+  it('refuses the one that did not parse', () => {
+    const { field } = mount({ value: '{{ a. }}{{ s2.count }}' })
+    retarget(field, 5)
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  /*
+   * The picker takes no focus, so the text can be edited from under it — and a
+   * span captured before that lands somewhere else entirely: typing one
+   * character at the start turned the retarget into `!Hi{{ … }}} there`.
+   */
+  it('forgets what it was aiming at once the text moves', () => {
+    const { field, onCommit } = mount({ value: 'Hi {{ s2.count }} there' })
+    retarget(field, 10)
+    fireEvent.change(field, {
+      target: { value: '!Hi {{ s2.count }} there', selectionStart: 1 },
+    })
+    const row = screen
+      .getAllByRole('button')
+      .find((button) => button.textContent?.startsWith('var.digest_to')) as HTMLElement
+    fireEvent.click(row)
+    // Landed at the caret, and nothing was spliced away.
+    expect(onCommit).toHaveBeenCalledWith('!{{ var.digest_to }}Hi {{ s2.count }} there')
+  })
+
   /* Outside a hole there is nothing to retarget, so a double-click is what the
      platform makes of it — selecting a word. */
   it('leaves a double-click in the surrounding text alone', () => {
