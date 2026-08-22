@@ -205,7 +205,7 @@ describe('referential stability', () => {
     const before = validation.getSnapshot()
     expect(before.all).toHaveLength(2)
 
-    editing.apply(removeStep('s2'))
+    editing.apply(removeStep({ board: null, id: 's2' }))
 
     const after = validation.getSnapshot()
     expect(after).not.toBe(before)
@@ -239,7 +239,7 @@ describe('referential stability', () => {
     const { editing, validation } = await opened('name: half written\n')
     const before = validation.getSnapshot()
 
-    editing.apply(removeStep('nope'))
+    editing.apply(removeStep({ board: null, id: 'nope' }))
     expect(validation.getSnapshot()).toBe(before)
   })
 })
@@ -270,7 +270,7 @@ describe('subscribing', () => {
     stop()
 
     const before = seen.mock.calls.length
-    editing.apply(removeStep('s1'))
+    editing.apply(removeStep({ board: null, id: 's1' }))
     catalogue.reload()
     await settle()
 

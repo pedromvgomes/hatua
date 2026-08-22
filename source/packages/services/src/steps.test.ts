@@ -101,7 +101,7 @@ describe('reaching into a document that is barely one', () => {
     ].join('\n')
 
     const document = parse(both)
-    removeStep('s1').apply(document)
+    removeStep({ board: null, id: 's1' }).apply(document)
 
     const text = document.toString()
     expect(text).not.toContain('about this step')
@@ -135,7 +135,7 @@ describe('reaching into a document that is barely one', () => {
     // against has moved on, and splicing at a position past the end would take
     // nothing out and report success.
     const document = parse(VALID)
-    expect(() => removeStep('s99').apply(document)).toThrow(/No Step with id/)
+    expect(() => removeStep({ board: null, id: 's99' }).apply(document)).toThrow(/No Step with id/)
     expect(document.toString()).toBe(VALID)
   })
 
@@ -223,7 +223,7 @@ describe('commands against a document that does not project', () => {
 
   it('removes one from such a document', () => {
     const doc = parse('name: half\nsteps:\n  - id: s1\n    use: a\n  - id: s2\n    use: b\n')
-    removeStep('s1').apply(doc)
+    removeStep({ board: null, id: 's1' }).apply(doc)
     expect(doc.toString()).not.toContain('id: s1')
     expect(doc.toString()).toContain('id: s2')
   })
@@ -280,11 +280,15 @@ describe('what a command refuses', () => {
   })
 
   it('throws when moving a Step that is not there', () => {
-    expect(() => moveStep('s99', { index: 0 }).apply(parse(VALID))).toThrow(/No Step with id/)
+    expect(() => moveStep({ board: null, id: 's99' }, { index: 0 }).apply(parse(VALID))).toThrow(
+      /No Step with id/,
+    )
   })
 
   it('throws when removing a Step that is not there', () => {
-    expect(() => removeStep('s99').apply(parse(VALID))).toThrow(/No Step with id/)
+    expect(() => removeStep({ board: null, id: 's99' }).apply(parse(VALID))).toThrow(
+      /No Step with id/,
+    )
   })
 
   it('leaves the document untouched when it refuses', () => {
@@ -293,7 +297,7 @@ describe('what a command refuses', () => {
     // mutation. Half-applied is the failure worth preventing.
     const doc = parse(VALID)
     const before = doc.toString()
-    expect(() => removeStep('s99').apply(doc)).toThrow()
+    expect(() => removeStep({ board: null, id: 's99' }).apply(doc)).toThrow()
     expect(doc.toString()).toBe(before)
   })
 })
@@ -306,8 +310,8 @@ describe('labels', () => {
     expect(addStep({ use: 'component.email.send', name: 'Reply' }, { index: 0 }).label).toBe(
       'Add Reply',
     )
-    expect(removeStep('s1').label).toBe('Remove s1')
-    expect(moveStep('s1', { index: 0 }).label).toBe('Move s1')
+    expect(removeStep({ board: null, id: 's1' }).label).toBe('Remove s1')
+    expect(moveStep({ board: null, id: 's1' }, { index: 0 }).label).toBe('Move s1')
   })
 })
 
@@ -345,7 +349,7 @@ describe('formatting the user chose', () => {
     const doc = parse(
       'id: w\nname: n\nversion: 1\nstatus: draft\nsteps:\n  # note\n  [{ id: s1, use: a }]\n',
     )
-    removeStep('s1').apply(doc)
+    removeStep({ board: null, id: 's1' }).apply(doc)
     expect(doc.toString()).toContain('# note')
   })
 
@@ -370,7 +374,7 @@ describe('a comment stays with the Step it describes', () => {
 
   it('takes the first Step’s comment with it when it moves', () => {
     const doc = parse(COMMENTED)
-    moveStep('s1', { index: 2 }).apply(doc)
+    moveStep({ board: null, id: 's1' }, { index: 2 }).apply(doc)
 
     const text = doc.toString()
     expect(text.indexOf('# about s2')).toBeLessThan(text.indexOf('id: s2'))
@@ -380,7 +384,7 @@ describe('a comment stays with the Step it describes', () => {
 
   it('takes it away when the first Step is removed', () => {
     const doc = parse(COMMENTED)
-    removeStep('s1').apply(doc)
+    removeStep({ board: null, id: 's1' }).apply(doc)
 
     const text = doc.toString()
     expect(text).not.toContain('# about s1')
@@ -398,7 +402,7 @@ describe('a comment stays with the Step it describes', () => {
 
   it('keeps every other Step’s comment where it was', () => {
     const doc = parse(COMMENTED)
-    moveStep('s2', { index: 0 }).apply(doc)
+    moveStep({ board: null, id: 's2' }, { index: 0 }).apply(doc)
 
     const text = doc.toString()
     expect(text.indexOf('# about s2')).toBeLessThan(text.indexOf('id: s2'))

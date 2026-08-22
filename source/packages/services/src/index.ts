@@ -7,6 +7,7 @@
  * renderer, and dragging a node does not re-render the step list.
  */
 
+export * from './blocks'
 export * from './command'
 export * from './connections'
 export * from './editing'

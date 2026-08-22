@@ -32,12 +32,22 @@ const SURFACE = [
   // Composition.
   'sequence',
 
-  // Commands: the Step tree.
+  // Commands: the Step tree, on whichever Board an InsertPoint names.
   'addStep',
+  'boardPath',
   'moveStep',
   'removeStep',
   'rootStepCount',
   'stepIn',
+
+  // Commands: the Blocks, and the contract each one declares.
+  'addBlock',
+  'addDeclaration',
+  'blockPath',
+  'removeBlock',
+  'removeDeclaration',
+  'renameBlock',
+  'setBlockName',
 
   // Commands: the workflow's own keys.
   'addTrigger',
@@ -71,8 +81,8 @@ describe('the package surface', () => {
     // caller reads rather than applies.
     const commands = [
       api.addStep({ use: 'component.email.send', name: 'Reply' }, { index: 0 }),
-      api.removeStep('s1'),
-      api.moveStep('s1', { index: 1 }),
+      api.removeStep({ board: null, id: 's1' }),
+      api.moveStep({ board: null, id: 's1' }, { index: 1 }),
       api.addTrigger({ use: 'component.schedule.cron' }),
       api.removeTrigger('t1'),
       api.setTriggerName('t1', 'Nightly'),
