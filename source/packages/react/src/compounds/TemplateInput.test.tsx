@@ -290,3 +290,56 @@ describe('at rest', () => {
     expect(chips()).toEqual([])
   })
 })
+
+describe('how the mirror is built', () => {
+  const runs = () => [...document.querySelectorAll('[data-at]')]
+  const braces = () =>
+    [...document.querySelectorAll('span')]
+      .filter((span) => span.className.startsWith('_brace'))
+      .map((span) => span.textContent)
+
+  /*
+   * `{{` and `}}` are how a Template spells a hole, not part of what it names.
+   * Colour only — anything that changed their width would slide the mirror off
+   * the text it stands in for.
+   */
+  it('steps the delimiters back while the characters are showing', () => {
+    const { field } = mount({ value: 'Hi {{ s2.count }} there' })
+    fireEvent.focus(field)
+    expect(braces()).toEqual(['{{', '}}'])
+  })
+
+  it('leaves a hole with nothing closing it a single delimiter', () => {
+    const { field } = mount({ value: 'Hi {{ s2.co' })
+    fireEvent.focus(field)
+    expect(braces()).toEqual(['{{'])
+  })
+
+  /*
+   * The invariant `offsetAtPoint` rests on: it translates a click into an
+   * offset by finding the run under the pointer and adding the offset within
+   * its text, so a run whose text does not begin where `data-at` says would put
+   * the caret somewhere else entirely.
+   */
+  it('gives every run the offset its text actually begins at', () => {
+    const value = 'Hi {{ s2.count }} and {{ s9.gone }} end'
+    const { field } = mount({ value })
+    fireEvent.focus(field)
+
+    const checked = runs().filter((run) => !run.hasAttribute('data-hole'))
+    expect(checked.length).toBeGreaterThan(3)
+    for (const run of checked) {
+      const at = Number(run.getAttribute('data-at'))
+      expect(value.slice(at, at + (run.textContent?.length ?? 0))).toBe(run.textContent)
+    }
+  })
+
+  it('holds it at rest too, where a click is the only way in', () => {
+    const value = 'Inbox digest · {{ s2.count }} messages'
+    mount({ value })
+    for (const run of runs().filter((r) => !r.hasAttribute('data-hole'))) {
+      const at = Number(run.getAttribute('data-at'))
+      expect(value.slice(at, at + (run.textContent?.length ?? 0))).toBe(run.textContent)
+    }
+  })
+})

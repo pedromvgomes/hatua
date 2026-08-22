@@ -477,8 +477,49 @@ interface Piece {
   text: string
   start: number
   className?: string
+  /** A `{{` with nothing closing it: three runs become two. */
+  unclosed?: boolean
   /** Set when this hole is drawn as a chip instead of as its own characters. */
   chip?: ChipParts
+}
+
+/**
+ * One stretch of text drawn as itself, carrying the offset it begins at.
+ *
+ * A hole is three of these — `{{`, the expression, `}}` — because the
+ * delimiters are how a Template spells a hole rather than part of what it
+ * names, and they step back so the path can read. The pill is drawn around all
+ * three by the piece that owns them.
+ *
+ * Every run carries `data-at`, and that is not decoration: `offsetAtPoint`
+ * translates a click into an offset by finding the run under it and adding the
+ * offset within its text. A run whose text node does not begin where `data-at`
+ * says would put the caret in the wrong place.
+ */
+interface Run {
+  text: string
+  start: number
+  className?: string
+}
+
+function runsOf(piece: Piece): Run[] {
+  if (!piece.className) return [{ text: piece.text, start: piece.start }]
+
+  const close = piece.unclosed ? 0 : 2
+  const body = piece.text.slice(2, piece.text.length - close)
+  return [
+    { text: piece.text.slice(0, 2), start: piece.start, className: styles.brace },
+    ...(body ? [{ text: body, start: piece.start + 2 }] : []),
+    ...(close
+      ? [
+          {
+            text: piece.text.slice(piece.text.length - close),
+            start: piece.start + 2 + body.length,
+            className: styles.brace,
+          },
+        ]
+      : []),
+  ]
 }
 
 /**
@@ -507,12 +548,11 @@ function chipOf(
  * Measuring a caret inside an `<input>` has no API; measuring a span in a box
  * with the same font, padding and wrapping does, and the mirror already exists.
  *
- * **The marker and the ghost go INSIDE the piece they fall in**, which is the
- * whole reason this is a function rather than three `map`s. A hole is drawn as
- * one pill; splitting it into two sibling spans to seat the caret between them
- * draws two pills with a seam down the middle, and a ghost appended after the
- * pieces completes `{{ ru }}` as `{{ ru }}n` — outside the hole it belongs to,
- * after the closing braces, in the place the eye least expects it.
+ * **The marker and the ghost go INSIDE the run they fall in.** A hole is drawn
+ * as one pill; splitting it to seat the caret between two siblings draws two
+ * pills with a seam down the middle, and a ghost appended after everything
+ * completes `{{ ru }}` as `{{ ru }}n` — outside the hole it belongs to, after
+ * the closing braces, in the place the eye least expects it.
  */
 function paint({
   value,
@@ -539,27 +579,52 @@ function paint({
       text: value.slice(hole.start, hole.end),
       start: hole.start,
       className: hole === shape.unclosed ? styles.broken : styles.hole,
+      unclosed: hole === shape.unclosed,
       chip: chipOf(hole, chip),
     })
     at = hole.end
   }
   pieces.push({ text: value.slice(at), start: at })
 
-  // By identity, not by offset: an empty text piece and the hole that follows
-  // it both start at the same offset, so comparing offsets seats a marker in
-  // both — and the one inside the hole splits its inline box, which draws the
-  // pill's end cap adrift of the pill.
+  const drawn = pieces.map((piece) => ({ piece, runs: piece.chip ? [] : runsOf(piece) }))
+
   /*
    * No marker at rest. It anchors the popups, which cannot be open unless the
-   * field has focus — and seating one splits a piece's text into two nodes,
-   * which is exactly what `offsetAtPoint` must not have to reason about when it
+   * field has focus — and seating one splits a run's text into two nodes, which
+   * is exactly what `offsetAtPoint` must not have to reason about when it
    * translates a click back into an offset in the value.
    */
-  const seat = chip ? { piece: null } : seatOf(pieces, caret)
+  const seat = chip
+    ? null
+    : seatOf(
+        drawn.flatMap((entry) => entry.runs),
+        caret,
+      )
 
-  return pieces
-    .filter((piece) => piece.text !== '' || piece === seat.piece)
-    .map((piece) => {
+  const draw = (run: Run) => {
+    const cut = run === seat ? caret - run.start : -1
+    if (cut < 0) {
+      return (
+        <span key={run.start} className={run.className} data-at={run.start}>
+          {run.text}
+        </span>
+      )
+    }
+    return (
+      <span key={run.start} className={run.className} data-at={run.start}>
+        {run.text.slice(0, cut)}
+        <span className={styles.caret} ref={mark} />
+        {ghost ? <span className={styles.ghost}>{ghost}</span> : null}
+        {run.text.slice(cut)}
+      </span>
+    )
+  }
+
+  return drawn
+    .filter(
+      ({ piece, runs }) => piece.chip || piece.text !== '' || runs.some((run) => run === seat),
+    )
+    .map(({ piece, runs }) => {
       if (piece.chip) {
         return (
           <span key={piece.start} className={styles.chip} data-at={piece.start} data-hole="">
@@ -569,21 +634,12 @@ function paint({
           </span>
         )
       }
-
-      const cut = piece === seat.piece ? caret - piece.start : -1
-      if (cut < 0) {
-        return (
-          <span key={piece.start} className={piece.className} data-at={piece.start}>
-            {piece.text}
-          </span>
-        )
-      }
+      // A plain stretch of text is one run and needs no wrapper; a hole needs
+      // one to draw the pill around its three.
+      if (!piece.className) return draw(runs[0] as Run)
       return (
-        <span key={piece.start} className={piece.className} data-at={piece.start}>
-          {piece.text.slice(0, cut)}
-          <span className={styles.caret} ref={mark} />
-          {ghost ? <span className={styles.ghost}>{ghost}</span> : null}
-          {piece.text.slice(cut)}
+        <span key={piece.start} className={piece.className}>
+          {runs.map(draw)}
         </span>
       )
     })
@@ -592,21 +648,25 @@ function paint({
 /**
  * Which offset in the value a click at this point means.
  *
- * At rest the mirror is a different width from the `<input>` behind it — that is
- * the whole point of a chip — so the offset the browser derives from the pointer
- * is measured against text nobody can see. Click the word after a chip and the
- * caret lands several characters earlier, inside the hole.
+ * At rest the mirror is a different width from the `<input>` behind it — that
+ * is the whole point of a chip — so the offset the browser derives from the
+ * pointer is measured against text nobody can see. Click the word after a chip
+ * and the caret lands several characters earlier, inside the hole.
  *
- * So the browser's own text hit-testing is borrowed and pointed at the mirror
+ * So the engine's own text hit-testing is borrowed and pointed at the mirror
  * instead. Flipping `pointer-events` for the length of one synchronous call is
- * what makes `caretPositionFromPoint` resolve into the visible text: no frame is
- * painted in between, so nothing about the field changes, and the answer comes
- * from the engine rather than from a second implementation of text measurement
- * that would have to know about wrapping, ligatures and bidi.
+ * what makes `caretPositionFromPoint` resolve into the visible text: no frame
+ * is painted in between, so nothing about the field changes, and the answer
+ * comes from the engine rather than from a second implementation of text
+ * measurement that would have to know about wrapping, ligatures and bidi.
  *
  * A chip stands for characters it does not show, so no offset inside one means
  * anything: the answer there is the end of its expression, which is where an
  * edit starts.
+ *
+ * Only ever called at rest, which is also why every run's text node begins
+ * exactly where its `data-at` says — the caret marker that would split one is
+ * not rendered then.
  *
  * Null when the point is over nothing the mirror rendered, which the caller
  * reads as "leave it to the platform".
@@ -653,34 +713,24 @@ function offsetAtPoint(
     field.style.pointerEvents = ''
   }
 
-  const piece = (node instanceof Element ? node : node?.parentElement)?.closest('[data-at]')
-  if (!piece || !mirror.contains(piece)) return null
-
-  return Number(piece.getAttribute('data-at')) + offset
+  const run = (node instanceof Element ? node : node?.parentElement)?.closest('[data-at]')
+  if (!run || !mirror.contains(run)) return null
+  return Number(run.getAttribute('data-at')) + offset
 }
 
 /**
- * Which piece the caret sits in.
+ * Which run the caret sits in.
  *
- * A caret on the boundary between two pieces belongs to exactly one of them, or
- * two markers are rendered and the ref keeps whichever React wrote last.
- * Strictly-inside wins first, so a caret in the middle of a hole seats the
- * ghost inside the pill; failing that the earliest piece that ends there takes
- * it, which is where the caret visually is.
+ * A caret on the boundary between two belongs to exactly one of them, or two
+ * markers are rendered and the ref keeps whichever React wrote last.
+ * Strictly-inside wins first, so a caret in the middle of a path seats the
+ * ghost beside it; failing that the earliest run that ends there takes it,
+ * which is where the caret visually is.
  */
-function seatOf(pieces: readonly Piece[], caret: number): { piece: Piece | null } {
-  const inside = pieces.find(
-    (piece) => caret > piece.start && caret < piece.start + piece.text.length,
-  )
-  if (inside) return { piece: inside }
-
-  // Nothing contains it strictly, so it is on a boundary. The earliest piece
-  // that ends there takes it, which is where the caret visually is.
-  return {
-    piece:
-      pieces.find((piece) => caret >= piece.start && caret <= piece.start + piece.text.length) ??
-      null,
-  }
+function seatOf(runs: readonly Run[], caret: number): Run | null {
+  const inside = runs.find((run) => caret > run.start && caret < run.start + run.text.length)
+  if (inside) return inside
+  return runs.find((run) => caret >= run.start && caret <= run.start + run.text.length) ?? null
 }
 
 /**

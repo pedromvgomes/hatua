@@ -20,13 +20,12 @@
     align-content: center;
     min-block-size: 40px;
     /*
-     * Roomier on the leading edge than a plain text field needs, because the
-     * first thing in one of these is often a pill rather than a letter — and a
-     * pill is painted wider than its text, so at 10px its rounded cap sat on
-     * the field's own border. The padding applies to the mirror and the input
-     * alike, both being grid items in this box, so nothing slides apart.
+     * Most of the leading inset, with the last 2px given to the mirror and the
+     * input themselves — see their own rule. Roomier than a plain text field
+     * needs, because the first thing in one of these is often a pill rather
+     * than a letter, and a pill is painted wider than its text.
      */
-    padding: 8px 44px 8px 12px;
+    padding: 8px 42px 8px 10px;
     border: 1px solid var(--hatua-border-strong);
     border-radius: var(--hatua-radius-md);
     background: var(--hatua-surface-card);
@@ -52,7 +51,16 @@
   .field {
     grid-area: 1 / 1;
     margin: 0;
-    padding: 0;
+    /*
+     * The last 2px of the field's inset, held here rather than on the box.
+     *
+     * A pill overhangs its own text by 2px on each side, and the mirror clips
+     * at its PADDING box — so with the whole inset on the box, the overhang
+     * fell outside the mirror and `overflow: hidden` sliced the pill's left cap
+     * clean off. Two pixels of padding is exactly the room it needs. Applied to
+     * both, so the two stay glyph-for-glyph aligned.
+     */
+    padding: 0 2px;
     border: 0;
     font-family: var(--hatua-font-mono);
     font-size: 0.8125rem;
@@ -120,7 +128,7 @@
    * box — so it simply grows the fill towards the height of the line.
    */
   .hole {
-    padding: 2px 2px;
+    padding: 2px;
     margin: 0 -2px;
     background: var(--hatua-accent-wash);
     box-shadow: inset 0 0 0 1px var(--hatua-border-accent);
@@ -227,6 +235,17 @@
     margin: 0 4px;
     color: var(--hatua-text-muted);
     font-weight: 400;
+  }
+
+  /*
+   * The delimiters, while the characters are showing.
+   *
+   * `{{` and `}}` are how a Template spells a hole and not part of what it
+   * names, so they step back and let the path read. Colour only: anything that
+   * changed their width would slide the mirror off the text it stands in for.
+   */
+  .brace {
+    color: var(--hatua-text-muted);
   }
 
   /* A `{{` with no `}}` after it: the ordinary state of a Template halfway

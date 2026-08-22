@@ -237,7 +237,10 @@ Three places hold a Template, and all three use the same widget:
 
 The text is the editing surface. `{{ … }}` is highlighted in place — `--accent-wash` fill, 1px
 `--border-accent`, `--text-accent` — and an unclosed hole takes a wavy `--status-error` underline. It
-is never replaced by a widget you cannot type through.
+is never replaced by a widget you cannot type through. The delimiters themselves take
+`--text-muted`: `{{` and `}}` are how a Template *spells* a hole rather than part of what it names,
+so they step back and let the path read. Colour only — anything that changed their width would slide
+the mirror off the text it stands in for.
 
 **At rest, a whole Reference is drawn as what it names, and where it is from.** A chip carries a
 mark for its kind, then the source in `--text-secondary` and the value in `--text-accent`:
