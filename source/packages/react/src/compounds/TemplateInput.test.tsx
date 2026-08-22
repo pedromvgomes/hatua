@@ -555,3 +555,67 @@ describe('the rest of the ways through', () => {
     expect(mirror.scrollLeft).toBe(42)
   })
 })
+
+describe('double-clicking a hole', () => {
+  /*
+   * The one gesture that retargets an existing Reference in a single go, which
+   * is what CONTEXT.md means by a Reference being something the builder can
+   * draw as a pill the user retargets. Everything else lands at the caret; this
+   * takes the hole's place.
+   */
+  const retarget = (field: HTMLElement, at: number) => {
+    fireEvent.focus(field)
+    fireEvent.click(field, { target: { selectionStart: at } })
+    fireEvent.mouseDown(field, { detail: 2 })
+  }
+
+  it('opens the picker scoped to the hole under it', () => {
+    const { field } = mount({ value: 'Hi {{ s2.count }} there' })
+    retarget(field, 10)
+    expect(screen.getByRole('dialog', { name: 'Insert' })).toBeDefined()
+  })
+
+  it('replaces that hole rather than writing into it', () => {
+    const { field, onCommit } = mount({ value: 'Hi {{ s2.count }} there' })
+    retarget(field, 10)
+    const row = screen
+      .getAllByRole('button')
+      .find((button) => button.textContent?.startsWith('var.digest_to')) as HTMLElement
+    fireEvent.click(row)
+    expect(onCommit).toHaveBeenCalledWith('Hi {{ var.digest_to }} there')
+  })
+
+  it('replaces it with a call just as readily', () => {
+    const { field, onCommit } = mount({ value: '{{ s2.count }}' })
+    retarget(field, 6)
+    fireEvent.click(screen.getByRole('tab', { name: 'Function' }))
+    fireEvent.click(screen.getByRole('button', { name: /dt\.now/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Insert' }))
+    expect(onCommit).toHaveBeenCalledWith('{{ dt.now() }}')
+  })
+
+  /* Outside a hole there is nothing to retarget, so a double-click is what the
+     platform makes of it — selecting a word. */
+  it('leaves a double-click in the surrounding text alone', () => {
+    const { field } = mount({ value: 'Hi {{ s2.count }} there' })
+    fireEvent.focus(field)
+    fireEvent.click(field, { target: { selectionStart: 1 } })
+    const event = fireEvent.mouseDown(field, { detail: 2 })
+    expect(event).toBe(true)
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  /* Opened any other way, the choice lands at the caret and the hole beside it
+     is untouched. */
+  it('does not replace anything when the picker was opened from the button', () => {
+    const { field, onCommit } = mount({ value: '{{ s2.count }} ' })
+    fireEvent.focus(field)
+    fireEvent.click(field, { target: { selectionStart: 15 } })
+    fireEvent.click(screen.getByRole('button', { name: 'Insert into To' }))
+    const row = screen
+      .getAllByRole('button')
+      .find((button) => button.textContent?.startsWith('var.digest_to')) as HTMLElement
+    fireEvent.click(row)
+    expect(onCommit).toHaveBeenCalledWith('{{ s2.count }} {{ var.digest_to }}')
+  })
+})

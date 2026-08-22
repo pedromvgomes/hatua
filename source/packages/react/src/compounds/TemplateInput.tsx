@@ -33,6 +33,7 @@ import {
   expectedAt,
   expressionEnd,
   insertCandidate,
+  replaceHole,
   spliceAt,
 } from './insertion'
 import styles from './TemplateInput.module.css'
@@ -151,6 +152,22 @@ export function TemplateInput({
   const [anchor, setAnchor] = useState({ left: 0, top: 0, bottom: 0 })
   const [focused, setFocused] = useState(false)
   /**
+   * The hole a double-click named, which the next choice replaces outright.
+   *
+   * Null for every other way into the picker, where the choice lands at the
+   * caret instead.
+   */
+  const [replacing, setReplacing] = useState<HoleSpan | null>(null)
+  /**
+   * What the picker is hanging off.
+   *
+   * The caret moves, so a picker opened from it re-measures; the ⚡ button does
+   * not, and re-measuring from the caret was quietly throwing its position away
+   * — the panel is right-aligned to that button so it hangs under the field
+   * rather than off the side of a 304px column.
+   */
+  const [anchoredTo, setAnchoredTo] = useState<'caret' | 'button'>('caret')
+  /**
    * Escape means "not now", and it has to outlast the keystroke that follows.
    * Cleared when the caret leaves the hole, or by asking for the list again.
    */
@@ -232,7 +249,7 @@ export function TemplateInput({
     // The picker anchors to the caret across, and to the whole field down: it
     // is tall, and one starting mid-field would cover the text it is being used
     // to write.
-    if (open !== 'picker') return
+    if (open !== 'picker' || anchoredTo !== 'caret') return
     const panel = { left: rect.left, top: rect.top, bottom: box.bottom }
     setAnchor((current) =>
       current.left === panel.left && current.top === panel.top && current.bottom === panel.bottom
@@ -278,6 +295,8 @@ export function TemplateInput({
       const inside = caretContext(draft, element.selectionStart ?? 0).hole !== null
       setCaret(element.selectionStart ?? 0)
       setDismissed(false)
+      setReplacing(null)
+      setAnchoredTo('caret')
       setOpen(inside ? 'completion' : 'picker')
       setActive(0)
       return
@@ -421,6 +440,27 @@ export function TemplateInput({
            * otherwise have set its own caret by the time this ran.
            */
           onMouseDownCapture={(event) => {
+            /*
+             * A second click on a hole retargets it: the picker opens scoped to
+             * that hole, and whatever is chosen replaces it.
+             *
+             * Read from the caret rather than from the pointer, because the
+             * first click has already put it inside the hole — and at rest that
+             * first click also swapped the chips for characters, so the pointer
+             * is now over different text than it was aimed at.
+             */
+            if (event.detail >= 2) {
+              const at = field.current?.selectionStart ?? caret
+              const hole = caretContext(draft, at).hole
+              if (!hole) return
+              event.preventDefault()
+              setReplacing(hole)
+              setAnchoredTo('caret')
+              setDismissed(false)
+              setOpen('picker')
+              return
+            }
+
             // Only at rest: with the characters back the input's own hit-testing
             // is measuring the text that is actually on screen, and the platform
             // does it better than this can.
@@ -541,6 +581,8 @@ export function TemplateInput({
               // side of the 304px column it lives in. `placement` clamps it to
               // the viewport from there.
               setAnchor({ left: box.right - 392, top: box.top, bottom: box.bottom })
+              setAnchoredTo('button')
+              setReplacing(null)
               setOpen('picker')
             }}
           >
@@ -594,11 +636,19 @@ export function TemplateInput({
           scope={scope}
           expected={expected}
           anchor={anchor}
-          onClose={() => setOpen('none')}
+          onClose={() => {
+            setReplacing(null)
+            setOpen('none')
+          }}
           onChoose={(insert) => {
-            const edit = insertCandidate(draft, context, caret, insert)
+            // Scoped to a hole, the choice takes its place; opened any other
+            // way, it lands at the caret.
+            const edit = replacing
+              ? replaceHole(draft, replacing, insert)
+              : insertCandidate(draft, context, caret, insert)
             write(edit)
             commit(edit.value)
+            setReplacing(null)
             setOpen('none')
           }}
         />

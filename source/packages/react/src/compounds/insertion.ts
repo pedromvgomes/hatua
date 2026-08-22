@@ -271,3 +271,19 @@ export function expressionEnd(value: string, hole: HoleSpan): number {
   while (at > hole.start + 2 && /\s/.test(value[at - 1] as string)) at--
   return at
 }
+
+/**
+ * Put a chosen Reference or call in place of a whole hole.
+ *
+ * What a double-click asks for: the hole is the target, not the caret, and the
+ * choice **replaces** it rather than landing inside it. That is the one gesture
+ * that retargets an existing Reference in one go — which is what CONTEXT.md
+ * means by a Reference being a thing the builder can draw as a pill the user
+ * retargets.
+ *
+ * The caret lands at the end of the new expression, where an edit starts.
+ */
+export function replaceHole(value: string, hole: HoleSpan, insert: string): Edit {
+  const written = `{{ ${insert} }}`
+  return spliceAt(value, hole.start, hole.end, written, written.length - 3)
+}

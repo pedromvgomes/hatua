@@ -63,7 +63,14 @@ const typeInto = (input: HTMLInputElement, text: string) => {
   input.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
-type Route = 'typing' | 'shortcut-inside' | 'shortcut-outside' | 'button' | 'caret' | 'focus'
+type Route =
+  | 'typing'
+  | 'shortcut-inside'
+  | 'shortcut-outside'
+  | 'button'
+  | 'caret'
+  | 'focus'
+  | 'retarget'
 
 /**
  * Opens one of the surfaces the way a user would reach it, once, after mount.
@@ -111,6 +118,12 @@ function Driven({
     }
     if (route === 'focus') {
       input.focus()
+      return
+    }
+    if (route === 'retarget') {
+      // The second click on a hole, which is what opens the picker over it.
+      input.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      input.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, detail: 2 }))
       return
     }
     const spark = host.current?.querySelector('button')
@@ -267,6 +280,20 @@ export const CompletionThroughAProjection: Story = {
     expectedType: 'text',
     route: 'shortcut-inside',
     caret: 17,
+  },
+}
+
+/**
+ * Way in #5: a second click on a hole opens the picker scoped to it, and
+ * whatever is chosen **replaces** it — the one gesture that retargets an
+ * existing Reference in a single go.
+ */
+export const RetargetByDoubleClick: Story = {
+  args: {
+    value: 'Inbox digest · {{ s2.count }} messages',
+    expectedType: 'text',
+    route: 'retarget',
+    caret: 22,
   },
 }
 
