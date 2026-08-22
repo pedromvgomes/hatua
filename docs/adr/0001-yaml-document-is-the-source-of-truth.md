@@ -15,7 +15,11 @@ a defect we would rather make structurally impossible than test for.
 
 - Node positions are **never stored**. The layout is computed from the tree on every render, which is
   what makes it impossible for a hand-edited file to disagree with the map. Free node positioning is
-  therefore not available, and arbitrary cross-links between steps would break this property.
+  therefore not available.
+  *(Arbitrary cross-links between steps are refused too, but not by this decision: a file of `Next:`
+  transitions lays out from its graph with no coordinates in it, so a graph does not force stored
+  positions. Cross-links break **exact static scope**, and
+  [ADR-0013](0013-control-flow-nests.md) carries that argument and the decision resting on it.)*
 - Comments, key order and quoting style survive a round trip, because we never re-serialise the whole
   document from typed objects.
 - The model stays a **tree**, matching the YAML's own nesting (`branches:`, `steps:`).
