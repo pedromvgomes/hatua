@@ -95,7 +95,7 @@ steps:
     use: core.for_each
     name: "Each message"
     with:
-      items: "{{ overnight.message }}"
+      items: "{{ triggers.overnight.message }}"
     steps:
       - id: s5
         use: component.email.send

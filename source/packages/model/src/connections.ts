@@ -22,8 +22,8 @@ export interface Diagnostic {
   /**
    * Which Board the subject sits on: a Block's id, or absent for the root.
    *
-   * Set ALONGSIDE `stepId`, not instead of it, because a step id alone no longer
-   * names one Step — ids are Board-local, so two Blocks may each hold a `ret`.
+   * Set ALONGSIDE `stepId`, not instead of it: a step id alone does not name one
+   * Step, because ids are Board-local — two Blocks may each hold a `ret`.
    * Set on its own when the subject is the Block itself: "a path through this
    * block can finish without returning" belongs to no Step in it.
    */

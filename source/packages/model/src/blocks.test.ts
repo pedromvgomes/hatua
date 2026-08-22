@@ -307,6 +307,35 @@ describe('what a document gets wrong', () => {
     expect([...byBlock.keys()].sort()).toEqual(['a', 'b'])
   })
 
+  /* A call resolves to the first block under an id, so a second is unreachable. */
+  it('reports two blocks declared under one id', () => {
+    const twice = doc({
+      blocks: [
+        { id: 'archive', steps: [] },
+        { id: 'archive', steps: [{ id: 'x', use: 'component.email.fetch' }] },
+      ],
+    })
+    const found = validateDefinition(twice, CATALOGUE).all.filter(
+      (d) => d.code === 'BLOCK_ID_DUPLICATE',
+    )
+    expect(found).toHaveLength(1)
+    expect(found[0]?.message).toContain('archive')
+  })
+
+  /* Both readers must agree which one `block.archive` names, or recursion is
+     analysed against one block's steps and reported against another's. */
+  it('resolves a repeated block id the same way in both readers', () => {
+    const twice = doc({
+      blocks: [
+        { id: 'archive', steps: [] },
+        { id: 'archive', steps: [{ id: 'again', use: 'block.archive' }] },
+      ],
+    })
+    // The second block is what would look recursive; the first is what a call
+    // resolves to, and first-wins is the answer both give.
+    expect(cyclicBlocks(twice).size).toBe(0)
+  })
+
   it('reports two steps on one board sharing an id, and allows one per board', () => {
     const twice = doc({
       blocks: [{ id: 'a', steps: [{ id: 'ret', use: 'core.return' }] }],
@@ -354,6 +383,58 @@ describe('every path returns', () => {
         },
       ]),
     ).toBe(true)
+  })
+
+  /*
+   * A condition fork is first-match-wins, so one whose every branch carries a
+   * `when` can match none of them and fall straight through. Crediting it both
+   * hides a block that can finish without returning and refuses publish to a
+   * Step legitimately placed after the fork.
+   */
+  it('does not accept a fork that can match no branch at all', () => {
+    expect(
+      returned([
+        {
+          id: 'fork',
+          use: 'core.fork',
+          branches: [
+            {
+              label: 'A',
+              when: '{{ params.a }}',
+              steps: [{ id: 'r1', use: 'core.return', with: { url: 'x' } }],
+            },
+            {
+              label: 'B',
+              when: '{{ params.b }}',
+              steps: [{ id: 'r2', use: 'core.return', with: { url: 'y' } }],
+            },
+          ],
+        },
+      ]),
+    ).toBe(false)
+  })
+
+  it('does not call a Step after such a fork unreachable', () => {
+    const after = withBody([
+      {
+        id: 'fork',
+        use: 'core.fork',
+        branches: [
+          {
+            label: 'A',
+            when: '{{ params.a }}',
+            steps: [{ id: 'r1', use: 'core.return', with: { url: 'x' } }],
+          },
+          {
+            label: 'B',
+            when: '{{ params.b }}',
+            steps: [{ id: 'r2', use: 'core.return', with: { url: 'y' } }],
+          },
+        ],
+      },
+      { id: 'ret', use: 'core.return', with: { url: 'z' } },
+    ])
+    expect(codes(validateDefinition(after, CATALOGUE).all)).not.toContain('STEP_AFTER_RETURN')
   })
 
   it('refuses a fork where one branch does not', () => {

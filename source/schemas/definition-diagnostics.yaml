@@ -103,7 +103,9 @@ codes:
     message: '"{name}" declares outputs, but a path through it can finish without returning.'
     summary: >-
       A path returns via a `core.return` at the Board's root level, or a
-      root-level fork whose every branch returns. A return inside a loop exits
+      root-level fork that is exhaustive — an unconditional last branch — and
+      whose every branch returns. A fork whose every branch carries a `when` is
+      not exhaustive: first-match-wins means it can match none of them. A return inside a loop exits
       the block early and is legal, but never discharges the obligation: the list
       may be empty and the body may never run — the same reasoning that keeps
       sibling branches out of scope, applied to time instead of to paths.
@@ -114,6 +116,16 @@ codes:
     summary: >-
       The same failure as an unconditional branch that swallows the ones behind
       it, and reported the same way.
+
+  - code: BLOCK_ID_DUPLICATE
+    blocks: publish
+    message: 'More than one block is called "{name}".'
+    summary: >-
+      The STEP_ID_DUPLICATE argument one level up: `use: block.x` naming two
+      things is the one case nothing can disambiguate. Worth its own code
+      because the readers disagree rather than merely tie — a call resolves to
+      the first, so the second block is unreachable while still being walked and
+      validated.
 
   - code: STEP_ID_DUPLICATE
     blocks: publish

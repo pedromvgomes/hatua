@@ -39,7 +39,7 @@ export const block = z.strictObject({
     return z.array(declaration).optional()
   },
   /**
-   * The block's own variables, read as `{{var.<key>}}` inside it and written by `data.set_var`. Rebuilt on every invocation, and invisible outside the block — the workflow's `vars` are a different set that a block cannot see.
+   * The block's own variables, read as `{{var.<key>}}` inside it and written by `core.set_var`. Rebuilt on every invocation, and invisible outside the block — the workflow's `vars` are a different set that a block cannot see.
    */
   get vars() {
     return z.array(variable).optional()
@@ -54,7 +54,12 @@ export type Block = z.infer<typeof block>
  * One parameter or one output. Spelled `{k, label, t, of}` exactly as a Component Manifest's output and a Run Context key are — ADR-0012 rejected inventing a second spelling for an idea the contract already has one of, and the reasoning holds here unchanged.
  */
 export const declaration = z.strictObject({
-  k: z.string().min(1),
+  /**
+   * Read inside the block as `{{params.<k>}}` and, for an output, at the call site as `{{steps.<call id>.<k>}}` — a path segment like every other user-chosen name, and held to the same rule.
+   */
+  get k() {
+    return identifier
+  },
   /**
    * Friendly name, shown in the reference tree and on the call site's field.
    */
@@ -209,7 +214,7 @@ export const workflowDefinition = z.strictObject({
     return z.array(trigger).optional()
   },
   /**
-   * Mutable workflow-scoped state, readable as `{{var.<key>}}` and written by `data.set_var`. Distinct from trigger payloads, which arrive from outside. A value may be a literal or an expression, so a var can normalise differently-shaped trigger payloads into one shape.
+   * Mutable workflow-scoped state, readable as `{{var.<key>}}` and written by `core.set_var`. Distinct from trigger payloads, which arrive from outside. A value may be a literal or an expression, so a var can normalise differently-shaped trigger payloads into one shape.
    */
   get vars() {
     return z.array(variable).optional()

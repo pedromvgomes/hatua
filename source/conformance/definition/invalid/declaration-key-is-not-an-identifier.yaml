@@ -1,0 +1,15 @@
+# expect: SCHEMA_INVALID
+#
+# A declaration's `k` is read inside the block as `{{params.<k>}}` and at the call
+# site as `{{steps.<call id>.<k>}}` — a path segment like every other user-chosen
+# name, so a name the grammar cannot parse is a parameter nothing can ever read.
+id: wf
+name: W
+version: 1
+status: draft
+blocks:
+  - id: archive
+    params:
+      - { k: user-id, label: User, t: text }
+    steps: []
+steps: []

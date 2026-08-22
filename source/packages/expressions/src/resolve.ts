@@ -60,6 +60,14 @@ export interface EvaluationContext {
   readonly steps?: Readonly<Record<string, Value>>
   /** Trigger payloads, addressed as `triggers.<id>.…`. */
   readonly triggers?: Readonly<Record<string, Value>>
+  /**
+   * The values a Block was called with, addressed as `params.<k>`.
+   *
+   * Supplied per invocation rather than per run: a Block called twice is called
+   * with different arguments, and its parameters are the only part of scope
+   * that changes between two calls of the same Block.
+   */
+  readonly params?: Readonly<Record<string, Value>>
   /** Workflow variables, addressed as `var.<key>`. */
   readonly var?: Readonly<Record<string, Value>>
   /** The Host's ambient values for this execution, addressed as `run.<key>`. */
@@ -292,6 +300,7 @@ function root(name: string, context: EvaluationContext): Raw {
   if (name === 'var') return (context.var ?? {}) as Value
   if (name === 'run') return (context.run ?? {}) as Value
   if (name === 'steps') return (context.steps ?? {}) as Value
+  if (name === 'params') return (context.params ?? {}) as Value
   return MISSING
 }
 

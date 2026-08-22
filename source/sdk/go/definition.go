@@ -142,14 +142,19 @@ func Boards(d Definition) []Board {
 }
 
 // BoardOf returns one Board by id, or nil when nothing declares it.
+//
+// Built directly rather than by scanning Boards: a runner calls ScopeFor once
+// per step, and each call reaches here — materialising the whole slice to read
+// one entry allocates a Board per block, per step, per execution.
 func BoardOf(d Definition, id BoardID) *Board {
-	for _, board := range Boards(d) {
-		if board.ID == id {
-			found := board
-			return &found
-		}
+	if id == RootBoard {
+		return &Board{ID: RootBoard, Steps: d.Steps}
 	}
-	return nil
+	block := BlockOf(d, id)
+	if block == nil {
+		return nil
+	}
+	return &Board{ID: block.ID, Block: block, Steps: block.Steps}
 }
 
 // StepRef names one step. Neither half identifies one alone: ids are

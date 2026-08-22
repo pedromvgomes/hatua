@@ -235,7 +235,10 @@ export function scopeFor(
  * contract, and `core.return` only binds values to it.
  */
 export function blockOutputType(block: Block | undefined): TypeNode {
-  const members: Record<string, TypeNode> = {}
+  // Null-prototype, because every key here is a name out of the document: a
+  // declaration keyed `__proto__` would otherwise swap the object's prototype
+  // instead of storing a member.
+  const members: Record<string, TypeNode> = Object.create(null)
   for (const output of block?.outputs ?? []) members[output.k] = declarationToType(output)
   return { type: 'object', members }
 }
@@ -251,7 +254,7 @@ function declarationToType(declaration: Declaration): TypeNode {
 }
 
 const declarationMembers = (declarations: readonly Declaration[]): Record<string, TypeNode> => {
-  const members: Record<string, TypeNode> = {}
+  const members: Record<string, TypeNode> = Object.create(null)
   for (const declaration of declarations) members[declaration.k] = declarationToType(declaration)
   return members
 }

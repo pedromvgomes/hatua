@@ -210,6 +210,7 @@ describe('the two structural verbs', () => {
 
   it('says something different when a fork has no Branches at all', () => {
     const found = malformedContainers(workflow([{ id: 's1', use: 'core.fork' }]))
+    expect(found[0]).toMatchObject({ code: 'FORK_HAS_NO_BRANCHES', blocks: 'publish' })
     expect(found[0]?.message).toMatch(/no branches/)
   })
 

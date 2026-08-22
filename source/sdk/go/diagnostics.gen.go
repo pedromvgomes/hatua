@@ -28,6 +28,7 @@ const (
 	CodeReturnOutsideBlock     DefinitionCode = "RETURN_OUTSIDE_BLOCK"
 	CodeBlockPathWithoutReturn DefinitionCode = "BLOCK_PATH_WITHOUT_RETURN"
 	CodeStepAfterReturn        DefinitionCode = "STEP_AFTER_RETURN"
+	CodeBlockIdDuplicate       DefinitionCode = "BLOCK_ID_DUPLICATE"
 	CodeStepIdDuplicate        DefinitionCode = "STEP_ID_DUPLICATE"
 )
 
@@ -54,5 +55,6 @@ var DefinitionDiagnostics = map[DefinitionCode]DefinitionDiagnosticSpec{
 	CodeReturnOutsideBlock:     {Code: CodeReturnOutsideBlock, Blocks: BlocksPublish, Message: "`core.return` publishes a block's outputs, and this is not inside a block."},
 	CodeBlockPathWithoutReturn: {Code: CodeBlockPathWithoutReturn, Blocks: BlocksPublish, Message: "\"{name}\" declares outputs, but a path through it can finish without returning."},
 	CodeStepAfterReturn:        {Code: CodeStepAfterReturn, Blocks: BlocksPublish, Message: "Nothing after `core.return` can run."},
+	CodeBlockIdDuplicate:       {Code: CodeBlockIdDuplicate, Blocks: BlocksPublish, Message: "More than one block is called \"{name}\"."},
 	CodeStepIdDuplicate:        {Code: CodeStepIdDuplicate, Blocks: BlocksPublish, Message: "More than one step on this board is called \"{name}\"."},
 }
