@@ -39,11 +39,20 @@ export {
   validate,
 } from '@hatua/expressions'
 export {
+  type Board,
+  type BoardId,
   boardScope,
+  boards,
+  callSlots,
+  cyclicBlocks,
   findStep,
+  returnSlots,
+  type StepRef,
   scopeFor,
   slotsFor,
+  stepKey,
   upstreamOf,
+  walkDocument,
   walkSteps,
   whenSlot,
 } from '@hatua/model'

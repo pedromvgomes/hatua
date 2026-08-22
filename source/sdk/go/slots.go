@@ -122,8 +122,15 @@ func MapEntries(value any) []MapEntry {
 // UpstreamOf reports the steps a given step may reference: its ancestors and the
 // earlier siblings of every ancestor. Sibling branches are deliberately out of
 // scope, so a user cannot express a mapping that could not resolve at run time.
-func UpstreamOf(doc Definition, id string) []Step {
-	if found := collectUpstream(doc.Steps, id, nil); found != nil {
+// The walk is rooted at the step's own Board and never leaves it. A block's
+// steps do not see the call site's ancestry, which is the whole reason a call is
+// a cross-link with a contract and a jump is not (ADR-0013).
+func UpstreamOf(doc Definition, ref StepRef) []Step {
+	board := BoardOf(doc, ref.Board)
+	if board == nil {
+		return []Step{}
+	}
+	if found := collectUpstream(board.Steps, ref.ID, nil); found != nil {
 		return found
 	}
 	return []Step{}
@@ -151,20 +158,32 @@ func collectUpstream(steps []Step, id string, ancestors []Step) []Step {
 	return nil
 }
 
-// WorkflowScope is everything addressable with no position in the tree: Run
-// Context, the Triggers, the TRIGGER built-in, and the workflow's variables.
+// BoardScope is everything a Board offers with no position in its tree.
 //
-// Never a step's output. A workflow variable's value has no position — it is
-// not reached by running anything — so no step is guaranteed to have run by the
-// time it is evaluated. Everything here is available unconditionally for the
-// mirror-image reason: a workflow cannot run without a trigger firing, the Host
-// supplies Run Context to every execution, and a var is workflow-scoped rather
-// than positional.
+// Never a step's output. A variable's value has no position — it is not reached
+// by running anything — so no step is guaranteed to have run by the time it is
+// evaluated. Everything here is available unconditionally for the mirror-image
+// reason: a workflow cannot run without a trigger firing, the Host supplies Run
+// Context to every execution, a parameter is filled by the caller before the
+// block starts, and a var is Board-scoped rather than positional.
+//
+// The two Boards offer different things, and the difference IS the contract:
+//
+//	                    root Board            a block's
+//	run.*               Run Context           the same — the one thing that crosses
+//	triggers.*/TRIGGER  the contract          absent
+//	params.*            absent                the contract
+//	var.*               the workflow's        the block's, rebuilt per call
+//
+// A block cannot read the workflow's variables or ask which trigger fired. Run
+// Context is the single exception because nothing in the document declares it:
+// the Host supplies it to every execution, so it is exact on every path of every
+// Board with no intersection to compute.
 //
 // Split out because the builder needs scope without a step to ask about, and
 // ScopeFor is this plus the upstream steps — one definition of the unpositioned
 // half, two readers.
-func WorkflowScope(doc Definition, manifests []Manifest, context []ContextKey) []expressions.ScopeEntry {
+func BoardScope(doc Definition, board BoardID, manifests []Manifest, context []ContextKey) []expressions.ScopeEntry {
 	byUse := make(map[string]Manifest, len(manifests))
 	for _, manifest := range manifests {
 		byUse[manifest.Use] = manifest
@@ -181,21 +200,45 @@ func WorkflowScope(doc Definition, manifests []Manifest, context []ContextKey) [
 		})
 	}
 
-	for _, trigger := range doc.Triggers {
-		entries = append(entries, expressions.ScopeEntry{
-			Path: "triggers." + trigger.ID,
-			Type: outputsToType(byUse[trigger.Use].Outputs),
-		})
+	block := BlockOf(doc, board)
+	if board != RootBoard && block == nil {
+		return []expressions.ScopeEntry{}
 	}
 
-	if len(doc.Triggers) > 1 {
-		entries = append(entries, expressions.ScopeEntry{
-			Path: "TRIGGER",
-			Type: expressions.TypeNode{Type: expressions.TypeText},
-		})
+	if block != nil {
+		for _, param := range block.Params {
+			entries = append(entries, expressions.ScopeEntry{
+				Path: "params." + param.K,
+				Type: declarationToType(param),
+			})
+		}
+	} else {
+		for _, trigger := range doc.Triggers {
+			entries = append(entries, expressions.ScopeEntry{
+				Path: "triggers." + trigger.ID,
+				Type: outputsToType(byUse[trigger.Use].Outputs),
+			})
+		}
+
+		// Absent on a block's Board for the reason `triggers.` is: a block
+		// cannot ask which trigger fired, because it cannot see the triggers at
+		// all. A block that needs to know takes it as a parameter.
+		if len(doc.Triggers) > 1 {
+			entries = append(entries, expressions.ScopeEntry{
+				Path: "TRIGGER",
+				Type: expressions.TypeNode{Type: expressions.TypeText},
+			})
+		}
 	}
 
-	for _, variable := range doc.Vars {
+	// The Board's own variables: the workflow's at the root, the block's inside
+	// one. A block called twice starts clean both times, because these are
+	// rebuilt per invocation rather than carried.
+	vars := doc.Vars
+	if block != nil {
+		vars = block.Vars
+	}
+	for _, variable := range vars {
 		entries = append(entries, expressions.ScopeEntry{
 			Path: "var." + variable.Key,
 			Type: expressions.TypeNode{Type: varType(variable.Value)},
@@ -211,23 +254,55 @@ func WorkflowScope(doc Definition, manifests []Manifest, context []ContextKey) [
 // Scope position comes from the tree; the shapes come from the manifests. The
 // two are joined here because neither side owns both. Only steps are
 // constrained by tree position, because only a step can fail to run.
-func ScopeFor(doc Definition, stepID string, manifests []Manifest, context []ContextKey) []expressions.ScopeEntry {
+func ScopeFor(doc Definition, ref StepRef, manifests []Manifest, context []ContextKey) []expressions.ScopeEntry {
 	byUse := make(map[string]Manifest, len(manifests))
 	for _, manifest := range manifests {
 		byUse[manifest.Use] = manifest
 	}
 
-	entries := WorkflowScope(doc, manifests, context)
+	entries := BoardScope(doc, ref.Board, manifests, context)
 
-	for _, step := range UpstreamOf(doc, stepID) {
+	for _, step := range UpstreamOf(doc, ref) {
 		manifest := byUse[step.Use]
 		entries = append(entries, expressions.ScopeEntry{
 			Path: "steps." + step.ID,
-			Type: stepOutputType(step, manifest),
+			Type: stepOutputType(doc, step, manifest),
 		})
 	}
 
 	return entries
+}
+
+// declarationToType turns a block's parameter or output into the shape the
+// checker wants. Three lines rather than a second traversal, because a
+// Declaration is spelled exactly as an Output is.
+func declarationToType(declaration Declaration) expressions.TypeNode {
+	node := expressions.TypeNode{Type: expressions.ValueType(declaration.T)}
+	if len(declaration.Of) > 0 {
+		node.Members = make(map[string]expressions.TypeNode, len(declaration.Of))
+		for _, member := range declaration.Of {
+			node.Members[member.K] = declarationToType(member)
+		}
+	}
+	return node
+}
+
+// blockOutputType is what a call publishes, read where the block is declared
+// rather than from a manifest. That is what makes a call type-check before its
+// body is written: the declaration is the contract, and core.return only binds
+// values to it.
+func blockOutputType(block *Block) expressions.TypeNode {
+	node := expressions.TypeNode{
+		Type:    expressions.TypeObject,
+		Members: map[string]expressions.TypeNode{},
+	}
+	if block == nil {
+		return node
+	}
+	for _, output := range block.Outputs {
+		node.Members[output.K] = declarationToType(output)
+	}
+	return node
 }
 
 // contextKeyType turns a Run Context key into the shape the checker wants.
@@ -284,7 +359,10 @@ func varType(value any) expressions.ValueType {
 // they are whatever the user named. It is the third verb Hatua interprets
 // structurally, alongside core.fork and core.for_each — and the only one that
 // does so by reading a field's value rather than its position in the tree.
-func stepOutputType(step Step, manifest Manifest) expressions.TypeNode {
+func stepOutputType(doc Definition, step Step, manifest Manifest) expressions.TypeNode {
+	if called, ok := BlockIDOf(step.Use); ok {
+		return blockOutputType(BlockOf(doc, called))
+	}
 	if step.Use == MappingVerb {
 		members := map[string]expressions.TypeNode{}
 		for _, entry := range MapEntries(step.With["entries"]) {

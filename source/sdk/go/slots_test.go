@@ -98,7 +98,7 @@ func TestWhenSlotIsBoolean(t *testing.T) {
 	}}
 
 	found := expressions.Validate(slot.Template, slot.ExpectedType, expressions.CheckContext{
-		Scope: ScopeFor(doc, "s3", manifests, nil),
+		Scope: ScopeFor(doc, StepRef{ID: "s3"}, manifests, nil),
 	})
 	if len(found) != 1 || found[0].Code != expressions.CodeExprTypeMismatch {
 		t.Fatalf("expected one EXPR_TYPE_MISMATCH, got %#v", found)
@@ -120,7 +120,7 @@ func TestScopeForDerivesMappingOutputsFromTheStepItself(t *testing.T) {
 		},
 	}
 
-	scope := ScopeFor(doc, "s2", []Manifest{mapper}, nil)
+	scope := ScopeFor(doc, StepRef{ID: "s2"}, []Manifest{mapper}, nil)
 	if len(scope) != 1 || scope[0].Path != "steps.s1" {
 		t.Fatalf("unexpected scope %#v", scope)
 	}
@@ -157,10 +157,10 @@ func TestUpstreamOfExcludesSiblingBranches(t *testing.T) {
 		return out
 	}
 
-	if got := ids(UpstreamOf(doc, "s7")); len(got) != 2 || got[0] != "s2" || got[1] != "s3" {
+	if got := ids(UpstreamOf(doc, StepRef{ID: "s7"})); len(got) != 2 || got[0] != "s2" || got[1] != "s3" {
 		t.Fatalf("expected [s2 s3], got %v", got)
 	}
-	if got := ids(UpstreamOf(doc, "s2")); len(got) != 0 {
+	if got := ids(UpstreamOf(doc, StepRef{ID: "s2"})); len(got) != 0 {
 		t.Fatalf("expected nothing upstream of the first step, got %v", got)
 	}
 }
@@ -186,7 +186,7 @@ func TestWorkflowScopeOffersRunContextAndNoStepOutput(t *testing.T) {
 	}
 
 	paths := map[string]expressions.TypeNode{}
-	for _, entry := range WorkflowScope(doc, nil, context) {
+	for _, entry := range BoardScope(doc, RootBoard, nil, context) {
 		paths[entry.Path] = entry.Type
 	}
 
@@ -212,8 +212,8 @@ func TestScopeForIsWorkflowScopePlusTheSteps(t *testing.T) {
 	}
 	context := []ContextKey{{K: "id", Label: "Run id", T: "text"}}
 
-	unpositioned := WorkflowScope(doc, nil, context)
-	positioned := ScopeFor(doc, "s2", nil, context)
+	unpositioned := BoardScope(doc, RootBoard, nil, context)
+	positioned := ScopeFor(doc, StepRef{ID: "s2"}, nil, context)
 
 	if len(positioned) != len(unpositioned)+1 {
 		t.Fatalf("expected one step on top, got %#v", positioned)
@@ -244,4 +244,134 @@ func TestRunContextResolvesFromItsOwnRoot(t *testing.T) {
 	if value != "acme" {
 		t.Fatalf("expected acme, got %#v", value)
 	}
+}
+
+// A block reads only what it declares, plus the Run Context.
+//
+// The mirror of packages/model/src/blocks.test.ts. conformance/ pins the
+// expression half of this in both languages; what these check is the half a
+// corpus cannot reach — that ScopeFor roots its walk at the Board an id sits on,
+// so a block scopes the same way in a runner as it does in the builder.
+func blockDoc() Definition {
+	return Definition{
+		ID: "wf", Name: "W", Version: 1, Status: StatusDraft,
+		Triggers: []Trigger{{ID: "nightly", Use: "core.schedule"}},
+		Vars:     []Variable{{Key: "digest_to", Value: "me@dane.dev"}},
+		Blocks: []Block{{
+			ID: "archive_entry",
+			Params: []Declaration{{
+				K: "entry", Label: "Entry", T: "object",
+				Of: []Declaration{{K: "headline", Label: "Headline", T: "text"}},
+			}},
+			Outputs: []Declaration{{K: "url", Label: "Archive URL", T: "text"}},
+			Vars:    []Variable{{Key: "attempt_note", Value: ""}},
+			Steps: []Step{
+				{ID: "put", Use: "component.s3.upload"},
+				{ID: "ret", Use: ReturnVerb},
+			},
+		}},
+		Steps: []Step{
+			{ID: "s2", Use: "component.email.fetch"},
+			{ID: "audit_1", Use: "block.archive_entry"},
+			{ID: "s9", Use: "core.end"},
+		},
+	}
+}
+
+func paths(entries []expressions.ScopeEntry) []string {
+	out := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		out = append(out, entry.Path)
+	}
+	return out
+}
+
+func has(entries []expressions.ScopeEntry, path string) bool {
+	for _, entry := range entries {
+		if entry.Path == path {
+			return true
+		}
+	}
+	return false
+}
+
+func TestBoardsYieldTheRootAndEveryBlock(t *testing.T) {
+	seen := []string{}
+	WalkDocument(blockDoc(), func(ref StepRef, _ Step) {
+		seen = append(seen, ref.Board+"/"+ref.ID)
+	})
+
+	want := []string{"/s2", "/audit_1", "/s9", "archive_entry/put", "archive_entry/ret"}
+	if len(seen) != len(want) {
+		t.Fatalf("expected %v, got %v", want, seen)
+	}
+	for i := range want {
+		if seen[i] != want[i] {
+			t.Fatalf("expected %v, got %v", want, seen)
+		}
+	}
+}
+
+func TestBlockScopeOffersOnlyWhatItDeclares(t *testing.T) {
+	doc := blockDoc()
+	context := []ContextKey{{K: "tenant", Label: "Tenant", T: "text"}}
+	scope := BoardScope(doc, "archive_entry", nil, context)
+
+	want := []string{"run.tenant", "params.entry", "var.attempt_note"}
+	if got := paths(scope); len(got) != len(want) {
+		t.Fatalf("expected %v, got %v", want, got)
+	}
+	for i, path := range want {
+		if paths(scope)[i] != path {
+			t.Fatalf("expected %v, got %v", want, paths(scope))
+		}
+	}
+}
+
+// The contract. If a step outside the block ever reaches this scope, it has
+// stopped being an exact walk and `blocks:` is the jump ADR-0013 refuses.
+func TestScopeForRootsTheWalkAtTheBlock(t *testing.T) {
+	doc := blockDoc()
+	scope := ScopeFor(doc, StepRef{Board: "archive_entry", ID: "ret"}, nil, nil)
+
+	if !has(scope, "steps.put") {
+		t.Fatalf("expected the block's own step, got %v", paths(scope))
+	}
+	for _, outside := range []string{"steps.s2", "steps.audit_1", "var.digest_to", "triggers.nightly"} {
+		if has(scope, outside) {
+			t.Fatalf("expected %q to be out of scope inside a block, got %v", outside, paths(scope))
+		}
+	}
+}
+
+func TestACallIsTypedByTheBlockItNames(t *testing.T) {
+	doc := blockDoc()
+	scope := ScopeFor(doc, StepRef{Board: RootBoard, ID: "s9"}, nil, nil)
+
+	var call *expressions.ScopeEntry
+	for i := range scope {
+		if scope[i].Path == "steps.audit_1" {
+			call = &scope[i]
+		}
+	}
+	if call == nil {
+		t.Fatalf("expected the call to be in scope, got %v", paths(scope))
+	}
+	if call.Type.Members["url"].Type != expressions.TypeText {
+		t.Fatalf("expected the declared output, got %#v", call.Type)
+	}
+}
+
+func TestABlockParameterKeepsItsDeclaredShape(t *testing.T) {
+	scope := BoardScope(blockDoc(), "archive_entry", nil, nil)
+	for _, entry := range scope {
+		if entry.Path != "params.entry" {
+			continue
+		}
+		if entry.Type.Members["headline"].Type != expressions.TypeText {
+			t.Fatalf("expected a nested text member, got %#v", entry.Type)
+		}
+		return
+	}
+	t.Fatalf("expected params.entry in %v", paths(scope))
 }
