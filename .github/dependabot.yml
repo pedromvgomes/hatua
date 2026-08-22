@@ -58,8 +58,9 @@ updates:
       default-days: 7
     open-pull-requests-limit: 25
 
-  # The Go SDK. Nothing in CI builds or tests it yet, so Dependabot is
-  # currently the only thing looking at its dependencies at all.
+  # The Go SDK module. ci-test builds, vets and tests it on the Go version
+  # setup-go reads out of this go.mod through go-version-file, so this entry
+  # is what moves that version as well as the module's dependencies.
   - package-ecosystem: "gomod"
     directory: "/source/sdk/go"
     schedule:
