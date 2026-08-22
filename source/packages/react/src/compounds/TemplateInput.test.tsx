@@ -192,6 +192,30 @@ describe('TemplateInput', () => {
     expect(input.value).toBe('{{ }}')
   })
 
+  /*
+   * The `{{` is closed for you, so the caret sits three characters inside
+   * `{{ | }}` — and walking out with the arrow key took three presses. Typing
+   * the closing brace steps over the whole closer at once, which is what every
+   * editor that auto-closes a bracket does, and is the keystroke somebody would
+   * have pressed anyway.
+   */
+  it('steps over the closing braces when they are typed', () => {
+    const { field } = mount()
+    const input = field as HTMLInputElement
+    type(field, '{{s2.count')
+    expect(input.value).toBe('{{ s2.count }}')
+
+    fireEvent.keyDown(field, { key: '}', target: { selectionStart: 11 } })
+    expect(input.selectionStart).toBe(14)
+    expect(input.value).toBe('{{ s2.count }}')
+  })
+
+  it('types a brace normally where there is no closer to step over', () => {
+    const { field } = mount({ value: 'plain' })
+    const event = fireEvent.keyDown(field, { key: '}', target: { selectionStart: 5 } })
+    expect(event).toBe(true)
+  })
+
   /* A pasted Template is already closed; closing it again is the same fault
      with a different trigger. */
   it('does not close a `{{` that arrived by paste', () => {
@@ -314,7 +338,10 @@ describe('at rest', () => {
    */
   it('draws an expression that computes something as its own text', () => {
     mount({ value: '{{ s2.count + 1 }}' })
-    expect(chips()).toEqual(['s2.count + 1'])
+    // `s2` is a Step's id, and putting it on a chip is the thing a chip exists
+    // to stop — so the Reference inside is named too, and only the operators
+    // and literals are left as they were written.
+    expect(chips()).toEqual(['Fetch emailscount + 1'])
   })
 
   /* The path is what the checker names and what has to be edited, so a stale
@@ -322,6 +349,18 @@ describe('at rest', () => {
   it('draws a stale Reference as its path, with no source', () => {
     mount({ value: '{{ s9.gone }}' })
     expect(chips()).toEqual(['s9.gone'])
+  })
+
+  it('names every Reference in a computed hole, and leaves the rest verbatim', () => {
+    mount({ value: '{{ s2.count + run.tenant }}' })
+    expect(chips()).toEqual(['Fetch emailscount + Run contextTenant'])
+  })
+
+  /* Substituted by span and only where the source agrees, so nothing is ever
+     reconstructed from the tree — that would be AST→text (ADR-0008). */
+  it('leaves a path it cannot match character for character alone', () => {
+    mount({ value: '{{ s9.gone + 1 }}' })
+    expect(chips()).toEqual(['s9.gone + 1'])
   })
 
   /* Its characters are the only thing that can be edited back into shape. */

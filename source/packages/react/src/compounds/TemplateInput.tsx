@@ -15,7 +15,14 @@ import {
 } from 'react'
 import { cx } from '../primitives/classNames'
 import { CompletionList, rowId } from './CompletionList'
-import { type Candidate, type ChipParts, chipFor, completionsAt, ghostFor } from './candidates'
+import {
+  type Candidate,
+  type ChipParts,
+  chipFor,
+  completionsAt,
+  expressionChip,
+  ghostFor,
+} from './candidates'
 import { ExpressionPicker } from './ExpressionPicker'
 import {
   caretContext,
@@ -276,6 +283,30 @@ export function TemplateInput({
       }
     }
 
+    /*
+     * Typing the closing brace steps over the one already there.
+     *
+     * The `{{` was closed on the user's behalf, so the caret sits three
+     * characters inside `{{ | }}` and walking out of it meant pressing the
+     * arrow key three times. Type-over is what every editor that auto-closes a
+     * bracket does about that, and it is one keystroke — the same keystroke
+     * somebody would have pressed anyway to close the hole themselves.
+     *
+     * The whole ` }}` in one press, not a brace at a time: the space is ours
+     * too, and leaving the caret in the middle of a closer nobody typed is the
+     * fiddliness this exists to remove.
+     */
+    if (event.key === '}') {
+      const from = element.selectionStart ?? 0
+      const closer = /^\s*\}\}/.exec(draft.slice(from))
+      if (closer && caretContext(draft, from).hole) {
+        event.preventDefault()
+        write({ value: draft, caret: from + closer[0].length })
+        setOpen('none')
+        return
+      }
+    }
+
     if (event.key === 'Escape') {
       if (open !== 'none') {
         event.preventDefault()
@@ -391,6 +422,7 @@ export function TemplateInput({
               caret,
               ghost,
               mark: caretMark,
+              scope,
               // At rest there is no caret to keep aligned, so a hole that names
               // one value may be drawn as what it is rather than as how it is
               // spelled. See `chipOf`.
@@ -581,6 +613,7 @@ function runsOf(piece: Piece): Run[] {
 function chipOf(
   hole: HoleSpan,
   value: string,
+  scope: readonly ScopeEntry[],
   chip: ((path: string) => ChipParts | null) | null,
 ): ChipParts | undefined {
   if (!chip || !hole.expr) return undefined
@@ -589,7 +622,15 @@ function chipOf(
   const named = path ? chip(path) : null
   if (named) return named
 
-  return { of: 'expression', text: value.slice(hole.start + 2, hole.end - 2).trim() }
+  // The hole minus its delimiters and the space a writer left inside them: the
+  // chip supplies its own padding, and carrying theirs as well shows as a gap
+  // the eye reads as part of the value.
+  let from = hole.start + 2
+  let to = hole.end - 2
+  while (from < to && /\s/.test(value[from] as string)) from++
+  while (to > from && /\s/.test(value[to - 1] as string)) to--
+
+  return { of: 'expression', parts: expressionChip(value, hole.expr, from, to, scope) }
 }
 
 /**
@@ -612,6 +653,7 @@ function paint({
   caret,
   ghost,
   mark,
+  scope,
   chip,
 }: {
   value: string
@@ -619,6 +661,8 @@ function paint({
   caret: number
   ghost: string
   mark: React.RefObject<HTMLSpanElement | null>
+  /** Read to name the References inside a computed hole. */
+  scope: readonly ScopeEntry[]
   /** What to call a Reference at rest, or null while the field has focus. */
   chip: ((path: string) => ChipParts | null) | null
 }) {
@@ -632,7 +676,7 @@ function paint({
       start: hole.start,
       className: hole === shape.unclosed ? styles.broken : styles.hole,
       unclosed: hole === shape.unclosed,
-      chip: chipOf(hole, value, chip),
+      chip: chipOf(hole, value, scope, chip),
     })
     at = hole.end
   }
@@ -687,7 +731,18 @@ function paint({
                 <span className={styles.chipLeaf}>{piece.chip.leaf}</span>
               </>
             ) : (
-              <span className={styles.chipLeaf}>{piece.chip.text}</span>
+              piece.chip.parts.map((part) =>
+                part.of === 'reference' ? (
+                  <span key={part.at} className={styles.chipRef}>
+                    <span className={styles.chipSource}>{part.source}</span>
+                    <span className={styles.chipLeaf}>{part.leaf}</span>
+                  </span>
+                ) : (
+                  <span key={part.at} className={styles.chipCode}>
+                    {part.text}
+                  </span>
+                ),
+              )
             )}
           </span>
         )

@@ -1,8 +1,11 @@
 import {
   CORE_FUNCTIONS,
   CORE_NAMESPACES,
+  type Expression,
   elementOf,
   type FunctionSpec,
+  isReference,
+  referencePath,
   type TypeNode,
   type ValueType,
 } from '@hatua/expressions'
@@ -342,14 +345,29 @@ export type ChipParts =
    * `{{ s2.count + 1 }}` is every bit as much a hole as `{{ s2.count }}` and has
    * to look like one, but there is no single value behind it to name — which is
    * exactly what makes it not a Reference. So it shows its own text, with no
-   * mark and no source, and the absence of both is what tells the two apart
-   * without inventing a symbol for "computed".
+   * mark, and the absence of one is what tells the two apart without inventing
+   * a symbol for "computed".
+   *
+   * The References *inside* it are still named, though. `s2` is a Step's id and
+   * putting it on a chip is the thing a chip exists to stop — one field showing
+   * "Fetch emails › count" beside a raw `s2.count` is two vocabularies at once,
+   * and the raw one is the half nobody chose.
    *
    * A Reference whose path has gone stale lands here too, and that is the
    * point: it keeps showing the path, and the missing source is the signal that
    * nothing answers to it any more.
    */
-  | { of: 'expression'; text: string }
+  | { of: 'expression'; parts: readonly ChipPart[] }
+
+/**
+ * A stretch of an expression: either its own characters, or a Reference named.
+ *
+ * `at` is the offset it starts at, which is its identity — the parts are
+ * positional slices of one string, and the string is what changes them.
+ */
+export type ChipPart =
+  | { of: 'text'; at: number; text: string }
+  | { of: 'reference'; at: number; kind: ScopeEntry['kind']; source: string; leaf: string }
 
 /**
  * Null when the path names nothing in scope. A Reference that has gone stale —
@@ -408,4 +426,80 @@ function chainTo(nodes: readonly RefNode[], path: string): RefNode[] | null {
     }
   }
   return null
+}
+
+/**
+ * A computed hole, with every Reference inside it named.
+ *
+ * Substituted **by span, and only where the source agrees**: a Reference node
+ * carries the offset it starts at, and its path is compared against the
+ * characters actually there before anything is replaced. Where they differ —
+ * whitespace written inside a path, anything unexpected — that occurrence is
+ * left exactly as it is.
+ *
+ * That conservatism is the whole design. Rebuilding the expression from its
+ * tree would be AST→text, which the grammar does not provide and which
+ * hand-writing makes a second implementation of the language (ADR-0008). This
+ * never reconstructs anything: it copies the source through and swaps out
+ * stretches it has checked character for character.
+ */
+export function expressionChip(
+  value: string,
+  expr: Expression,
+  from: number,
+  to: number,
+  scope: readonly ScopeEntry[],
+): ChipPart[] {
+  const parts: ChipPart[] = []
+  let at = from
+
+  for (const node of referencesIn(expr)) {
+    const path = referencePath(node)
+    if (!path || node.at < at) continue
+    // The source has to say what the tree says before a single character moves.
+    if (value.slice(node.at, node.at + path.length) !== path) continue
+
+    const named = chipFor(path, scope)
+    if (named?.of !== 'reference') continue
+
+    if (node.at > at) parts.push({ of: 'text', at, text: value.slice(at, node.at) })
+    parts.push({ ...named, at: node.at })
+    at = node.at + path.length
+  }
+
+  if (at < to) parts.push({ of: 'text', at, text: value.slice(at, to) })
+  return parts
+}
+
+/**
+ * The outermost References in an expression, in source order.
+ *
+ * Outermost, because `s2.messages[].subject` is one Reference and not four:
+ * descending into a node that is already one would name its own prefix a second
+ * time.
+ */
+function referencesIn(node: Expression): Expression[] {
+  if (isReference(node)) return [node]
+
+  switch (node.kind) {
+    case 'Member':
+    case 'Project':
+      return referencesIn(node.object)
+    case 'Index':
+      return [...referencesIn(node.object), ...referencesIn(node.index)]
+    case 'Call':
+      return [...referencesIn(node.object), ...node.args.flatMap(referencesIn)]
+    case 'Unary':
+      return referencesIn(node.operand)
+    case 'Binary':
+      return [...referencesIn(node.left), ...referencesIn(node.right)]
+    case 'Ternary':
+      return [
+        ...referencesIn(node.cond),
+        ...referencesIn(node.whenTrue),
+        ...referencesIn(node.whenFalse),
+      ]
+    default:
+      return []
+  }
 }

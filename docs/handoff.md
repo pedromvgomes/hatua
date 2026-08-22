@@ -255,7 +255,11 @@ value, and one drawn as bare text among the words around it is the only thing on
 not look like what it is. What differs is what the chip can *say*: a **Reference** names exactly one
 value, so its chip carries that value's source and its kind's mark; anything computed —
 `{{ s2.count + 1 }}` — has no single source to name, so its chip shows its own text, and the absence
-of a mark is what tells the two apart without inventing a symbol for "computed". A Reference whose
+of a mark is what tells the two apart without inventing a symbol for "computed". **The References
+inside it are still named**: `s2` is a Step's id, and one field showing "Fetch emails › count" beside
+a raw `s2.count` is two vocabularies at once, of which the raw one is the half nobody chose. They are
+substituted by span and only where the source agrees character for character — rebuilding the
+expression from its tree would be AST→text, which is ADR-0008's argument in another costume. A Reference whose
 path has gone stale falls to the same treatment, which keeps the path the checker will name on
 screen. A hole that does not parse at all keeps its characters, because they are the only thing that
 can be edited back into shape.
@@ -282,7 +286,7 @@ be edited.
 
 | Trigger | What opens |
 | --- | --- |
-| Typing `{{` | Inline completion — ghost text plus a list, anchored at the caret |
+| Typing `{{` | The hole closes itself, and inline completion opens — ghost text plus a list, anchored at the caret. Typing the closing brace steps back over the closer, which is one keystroke instead of three arrow presses |
 | `Ctrl`+`Space` **inside** a hole | The same completion list |
 | `Ctrl`+`Space` **outside** a hole | The picker, anchored at the caret |
 | The ⚡ button (40px, right of the field) | The picker, anchored to the button |

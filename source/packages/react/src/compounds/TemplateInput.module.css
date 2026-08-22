@@ -202,6 +202,25 @@
     font-weight: 500;
   }
 
+  /*
+   * A Reference named inside a computed chip.
+   *
+   * The same two tones as a chip of its own, and no mark: the outer chip has
+   * already said this is a hole, and a mark per Reference would turn one pill
+   * into a row of badges.
+   */
+  .chipRef {
+    display: inline-flex;
+    align-items: baseline;
+    white-space: nowrap;
+  }
+
+  /* The operators and literals between them, which are code and read as code. */
+  .chipCode {
+    color: var(--hatua-text-secondary);
+    white-space: pre;
+  }
+
   /* Drawn rather than typed, so it cannot be selected or mistaken for part of
      either name. */
   .chipSource::after {
