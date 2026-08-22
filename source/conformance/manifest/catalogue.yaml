@@ -83,6 +83,18 @@ components:
     fields: []
     outputs: []
   - kind: component
+    use: core.return
+    name: Return
+    group: Built-in
+    icon: /icons/zap.svg
+    blurb: Publish a block's declared outputs and end it.
+    # Its fields are the enclosing block's `outputs:`, which no manifest can
+    # declare — the mirror of core.map, whose outputs no manifest can declare
+    # either. The entry exists so a return is a component like any other; the
+    # contract it is held to comes from the Board it sits on.
+    fields: []
+    outputs: []
+  - kind: component
     use: core.for_each
     name: For each
     group: Built-in
