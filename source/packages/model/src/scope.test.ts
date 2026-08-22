@@ -96,6 +96,21 @@ describe('workflowScope', () => {
     expect(entry?.type).toEqual({ type: 'object', members: { name: { type: 'text' } } })
   })
 
+  /*
+   * Nothing stops a Host assembling its array from several sources, and two
+   * `run.tenant` entries are two rows in the completion list and two siblings
+   * under one React key in the reference tree.
+   */
+  it('takes the first of a repeated key, the way every other lookup here does', () => {
+    const twice: ContextKey[] = [
+      { k: 'tenant', label: 'Tenant', t: 'text' },
+      { k: 'tenant', label: 'Tenant again', t: 'number' },
+    ]
+    const found = workflowScope(DOC, [], twice).filter((entry) => entry.path === 'run.tenant')
+    expect(found).toHaveLength(1)
+    expect(found[0]?.label).toBe('Tenant')
+  })
+
   it('declares nothing when the Host declared nothing', () => {
     expect(workflowScope(DOC).some((entry) => entry.kind === 'context')).toBe(false)
   })

@@ -71,7 +71,11 @@ export function caretContext(value: string, caret: number): CaretContext {
   if (caret === 0) return outside
 
   const open = value.lastIndexOf('{{', caret - 1)
-  if (open === -1) return outside
+  // `open + 2 > caret` means the caret is between the two braces, so the `{{`
+  // is not complete before it and there is no hole yet. Left as "inside", the
+  // prefix started one character AFTER the caret, and accepting a row spliced a
+  // reversed range: `a{{b}}` with the caret at 2 became `a{{s2{b}}`.
+  if (open === -1 || open + 2 > caret) return outside
 
   // A `}}` between that `{{` and the caret means the hole closed before the
   // caret got here, and the caret is in the text after it.

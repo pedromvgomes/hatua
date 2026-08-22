@@ -1,6 +1,6 @@
 import type { ScopeEntry } from '@hatua/model'
 import { describe, expect, it } from 'vitest'
-import { chipFor, completionsAt, ghostFor, referenceTree } from './candidates'
+import { chipFor, completionsAt, expressionChip, ghostFor, referenceTree } from './candidates'
 import {
   caretContext,
   dragPayload,
@@ -398,5 +398,62 @@ describe('clicking a chip', () => {
   it('never lands before the opening braces, whatever is between them', () => {
     const value = '{{   }}'
     expect(expressionEnd(value, templateShape(value).holes[0] as never)).toBe(2)
+  })
+})
+
+describe('positions a caret can be in that are not inside a hole', () => {
+  /*
+   * Between the two braces the `{{` is not complete before the caret, so there
+   * is no hole yet. Treated as one, the prefix began one character AFTER the
+   * caret and accepting a row spliced a reversed range — `a{{b}}` came back as
+   * `a{{s2{b}}`.
+   */
+  it('is outside when the caret is between the braces', () => {
+    const context = caretContext('a{{b}}', 2)
+    expect(context.hole).toBeNull()
+    expect(context.prefixStart).toBe(2)
+  })
+
+  it('never reports a prefix that starts after the caret', () => {
+    const value = 'a{{b}}'
+    for (let caret = 0; caret <= value.length; caret++) {
+      expect(caretContext(value, caret).prefixStart).toBeLessThanOrEqual(caret)
+    }
+  })
+
+  it('wraps a candidate rather than splicing backwards there', () => {
+    // Split at the caret and nothing re-emitted: `a{` + the new hole + `{b}}`.
+    const value = 'a{{b}}'
+    expect(insertCandidate(value, caretContext(value, 2), 2, 's2').value).toBe('a{{{ s2 }}{b}}')
+  })
+})
+
+describe('a hole the scanner found', () => {
+  /*
+   * Every offset in a tree is measured from the start of what was parsed, so a
+   * hole parsed out of context came back with its References claiming to start
+   * where they sit inside the hole. `expressionChip` reads them against the
+   * whole value, found the wrong characters, and quietly named nothing — in
+   * precisely the state the fallback exists to serve.
+   */
+  it('reports offsets into the whole value, not into itself', () => {
+    const value = '{{ a. }}{{ s2.count + 1 }}'
+    const shape = templateShape(value)
+    expect(shape.parses).toBe(false)
+
+    const second = shape.holes[1]
+    expect(second?.start).toBe(8)
+    // `s2.count` begins at 11 in the value, not at 3 inside its own hole.
+    expect((second?.expr as { at: number } | undefined)?.at).toBe(11)
+  })
+
+  it('still names what it can when an earlier hole is unfinished', () => {
+    const value = '{{ a. }}{{ s2.count + 1 }}'
+    const hole = templateShape(value).holes[1]
+    const parts = expressionChip(value, hole?.expr as never, 11, 23, SCOPE)
+    expect(parts.map((part) => (part.of === 'reference' ? part.leaf : part.text))).toEqual([
+      'count',
+      ' + 1',
+    ])
   })
 })

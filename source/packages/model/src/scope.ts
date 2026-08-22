@@ -89,9 +89,19 @@ export function workflowScope(
   const byUse = new Map(manifests.map((manifest) => [manifest.use, manifest]))
   const entries: ScopeEntry[] = []
 
-  // First, because it is the only part of scope no document declares: it is
-  // there before a workflow has a Trigger, a variable or a Step.
+  /*
+   * First, because it is the only part of scope no document declares: it is
+   * there before a workflow has a Trigger, a variable or a Step.
+   *
+   * The first of any repeated key wins, the way every other lookup here
+   * resolves one. Nothing stops a Host assembling its array from several
+   * sources, and two `run.tenant` entries are two rows in the completion list
+   * and two siblings under one React key in the reference tree.
+   */
+  const declared = new Set<string>()
   for (const key of context) {
+    if (declared.has(key.k)) continue
+    declared.add(key.k)
     entries.push({
       path: `run.${key.k}`,
       kind: 'context',

@@ -63,6 +63,24 @@ describe('TemplateInput', () => {
   })
 
   /*
+   * The list rebuilds under the selection on every keystroke, so what it points
+   * at has to keep existing — an id naming nothing is a row a screen reader
+   * announces and then cannot find.
+   */
+  it('keeps pointing at one, however far down the list the selection has moved', () => {
+    const { field } = mount()
+    type(field, '{{')
+    for (let i = 0; i < 6; i++) fireEvent.keyDown(field, { key: 'ArrowDown' })
+
+    for (const more of ['s', '2', '.']) {
+      type(field, more)
+      const active = field.getAttribute('aria-activedescendant')
+      expect(active, `after "${more}"`).not.toBeNull()
+      expect(document.getElementById(active as string), `after "${more}"`).not.toBeNull()
+    }
+  })
+
+  /*
    * Completion follows TYPING, never caret placement. Opening on a click would
    * bury the field under a popup every time somebody went in to fix one
    * character, which made an existing Template harder to edit than to write.
@@ -240,6 +258,17 @@ describe('TemplateInput', () => {
     )
     rerender(<TemplateInput label="To" value="b" scope={SCOPE} onCommit={vi.fn()} />)
     expect((screen.getByRole('combobox', { name: 'To' }) as HTMLInputElement).value).toBe('b')
+  })
+
+  /*
+   * Counted as ordinary characters, the `(` in a text literal opens a call that
+   * never closes and the strip goes on naming a parameter of it for the rest of
+   * the hole.
+   */
+  it('steps over a paren inside a text literal', () => {
+    const { field } = mount({ value: "{{ text.join(items, '(') }} after" })
+    fireEvent.click(field, { target: { selectionStart: 30 } })
+    expect(screen.queryByRole('status')).toBeNull()
   })
 
   it('shows signature help while the caret is inside a call', () => {

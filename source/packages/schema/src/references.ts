@@ -65,11 +65,22 @@ export function entryKind(entry: unknown): ManifestEntry['kind'] | null {
   return kind === 'component' || kind === 'trigger' || kind === 'context' ? kind : null
 }
 
-/** The Component Manifests among the entries — step types and trigger types alike. */
+/**
+ * The Component Manifests among the entries — step types and trigger types
+ * alike.
+ *
+ * Through `entryKind`, which is the point of it: the store deliberately passes
+ * an entry it cannot read straight through, saying so by name — "a `kind` from
+ * a newer contract, a name the Host left off, an outright `null`" — because one
+ * bad row must not empty a catalogue. Reaching for `.kind` on that row instead
+ * throws from render and takes down the Host's tree, which is the outcome the
+ * store's `failed` state exists to avoid.
+ */
 export const manifestsIn = (entries: readonly ManifestEntry[]): Manifest[] =>
-  entries.filter(
-    (entry): entry is Manifest => entry.kind === 'component' || entry.kind === 'trigger',
-  )
+  entries.filter((entry): entry is Manifest => {
+    const kind = entryKind(entry)
+    return kind === 'component' || kind === 'trigger'
+  })
 
 /**
  * The Run Context keys among the entries, flattened.
@@ -81,4 +92,6 @@ export const manifestsIn = (entries: readonly ManifestEntry[]): Manifest[] =>
  * `workflowScope` takes the first, the way every other lookup here does.
  */
 export const contextKeysIn = (entries: readonly ManifestEntry[]): ContextKey[] =>
-  entries.flatMap((entry) => (entry.kind === 'context' ? entry.keys : []))
+  entries.flatMap((entry) =>
+    entryKind(entry) === 'context' ? ((entry as RunContextManifest).keys ?? []) : [],
+  )

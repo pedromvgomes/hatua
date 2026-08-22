@@ -138,7 +138,7 @@ function scan(source: string): TemplateShape {
     if (close === -1) {
       return { holes, unclosed: { start: open, end: source.length }, parses: false }
     }
-    holes.push({ start: open, end: close + 2, ...parsed(source.slice(open, close + 2)) })
+    holes.push({ start: open, end: close + 2, ...parsed(source, open, close + 2) })
     at = close + 2
   }
 
@@ -146,16 +146,23 @@ function scan(source: string): TemplateShape {
 }
 
 /**
- * What one hole holds, asked of the parser on its own.
+ * What one hole holds, asked of the parser where the hole actually sits.
  *
- * Absent when it does not parse, which is what keeps a half-written hole from
- * being mistaken for a Reference.
+ * Padded with the whitespace it is standing on rather than sliced out of the
+ * source, because every offset in the tree is measured from the start of what
+ * was parsed. Sliced, a hole at offset 8 came back with its References claiming
+ * to start at 3 — and `expressionChip`, which reads them against the whole
+ * value, then found the wrong characters there and quietly named nothing.
+ *
+ * Whitespace, so what precedes the hole is one Text segment and cannot be
+ * anything else. Absent when it does not parse, which is what keeps a
+ * half-written hole from being mistaken for a Reference.
  */
-function parsed(hole: string): { expr?: Expression } {
-  const attempt = tryParseTemplate(hole)
+function parsed(source: string, from: number, to: number): { expr?: Expression } {
+  const attempt = tryParseTemplate(' '.repeat(from) + source.slice(from, to))
   if (!attempt.ok) return {}
-  const [only] = attempt.template.segments
-  return attempt.template.segments.length === 1 && only?.kind === 'Hole' ? { expr: only.expr } : {}
+  const hole = attempt.template.segments.find((segment) => segment.kind === 'Hole')
+  return hole && attempt.template.segments.length <= 2 ? { expr: hole.expr } : {}
 }
 
 function spansOf(segments: readonly Segment[], text: string): HoleSpan[] {

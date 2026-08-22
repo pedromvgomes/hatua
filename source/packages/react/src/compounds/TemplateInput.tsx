@@ -286,8 +286,12 @@ export function TemplateInput({
     if (open === 'completion' && candidates.length > 0) {
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         event.preventDefault()
+        // From `selected`, not from `active`: the list rebuilds on every
+        // keystroke and `active` may be pointing past the end of it, in which
+        // case wrapping off that stale index lands back where the highlight
+        // already is and the arrow key does nothing.
         const step = event.key === 'ArrowDown' ? 1 : -1
-        setActive((current) => (current + step + candidates.length) % candidates.length)
+        setActive((selected + step + candidates.length) % candidates.length)
         return
       }
       if (event.key === 'Enter' || event.key === 'Tab') {
@@ -951,9 +955,27 @@ function signatureAt(
   let commas = 0
   let openAt = -1
   const stack: { at: number; commas: number }[] = []
+  let quote: string | null = null
 
   for (let i = holeStart; i < caret; i++) {
     const char = value[i]
+
+    /*
+     * Text literals are stepped over whole. Counted as ordinary characters, the
+     * `(` in `text.join(items, '(')` opens a call that never closes, and the
+     * signature strip goes on naming a parameter of it for the rest of the
+     * hole.
+     */
+    if (quote) {
+      if (char === '\\') i++
+      else if (char === quote) quote = null
+      continue
+    }
+    if (char === "'" || char === '"') {
+      quote = char
+      continue
+    }
+
     if (char === '(') {
       stack.push({ at: openAt, commas })
       openAt = i
