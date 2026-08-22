@@ -79,14 +79,18 @@ describe('a document with blocks', () => {
 
   it('projects both boards, with ids scoped to the one they are on', () => {
     const doc = parseWorkflow(WITH_BLOCKS).toJSON()
-    expect(doc.blocks[0].id).toBe('archive_entry')
-    expect(doc.blocks[0].steps.map((step: { id: string }) => step.id)).toEqual(['put', 'ret'])
-    expect(doc.steps.map((step: { id: string }) => step.id)).toEqual(['audit_1'])
+    const block = doc.blocks?.[0]
+
+    expect(block?.id).toBe('archive_entry')
+    expect(block?.steps.map((step) => step.id)).toEqual(['put', 'ret'])
+    expect(doc.steps.map((step) => step.id)).toEqual(['audit_1'])
   })
 
   it('keeps a declaration’s nested shape, which is what types a member', () => {
     const doc = parseWorkflow(WITH_BLOCKS).toJSON()
-    expect(doc.blocks[0].params[0].of).toEqual([{ k: 'headline', label: 'Headline', t: 'text' }])
+    expect(doc.blocks?.[0]?.params?.[0]?.of).toEqual([
+      { k: 'headline', label: 'Headline', t: 'text' },
+    ])
   })
 })
 
