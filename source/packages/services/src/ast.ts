@@ -175,12 +175,22 @@ export function setScalar(
   else document.ast.setIn(path, value)
 }
 
-/** The loose projection at `path`, whether or not the document validates. */
+/**
+ * The loose projection at `path`, whether or not the document validates.
+ *
+ * Own properties only. Every caller builds its path from literals and list
+ * indices today, so `__proto__` cannot reach here — but a reader that walks a
+ * user-editable document by dynamic key has to be safe on its own terms rather
+ * than by every caller's discipline, and `Object.hasOwn` is the same guarantee
+ * `resolve.ts` gives one level down.
+ */
 export function readAt(document: WorkflowDocument, path: Path): unknown {
   let value: unknown = asObject(document)
   for (const part of path) {
     if (value === null || typeof value !== 'object') return undefined
-    value = (value as Record<string, unknown>)[String(part)]
+    const key = String(part)
+    if (!Object.hasOwn(value, key)) return undefined
+    value = (value as Record<string, unknown>)[key]
   }
   return value
 }

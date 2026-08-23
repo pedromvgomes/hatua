@@ -2,7 +2,7 @@ import type { Block, Declaration, Manifest, Step, WorkflowDefinition } from '@ha
 import { blockIdOf, blockOf, cyclicBlocks, RETURN_VERB } from './blocks'
 import type { Diagnostic } from './connections'
 import { DEFINITION_DIAGNOSTICS, type DefinitionCode } from './generated/diagnostics'
-import { type BoardId, boards, stepKey, walkDocument, walkSteps } from './tree'
+import { type BoardId, boards, own, stepKey, walkDocument, walkSteps } from './tree'
 
 /**
  * Whether a Workflow Definition is filled in enough to run — the rules that read
@@ -80,7 +80,7 @@ export const fieldVisible = (
 ): boolean => {
   if (!field.when) return true
   const [key, expected] = field.when
-  return String(values[key as string] ?? '') === expected
+  return String(own(values, key as string) ?? '') === expected
 }
 
 /**
@@ -117,7 +117,7 @@ export function missingRequiredFields(
     values: Record<string, unknown>,
   ) => {
     for (const declaration of declarations ?? []) {
-      if (!unfilled(values[declaration.k])) continue
+      if (!unfilled(own(values, declaration.k))) continue
       out.push(
         raise(
           'FIELD_REQUIRED',
@@ -142,7 +142,7 @@ export function missingRequiredFields(
 
     for (const field of manifest.fields ?? []) {
       if (!field.req || !fieldVisible(field, values)) continue
-      if (!unfilled(values[field.k])) continue
+      if (!unfilled(own(values, field.k))) continue
       out.push(raise('FIELD_REQUIRED', { ...subject, fieldKey: field.k }, { label: field.label }))
     }
   }
