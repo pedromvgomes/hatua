@@ -174,8 +174,106 @@ func WalkDocument(d Definition, visit func(StepRef, Step)) {
 // BlockPrefix is the verb root that says a step calls a block in this document.
 const BlockPrefix = "block."
 
-// ReturnVerb publishes a block's declared outputs and ends it.
-const ReturnVerb = "core.return"
+// ReturnVerb publishes a block's declared outputs and ends it. ForkVerb and
+// ForEachVerb are the other two Hatua reads structurally: their shape is a
+// position in the document rather than a field under `with:`, so no manifest
+// can describe them.
+const (
+	ReturnVerb  = "core.return"
+	ForkVerb    = "core.fork"
+	ForEachVerb = "core.for_each"
+)
+
+// CallsOf reports which blocks a step list reaches directly, in document order.
+//
+// Reads the whole board rather than its top level: a call nested inside a fork
+// branch or a loop body still reaches, which is the entire point of asking.
+func CallsOf(steps []Step) []string {
+	found := []string{}
+	var walk func([]Step)
+	walk = func(list []Step) {
+		for _, step := range list {
+			if id, ok := BlockIDOf(step.Use); ok {
+				found = append(found, id)
+			}
+			for _, branch := range step.Branches {
+				walk(branch.Steps)
+			}
+			walk(step.Steps)
+		}
+	}
+	walk(steps)
+	return found
+}
+
+// CyclicBlocks reports the blocks that take part in a cycle, in declaration
+// order.
+//
+// ADR-0013 refuses recursion, so this is a design-time answer rather than a
+// depth limit a runner discovers. Direct and indirect are one question: a block
+// that reaches itself through any chain is in a cycle, and a colour-marked
+// depth-first walk answers both without a second traversal.
+func CyclicBlocks(doc Definition) []string {
+	// First-wins, matching BlockOf — letting the LAST block under a repeated id
+	// decide what the call graph is would analyse recursion against one block's
+	// steps while every other reader acts on the first.
+	edges := map[string][]string{}
+	order := []string{}
+	for _, block := range doc.Blocks {
+		if _, held := edges[block.ID]; held {
+			continue
+		}
+		edges[block.ID] = CallsOf(block.Steps)
+		order = append(order, block.ID)
+	}
+
+	cyclic := map[string]bool{}
+	visiting := map[string]bool{}
+	done := map[string]bool{}
+
+	var visit func(string, []string)
+	visit = func(id string, path []string) {
+		if visiting[id] {
+			// Everything from where this id first appears is on the cycle; what
+			// came before merely leads to it and is not itself recursive.
+			for i, member := range path {
+				if member == id {
+					for _, onCycle := range path[i:] {
+						cyclic[onCycle] = true
+					}
+					break
+				}
+			}
+			return
+		}
+		if done[id] {
+			return
+		}
+		if _, declared := edges[id]; !declared {
+			return
+		}
+
+		visiting[id] = true
+		for _, next := range edges[id] {
+			visit(next, append(append([]string{}, path...), id))
+		}
+		visiting[id] = false
+		done[id] = true
+	}
+
+	for _, id := range order {
+		visit(id, nil)
+	}
+
+	// Declaration order, so both languages report the same document the same way.
+	found := []string{}
+	for _, id := range order {
+		if cyclic[id] {
+			found = append(found, id)
+		}
+	}
+	return found
+}
 
 // BlockIDOf returns the block a verb names, and whether it names one at all.
 func BlockIDOf(use string) (string, bool) {
