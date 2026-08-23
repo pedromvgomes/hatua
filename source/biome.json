@@ -51,7 +51,7 @@
                     "group": [
                       "@hatua/**",
                       "**/compounds/**",
-                      "**/blocks/**",
+                      "**/units/**",
                       "**/layouts/**",
                       "**/views/**"
                     ],
@@ -65,7 +65,7 @@
       }
     },
     {
-      "includes": ["packages/react/src/compounds/**", "packages/react/src/blocks/**"],
+      "includes": ["packages/react/src/compounds/**", "packages/react/src/units/**"],
       "linter": {
         "rules": {
           "style": {

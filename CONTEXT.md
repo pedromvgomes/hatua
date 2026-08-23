@@ -192,11 +192,10 @@ and **Derived Layout** in this same file. Resolution: there are no connections t
 is expressed by containers — `core.fork`, `core.for_each`, `core.repeat`, `core.try` — and a **Step**
 runs because of where it nests. Reuse is a **Block**, not an edge into a shared node.
 
-**"Block" the domain term vs `blocks/` the React layer** — `packages/react/src/blocks/` holds
-presentational units (NodeCard, StepRow, Connector) and has nothing to do with a **Block**. That is
-the *Flow tab* / `FlowMap` collision again: one word, two meanings, in one repo. Resolution: the
-domain term wins — a presentational unit is never called a block, whatever the directory holding
-one is named, and `packages/react/src/blocks/` is misnamed.
+**"Block" the domain term vs the React presentational layer** — a layer of presentational units
+(NodeCard, StepRow, Connector) shared the word with **Block**, which is the *Flow tab* / `FlowMap`
+collision again: one word, two meanings, in one repo. Resolution: the domain term wins. That layer is
+`packages/react/src/units/`, and a presentational unit is never called a block.
 See [ADR-0013](docs/adr/0013-control-flow-nests.md), which also corrects ADR-0001's reason for the
 constraint: cross-links break exact static scope, not derived layout.
 
