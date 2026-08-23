@@ -37,6 +37,7 @@
     "@hatua/services": "workspace:*"
   },
   "devDependencies": {
+    "@hatua/document": "workspace:*",
     "@storybook/react-vite": "^10.5.8",
     "@testing-library/react": "^16.3.0",
     "@types/react": "^19.2.2",
