@@ -29,8 +29,21 @@ import { type BoardId, boards, stepKey, walkDocument, walkSteps } from './tree'
 
 type ManifestIndex = ReadonlyMap<string, Manifest>
 
-/** The declared message, with its `{name}` holes filled. */
-const message = (code: DefinitionCode, fields: Record<string, string> = {}): string =>
+/**
+ * Fill a declared message's `{name}` holes from the fields a diagnostic carries.
+ *
+ * Exported because the generated table carries templates, and a Host reading
+ * `DEFINITION_DIAGNOSTICS[code].message` itself would get the literal braces.
+ * The Go SDK's `FormatDefinitionMessage` is the same function.
+ *
+ * A hole with no field keeps its braces rather than becoming empty: a sentence
+ * missing a word reads as a bug in Hatua, and one still holding `{label}` reads
+ * as a diagnostic raised without the field it names — which is what it is.
+ */
+export const formatDefinitionMessage = (
+  code: DefinitionCode,
+  fields: Record<string, string> = {},
+): string =>
   DEFINITION_DIAGNOSTICS[code].message.replace(/\{(\w+)\}/g, (whole, name) =>
     Object.hasOwn(fields, name) ? (fields[name] ?? whole) : whole,
   )
@@ -42,7 +55,7 @@ const raise = (
   fields?: Record<string, string>,
 ): Diagnostic => ({
   code,
-  message: message(code, fields),
+  message: formatDefinitionMessage(code, fields),
   blocks: DEFINITION_DIAGNOSTICS[code].blocks,
   ...subject,
 })
@@ -276,7 +289,11 @@ function alwaysReturns(steps: readonly Step[]): boolean {
     // this the obligation is discharged by a fork that can skip every path, and
     // a Step legitimately placed after such a fork is refused publish as
     // unreachable.
-    if (branches.at(-1)?.when !== undefined) return false
+    // Falsy rather than `!== undefined`, so this agrees with
+    // `malformedContainers` about `when: ""` — the schema permits it, and one
+    // rule reading it as the fallback while the other reads it as a condition
+    // refuses publish to a Block that does return on every path.
+    if (branches.at(-1)?.when) return false
 
     return branches.every((branch) => alwaysReturns(branch.steps))
   })
@@ -303,6 +320,27 @@ export function blockRules(doc: WorkflowDefinition): Diagnostic[] {
       out.push(raise('BLOCK_ID_DUPLICATE', { blockId: block.id }, { name: block.id }))
     }
     declared.add(block.id)
+  }
+
+  for (const block of doc.blocks ?? []) {
+    for (const [side, declarations] of [
+      ['parameter', block.params],
+      ['output', block.outputs],
+    ] as const) {
+      const named = new Set<string>()
+      for (const declaration of declarations ?? []) {
+        if (named.has(declaration.k)) {
+          out.push(
+            raise(
+              'DECLARATION_KEY_DUPLICATE',
+              { blockId: block.id },
+              { side, block: block.id, name: declaration.k },
+            ),
+          )
+        }
+        named.add(declaration.k)
+      }
+    }
   }
 
   for (const id of cyclicBlocks(doc)) {

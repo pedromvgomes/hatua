@@ -20,6 +20,7 @@ export type DefinitionCode =
   | 'BLOCK_PATH_WITHOUT_RETURN'
   | 'STEP_AFTER_RETURN'
   | 'BLOCK_ID_DUPLICATE'
+  | 'DECLARATION_KEY_DUPLICATE'
   | 'STEP_ID_DUPLICATE'
 
 export interface DefinitionDiagnosticSpec {
@@ -91,6 +92,11 @@ export const DEFINITION_DIAGNOSTICS: Record<DefinitionCode, DefinitionDiagnostic
     code: 'BLOCK_ID_DUPLICATE',
     blocks: 'publish',
     message: 'More than one block is called "{name}".',
+  },
+  DECLARATION_KEY_DUPLICATE: {
+    code: 'DECLARATION_KEY_DUPLICATE',
+    blocks: 'publish',
+    message: 'More than one {side} of "{block}" is called "{name}".',
   },
   STEP_ID_DUPLICATE: {
     code: 'STEP_ID_DUPLICATE',

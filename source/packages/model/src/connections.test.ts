@@ -22,6 +22,34 @@ describe('mismatchedConnections', () => {
     expect(mismatchedConnections(DOC, index, typeOf)).toEqual([])
   })
 
+  /*
+   * A `conn` field inside a Block is a `conn` field. Both codes here block
+   * editing, so a Board this rule skipped would lock a document over a Step
+   * nothing reported — which is why nothing may walk `doc.steps` alone.
+   */
+  it('checks a Step on a Block’s Board, and says which Board it is on', () => {
+    const withBlock = structuredClone(DOC)
+    withBlock.blocks = [
+      {
+        id: 'archive',
+        steps: [{ id: 'send', use: 'component.email.send', with: { connection: 'brain' } }],
+      },
+    ]
+
+    const [issue] = mismatchedConnections(withBlock, index, typeOf)
+    expect(issue?.code).toBe('CONNECTION_TYPE_MISMATCH')
+    expect(issue?.stepId).toBe('send')
+    expect(issue?.blockId).toBe('archive')
+  })
+
+  it('leaves a root Step without a blockId, so the two are told apart', () => {
+    const bad = structuredClone(DOC)
+    bad.steps[1]!.branches![0]!.steps![1]!.with = { connection: 'brain' }
+
+    const [issue] = mismatchedConnections(bad, index, typeOf)
+    expect(issue?.blockId).toBeUndefined()
+  })
+
   it('rejects an llm connection in a field wanting email', () => {
     const bad = structuredClone(DOC)
     bad.steps[1]!.branches![0]!.steps![1]!.with = { connection: 'brain' }

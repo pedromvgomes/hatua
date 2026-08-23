@@ -137,6 +137,17 @@ steps:
     expect(projected(out).blocks?.[0]?.id).toBe('archive_entry')
   })
 
+  /*
+   * Two blocks under one id is worse than a refused rename: every reader takes
+   * the first, so the second block's Board opens on the first's steps and
+   * `removeBlock` deletes the wrong one — long before BLOCK_ID_DUPLICATE stops
+   * a Publish.
+   */
+  it('refuses a rename onto an id another block already holds', () => {
+    const built = apply(SOURCE, addBlock({ id: 'a' }), addBlock({ id: 'b' }))
+    expect(() => apply(built, renameBlock('b', 'a'))).toThrow(/already exists/)
+  })
+
   it('sets a display name, which nothing references', () => {
     const out = apply(SOURCE, addBlock({ id: 'a' }), setBlockName('a', 'Archive an entry'))
     expect(projected(out).blocks?.[0]?.name).toBe('Archive an entry')

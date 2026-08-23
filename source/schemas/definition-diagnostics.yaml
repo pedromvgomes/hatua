@@ -127,6 +127,15 @@ codes:
       the first, so the second block is unreachable while still being walked and
       validated.
 
+  - code: DECLARATION_KEY_DUPLICATE
+    blocks: publish
+    message: 'More than one {side} of "{block}" is called "{name}".'
+    summary: >-
+      The same argument as STEP_ID_DUPLICATE and BLOCK_ID_DUPLICATE: a name that
+      resolves two ways resolves to whichever reader looked first. `params.<k>`
+      would offer two completion rows for one value, and a call would report the
+      one field missing twice.
+
   - code: STEP_ID_DUPLICATE
     blocks: publish
     message: 'More than one step on this board is called "{name}".'

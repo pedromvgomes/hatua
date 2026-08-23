@@ -82,6 +82,66 @@ func SlotsFor(step Step, manifest Manifest) []expressions.Slot {
 	return slots
 }
 
+// CallSlots is the Slots a call's `with:` map resolves into: one per declared
+// parameter, typed by the declaration.
+//
+// Separate from SlotsFor because a call has no manifest — `block.<id>` names a
+// block in this document, and its parameters are the contract that block
+// declares. A runner that only asked SlotsFor would evaluate nothing at a call
+// site at all.
+func CallSlots(step Step, block Block) []expressions.Slot {
+	return declaredSlots(block.Params, step)
+}
+
+// ReturnSlots is the Slots a core.return's `with:` map resolves into: one per
+// declared output of the block it sits on.
+//
+// The mirror of core.map. A mapping's outputs come from its own field values
+// because no manifest can declare them; a return's inputs come from the
+// enclosing block's outputs for the same reason — no manifest knows which board
+// a step is on.
+func ReturnSlots(step Step, block Block) []expressions.Slot {
+	return declaredSlots(block.Outputs, step)
+}
+
+func declaredSlots(declarations []Declaration, step Step) []expressions.Slot {
+	slots := []expressions.Slot{}
+	for _, declaration := range declarations {
+		// One nobody filled in is reported as missing by its own rule; resolving
+		// an absent value as a Template would name the wrong problem.
+		template, ok := step.With[declaration.K].(string)
+		if !ok {
+			continue
+		}
+		slots = append(slots, expressions.Slot{
+			Name:         declaration.K,
+			Template:     template,
+			ExpectedType: expressions.ValueType(declaration.T),
+		})
+	}
+	return slots
+}
+
+// SlotsForStep is the Slots any step resolves into, whichever kind it is.
+//
+// One entry point so a runner never has to know that a call and a return are
+// the two verbs a manifest cannot describe.
+func SlotsForStep(doc Definition, board BoardID, step Step, manifest Manifest) []expressions.Slot {
+	if called, ok := BlockIDOf(step.Use); ok {
+		if block := BlockOf(doc, called); block != nil {
+			return CallSlots(step, *block)
+		}
+		return []expressions.Slot{}
+	}
+	if step.Use == ReturnVerb && board != RootBoard {
+		if block := BlockOf(doc, board); block != nil {
+			return ReturnSlots(step, *block)
+		}
+		return []expressions.Slot{}
+	}
+	return SlotsFor(step, manifest)
+}
+
 // WhenSlot is the Slot a branch's condition resolves into.
 //
 // Separate from SlotsFor because a branch is not a step and has no manifest —
@@ -209,9 +269,17 @@ func BoardScope(doc Definition, board BoardID, manifests []Manifest, context []C
 		})
 	}
 
-	block := BlockOf(doc, board)
-	if board != RootBoard && block == nil {
-		return []expressions.ScopeEntry{}
+	// The root check comes FIRST: BoardID is a bare string with "" as the root,
+	// so looking a block up by "" would let one whose id is empty answer for the
+	// root Board — handing the root a block's params and losing its triggers.
+	// The schema forbids an empty id, but this must not depend on validation
+	// having run.
+	var block *Block
+	if board != RootBoard {
+		block = BlockOf(doc, board)
+		if block == nil {
+			return []expressions.ScopeEntry{}
+		}
 	}
 
 	if block != nil {

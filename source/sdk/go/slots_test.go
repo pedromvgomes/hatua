@@ -375,3 +375,51 @@ func TestABlockParameterKeepsItsDeclaredShape(t *testing.T) {
 	}
 	t.Fatalf("expected params.entry in %v", paths(scope))
 }
+
+// A call and a return are the two verbs no manifest can describe, so SlotsFor
+// alone yields nothing for either — a runner asking only that would evaluate
+// nothing at a call site at all.
+func TestSlotsForStepReadsACallAgainstTheBlockItNames(t *testing.T) {
+	doc := blockDoc()
+	doc.Steps[1].With = map[string]any{"entry": "{{ steps.s2 }}"}
+
+	slots := SlotsForStep(doc, RootBoard, doc.Steps[1], Manifest{})
+	if len(slots) != 1 {
+		t.Fatalf("expected the block's one parameter, got %#v", slots)
+	}
+	if slots[0].Name != "entry" || slots[0].ExpectedType != expressions.TypeObject {
+		t.Fatalf("expected entry typed by the declaration, got %#v", slots[0])
+	}
+}
+
+func TestSlotsForStepReadsAReturnAgainstItsBoard(t *testing.T) {
+	doc := blockDoc()
+	doc.Blocks[0].Steps[1].With = map[string]any{"url": "{{ steps.put.location }}"}
+
+	slots := SlotsForStep(doc, "archive_entry", doc.Blocks[0].Steps[1], Manifest{})
+	if len(slots) != 1 {
+		t.Fatalf("expected the block's one output, got %#v", slots)
+	}
+	if slots[0].Name != "url" || slots[0].ExpectedType != expressions.TypeText {
+		t.Fatalf("expected url typed by the declaration, got %#v", slots[0])
+	}
+}
+
+// BoardID is a bare string with "" as the root, so a block whose id is empty
+// must not be able to answer for the root Board.
+func TestRootBoardIsNotHijackedByAnEmptyBlockID(t *testing.T) {
+	doc := blockDoc()
+	doc.Blocks = append(doc.Blocks, Block{
+		ID:     "",
+		Params: []Declaration{{K: "smuggled", Label: "Smuggled", T: "text"}},
+		Vars:   []Variable{{Key: "sneaky", Value: "x"}},
+	})
+
+	scope := BoardScope(doc, RootBoard, nil, nil)
+	if has(scope, "params.smuggled") || has(scope, "var.sneaky") {
+		t.Fatalf("an empty block id answered for the root Board: %v", paths(scope))
+	}
+	if !has(scope, "triggers.nightly") || !has(scope, "var.digest_to") {
+		t.Fatalf("the root Board lost its own scope: %v", paths(scope))
+	}
+}

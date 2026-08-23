@@ -351,6 +351,52 @@ describe('what a document gets wrong', () => {
   })
 })
 
+describe('a name that would resolve two ways', () => {
+  it('reports two parameters under one key, and offers the first once', () => {
+    const twice = doc({
+      blocks: [
+        {
+          id: 'archive',
+          params: [
+            { k: 'entry', label: 'First', t: 'text' },
+            { k: 'entry', label: 'Second', t: 'number' },
+          ],
+          steps: [],
+        },
+      ],
+    })
+
+    const found = validateDefinition(twice, CATALOGUE).all.filter(
+      (d) => d.code === 'DECLARATION_KEY_DUPLICATE',
+    )
+    expect(found).toHaveLength(1)
+    expect(found[0]?.message).toContain('parameter')
+
+    // One row, and the first declaration is the one every reader resolves to.
+    const offered = boardScope(twice, 'archive', MANIFESTS).filter(
+      (entry) => entry.path === 'params.entry',
+    )
+    expect(offered).toHaveLength(1)
+    expect(offered[0]?.type).toEqual({ type: 'text' })
+  })
+
+  it('reports two outputs under one key', () => {
+    const twice = doc({
+      blocks: [
+        {
+          id: 'archive',
+          outputs: [
+            { k: 'url', label: 'First', t: 'text' },
+            { k: 'url', label: 'Second', t: 'text' },
+          ],
+          steps: [{ id: 'ret', use: 'core.return', with: { url: 'x' } }],
+        },
+      ],
+    })
+    expect(codes(validateDefinition(twice, CATALOGUE).all)).toContain('DECLARATION_KEY_DUPLICATE')
+  })
+})
+
 describe('every path returns', () => {
   const withBody = (steps: WorkflowDefinition['steps']) =>
     doc({
@@ -435,6 +481,34 @@ describe('every path returns', () => {
       { id: 'ret', use: 'core.return', with: { url: 'z' } },
     ])
     expect(codes(validateDefinition(after, CATALOGUE).all)).not.toContain('STEP_AFTER_RETURN')
+  })
+
+  /*
+   * `when: ""` is schema-legal, and `malformedContainers` reads a falsy `when`
+   * as the unconditional fallback. Reading it as a condition here would refuse
+   * publish to a Block that does return on every path.
+   */
+  it('reads an empty `when` on the last branch as the fallback, as the fork rule does', () => {
+    expect(
+      returned([
+        {
+          id: 'fork',
+          use: 'core.fork',
+          branches: [
+            {
+              label: 'A',
+              when: '{{ params.a }}',
+              steps: [{ id: 'r1', use: 'core.return', with: { url: 'x' } }],
+            },
+            {
+              label: 'B',
+              when: '',
+              steps: [{ id: 'r2', use: 'core.return', with: { url: 'y' } }],
+            },
+          ],
+        },
+      ]),
+    ).toBe(true)
   })
 
   it('refuses a fork where one branch does not', () => {

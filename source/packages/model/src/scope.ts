@@ -148,7 +148,14 @@ export function boardScope(
   }
 
   if (block) {
+    // First-wins, the way `run.` above resolves a repeat and the way every
+    // other reader of a declaration resolves one. Two entries under one path
+    // are two completion rows for one value and two siblings under one React
+    // key in the reference tree.
+    const named = new Set<string>()
     for (const param of block.params ?? []) {
+      if (named.has(param.k)) continue
+      named.add(param.k)
       entries.push({
         path: `params.${param.k}`,
         kind: 'param',
@@ -239,7 +246,10 @@ export function blockOutputType(block: Block | undefined): TypeNode {
   // declaration keyed `__proto__` would otherwise swap the object's prototype
   // instead of storing a member.
   const members: Record<string, TypeNode> = Object.create(null)
-  for (const output of block?.outputs ?? []) members[output.k] = declarationToType(output)
+  for (const output of block?.outputs ?? []) {
+    if (output.k in members) continue
+    members[output.k] = declarationToType(output)
+  }
   return { type: 'object', members }
 }
 
@@ -301,7 +311,7 @@ function stepOutputType(
 }
 
 function mappingOutputType(step: Step): TypeNode {
-  const members: Record<string, TypeNode> = {}
+  const members: Record<string, TypeNode> = Object.create(null)
   for (const entry of mapEntries((step.with as Record<string, unknown> | undefined)?.entries)) {
     members[entry.key] = { type: entry.type }
   }
@@ -322,14 +332,14 @@ function contextKeyToType(key: ContextKey): TypeNode {
 }
 
 const membersOf = (keys: readonly ContextKey[]): Record<string, TypeNode> => {
-  const members: Record<string, TypeNode> = {}
+  const members: Record<string, TypeNode> = Object.create(null)
   for (const key of keys) members[key.k] = contextKeyToType(key)
   return members
 }
 
 /** Manifest outputs are a list of `{k, t, of}`; the checker wants a tree. */
 function outputsToType(outputs: readonly Output[]): TypeNode {
-  const members: Record<string, TypeNode> = {}
+  const members: Record<string, TypeNode> = Object.create(null)
   for (const output of outputs) members[output.k] = outputToType(output)
   return { type: 'object', members }
 }
