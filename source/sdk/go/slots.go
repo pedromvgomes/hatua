@@ -1,9 +1,6 @@
 package hatua
 
 import (
-	"strings"
-	"time"
-
 	"hatua.dev/go/expressions"
 )
 
@@ -124,8 +121,8 @@ func declaredSlots(declarations []Declaration, step Step) []expressions.Slot {
 
 // SlotsForStep is the Slots any step resolves into, whichever kind it is.
 //
-// One entry point so a runner never has to know that a call and a return are
-// the two verbs a manifest cannot describe.
+// One entry point so a runner never has to know that a call, a return and a
+// core.set_var are the three verbs a manifest cannot describe.
 func SlotsForStep(doc Definition, board BoardID, step Step, manifest Manifest) []expressions.Slot {
 	if called, ok := BlockIDOf(step.Use); ok {
 		if block := BlockOf(doc, called); block != nil {
@@ -139,7 +136,71 @@ func SlotsForStep(doc Definition, board BoardID, step Step, manifest Manifest) [
 		}
 		return []expressions.Slot{}
 	}
+	if step.Use == SetVarVerb {
+		if slot, ok := SetVarSlot(doc, board, step); ok {
+			return []expressions.Slot{slot}
+		}
+		return []expressions.Slot{}
+	}
 	return SlotsFor(step, manifest)
+}
+
+// RepeatSlot is the Slot a core.repeat's Until resolves into.
+//
+// The mirror of WhenSlot, and for the same reason: a condition is a boolean, and
+// no manifest field can say so — FieldKindTypes has no mappable boolean at all,
+// because `bool` holds a literal rather than a Template. That is why Until is a
+// structural key beside Steps rather than a field under With; under With it
+// would type-check as text, so `{{steps.s2.count}}` would pass as a termination
+// condition.
+//
+// A repeat tests this AFTER its body, so the body always runs at least once.
+func RepeatSlot(until string) expressions.Slot {
+	return expressions.Slot{Name: "until", Template: until, ExpectedType: expressions.TypeBoolean}
+}
+
+// SetVarSlot is the Slot a core.set_var's `value` resolves into, typed by the
+// variable it names.
+//
+// The third verb a manifest cannot describe, alongside a call and a core.return,
+// and for the same reason: what its field must produce is declared elsewhere in
+// the document. Here it is the Board's vars — which is also why a core.set_var
+// inside a block can only ever name that block's, since the list is read from
+// the Board the step sits on and there is no second one to fall back to.
+//
+// Not ok when the step names no variable, or names one the Board does not
+// declare: both have their own diagnostic, and resolving a Template against a
+// type nothing declared would report a mismatch the user cannot act on.
+func SetVarSlot(doc Definition, board BoardID, step Step) (expressions.Slot, bool) {
+	key, ok := step.With["key"].(string)
+	if !ok {
+		return expressions.Slot{}, false
+	}
+	variable := VariableOf(doc, board, key)
+	if variable == nil {
+		return expressions.Slot{}, false
+	}
+	template, ok := step.With["value"].(string)
+	if !ok {
+		return expressions.Slot{}, false
+	}
+	return expressions.Slot{
+		Name: "value", Template: template, ExpectedType: variableType(*variable),
+	}, true
+}
+
+// VariableSlot is the Slot a variable's initial value resolves into.
+//
+// A var's Value may hold `{{ … }}`, and until T was declared there was nothing
+// to check it against. Not ok for a literal: only a Template is a Slot.
+func VariableSlot(variable Variable) (expressions.Slot, bool) {
+	template, ok := variable.Value.(string)
+	if !ok {
+		return expressions.Slot{}, false
+	}
+	return expressions.Slot{
+		Name: variable.Key, Template: template, ExpectedType: variableType(variable),
+	}, true
 }
 
 // WhenSlot is the Slot a branch's condition resolves into.
@@ -318,7 +379,7 @@ func BoardScope(doc Definition, board BoardID, manifests []Manifest, context []C
 	for _, variable := range vars {
 		entries = append(entries, expressions.ScopeEntry{
 			Path: "var." + variable.Key,
-			Type: expressions.TypeNode{Type: varType(variable.Value)},
+			Type: variableToType(variable),
 		})
 	}
 
@@ -409,35 +470,37 @@ func contextKeyType(key ContextKey) expressions.TypeNode {
 	return node
 }
 
-// varType reads a workflow variable's type from its literal value.
+// variableType reads a variable's type from its declaration.
 //
-// Vars are the one addressable thing with no declaration to consult, and calling
-// them all unknown would make every `{{ var.x }}` in a workflow warn — which
-// trains people to ignore warnings. A var holding text is text. A var holding a
-// Template is genuinely unknown until it is evaluated, and says so.
-func varType(value any) expressions.ValueType {
-	switch v := value.(type) {
-	case string:
-		if strings.Contains(v, "{{") {
-			return expressions.TypeUnknown
-		}
-		return expressions.TypeText
-	case float64, float32, int, int8, int16, int32, int64,
-		uint, uint8, uint16, uint32, uint64:
-		return expressions.TypeNumber
-	case bool:
-		return expressions.TypeBoolean
-	case []any:
-		return expressions.TypeList
-	case time.Time:
-		// Text, not datetime, and the reason is the decoders rather than the
-		// language: yaml.v3 turns `value: 2024-01-01T00:00:00Z` into a
-		// time.Time, and the `yaml` package the builder uses leaves it a string.
-		// Typing it `datetime` here would block a publish in the Go SDK that the
-		// builder allows, over one scalar neither of them was told the type of.
-		return expressions.TypeText
+// Read from T rather than from the value beside it, which is the decision
+// core.set_var forced: a var's value is only its FIRST value, so a type inferred
+// from the literal in the document is a claim about one moment in an execution
+// rather than about the variable (ADR-0013). It also settles a divergence the
+// old inference had no answer for — yaml.v3 turns `value: 2024-01-01T00:00:00Z`
+// into a time.Time while the builder's parser leaves it a string, so the two
+// languages typed one scalar differently. A declared type is decoder-independent.
+//
+// Unknown for a var carrying no T at all: the schema requires one, so this is a
+// hand-edit, and refusing to check is the honest answer where guessing `text`
+// would refuse a document over a type nothing declared.
+func variableType(variable Variable) expressions.ValueType {
+	if variable.T == "" {
+		return expressions.TypeUnknown
 	}
-	return expressions.TypeUnknown
+	return expressions.ValueType(variable.T)
+}
+
+// variableToType is that, plus the shape Of carries — spelled exactly as a
+// declaration's Of is, so one traversal reads both.
+func variableToType(variable Variable) expressions.TypeNode {
+	node := expressions.TypeNode{Type: variableType(variable)}
+	if len(variable.Of) > 0 {
+		node.Members = make(map[string]expressions.TypeNode, len(variable.Of))
+		for _, member := range variable.Of {
+			node.Members[member.K] = declarationToType(member)
+		}
+	}
+	return node
 }
 
 // stepOutputType reports a step's outputs as a type.

@@ -1,5 +1,5 @@
 import type { Slot, ValueType } from '@hatua/expressions'
-import type { Manifest, Step } from '@hatua/schema'
+import type { Manifest, Step, Variable } from '@hatua/schema'
 import { isMappable, type MAPPABLE_FIELD_KINDS } from '@hatua/schema'
 import { own } from './tree'
 
@@ -101,6 +101,93 @@ export const whenSlot = (when: string): Slot => ({
 
 /** The verb whose outputs come from its own configuration. */
 export const MAPPING_VERB = 'core.map'
+
+/** The verb that repeats its children until a condition holds. */
+export const REPEAT_VERB = 'core.repeat'
+
+/** The verb that iterates a collection. */
+export const FOR_EACH_VERB = 'core.for_each'
+
+/** The verb that branches. */
+export const FORK_VERB = 'core.fork'
+
+/** The verb that writes one of its Board's variables. */
+export const SET_VAR_VERB = 'core.set_var'
+
+/**
+ * The Slot a `core.repeat`'s `until` resolves into.
+ *
+ * The mirror of `whenSlot`, and for the same reason: a condition is a boolean,
+ * and no manifest field can say so — `FIELD_KIND_TYPES` has no mappable boolean
+ * at all, because `bool` holds a literal rather than a Template. That is why
+ * `until` is a structural key beside `steps:` rather than a field under `with:`.
+ * Under `with:` it would type-check as text, so `{{ steps.s2.count }}` would
+ * pass as a termination condition.
+ *
+ * A repeat tests this AFTER its body, so the body always runs at least once.
+ */
+export const repeatSlot = (until: string): Slot => ({
+  name: 'until',
+  template: until,
+  expectedType: 'boolean',
+})
+
+/**
+ * The type a variable's `{{ var.<key> }}`, its initial `value` and every
+ * `core.set_var` writing it are all checked against.
+ *
+ * Declared rather than read off the value. A var is the one addressable thing
+ * whose content changes while the document does not, so inferring its type from
+ * the literal in the file would make the marking a lie the moment a
+ * `core.set_var` wrote something else — and every downstream check was answered
+ * against it (ADR-0013).
+ *
+ * `unknown` for a var carrying no `t` at all: the schema requires one, so this
+ * is a hand-edit, and refusing to check is the honest answer where guessing
+ * `text` would refuse a document over a type nothing declared.
+ */
+export const variableType = (variable: Variable): ValueType =>
+  (variable.t as ValueType | undefined) ?? 'unknown'
+
+/**
+ * The Slot a `core.set_var`'s `value` resolves into, typed by the variable it
+ * names.
+ *
+ * The third verb a manifest cannot describe, alongside a call and a
+ * `core.return`, and for the same reason: what its field must produce is
+ * declared elsewhere in the document. Here it is the Board's `vars`, which is
+ * also why a `core.set_var` inside a Block can only ever name that Block's —
+ * `vars` is read from the Board the Step sits on, so there is no reaching out.
+ *
+ * Null when the step names no variable, or names one the Board does not
+ * declare: both have their own diagnostic, and resolving a Template against a
+ * type nothing declared would report a mismatch the user cannot act on.
+ */
+export function setVarSlot(step: Step, vars: readonly Variable[]): Slot | null {
+  const values = (step.with ?? {}) as Record<string, unknown>
+
+  const key = own(values, 'key')
+  if (typeof key !== 'string') return null
+
+  const variable = vars.find((one) => one.key === key)
+  if (!variable) return null
+
+  const template = own(values, 'value')
+  if (typeof template !== 'string') return null
+
+  return { name: 'value', template, expectedType: variableType(variable) }
+}
+
+/**
+ * The Slot a variable's initial value resolves into.
+ *
+ * A var's `value` may hold `{{ … }}`, and until `t` was declared there was
+ * nothing to check it against. Null for a literal: only a Template is a Slot.
+ */
+export function variableSlot(variable: Variable): Slot | null {
+  if (typeof variable.value !== 'string') return null
+  return { name: variable.key, template: variable.value, expectedType: variableType(variable) }
+}
 
 /** The `{key, value, type}` entries of a `map` field, ignoring anything malformed. */
 export function mapEntries(value: unknown): MapEntry[] {
