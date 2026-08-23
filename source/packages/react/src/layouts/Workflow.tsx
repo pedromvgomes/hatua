@@ -20,6 +20,7 @@ import {
   sequence,
   setTriggerField,
   setTriggerName,
+  setVariableType,
   setVariableValue,
   setWorkflowName,
   setWorkflowSlug,
@@ -278,6 +279,7 @@ export function Workflow({ className, ...rest }: WorkflowProps) {
                 onAdd={() => store?.apply(addVariable())}
                 onRemove={(key) => store?.apply(removeVariable(key))}
                 onRename={(from, to) => store?.apply(renameVariable(from, to))}
+                onType={(key, t) => store?.apply(setVariableType(key, t))}
                 onValue={(key, value) => store?.apply(setVariableValue(key, value))}
               />
             </>
@@ -570,13 +572,18 @@ function TriggerCard({
   )
 }
 
+/** The types a variable may declare, in the order the schema lists them. */
+const VARIABLE_TYPES = ['text', 'number', 'boolean', 'datetime', 'object', 'list'] as const
+
 /**
- * The workflow's variables: a key and a Template, per row.
+ * The workflow's variables: a key, a declared type and a Template, per row.
  *
- * **A variable field is the one input with no type marking**, because `varType`
- * infers a variable's type *from* its value. There is nothing to check it
- * against — and editing one therefore changes what every downstream Expression
- * reading it type-checks against, which is correct.
+ * **The type is declared, not read off the value**, so the value box is a
+ * Template input with a type marking like every other. `core.set_var` writes the
+ * same variable from a Step, which is what makes the literal in the document its
+ * FIRST value rather than its contract — a marking read off it would be a claim
+ * about one moment in an execution (ADR-0013). The type control is therefore the
+ * one edit on this row that re-types every Expression reading the variable.
  *
  * **Renaming a key does not rewrite References.** `{{ var.old_name }}` goes
  * stale and the checker reports it, exactly as it does for a Step that was
@@ -590,6 +597,7 @@ function Variables({
   onAdd,
   onRemove,
   onRename,
+  onType,
   onValue,
 }: {
   variables: readonly Variable[]
@@ -597,6 +605,7 @@ function Variables({
   onAdd: () => void
   onRemove: (key: string) => void
   onRename: (from: string, to: string) => void
+  onType: (key: string, t: string) => void
   onValue: (key: string, value: string) => void
 }) {
   return (
@@ -640,6 +649,18 @@ function Variables({
                   </svg>
                 </button>
               </div>
+              <Select
+                aria-label={`Type of ${variable.key}`}
+                className={styles.varType}
+                value={variable.t}
+                onChange={(event) => onType(variable.key, event.target.value)}
+              >
+                {VARIABLE_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </Select>
               <TemplateInput
                 label={`Value of ${variable.key}`}
                 value={
@@ -648,10 +669,10 @@ function Variables({
                     : String(variable.value)
                 }
                 scope={scope}
-                // No `expectedType`, and therefore no type marking. `varType`
-                // reads a variable's type *from* its value, so there is nothing
-                // to check it against — and a rail that is always green carries
-                // no more information than one that is never green.
+                // The declared type, so the initial value is checked like every
+                // other Template. It is the one place a var's value is a Slot:
+                // everywhere else the variable is read rather than written.
+                expectedType={variable.t}
                 onCommit={(next) => onValue(variable.key, next)}
               />
             </li>

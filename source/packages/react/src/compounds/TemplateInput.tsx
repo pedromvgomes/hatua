@@ -100,9 +100,9 @@ export interface TemplateInputProps {
   /**
    * The type the field declares, and what the left rail judges against.
    *
-   * Undefined where nothing declares one — a workflow variable, whose type is
-   * read *from* its value — and then no row is ever marked. There is nothing to
-   * check against, and a rail that is always neutral is at least honest.
+   * Optional because a caller may hold a Template nothing declares a type for,
+   * and then no row is ever marked. There is nothing to check against, and a
+   * rail that is always neutral is at least honest.
    */
   expectedType?: ValueType
   /**

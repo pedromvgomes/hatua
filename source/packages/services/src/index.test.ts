@@ -62,6 +62,7 @@ const SURFACE = [
   'addVariable',
   'removeVariable',
   'renameVariable',
+  'setVariableType',
   'setVariableValue',
 ].sort()
 

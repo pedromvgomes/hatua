@@ -57,8 +57,10 @@ triggers:
 vars:
   # Where the digest goes.
   - key: digest_to
+    t: text
     value: "ops@example.com"
   - key: subject_prefix
+    t: text
     value: "[triage]"
   - key: threshold
     value: 10

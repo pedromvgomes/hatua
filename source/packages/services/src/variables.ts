@@ -32,11 +32,12 @@ import type { EditCommand } from './command'
  * earlier variables, never a Step's outputs, because no Step is guaranteed to
  * have run.
  *
- * Its *type* follows from what is stored: `varType` in @hatua/model reads a
- * variable's type off its value, because a variable is the one addressable
- * thing with no declaration to consult. So editing one changes what every
- * downstream Expression reading it type-checks against, which is correct and is
- * the reason `variables.test.ts` asserts it end to end.
+ * Its *type* is declared, in `t`, and is the one thing here that re-types every
+ * downstream Expression. The value box does not: `value` is only the FIRST
+ * value, because `core.set_var` writes the same variable from a Step, so a type
+ * read off the literal in the document would be a claim about one moment rather
+ * than about the variable (ADR-0013). `setVariableType` is therefore a command
+ * of its own, and `variables.test.ts` follows it to a verdict.
  */
 
 /**
@@ -91,7 +92,16 @@ export function addVariable(key?: string, board: BoardId = null): EditCommand {
       const listPath = ensureVars(document, board)
       const list = readAt(document, listPath)
       const index = Array.isArray(list) ? list.length : 0
-      const value: Record<string, unknown> = { key: key ?? mintKey(document, board), value: '' }
+      // `t` is written rather than left out, for the reason the key is minted
+      // rather than left blank: the schema requires it, so a row without one is
+      // a document that stops projecting the moment it appears. `text` because
+      // it is the type an empty value is, and it is the one every other type
+      // can be typed over from the row's control.
+      const value: Record<string, unknown> = {
+        key: key ?? mintKey(document, board),
+        t: 'text',
+        value: '',
+      }
       insertNode(document, listPath, index, document.ast.createNode(value))
     },
   }
@@ -148,14 +158,31 @@ export function renameVariable(from: string, to: string, board: BoardId = null):
 }
 
 /**
+ * Write a variable's declared type.
+ *
+ * The type control, and the only edit here that changes what a Template reading
+ * `{{ var.<key> }}` is checked against. Separate from the value box because the
+ * two answer different questions once a `core.set_var` can write the variable:
+ * the value box says what it starts as, and this says what it must always be.
+ */
+export function setVariableType(key: string, t: string, board: BoardId = null): EditCommand {
+  return {
+    label: `Retype ${key}`,
+    apply(document) {
+      const listPath = varsPath(document, board)
+      setScalar(document, [...listPath, locateVariable(document, board, key), 't'], t)
+    },
+  }
+}
+
+/**
  * The scalar a line of typed text denotes, by YAML's own rules.
  *
  * `7` is a number, `true` is a boolean, and everything else — including every
  * Template, because `{{ … }}` is not a YAML scalar form — is text. That is not
  * a convenience: the same text typed into Text Mode produces exactly these
  * values, and a Workflow Definition edited two ways has to mean one thing
- * (ADR-0001). It is also what makes the type marking move, since `varType`
- * reads a variable's type off the value stored here.
+ * (ADR-0001).
  *
  * Only what round-trips. `007` and `1e400` are left as text rather than
  * normalised to `7` and `Infinity`, because rewriting what the user typed is
@@ -170,13 +197,14 @@ const scalarFor = (text: string): string | number | boolean => {
 }
 
 /**
- * Write a variable's value, as the Template it is.
+ * Write a variable's initial value, as the Template it is.
  *
  * `setIn` rather than an assignment onto the existing scalar, because this is
  * the one field whose *style* is part of its meaning: `value: "7"` is text and
- * `value: 7` is a number, so keeping the quoting the previous value was written
- * in would make a variable that starts out quoted impossible to turn into a
- * number. Everywhere else the quoting is the user's and stays.
+ * `value: 7` is a number. What it is checked against comes from `t` rather than
+ * from the quoting, but a document round-trips what the user typed, and
+ * silently requoting a number as a string is the one thing a value box must not
+ * do.
  */
 export function setVariableValue(
   key: string,

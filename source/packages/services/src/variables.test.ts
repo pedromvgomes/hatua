@@ -2,7 +2,13 @@ import { parseWorkflow } from '@hatua/document'
 import { coreFunctions, validate } from '@hatua/expressions'
 import { scopeFor } from '@hatua/model'
 import { describe, expect, it } from 'vitest'
-import { addVariable, removeVariable, renameVariable, setVariableValue } from './variables'
+import {
+  addVariable,
+  removeVariable,
+  renameVariable,
+  setVariableType,
+  setVariableValue,
+} from './variables'
 
 /**
  * The variable commands against a document directly.
@@ -10,9 +16,9 @@ import { addVariable, removeVariable, renameVariable, setVariableValue } from '.
  * Two things are being protected. The first is the round trip: a variable is
  * added, renamed and removed out of a file that lives in the Host's repository,
  * and the comments, key order and quoting around it come back untouched
- * (ADR-0001). The second is the consequence of editing one — `varType` reads a
- * variable's type off its value, so a value box is also a type control, and the
- * last test here follows that all the way to a verdict.
+ * (ADR-0001). The second is which edit re-types a variable: `t` is declared, so
+ * the type control moves every downstream verdict and the value box moves none,
+ * and the last tests here follow both all the way to a verdict.
  */
 
 const SOURCE = `# The overnight triage.
@@ -24,8 +30,10 @@ status: draft
 vars:
   # Where the digest goes.
   - key: digest_to
+    t: text
     value: "ops@example.com"
   - key: threshold
+    t: number
     value: 10
 
 steps:
@@ -186,11 +194,12 @@ describe('setVariableValue', () => {
   })
 })
 
-describe('editing a variable changes what an Expression checks against', () => {
+describe('retyping a variable changes what an Expression checks against', () => {
   /**
-   * The consequence of `varType`: a variable is the one addressable thing with
-   * no declaration to consult, so its type is read off its value. Editing one
-   * therefore re-types every Expression that reads it.
+   * The consequence of declaring `t`: the type control is what re-types every
+   * Expression reading the variable, and the value box is not — because a
+   * `core.set_var` writes the same variable from a Step, so the literal in the
+   * document is only what it starts as.
    *
    * Through `@hatua/expressions` over `scopeFor` output, which is where
    * expression type-checking happens. The validation store does none — it
@@ -206,19 +215,22 @@ describe('editing a variable changes what an Expression checks against', () => {
   }
 
   it('goes from clean to reported when a number field starts reading text', () => {
-    const asNumber = apply(SOURCE, setVariableValue('threshold', '25')).toString()
-    expect(verdicts(asNumber, '{{ var.threshold }}', 'number')).toEqual([])
+    expect(verdicts(SOURCE, '{{ var.threshold }}', 'number')).toEqual([])
 
-    const asText = apply(SOURCE, setVariableValue('threshold', 'twenty five')).toString()
+    const asText = apply(SOURCE, setVariableType('threshold', 'text')).toString()
     expect(verdicts(asText, '{{ var.threshold }}', 'number')).not.toEqual([])
   })
 
-  it('clears the report when the value is edited back, in the same field', () => {
-    const asText = apply(SOURCE, setVariableValue('threshold', 'twenty five')).toString()
-    const reported = verdicts(asText, '{{ var.threshold }}', 'number')
-    expect(reported).toHaveLength(1)
+  it('clears the report when the type is set back, in the same control', () => {
+    const asText = apply(SOURCE, setVariableType('threshold', 'text')).toString()
+    expect(verdicts(asText, '{{ var.threshold }}', 'number')).toHaveLength(1)
 
-    const repaired = apply(asText, setVariableValue('threshold', '25')).toString()
+    const repaired = apply(asText, setVariableType('threshold', 'number')).toString()
     expect(verdicts(repaired, '{{ var.threshold }}', 'number')).toEqual([])
+  })
+
+  it('leaves the marking alone when only the value changes, because the value is only the first one', () => {
+    const written = apply(SOURCE, setVariableValue('threshold', 'twenty five')).toString()
+    expect(verdicts(written, '{{ var.threshold }}', 'number')).toEqual([])
   })
 })

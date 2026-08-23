@@ -40,6 +40,7 @@ triggers:
 
 vars:
   - key: digest_to
+    t: text
     value: "ops@example.com"
 
 steps:
@@ -77,6 +78,7 @@ triggers:
 
 vars:
   - key: digest_to
+    t: text
     value: "ops@example.com"
 blocks:
   - id: archive_entry
@@ -288,10 +290,12 @@ describe('a block’s own variables', () => {
       setVariableValue('attempt_note', 'first pass', 'archive'),
     )
 
-    expect(projected(out).blocks?.[0]?.vars).toEqual([{ key: 'attempt_note', value: 'first pass' }])
+    expect(projected(out).blocks?.[0]?.vars).toEqual([
+      { key: 'attempt_note', t: 'text', value: 'first pass' },
+    ])
     // The workflow's own list is untouched, which is the lifetime difference:
     // a block's vars are rebuilt on every invocation.
-    expect(projected(out).vars).toEqual([{ key: 'digest_to', value: 'ops@example.com' }])
+    expect(projected(out).vars).toEqual([{ key: 'digest_to', t: 'text', value: 'ops@example.com' }])
   })
 
   it('puts `vars:` before `steps:` inside the block', () => {

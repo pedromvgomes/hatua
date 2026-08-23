@@ -19,6 +19,7 @@ triggers:
 
 vars:
   - key: digest_to
+    t: text
     value: me@dane.dev
 
 blocks:
@@ -53,6 +54,7 @@ blocks:
     # here: anything a block needs from the call site arrives as a parameter.
     vars:
       - key: subject_line
+        t: text
         value: "Digest: {{ params.entry.headline }}"
     params:
       - k: entry
