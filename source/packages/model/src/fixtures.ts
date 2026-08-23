@@ -20,7 +20,7 @@ export const DOC: WorkflowDefinition = {
       with: { connection: 'mailbox' },
     },
   ],
-  vars: [{ key: 'digest_to', value: 'me@dane.dev' }],
+  vars: [{ key: 'digest_to', t: 'text', value: 'me@dane.dev' }],
   steps: [
     {
       id: 's2',

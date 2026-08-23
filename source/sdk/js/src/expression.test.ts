@@ -55,7 +55,7 @@ status: draft
 triggers:
   - { id: nightly, use: core.schedule, name: Nightly }
 vars:
-  - { key: digest_to, value: me@dane.dev }
+  - { key: digest_to, t: text, value: me@dane.dev }
 steps:
   - { id: s2, use: component.email.fetch, name: Fetch, with: { connection: mailbox } }
   - id: s6

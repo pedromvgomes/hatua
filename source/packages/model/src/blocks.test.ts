@@ -45,7 +45,7 @@ const doc = (overrides: Partial<WorkflowDefinition> = {}): WorkflowDefinition =>
   version: 1,
   status: 'draft',
   triggers: [{ id: 'nightly', use: 'core.schedule' }],
-  vars: [{ key: 'digest_to', value: 'me@dane.dev' }],
+  vars: [{ key: 'digest_to', t: 'text', value: 'me@dane.dev' }],
   steps: [],
   ...overrides,
 })
@@ -65,7 +65,7 @@ const ARCHIVE: WorkflowDefinition = doc({
         },
       ],
       outputs: [{ k: 'url', label: 'Archive URL', t: 'text' }],
-      vars: [{ key: 'attempt_note', value: '' }],
+      vars: [{ key: 'attempt_note', t: 'text', value: '' }],
       steps: [
         {
           id: 'put',
