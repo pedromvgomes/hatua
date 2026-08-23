@@ -145,12 +145,17 @@ subset already exists inside `scopeFor`, which computes it before appending upst
 it as `boardScope(doc, board, manifests, runContext)` and let `scopeFor` be that plus the Steps, so the two readers
 share one definition.
 
-**A variable declares its type, so the value input carries a type marking like every other.** The
-type is read from `t` rather than from the value beside it, because `core.set_var` writes the same
-variable from a Step — so the literal in the document is only what it *starts* as, and a marking
-inferred from it would be a claim about one moment in an execution (ADR-0013). The value input's
-`expectedType` is therefore the declared type, and it is the one place a variable's value is a Slot:
-everywhere else the variable is read rather than written.
+**A variable declares its type**, read from `t` rather than from the value beside it, because
+`core.set_var` writes the same variable from a Step — so the literal in the document is only what it
+*starts* as, and a type inferred from it would be a claim about one moment in an execution
+(ADR-0013).
+
+What that buys on this tab is the **completion list**, not a marking on the field: passing
+`expectedType` is what lets the picker rail the candidate rows that fit, where a variable's value
+input could rail none. Nothing is ever marked wrong — neutral covers "does not fit" and "cannot be
+judged" alike — so the field itself looks the same either way. The declared type also shows beside
+every `var.*` row in the reference tree, where an expression-valued variable previously read
+`unknown`.
 
 **The type control is the one edit on the row that re-types downstream Expressions**, and the value
 box is not. That needs a test on both halves: retyping `threshold` from number to text changes the

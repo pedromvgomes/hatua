@@ -578,12 +578,17 @@ const VARIABLE_TYPES = ['text', 'number', 'boolean', 'datetime', 'object', 'list
 /**
  * The workflow's variables: a key, a declared type and a Template, per row.
  *
- * **The type is declared, not read off the value**, so the value box is a
- * Template input with a type marking like every other. `core.set_var` writes the
+ * **The type is declared, not read off the value.** `core.set_var` writes the
  * same variable from a Step, which is what makes the literal in the document its
- * FIRST value rather than its contract — a marking read off it would be a claim
+ * FIRST value rather than its contract — a type read off it would be a claim
  * about one moment in an execution (ADR-0013). The type control is therefore the
- * one edit on this row that re-types every Expression reading the variable.
+ * one edit on this row that re-types every Expression reading the variable, and
+ * the value box is not.
+ *
+ * The declared type reaches the screen through the value box's completion list
+ * rather than through the box itself: it is what lets the picker rail the
+ * candidate rows that fit, where a variable's value could rail none. Nothing is
+ * ever marked wrong, so the field looks the same either way.
  *
  * **Renaming a key does not rewrite References.** `{{ var.old_name }}` goes
  * stale and the checker reports it, exactly as it does for a Step that was
@@ -669,9 +674,10 @@ function Variables({
                     : String(variable.value)
                 }
                 scope={scope}
-                // The declared type, so the initial value is checked like every
-                // other Template. It is the one place a var's value is a Slot:
-                // everywhere else the variable is read rather than written.
+                // What the completion list judges a candidate against. It marks
+                // the rows that fit rather than the field itself — nothing here
+                // is ever marked wrong — so declaring the type is what lets the
+                // picker rail a row at all, where before it could rail none.
                 expectedType={variable.t}
                 onCommit={(next) => onValue(variable.key, next)}
               />
