@@ -472,13 +472,15 @@ func contextKeyType(key ContextKey) expressions.TypeNode {
 
 // variableType reads a variable's type from its declaration.
 //
-// Read from T rather than from the value beside it, which is the decision
-// core.set_var forced: a var's value is only its FIRST value, so a type inferred
-// from the literal in the document is a claim about one moment in an execution
-// rather than about the variable (ADR-0013). It also settles a divergence the
-// old inference had no answer for — yaml.v3 turns `value: 2024-01-01T00:00:00Z`
-// into a time.Time while the builder's parser leaves it a string, so the two
-// languages typed one scalar differently. A declared type is decoder-independent.
+// Read from T rather than from the value beside it: a var's value is only its
+// FIRST value, because core.set_var writes the same variable from a step, so a
+// type read off the literal in the document is a claim about one moment in an
+// execution rather than about the variable (ADR-0013).
+//
+// A declared type is also decoder-independent, which a type read off the value
+// cannot be: yaml.v3 turns `value: 2024-01-01T00:00:00Z` into a time.Time while
+// the builder's parser leaves it a string, so reading the value types one scalar
+// two ways and the two languages disagree about the same document.
 //
 // Unknown for a var carrying no T at all: the schema requires one, so this is a
 // hand-edit, and refusing to check is the honest answer where guessing `text`
