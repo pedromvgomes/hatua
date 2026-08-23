@@ -63,8 +63,10 @@ vars:
     t: text
     value: "[triage]"
   - key: threshold
+    t: number
     value: 10
   - key: greeting
+    t: text
     value: "Morning, {{ triggers.t1.owner }}"
 
 steps:

@@ -117,6 +117,9 @@ importers:
         specifier: workspace:*
         version: link:../services
     devDependencies:
+      '@hatua/document':
+        specifier: workspace:*
+        version: link:../document
       '@storybook/react-vite':
         specifier: ^10.5.8
         version: 10.5.8(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(esbuild@0.28.2)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(rollup@4.62.4)(storybook@10.5.8(@types/react@19.2.18)(react@19.2.8))(typescript@7.0.2)(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.2)(yaml@2.9.0))
