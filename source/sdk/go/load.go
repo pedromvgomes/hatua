@@ -136,10 +136,8 @@ func (d *Definition) Validate() error {
 			return fmt.Errorf("%s: trigger %q needs a use", prefix, t.ID)
 		}
 	}
-	for _, v := range d.Vars {
-		if err := identifier(v.Key, "var key", prefix); err != nil {
-			return err
-		}
+	if err := validateVariables(d.Vars, "", prefix); err != nil {
+		return err
 	}
 	for _, b := range d.Blocks {
 		if err := identifier(b.ID, "block id", prefix); err != nil {
@@ -148,13 +146,11 @@ func (d *Definition) Validate() error {
 		if b.Steps == nil {
 			return fmt.Errorf("%s: block %q needs a steps list", prefix, b.ID)
 		}
-		for _, v := range b.Vars {
-			if err := identifier(v.Key, "var key", prefix); err != nil {
-				return err
-			}
+		if err := validateVariables(b.Vars, fmt.Sprintf(" of block %q", b.ID), prefix); err != nil {
+			return err
 		}
 		for _, side := range [][]Declaration{b.Params, b.Outputs} {
-			if err := validateDeclarations(side, b.ID, prefix); err != nil {
+			if err := validateDeclarations(side, fmt.Sprintf("block %q", b.ID), prefix); err != nil {
 				return err
 			}
 		}
@@ -207,31 +203,72 @@ func identifier(value, what, prefix string) error {
 	return nil
 }
 
+// validateType holds a `t` to the set a document may name.
+//
+// One function rather than a switch per caller, because a block's contract and a
+// Board's variables are checked against the same set and a second copy is a
+// second answer: a type this accepts and the JSON Schema refuses is a document
+// the runner loads and the builder will not open.
+//
+// `item` is refused along with everything else outside the set. It resolves by
+// following a loop's list back to its source output, and neither a parameter nor
+// a variable is the output of anything. `unknown` is refused for a sharper
+// reason: the checker treats it as matching everything, so accepting it would
+// switch the type gate off for that name while the builder still drew a marking
+// beside it.
+func validateType(t, what, prefix string) error {
+	switch t {
+	case "text", "number", "boolean", "datetime", "object", "list":
+		return nil
+	}
+	return fmt.Errorf("%s: %s declares an unusable type %q", prefix, what, t)
+}
+
+// validateVariables holds a Board's variables to the same contract a block's
+// declarations are held to.
+//
+// A variable's `t` is what every `{{var.<key>}}` read and every `core.set_var`
+// write is checked against, so it is the contract rather than a hint, and `of`
+// carries the same nested shape a declaration's does.
+func validateVariables(vars []Variable, where, prefix string) error {
+	for _, v := range vars {
+		if err := identifier(v.Key, "var key", prefix); err != nil {
+			return err
+		}
+		owner := fmt.Sprintf("variable %q%s", v.Key, where)
+		if err := validateType(v.T, owner, prefix); err != nil {
+			return err
+		}
+		if err := validateDeclarations(v.Of, owner, prefix); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // validateDeclarations holds a block's contract to the shape a manifest output
-// has. `item` is refused: it resolves by following a loop's list back to its
-// source, and a parameter is not the output of anything.
+// has, and a variable's `of` to the same one.
 //
 // Deliberately unbounded in depth, because the schema is: a cap here and none in
 // the JSON Schema would refuse a document the builder published, which is the
 // divergence this function exists to prevent. A bound belongs in the shared
 // contract or nowhere.
-func validateDeclarations(declarations []Declaration, block, prefix string) error {
+func validateDeclarations(declarations []Declaration, owner, prefix string) error {
 	for _, declaration := range declarations {
 		if err := identifier(declaration.K, "declaration key", prefix); err != nil {
 			return err
 		}
 		if declaration.Label == "" {
-			return fmt.Errorf("%s: %q in block %q needs a label", prefix, declaration.K, block)
+			return fmt.Errorf("%s: %q in %s needs a label", prefix, declaration.K, owner)
 		}
-		switch declaration.T {
-		case "text", "number", "boolean", "datetime", "object", "list":
-		default:
-			return fmt.Errorf(
-				"%s: %q in block %q declares an unusable type %q",
-				prefix, declaration.K, block, declaration.T,
-			)
+		if err := validateType(
+			declaration.T,
+			fmt.Sprintf("%q in %s", declaration.K, owner),
+			prefix,
+		); err != nil {
+			return err
 		}
-		if err := validateDeclarations(declaration.Of, block, prefix); err != nil {
+		if err := validateDeclarations(declaration.Of, owner, prefix); err != nil {
 			return err
 		}
 	}

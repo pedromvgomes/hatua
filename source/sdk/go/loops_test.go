@@ -171,3 +171,82 @@ func TestVariableOfShapesAMemberRead(t *testing.T) {
 		t.Fatalf("expected a text member to be refused where a number belongs")
 	}
 }
+
+// A variable's declared type is held to the same set a block's declarations are.
+//
+// The loader is a layer above the rules corpus — that corpus calls
+// ValidateDefinition directly and never reaches Validate() — so a type the
+// loader accepts and the JSON Schema refuses is a document this SDK loads and
+// the builder will not open. `unknown` and `item` are the sharp cases: the
+// checker treats both as matching everything, so accepting one switches the type
+// gate off for that variable while the builder still draws a marking beside it.
+func TestVariableTypeIsHeldToTheDeclaredSet(t *testing.T) {
+	document := func(declared string) string {
+		return "id: wf\nname: W\nversion: 1\nstatus: draft\n" +
+			"vars:\n  - { key: attempt, t: " + declared + ", value: 0 }\nsteps: []\n"
+	}
+
+	for _, declared := range []string{"unknown", "item", "Text", "str", ""} {
+		if _, err := LoadDefinition([]byte(document(declared))); err == nil {
+			t.Fatalf("expected t: %q to be refused", declared)
+		}
+	}
+
+	for _, declared := range []string{"text", "number", "boolean", "datetime", "object", "list"} {
+		if _, err := LoadDefinition([]byte(document(declared))); err != nil {
+			t.Fatalf("expected t: %q to load, got: %v", declared, err)
+		}
+	}
+}
+
+// A variable's `of` carries the same nested shape a declaration's does, so its
+// members are held to the same contract rather than to none.
+func TestVariableMembersAreHeldToTheSameContract(t *testing.T) {
+	const bad = `id: wf
+name: W
+version: 1
+status: draft
+vars:
+  - key: entry
+    t: object
+    of:
+      - { k: headline, label: Headline, t: nonsense }
+    value: ""
+steps: []
+`
+	if _, err := LoadDefinition([]byte(bad)); err == nil {
+		t.Fatalf("expected a member declaring an unusable type to be refused")
+	}
+
+	const missingLabel = `id: wf
+name: W
+version: 1
+status: draft
+vars:
+  - key: entry
+    t: object
+    of:
+      - { k: headline, t: text }
+    value: ""
+steps: []
+`
+	if _, err := LoadDefinition([]byte(missingLabel)); err == nil {
+		t.Fatalf("expected a member with no label to be refused")
+	}
+
+	const good = `id: wf
+name: W
+version: 1
+status: draft
+vars:
+  - key: entry
+    t: object
+    of:
+      - { k: headline, label: Headline, t: text }
+    value: ""
+steps: []
+`
+	if _, err := LoadDefinition([]byte(good)); err != nil {
+		t.Fatalf("expected a well-formed member to load, got: %v", err)
+	}
+}
