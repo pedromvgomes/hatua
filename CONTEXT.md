@@ -97,10 +97,20 @@ _Avoid_: helper, macro, formula, built-in
 **Slot**:
 A named **Template** together with the type it must produce — `{name: "to", template: "{{
 var.digest_to }}", expectedType: text}`. It names the *place* something is resolved into, which is
-what distinguishes it from the **Template** it holds. The type is always the field's, declared by
-the **Component Manifest** or — for a **Branch**'s `when` — by the language; it is never inferred
-from the expression.
+what distinguishes it from the **Template** it holds. **The type is never inferred from the
+expression**, and it comes from one of three places: the **Component Manifest**'s field, a
+declaration in the document (a **Block**'s `params`/`outputs`, a **Variable**'s `t`), or the
+language — a **Branch**'s `when` and a **Repeat**'s `until` are boolean because a condition is.
 _Avoid_: binding, target, assignment, field value
+
+**Variable**:
+Named mutable state declared under a **Board**'s `vars:` and read anywhere on it as `{{var.<key>}}`,
+regardless of where it was written — which is what lets a **Repeat**'s body carry something back to
+a **Step** that runs before it. **Its type is declared, in `t`, never read off its value**: `value`
+is only the *initial* value, because `core.set_var` writes the same variable from a **Step**. A
+Board's variables are its own — the workflow's at the root, a **Block**'s inside one, rebuilt on
+every invocation — so a `core.set_var` can never reach out of the Board it is on.
+_Avoid_: state, global, parameter, field
 
 **Mapping**:
 A **Step** (`core.map`) whose outputs are the entries the user wrote into it rather than anything
@@ -129,6 +139,16 @@ _Avoid_: conditional, switch, if-node, gateway
 One labelled child path of a **Fork**, with an optional `when` condition and its own nested steps.
 Order is meaningful in a condition fork.
 _Avoid_: path, case, leg
+
+**Repeat**:
+A container **Step** (`core.repeat`) that runs its children, then evaluates its `until` condition,
+and runs them again while that is false. **The body always runs at least once**, which is what
+distinguishes it from `core.for_each` — a list may be empty — and what lets one discharge a
+**Block**'s obligation to reach a `core.return`. `until` sits beside `steps:` rather than under
+`with:`, because a **Component Manifest** field carries a rendering kind and cannot say "a
+**Template** that must produce a boolean". It binds nothing: a counter is a **Variable**, written
+by `core.set_var`. Nothing in the document bounds the iterations — a runner imposes its own ceiling.
+_Avoid_: while, do-while, until-loop, retry
 
 **Derived Layout**:
 The rule that a **Step**'s position on the flow map is computed from the tree on every render and
