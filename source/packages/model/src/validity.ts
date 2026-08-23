@@ -1,16 +1,9 @@
-import type {
-  Block,
-  Declaration,
-  Manifest,
-  Step,
-  Variable,
-  WorkflowDefinition,
-} from '@hatua/schema'
+import type { Block, Declaration, Manifest, Step, WorkflowDefinition } from '@hatua/schema'
 import { blockIdOf, blockOf, cyclicBlocks, RETURN_VERB } from './blocks'
 import type { Diagnostic } from './connections'
 import { DEFINITION_DIAGNOSTICS, type DefinitionCode } from './generated/diagnostics'
 import { FOR_EACH_VERB, FORK_VERB, REPEAT_VERB, SET_VAR_VERB } from './slots'
-import { type BoardId, boardOf, boards, own, stepKey, walkDocument, walkSteps } from './tree'
+import { type BoardId, boards, own, stepKey, varsOn, walkDocument, walkSteps } from './tree'
 
 /**
  * Whether a Workflow Definition is filled in enough to run — the rules that read
@@ -315,18 +308,6 @@ const SET_VAR_FIELDS: readonly (readonly [string, string])[] = [
   ['key', 'Variable'],
   ['value', 'Value'],
 ]
-
-/**
- * The variables one Board declares: the workflow's at the root, a Block's
- * inside one.
- *
- * This is the whole of "a `core.set_var` can never reach out of the Board it is
- * on" — there is no second list to fall back to, so a Block naming a workflow
- * variable is an unknown name rather than a scope the runner resolves
- * differently.
- */
-const varsOn = (doc: WorkflowDefinition, board: BoardId): readonly Variable[] =>
-  board === null ? (doc.vars ?? []) : (boardOf(doc, board)?.block?.vars ?? [])
 
 /**
  * Whether a step list, read from its own root level, always reaches a return.

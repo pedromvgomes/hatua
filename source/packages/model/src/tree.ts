@@ -1,4 +1,4 @@
-import type { Block, Step, WorkflowDefinition } from '@hatua/schema'
+import type { Block, Step, Variable, WorkflowDefinition } from '@hatua/schema'
 
 /**
  * Pure domain rules over the step tree. No state, no I/O, no YAML — those live
@@ -107,6 +107,28 @@ export function findStep(doc: WorkflowDefinition, ref: StepRef): Step | undefine
   for (const step of walkSteps(board.steps)) if (step.id === ref.id) return step
   return undefined
 }
+
+/**
+ * The variables one Board declares: the workflow's at the root, a Block's inside
+ * one.
+ *
+ * This is the whole of "a `core.set_var` can never reach out of the Board it is
+ * on" — there is no second list to fall back to, so a Block naming a workflow
+ * variable is an unknown name rather than a scope a runner resolves differently.
+ *
+ * Exported because a runner has to answer the same question the builder does,
+ * and the Go SDK's `VarsOn` is this function: a rule restated at two call sites
+ * is two rules the day one of them gains a fallback.
+ */
+export const varsOn = (doc: WorkflowDefinition, board: BoardId): readonly Variable[] =>
+  board === null ? (doc.vars ?? []) : (boardOf(doc, board)?.block?.vars ?? [])
+
+/** One Board's variable by key, or undefined when that Board declares none. */
+export const variableOn = (
+  doc: WorkflowDefinition,
+  board: BoardId,
+  key: string,
+): Variable | undefined => varsOn(doc, board).find((variable) => variable.key === key)
 
 /** Every step id on one Board, for detecting references to steps that vanished. */
 export function stepIds(doc: WorkflowDefinition, board: BoardId): Set<string> {
