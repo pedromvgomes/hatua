@@ -132,8 +132,9 @@ booleans.
 
 ### 3. Workflow variables
 
-Rows of two mono `Input size="sm"` — key 118px, value flexible — plus a ghost trash button, then
-`Button size="sm" variant="secondary" icon="plus"` **Add variable**.
+Rows of a mono `Input size="sm"` for the key plus a ghost trash button, a full-width `Select` for
+the declared type, and the value below, then `Button size="sm" variant="secondary" icon="plus"`
+**Add variable**.
 
 **A variable's value is a Template**, not a literal. It may hold `{{ … }}`, so the value input is a
 [Template input](#the-template-input) like any other, and it gets the same completion.
@@ -144,14 +145,24 @@ subset already exists inside `scopeFor`, which computes it before appending upst
 it as `boardScope(doc, board, manifests, runContext)` and let `scopeFor` be that plus the Steps, so the two readers
 share one definition.
 
-**A variable field is the one input with no type marking**, because `varType` in `model/scope.ts`
-infers a variable's type *from* its value. There is nothing to check it against.
+**A variable declares its type, so the value input carries a type marking like every other.** The
+type is read from `t` rather than from the value beside it, because `core.set_var` writes the same
+variable from a Step — so the literal in the document is only what it *starts* as, and a marking
+inferred from it would be a claim about one moment in an execution (ADR-0013). The value input's
+`expectedType` is therefore the declared type, and it is the one place a variable's value is a Slot:
+everywhere else the variable is read rather than written.
 
-Editing a variable therefore changes what downstream Expressions type-check against. That is
-correct, and it needs a test: change a variable from text to a number and a field reading it changes
-verdict. It runs through `@hatua/expressions` with `scopeFor` output — not through the validation
-store, which checks required fields, unknown components and malformed containers, and does no
-expression type-checking at all.
+**The type control is the one edit on the row that re-types downstream Expressions**, and the value
+box is not. That needs a test on both halves: retyping `threshold` from number to text changes the
+verdict of a number field reading it, and editing its value does not. It runs through
+`@hatua/expressions` with `scopeFor` output — not through the validation store, which checks
+required fields, unknown components and malformed containers, and does no expression type-checking
+at all.
+
+A row's controls therefore map one to one onto commands: `renameVariable`, `setVariableType`,
+`setVariableValue`, `removeVariable`. `addVariable` writes `t: text` rather than leaving it out, for
+the reason it mints a key rather than leaving one blank — the schema requires it, so a row without
+one is a document that stops projecting the moment it appears.
 
 #### Renaming a key
 
