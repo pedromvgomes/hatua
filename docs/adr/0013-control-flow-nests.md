@@ -200,7 +200,7 @@ settles why. That is the same reasoning that keeps sibling branches out of scope
 instead of to paths. Steps sitting after a return on the same path can never run, and are reported the way an
 unconditional Branch that swallows the ones behind it already is.
 
-## `core.repeat` tests after the body, and that decides three things
+## `core.repeat` tests after the body, and that decides four things
 
 ```yaml
 - id: revise
