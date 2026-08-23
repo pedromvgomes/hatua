@@ -66,7 +66,7 @@ describe('what a set_var writes', () => {
   })
 
   it('is typed by the variable it names', () => {
-    expect(setVarSlot(WORKFLOW.steps[0] as Step, WORKFLOW.vars ?? [])).toEqual({
+    expect(setVarSlot(WORKFLOW, null, WORKFLOW.steps[0] as Step)).toEqual({
       name: 'value',
       template: '{{ 1 + 1 }}',
       expectedType: 'number',
@@ -74,12 +74,12 @@ describe('what a set_var writes', () => {
   })
 
   it('is not a Slot at all when the board declares no such variable', () => {
-    expect(setVarSlot(setVar('attemp', '1'), WORKFLOW.vars ?? [])).toBeNull()
-    expect(setVarSlot(setVar(undefined, '1'), WORKFLOW.vars ?? [])).toBeNull()
+    expect(setVarSlot(WORKFLOW, null, setVar('attemp', '1'))).toBeNull()
+    expect(setVarSlot(WORKFLOW, null, setVar(undefined, '1'))).toBeNull()
   })
 
   it('is not a Slot when the value is a literal rather than a Template', () => {
-    expect(setVarSlot(setVar('attempt', 7), WORKFLOW.vars ?? [])).toBeNull()
+    expect(setVarSlot(WORKFLOW, null, setVar('attempt', 7))).toBeNull()
   })
 
   /**
@@ -94,7 +94,7 @@ describe('what a set_var writes', () => {
       steps: [setVar('attempt', '{{ 1 + 1 }}')],
     })
     const scope = scopeFor(asBoolean, { board: null, id: 'bump' })
-    const wrong = setVarSlot(asBoolean.steps[0] as Step, asBoolean.vars ?? [])
+    const wrong = setVarSlot(asBoolean, null, asBoolean.steps[0] as Step)
     expect(wrong).not.toBeNull()
     expect(
       validate(wrong?.template ?? '', wrong?.expectedType ?? 'text', {
@@ -103,7 +103,7 @@ describe('what a set_var writes', () => {
       }),
     ).toEqual([expect.objectContaining({ code: 'EXPR_TYPE_MISMATCH' })])
 
-    const right = setVarSlot(WORKFLOW.steps[0] as Step, WORKFLOW.vars ?? [])
+    const right = setVarSlot(WORKFLOW, null, WORKFLOW.steps[0] as Step)
     expect(
       validate(right?.template ?? '', right?.expectedType ?? 'text', {
         scope: scopeFor(WORKFLOW, { board: null, id: 'bump' }),
@@ -129,7 +129,7 @@ describe('what a set_var writes', () => {
       ],
     })
     const block = inBlock.blocks?.[0]
-    expect(setVarSlot(block?.steps[0] as Step, block?.vars ?? [])).toBeNull()
+    expect(setVarSlot(inBlock, 'ask', block?.steps[0] as Step)).toBeNull()
   })
 })
 
@@ -141,6 +141,10 @@ describe('a variable’s type', () => {
 
   it('is unknown when nothing declares one, rather than guessed from the value', () => {
     expect(variableType({ key: 'a', value: 7 } as never)).toBe('unknown')
+    // Empty and absent alike, matching the Go SDK. A `t: ""` reaching here is a
+    // hand-edit like a missing key is, and treating it as a type nothing
+    // declares would report a mismatch on every read of the variable.
+    expect(variableType({ key: 'a', t: '', value: 7 } as never)).toBe('unknown')
   })
 
   it('checks the initial value, which nothing could before it was declared', () => {

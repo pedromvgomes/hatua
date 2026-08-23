@@ -1,7 +1,7 @@
 import type { Slot, ValueType } from '@hatua/expressions'
-import type { Manifest, Step, Variable } from '@hatua/schema'
+import type { Manifest, Step, Variable, WorkflowDefinition } from '@hatua/schema'
 import { isMappable, type MAPPABLE_FIELD_KINDS } from '@hatua/schema'
-import { own } from './tree'
+import { type BoardId, own, variableOn } from './tree'
 
 /**
  * The bridge between a Component Manifest and the expression language.
@@ -142,12 +142,14 @@ export const repeatSlot = (until: string): Slot => ({
  * `core.set_var` wrote something else — and every downstream check was answered
  * against it (ADR-0013).
  *
- * `unknown` for a var carrying no `t` at all: the schema requires one, so this
- * is a hand-edit, and refusing to check is the honest answer where guessing
- * `text` would refuse a document over a type nothing declared.
+ * `unknown` for a var carrying no `t` at all — absent or empty alike, matching
+ * the Go SDK, because a hand-edit is exactly what reaches here and `t: ""` is as
+ * plausible a one as a missing key. The schema requires a type, so refusing to
+ * check is the honest answer where guessing `text` would refuse a document over
+ * a type nothing declared.
  */
 export const variableType = (variable: Variable): ValueType =>
-  (variable.t as ValueType | undefined) ?? 'unknown'
+  variable.t ? (variable.t as ValueType) : 'unknown'
 
 /**
  * The Slot a `core.set_var`'s `value` resolves into, typed by the variable it
@@ -159,17 +161,22 @@ export const variableType = (variable: Variable): ValueType =>
  * also why a `core.set_var` inside a Block can only ever name that Block's —
  * `vars` is read from the Board the Step sits on, so there is no reaching out.
  *
+ * Takes the Board rather than a list of variables, so the caller cannot supply
+ * the wrong one: the Go SDK's `SetVarSlot` has the same signature, and a runner
+ * handed a list would be the one deciding whether a Block falls back to the
+ * workflow's variables — which is the rule this verb exists inside.
+ *
  * Null when the step names no variable, or names one the Board does not
  * declare: both have their own diagnostic, and resolving a Template against a
  * type nothing declared would report a mismatch the user cannot act on.
  */
-export function setVarSlot(step: Step, vars: readonly Variable[]): Slot | null {
+export function setVarSlot(doc: WorkflowDefinition, board: BoardId, step: Step): Slot | null {
   const values = (step.with ?? {}) as Record<string, unknown>
 
   const key = own(values, 'key')
   if (typeof key !== 'string') return null
 
-  const variable = vars.find((one) => one.key === key)
+  const variable = variableOn(doc, board, key)
   if (!variable) return null
 
   const template = own(values, 'value')
