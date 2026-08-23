@@ -232,13 +232,20 @@ names is an *undiscriminated container arm*, which this does not have.
 
 The substantial half of the builder, and the part the original handoff specified least.
 
-Three places hold a Template, and all three use the same widget:
+Four places hold a Template, and all four use the same widget:
 
 | Site | Where it is edited |
 | --- | --- |
 | A Step's mappable `with:` fields, including `map` entries | Step editor |
 | A Branch's `when` | Step editor, via its Fork |
-| A workflow variable's value | Workflow tab |
+| A `core.repeat`'s `until` | Step editor, via its Repeat |
+| A variable's value | Workflow tab |
+
+The two conditions are one row twice over. Both are a structural key on a container rather than a
+field under `with:`, so neither is reached through the **Component Manifest** and both are typed
+`boolean` by the language — which is why they are edited through the container that owns them rather
+than as a field of their own. Whatever surface holds one holds the other; a builder that could
+author a repeat's condition and not a fork's would be a worse gap than having neither.
 
 ### The Template input
 
