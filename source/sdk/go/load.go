@@ -96,9 +96,12 @@ func LoadRunContext(data []byte) (*RunContextManifest, error) {
 // Cross-field rules belong to the builder's model layer (@hatua/model) and are
 // not duplicated here: connection type matching, empty loops, unmapped required
 // fields, and — for a block — a call naming nothing, a call graph with a cycle,
-// and a path that finishes without returning. A runner linking this package
-// gets shape, not those rules, so a document reaching it unvalidated by a
-// builder can still hold a block that calls itself.
+// a path that finishes without returning, two blocks under one id, two steps
+// under one id on a board, and two declarations under one key. A runner linking
+// this package gets shape, not those rules, so a document reaching it
+// unvalidated by a builder can still hold a block that calls itself, and can
+// hold a repeated id that Boards and WalkDocument both yield while BlockOf and
+// ScopeFor resolve first-wins.
 func (d *Definition) Validate() error {
 	const prefix = "not a valid Workflow Definition"
 
@@ -208,19 +211,11 @@ func identifier(value, what, prefix string) error {
 // has. `item` is refused: it resolves by following a loop's list back to its
 // source, and a parameter is not the output of anything.
 //
-// The depth bound is its own guarantee rather than one borrowed from the YAML
-// decoder: `of:` nests as deep as the document says, and safety that rests on
-// which input the decoder happens to refuse first is safety nobody can check.
-const maxDeclarationDepth = 32
-
+// Deliberately unbounded in depth, because the schema is: a cap here and none in
+// the JSON Schema would refuse a document the builder published, which is the
+// divergence this function exists to prevent. A bound belongs in the shared
+// contract or nowhere.
 func validateDeclarations(declarations []Declaration, block, prefix string) error {
-	return validateDeclarationsAt(declarations, block, prefix, 0)
-}
-
-func validateDeclarationsAt(declarations []Declaration, block, prefix string, depth int) error {
-	if depth > maxDeclarationDepth {
-		return fmt.Errorf("%s: block %q nests `of:` deeper than %d", prefix, block, maxDeclarationDepth)
-	}
 	for _, declaration := range declarations {
 		if err := identifier(declaration.K, "declaration key", prefix); err != nil {
 			return err
@@ -236,7 +231,7 @@ func validateDeclarationsAt(declarations []Declaration, block, prefix string, de
 				prefix, declaration.K, block, declaration.T,
 			)
 		}
-		if err := validateDeclarationsAt(declaration.Of, block, prefix, depth+1); err != nil {
+		if err := validateDeclarations(declaration.Of, block, prefix); err != nil {
 			return err
 		}
 	}

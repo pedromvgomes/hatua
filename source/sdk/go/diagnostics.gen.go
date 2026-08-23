@@ -17,19 +17,20 @@ const (
 type DefinitionCode string
 
 const (
-	CodeFieldRequired          DefinitionCode = "FIELD_REQUIRED"
-	CodeComponentUnknown       DefinitionCode = "COMPONENT_UNKNOWN"
-	CodeForkHasNoBranches      DefinitionCode = "FORK_HAS_NO_BRANCHES"
-	CodeForkNeedsTwoBranches   DefinitionCode = "FORK_NEEDS_TWO_BRANCHES"
-	CodeBranchUnreachableAfter DefinitionCode = "BRANCH_UNREACHABLE_AFTER"
-	CodeLoopHasNoBody          DefinitionCode = "LOOP_HAS_NO_BODY"
-	CodeBlockUnknown           DefinitionCode = "BLOCK_UNKNOWN"
-	CodeBlockRecursion         DefinitionCode = "BLOCK_RECURSION"
-	CodeReturnOutsideBlock     DefinitionCode = "RETURN_OUTSIDE_BLOCK"
-	CodeBlockPathWithoutReturn DefinitionCode = "BLOCK_PATH_WITHOUT_RETURN"
-	CodeStepAfterReturn        DefinitionCode = "STEP_AFTER_RETURN"
-	CodeBlockIdDuplicate       DefinitionCode = "BLOCK_ID_DUPLICATE"
-	CodeStepIdDuplicate        DefinitionCode = "STEP_ID_DUPLICATE"
+	CodeFieldRequired           DefinitionCode = "FIELD_REQUIRED"
+	CodeComponentUnknown        DefinitionCode = "COMPONENT_UNKNOWN"
+	CodeForkHasNoBranches       DefinitionCode = "FORK_HAS_NO_BRANCHES"
+	CodeForkNeedsTwoBranches    DefinitionCode = "FORK_NEEDS_TWO_BRANCHES"
+	CodeBranchUnreachableAfter  DefinitionCode = "BRANCH_UNREACHABLE_AFTER"
+	CodeLoopHasNoBody           DefinitionCode = "LOOP_HAS_NO_BODY"
+	CodeBlockUnknown            DefinitionCode = "BLOCK_UNKNOWN"
+	CodeBlockRecursion          DefinitionCode = "BLOCK_RECURSION"
+	CodeReturnOutsideBlock      DefinitionCode = "RETURN_OUTSIDE_BLOCK"
+	CodeBlockPathWithoutReturn  DefinitionCode = "BLOCK_PATH_WITHOUT_RETURN"
+	CodeStepAfterReturn         DefinitionCode = "STEP_AFTER_RETURN"
+	CodeBlockIdDuplicate        DefinitionCode = "BLOCK_ID_DUPLICATE"
+	CodeDeclarationKeyDuplicate DefinitionCode = "DECLARATION_KEY_DUPLICATE"
+	CodeStepIdDuplicate         DefinitionCode = "STEP_ID_DUPLICATE"
 )
 
 // DefinitionDiagnosticSpec is one declared code.
@@ -44,17 +45,18 @@ type DefinitionDiagnosticSpec struct {
 // contract: a code that stopped Publish in TypeScript and merely informed
 // here would let a workflow publish from one builder and not another.
 var DefinitionDiagnostics = map[DefinitionCode]DefinitionDiagnosticSpec{
-	CodeFieldRequired:          {Code: CodeFieldRequired, Blocks: BlocksPublish, Message: "{label} is required."},
-	CodeComponentUnknown:       {Code: CodeComponentUnknown, Blocks: BlocksEdit, Message: "Nothing declares \"{use}\". It may no longer be available."},
-	CodeForkHasNoBranches:      {Code: CodeForkHasNoBranches, Blocks: BlocksPublish, Message: "This fork has no branches. Add the two paths it chooses between."},
-	CodeForkNeedsTwoBranches:   {Code: CodeForkNeedsTwoBranches, Blocks: BlocksPublish, Message: "A fork needs at least two branches — add the other path."},
-	CodeBranchUnreachableAfter: {Code: CodeBranchUnreachableAfter, Blocks: BlocksPublish, Message: "\"{label}\" has no condition, so nothing after it can ever run. Only the last branch may be unconditional."},
-	CodeLoopHasNoBody:          {Code: CodeLoopHasNoBody, Blocks: BlocksPublish, Message: "This loop repeats nothing. Add at least one Step inside it."},
-	CodeBlockUnknown:           {Code: CodeBlockUnknown, Blocks: BlocksPublish, Message: "No block called \"{name}\" is declared in this workflow."},
-	CodeBlockRecursion:         {Code: CodeBlockRecursion, Blocks: BlocksPublish, Message: "\"{name}\" calls itself, directly or through another block."},
-	CodeReturnOutsideBlock:     {Code: CodeReturnOutsideBlock, Blocks: BlocksPublish, Message: "`core.return` publishes a block's outputs, and this is not inside a block."},
-	CodeBlockPathWithoutReturn: {Code: CodeBlockPathWithoutReturn, Blocks: BlocksPublish, Message: "\"{name}\" declares outputs, but a path through it can finish without returning."},
-	CodeStepAfterReturn:        {Code: CodeStepAfterReturn, Blocks: BlocksPublish, Message: "Nothing after `core.return` can run."},
-	CodeBlockIdDuplicate:       {Code: CodeBlockIdDuplicate, Blocks: BlocksPublish, Message: "More than one block is called \"{name}\"."},
-	CodeStepIdDuplicate:        {Code: CodeStepIdDuplicate, Blocks: BlocksPublish, Message: "More than one step on this board is called \"{name}\"."},
+	CodeFieldRequired:           {Code: CodeFieldRequired, Blocks: BlocksPublish, Message: "{label} is required."},
+	CodeComponentUnknown:        {Code: CodeComponentUnknown, Blocks: BlocksEdit, Message: "Nothing declares \"{use}\". It may no longer be available."},
+	CodeForkHasNoBranches:       {Code: CodeForkHasNoBranches, Blocks: BlocksPublish, Message: "This fork has no branches. Add the two paths it chooses between."},
+	CodeForkNeedsTwoBranches:    {Code: CodeForkNeedsTwoBranches, Blocks: BlocksPublish, Message: "A fork needs at least two branches — add the other path."},
+	CodeBranchUnreachableAfter:  {Code: CodeBranchUnreachableAfter, Blocks: BlocksPublish, Message: "\"{label}\" has no condition, so nothing after it can ever run. Only the last branch may be unconditional."},
+	CodeLoopHasNoBody:           {Code: CodeLoopHasNoBody, Blocks: BlocksPublish, Message: "This loop repeats nothing. Add at least one Step inside it."},
+	CodeBlockUnknown:            {Code: CodeBlockUnknown, Blocks: BlocksPublish, Message: "No block called \"{name}\" is declared in this workflow."},
+	CodeBlockRecursion:          {Code: CodeBlockRecursion, Blocks: BlocksPublish, Message: "\"{name}\" calls itself, directly or through another block."},
+	CodeReturnOutsideBlock:      {Code: CodeReturnOutsideBlock, Blocks: BlocksPublish, Message: "`core.return` publishes a block's outputs, and this is not inside a block."},
+	CodeBlockPathWithoutReturn:  {Code: CodeBlockPathWithoutReturn, Blocks: BlocksPublish, Message: "\"{name}\" declares outputs, but a path through it can finish without returning."},
+	CodeStepAfterReturn:         {Code: CodeStepAfterReturn, Blocks: BlocksPublish, Message: "Nothing after `core.return` can run."},
+	CodeBlockIdDuplicate:        {Code: CodeBlockIdDuplicate, Blocks: BlocksPublish, Message: "More than one block is called \"{name}\"."},
+	CodeDeclarationKeyDuplicate: {Code: CodeDeclarationKeyDuplicate, Blocks: BlocksPublish, Message: "More than one {side} of \"{block}\" is called \"{name}\"."},
+	CodeStepIdDuplicate:         {Code: CodeStepIdDuplicate, Blocks: BlocksPublish, Message: "More than one step on this board is called \"{name}\"."},
 }

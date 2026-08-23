@@ -80,8 +80,18 @@ fs.writeFileSync(
   definitionDiagnosticsToGo(diagnostics),
   'utf8',
 )
-execFileSync('gofmt', ['-w', path.join(GO_OUT, 'diagnostics.gen.go')], { stdio: 'pipe' })
-console.log(`  ✓ diagnostics  (${diagnostics.length} codes, both languages)`)
+// gofmt is a convenience, not a correctness step: the emitter already writes
+// formatted Go. A machine with no Go toolchain must still be able to generate,
+// so a missing binary is a note rather than a half-written tree.
+let formatted = true
+try {
+  execFileSync('gofmt', ['-w', path.join(GO_OUT, 'diagnostics.gen.go')], { stdio: 'pipe' })
+} catch {
+  formatted = false
+}
+console.log(
+  `  ✓ diagnostics  (${diagnostics.length} codes, both languages${formatted ? '' : ', gofmt unavailable'})`,
+)
 
 // Format the output. Generated code still gets read and reviewed, and leaving
 // it unformatted would make `biome ci` fail on files nobody is allowed to edit

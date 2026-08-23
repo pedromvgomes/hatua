@@ -1,4 +1,5 @@
 import type { Manifest, WorkflowDefinition } from '@hatua/schema'
+import { walkDocument } from './tree'
 
 /**
  * Connection rules. Two of them, and they fail at different moments on purpose.
@@ -69,7 +70,11 @@ export function mismatchedConnections(
   const byId = new Map((doc.connections ?? []).map((c) => [c.id, c]))
   const out: Diagnostic[] = []
 
-  const check = (stepId: string, use: string, values: Record<string, unknown> | undefined) => {
+  const check = (
+    subject: Partial<Diagnostic>,
+    use: string,
+    values: Record<string, unknown> | undefined,
+  ) => {
     const manifest = manifests.get(use)
     if (!manifest) return
     for (const field of manifest.fields) {
@@ -83,7 +88,7 @@ export function mismatchedConnections(
           code: 'CONNECTION_UNKNOWN',
           message: `"${connectionId}" is not declared in this workflow.`,
           blocks: 'edit',
-          stepId,
+          ...subject,
           fieldKey: field.k,
         })
         continue
@@ -100,7 +105,7 @@ export function mismatchedConnections(
           code: 'CONNECTION_UNRESOLVABLE',
           message: `"${connection.id}" no longer resolves. Reconnect it or pick another.`,
           blocks: 'publish',
-          stepId,
+          ...subject,
           connectionId: connection.id,
           fieldKey: field.k,
         })
@@ -111,7 +116,7 @@ export function mismatchedConnections(
           code: 'CONNECTION_TYPE_MISMATCH',
           message: `${field.label} needs a ${field.conn_type} connection, but "${connection.id}" is ${actual}.`,
           blocks: 'edit',
-          stepId,
+          ...subject,
           connectionId: connection.id,
           fieldKey: field.k,
         })
@@ -119,17 +124,23 @@ export function mismatchedConnections(
     }
   }
 
-  const walk = (steps: WorkflowDefinition['steps']) => {
-    for (const step of steps) {
-      check(step.id, step.use, step.with as Record<string, unknown> | undefined)
-      for (const branch of step.branches ?? []) walk(branch.steps)
-      if (step.steps) walk(step.steps)
-    }
+  // Every Board, not `doc.steps`: a `conn` field inside a Block is a `conn`
+  // field, and two of the codes above block editing — so skipping one would
+  // lock a document over a Step nothing reported.
+  for (const { step, board } of walkDocument(doc)) {
+    check(
+      { stepId: step.id, ...(board === null ? {} : { blockId: board }) },
+      step.use,
+      step.with as Record<string, unknown> | undefined,
+    )
   }
-  walk(doc.steps)
 
   for (const trigger of doc.triggers ?? []) {
-    check(trigger.id, trigger.use, trigger.with as Record<string, unknown> | undefined)
+    check(
+      { triggerId: trigger.id },
+      trigger.use,
+      trigger.with as Record<string, unknown> | undefined,
+    )
   }
 
   return out

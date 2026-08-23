@@ -115,7 +115,18 @@ export function renameBlock(from: string, to: string): EditCommand {
   return {
     label: `Rename ${from}`,
     apply(document) {
-      setScalar(document, [...blockPath(document, from), 'id'], to)
+      const path = blockPath(document, from)
+
+      // Two blocks under one id is worse than a refused rename. Every reader
+      // here resolves the FIRST match, so the second block's Board opens on the
+      // first's steps, `removeBlock` deletes the wrong one and `addDeclaration`
+      // edits the wrong contract — and `BLOCK_ID_DUPLICATE` only stops Publish,
+      // long after the edit commands have gone to the wrong place.
+      for (const { entry } of entriesOf(document, 'blocks')) {
+        if (entry.id === to) throw new Error(`A block named "${to}" already exists`)
+      }
+
+      setScalar(document, [...path, 'id'], to)
     },
   }
 }
