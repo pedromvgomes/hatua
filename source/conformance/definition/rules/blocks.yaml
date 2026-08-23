@@ -1,0 +1,372 @@
+about: >-
+  The rules that decide whether a Workflow Definition is filled in enough to run,
+  as both languages must report them.
+
+  `definition/invalid/` holds documents the SCHEMA refuses — a shape neither
+  language will parse. These are documents that parse perfectly and are still
+  wrong: a required field left empty, a fork with one branch, a block that calls
+  itself. None is expressible in JSON Schema, each is implemented once per
+  language, and this corpus is the only thing keeping those two implementations
+  saying the same thing.
+
+  `expect` is compared as a set, sorted, so the two languages are held to the
+  same diagnostics rather than to the same iteration order. Every entry names its
+  `code` and what it `blocks`; `stepId`, `blockId`, `triggerId` and `fieldKey`
+  are checked when a scenario states them.
+
+manifests:
+  - kind: component
+    use: component.email.send
+    name: Send email
+    fields:
+      - { k: to, label: To, kind: text, req: true }
+      - { k: subject, label: Subject, kind: text }
+    outputs: []
+  - kind: component
+    use: core.fork
+    name: Branch
+    fields: []
+    outputs: []
+  - kind: component
+    use: core.for_each
+    name: For each
+    fields: []
+    outputs: []
+  - kind: component
+    use: core.return
+    name: Return
+    fields: []
+    outputs: []
+  - kind: trigger
+    use: core.schedule
+    name: Schedule
+    fields: []
+    outputs: []
+
+scenarios:
+  - name: a document with nothing wrong reports nothing
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      triggers: [{ id: nightly, use: core.schedule }]
+      steps:
+        - { id: s1, use: component.email.send, with: { to: "me@dane.dev" } }
+    expect: []
+
+  # ---- a step against its manifest ------------------------------------------
+
+  - name: a required field left empty blocks publish, naming the field's label
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps:
+        - { id: s1, use: component.email.send, with: {} }
+    expect:
+      - { code: FIELD_REQUIRED, blocks: publish, stepId: s1, fieldKey: to }
+
+  - name: a field holding only whitespace is empty
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps:
+        - { id: s1, use: component.email.send, with: { to: "   " } }
+    expect:
+      - { code: FIELD_REQUIRED, blocks: publish, stepId: s1, fieldKey: to }
+
+  - name: a verb no manifest declares blocks editing, because building cannot produce it
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps:
+        - { id: s1, use: component.nothing.here }
+    expect:
+      - { code: COMPONENT_UNKNOWN, blocks: edit, stepId: s1 }
+
+  - name: a trigger's verb is checked the same way
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      triggers: [{ id: nightly, use: component.nothing.here }]
+      steps: []
+    expect:
+      - { code: COMPONENT_UNKNOWN, blocks: edit, triggerId: nightly }
+
+  # ---- the structural verbs -------------------------------------------------
+
+  - name: an empty fork and a one-branch fork are different mistakes
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps:
+        - { id: s1, use: core.fork }
+        - id: s2
+          use: core.fork
+          branches: [{ label: Only, steps: [] }]
+    expect:
+      - { code: FORK_HAS_NO_BRANCHES, blocks: publish, stepId: s1 }
+      - { code: FORK_NEEDS_TWO_BRANCHES, blocks: publish, stepId: s2 }
+
+  - name: an unconditional branch before the end swallows the ones behind it
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps:
+        - id: s1
+          use: core.fork
+          branches:
+            - { label: Always, steps: [] }
+            - { label: Never, when: "{{ triggers.x }}", steps: [] }
+    expect:
+      - { code: BRANCH_UNREACHABLE_AFTER, blocks: publish, stepId: s1 }
+
+  - name: a loop with no body repeats nothing
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps:
+        - { id: s1, use: core.for_each }
+    expect:
+      - { code: LOOP_HAS_NO_BODY, blocks: publish, stepId: s1 }
+
+  # ---- blocks ---------------------------------------------------------------
+
+  - name: >-
+      a call naming no declared block blocks publish only — renaming a block is
+      ordinary building, unlike a Host withdrawing a component
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps:
+        - { id: call, use: block.nowhere }
+    expect:
+      - { code: BLOCK_UNKNOWN, blocks: publish, stepId: call }
+
+  - name: a block that calls itself is refused at design time
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      blocks:
+        - { id: loop, steps: [{ id: again, use: block.loop }] }
+      steps: []
+    expect:
+      - { code: BLOCK_RECURSION, blocks: publish, blockId: loop }
+
+  - name: >-
+      so is a cycle through another block, and only the blocks ON it are named —
+      one that merely reaches a cycle is not itself recursive
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      blocks:
+        - { id: entry, steps: [{ id: a, use: block.middle }] }
+        - { id: middle, steps: [{ id: b, use: block.tail }] }
+        - { id: tail, steps: [{ id: c, use: block.middle }] }
+      steps: []
+    expect:
+      - { code: BLOCK_RECURSION, blocks: publish, blockId: middle }
+      - { code: BLOCK_RECURSION, blocks: publish, blockId: tail }
+
+  - name: a return at the root has no outputs to bind
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps:
+        - { id: ret, use: core.return }
+    expect:
+      - { code: RETURN_OUTSIDE_BLOCK, blocks: publish, stepId: ret }
+
+  - name: a block declaring outputs must reach a return on every path
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      blocks:
+        - id: archive
+          outputs: [{ k: url, label: URL, t: text }]
+          steps: [{ id: s1, use: component.email.send, with: { to: "x" } }]
+      steps: []
+    expect:
+      - { code: BLOCK_PATH_WITHOUT_RETURN, blocks: publish, blockId: archive }
+
+  - name: >-
+      a return only a loop body reaches does not discharge the obligation — the
+      list may be empty and the body may never run
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      blocks:
+        - id: archive
+          outputs: [{ k: url, label: URL, t: text }]
+          steps:
+            - id: each
+              use: core.for_each
+              steps: [{ id: ret, use: core.return, with: { url: "x" } }]
+      steps: []
+    expect:
+      - { code: BLOCK_PATH_WITHOUT_RETURN, blocks: publish, blockId: archive }
+
+  - name: >-
+      neither does a condition fork that can match no branch, and a step after
+      such a fork is NOT unreachable
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      blocks:
+        - id: archive
+          outputs: [{ k: url, label: URL, t: text }]
+          steps:
+            - id: fork
+              use: core.fork
+              branches:
+                - { label: A, when: "{{ params.a }}", steps: [{ id: r1, use: core.return, with: { url: "x" } }] }
+                - { label: B, when: "{{ params.b }}", steps: [{ id: r2, use: core.return, with: { url: "y" } }] }
+      steps: []
+    expect:
+      - { code: BLOCK_PATH_WITHOUT_RETURN, blocks: publish, blockId: archive }
+
+  - name: an exhaustive fork whose every branch returns does discharge it
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      blocks:
+        - id: archive
+          outputs: [{ k: url, label: URL, t: text }]
+          steps:
+            - id: fork
+              use: core.fork
+              branches:
+                - { label: A, when: "{{ params.a }}", steps: [{ id: r1, use: core.return, with: { url: "x" } }] }
+                - { label: B, steps: [{ id: r2, use: core.return, with: { url: "y" } }] }
+      steps: []
+    expect: []
+
+  - name: nothing after a return can run
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      blocks:
+        - id: archive
+          outputs: [{ k: url, label: URL, t: text }]
+          steps:
+            - { id: ret, use: core.return, with: { url: "x" } }
+            - { id: later, use: component.email.send, with: { to: "x" } }
+      steps: []
+    expect:
+      - { code: STEP_AFTER_RETURN, blocks: publish, stepId: later, blockId: archive }
+
+  - name: an unfilled block parameter is reported against the declaration
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      blocks:
+        - id: archive
+          params: [{ k: entry, label: Entry, t: object }]
+          steps: []
+      steps:
+        - { id: call, use: block.archive, with: {} }
+    expect:
+      - { code: FIELD_REQUIRED, blocks: publish, stepId: call, fieldKey: entry }
+
+  - name: an unfilled declared output is reported against the return
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      blocks:
+        - id: archive
+          outputs: [{ k: url, label: Archive URL, t: text }]
+          steps: [{ id: ret, use: core.return, with: {} }]
+      steps: []
+    expect:
+      - { code: FIELD_REQUIRED, blocks: publish, stepId: ret, blockId: archive, fieldKey: url }
+
+  # ---- names that would resolve two ways ------------------------------------
+
+  - name: two steps on one board share a name nothing can disambiguate
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps:
+        - { id: s1, use: component.email.send, with: { to: "x" } }
+        - { id: s1, use: component.email.send, with: { to: "y" } }
+    expect:
+      - { code: STEP_ID_DUPLICATE, blocks: publish, stepId: s1 }
+
+  - name: but one step per board is not a collision, because ids are Board-local
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      blocks:
+        - { id: a, steps: [{ id: ret, use: core.return }] }
+        - { id: b, steps: [{ id: ret, use: core.return }] }
+      steps: []
+    expect: []
+
+  - name: two blocks under one id make a call resolve to the first and orphan the second
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      blocks:
+        - { id: archive, steps: [] }
+        - { id: archive, steps: [] }
+      steps: []
+    expect:
+      - { code: BLOCK_ID_DUPLICATE, blocks: publish, blockId: archive }
+
+  - name: so do two parameters or two outputs under one key
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      blocks:
+        - id: archive
+          params:
+            - { k: entry, label: First, t: text }
+            - { k: entry, label: Second, t: number }
+          steps: []
+      steps: []
+    expect:
+      - { code: DECLARATION_KEY_DUPLICATE, blocks: publish, blockId: archive }
