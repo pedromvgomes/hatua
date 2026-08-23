@@ -1,5 +1,5 @@
 import type { Manifest, WorkflowDefinition } from '@hatua/schema'
-import { walkDocument } from './tree'
+import { own, walkDocument } from './tree'
 
 /**
  * Connection rules. Two of them, and they fail at different moments on purpose.
@@ -79,7 +79,7 @@ export function mismatchedConnections(
     if (!manifest) return
     for (const field of manifest.fields) {
       if (field.kind !== 'conn' || !field.conn_type) continue
-      const connectionId = values?.[field.k]
+      const connectionId = own(values, field.k)
       if (typeof connectionId !== 'string') continue
 
       const connection = byId.get(connectionId)

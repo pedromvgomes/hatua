@@ -1,6 +1,7 @@
 import type { Slot, ValueType } from '@hatua/expressions'
 import type { Manifest, Step } from '@hatua/schema'
 import { isMappable, type MAPPABLE_FIELD_KINDS } from '@hatua/schema'
+import { own } from './tree'
 
 /**
  * The bridge between a Component Manifest and the expression language.
@@ -60,7 +61,7 @@ export function slotsFor(step: Step, manifest: Manifest): Slot[] {
 
   for (const field of manifest.fields ?? []) {
     if (!isMappable(field.kind)) continue
-    const value = values[field.k]
+    const value = own(values, field.k)
 
     if (field.kind === 'map') {
       for (const entry of mapEntries(value)) {

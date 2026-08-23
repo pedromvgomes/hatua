@@ -29,6 +29,20 @@ export interface Board {
   readonly steps: readonly Step[]
 }
 
+/**
+ * Read one key of a document-supplied map.
+ *
+ * `Object.hasOwn` is the whole guarantee, and it is the same one `resolve.ts`
+ * gives for `{{ steps.s2.constructor }}`. A Workflow Definition is user-editable
+ * YAML and the schema's identifier rule permits underscores, so `__proto__` is a
+ * legal field key, a legal declaration key and a legal var key — and a bare
+ * `values[k]` there reads `Object.prototype` rather than nothing, which makes a
+ * missing value look present. Go has no prototype to find, so this is also what
+ * keeps the two languages saying the same thing about the same document.
+ */
+export const own = (values: Record<string, unknown> | undefined, key: string): unknown =>
+  values && Object.hasOwn(values, key) ? values[key] : undefined
+
 /** A Step, and the Board it is on. Neither half identifies one alone. */
 export interface StepRef {
   readonly board: BoardId

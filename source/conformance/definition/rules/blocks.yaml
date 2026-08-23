@@ -316,6 +316,23 @@ scenarios:
     expect:
       - { code: FIELD_REQUIRED, blocks: publish, stepId: ret, blockId: archive, fieldKey: url }
 
+  - name: >-
+      a parameter keyed `__proto__` is still an unfilled parameter — the key is
+      schema-legal, because the identifier rule permits underscores
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      blocks:
+        - id: archive
+          params: [{ k: __proto__, label: Entry, t: object }]
+          steps: []
+      steps:
+        - { id: call, use: block.archive, with: {} }
+    expect:
+      - { code: FIELD_REQUIRED, blocks: publish, stepId: call, fieldKey: __proto__ }
+
   # ---- names that would resolve two ways ------------------------------------
 
   - name: two steps on one board share a name nothing can disambiguate

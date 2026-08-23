@@ -1,5 +1,6 @@
 import type { Slot } from '@hatua/expressions'
 import type { Block, Declaration, Step, WorkflowDefinition } from '@hatua/schema'
+import { own } from './tree'
 
 /**
  * Blocks: what a call takes, what a return publishes, and which Blocks reach
@@ -59,7 +60,7 @@ const declaredSlots = (declarations: readonly Declaration[] | undefined, step: S
   const slots: Slot[] = []
 
   for (const declaration of declarations ?? []) {
-    const template = values[declaration.k]
+    const template = own(values, declaration.k)
     // A parameter nobody filled in is reported as missing by its own rule.
     // Resolving `undefined` as a Template would report a parse error instead,
     // which names the wrong problem in a place the user cannot act on.
