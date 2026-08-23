@@ -1,0 +1,326 @@
+about: >-
+  `core.repeat` and `core.set_var`, as both languages must report them.
+
+  Two verbs Hatua interprets structurally and a manifest cannot describe. A
+  repeat's `until` is a key beside `steps:`, not a field under `with:`, because
+  `FIELD_KIND_TYPES` has no mappable boolean. A `core.set_var`'s `key` names one
+  of its own Board's `vars` and its `value` is typed by that var's declaration,
+  so neither field is a manifest's to declare either.
+
+  The load-bearing pair is here: a repeat DISCHARGES a block's return obligation
+  and a `core.for_each` does not, because a repeat tests its condition after the
+  body and therefore always runs it once, while a list may be empty. Both
+  scenarios sit side by side so a language that collapses the two fails on one of
+  them.
+
+manifests:
+  - kind: component
+    use: component.email.send
+    name: Send email
+    fields:
+      - { k: to, label: To, kind: text, req: true }
+    outputs: []
+  - kind: component
+    use: core.fork
+    name: Branch
+    fields: []
+    outputs: []
+  - kind: component
+    use: core.for_each
+    name: For each
+    fields: []
+    outputs: []
+  - kind: component
+    use: core.repeat
+    name: Repeat
+    fields: []
+    outputs: []
+  - kind: component
+    use: core.set_var
+    name: Set a variable
+    fields: []
+    outputs: []
+  - kind: component
+    use: core.return
+    name: Return
+    fields: []
+    outputs: []
+  - kind: trigger
+    use: core.schedule
+    name: Schedule
+    fields: []
+    outputs: []
+
+scenarios:
+  # ---- core.repeat ----------------------------------------------------------
+
+  - name: a repeat with a condition and a body reports nothing
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps:
+        - id: again
+          use: core.repeat
+          until: "{{ var.done }}"
+          steps:
+            - { id: s1, use: component.email.send, with: { to: "me@dane.dev" } }
+      vars:
+        - { key: done, t: boolean, value: false }
+    expect: []
+
+  - name: a repeat with no condition never ends, and says so
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps:
+        - id: again
+          use: core.repeat
+          steps:
+            - { id: s1, use: component.email.send, with: { to: "me@dane.dev" } }
+    expect:
+      - { code: REPEAT_HAS_NO_CONDITION, blocks: publish, stepId: again }
+
+  - name: a condition of nothing but whitespace is no condition
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps:
+        - id: again
+          use: core.repeat
+          until: "   "
+          steps:
+            - { id: s1, use: component.email.send, with: { to: "me@dane.dev" } }
+    expect:
+      - { code: REPEAT_HAS_NO_CONDITION, blocks: publish, stepId: again }
+
+  - name: an empty repeat is both an empty body and a missing condition
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps:
+        - { id: again, use: core.repeat }
+    expect:
+      - { code: LOOP_HAS_NO_BODY, blocks: publish, stepId: again }
+      - { code: REPEAT_HAS_NO_CONDITION, blocks: publish, stepId: again }
+
+  - name: an empty body is one code whichever loop verb it is
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps:
+        - { id: each, use: core.for_each }
+        - { id: again, use: core.repeat, until: "{{ var.done }}", steps: [] }
+      vars:
+        - { key: done, t: boolean, value: false }
+    expect:
+      - { code: LOOP_HAS_NO_BODY, blocks: publish, stepId: each }
+      - { code: LOOP_HAS_NO_BODY, blocks: publish, stepId: again }
+
+  - name: a repeat's condition is not held to a manifest, so a repeat needs no fields
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps:
+        - id: again
+          use: core.repeat
+          until: "{{ var.done }}"
+          with: {}
+          steps:
+            - { id: s1, use: component.email.send, with: { to: "me@dane.dev" } }
+      vars:
+        - { key: done, t: boolean, value: false }
+    expect: []
+
+  # ---- a repeat and the return obligation -----------------------------------
+
+  - name: a repeat whose body always returns discharges the obligation, because the body always runs
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps: []
+      blocks:
+        - id: ask
+          outputs: [{ k: answer, label: Answer, t: text }]
+          steps:
+            - id: again
+              use: core.repeat
+              until: "{{ var.done }}"
+              steps:
+                - { id: ret, use: core.return, with: { answer: "yes" } }
+          vars:
+            - { key: done, t: boolean, value: false }
+    expect: []
+
+  - name: a for_each whose body always returns does not, because the list may be empty
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps: []
+      blocks:
+        - id: ask
+          outputs: [{ k: answer, label: Answer, t: text }]
+          steps:
+            - id: each
+              use: core.for_each
+              steps:
+                - { id: ret, use: core.return, with: { answer: "yes" } }
+    expect:
+      - { code: BLOCK_PATH_WITHOUT_RETURN, blocks: publish, blockId: ask }
+
+  - name: a repeat whose body only sometimes returns discharges nothing
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps: []
+      blocks:
+        - id: ask
+          outputs: [{ k: answer, label: Answer, t: text }]
+          steps:
+            - id: again
+              use: core.repeat
+              until: "{{ var.done }}"
+              steps:
+                - { id: s1, use: component.email.send, with: { to: "me@dane.dev" } }
+          vars:
+            - { key: done, t: boolean, value: false }
+    expect:
+      - { code: BLOCK_PATH_WITHOUT_RETURN, blocks: publish, blockId: ask }
+
+  - name: nothing after a repeat that always returns can run
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps: []
+      blocks:
+        - id: ask
+          outputs: [{ k: answer, label: Answer, t: text }]
+          steps:
+            - id: again
+              use: core.repeat
+              until: "{{ var.done }}"
+              steps:
+                - { id: ret, use: core.return, with: { answer: "yes" } }
+            - { id: after, use: component.email.send, with: { to: "me@dane.dev" } }
+          vars:
+            - { key: done, t: boolean, value: false }
+    expect:
+      - { code: STEP_AFTER_RETURN, blocks: publish, stepId: after, blockId: ask }
+
+  # ---- core.set_var ---------------------------------------------------------
+
+  - name: a set_var at the root writes the workflow's variable
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      vars:
+        - { key: attempt, t: number, value: 0 }
+      steps:
+        - { id: bump, use: core.set_var, with: { key: attempt, value: "{{ var.attempt }}" } }
+    expect: []
+
+  - name: a set_var naming a variable nothing declares blocks publish
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      vars:
+        - { key: attempt, t: number, value: 0 }
+      steps:
+        - { id: bump, use: core.set_var, with: { key: attemp, value: "1" } }
+    expect:
+      - { code: VAR_UNKNOWN, blocks: publish, stepId: bump, fieldKey: key }
+
+  - name: a set_var inside a block writes that block's variable
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps: []
+      blocks:
+        - id: ask
+          vars:
+            - { key: note, t: text, value: "" }
+          steps:
+            - { id: bump, use: core.set_var, with: { key: note, value: "again" } }
+    expect: []
+
+  - name: a set_var inside a block cannot reach the workflow's variables
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      vars:
+        - { key: attempt, t: number, value: 0 }
+      steps: []
+      blocks:
+        - id: ask
+          vars:
+            - { key: note, t: text, value: "" }
+          steps:
+            - { id: bump, use: core.set_var, with: { key: attempt, value: "1" } }
+    expect:
+      - { code: VAR_UNKNOWN, blocks: publish, stepId: bump, blockId: ask, fieldKey: key }
+
+  - name: a set_var with nothing to write and nowhere to write it reports both
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      vars:
+        - { key: attempt, t: number, value: 0 }
+      steps:
+        - { id: bump, use: core.set_var, with: {} }
+    expect:
+      - { code: FIELD_REQUIRED, blocks: publish, stepId: bump, fieldKey: key }
+      - { code: FIELD_REQUIRED, blocks: publish, stepId: bump, fieldKey: value }
+
+  - name: a set_var whose value is false has a value, because false is an answer
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      vars:
+        - { key: done, t: boolean, value: false }
+      steps:
+        - { id: finish, use: core.set_var, with: { key: done, value: false } }
+    expect: []
+
+  - name: an unnamed variable is not resolved against the board, so only the missing key is reported
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      vars:
+        - { key: attempt, t: number, value: 0 }
+      steps:
+        - { id: bump, use: core.set_var, with: { value: "1" } }
+    expect:
+      - { code: FIELD_REQUIRED, blocks: publish, stepId: bump, fieldKey: key }

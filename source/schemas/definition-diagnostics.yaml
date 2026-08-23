@@ -67,7 +67,37 @@ codes:
   - code: LOOP_HAS_NO_BODY
     blocks: publish
     message: "This loop repeats nothing. Add at least one Step inside it."
-    summary: A `core.for_each` with no children.
+    summary: >-
+      A `core.for_each` or a `core.repeat` with no children. One code rather than
+      two: the mistake is the same and so is the fix, and the message names
+      neither verb.
+
+  - code: REPEAT_HAS_NO_CONDITION
+    blocks: publish
+    message: "This repeat has no condition, so nothing ever ends it. Give it an `until`."
+    summary: >-
+      A `core.repeat` whose `until` is absent or blank. Structural rather than a
+      required field, because the condition is a structural key beside `steps:`
+      and not something a manifest declares — the same position a Branch's
+      `when` holds, and for the same reason: `FIELD_KIND_TYPES` cannot express
+      "a Template that must produce a boolean".
+
+      Publish-blocking rather than edit-blocking, because a repeat a second after
+      it is added is exactly this.
+
+  - code: VAR_UNKNOWN
+    blocks: publish
+    message: 'No variable called "{name}" is declared on this board.'
+    summary: >-
+      A `core.set_var` naming a var its Board does not declare. The BLOCK_UNKNOWN
+      argument one level down: a var key goes stale the moment someone renames or
+      removes it, which is ordinary building, so this blocks Publish and never
+      editing.
+
+      "on this board" is the load-bearing half of the message. A `core.set_var`
+      inside a block writes that block's vars and can never reach the workflow's,
+      so naming a workflow var from inside a block is this diagnostic and not a
+      scoping accident the runner discovers.
 
   # ---- blocks ---------------------------------------------------------------
 
@@ -105,10 +135,14 @@ codes:
       A path returns via a `core.return` at the Board's root level, or a
       root-level fork that is exhaustive — an unconditional last branch — and
       whose every branch returns. A fork whose every branch carries a `when` is
-      not exhaustive: first-match-wins means it can match none of them. A return inside a loop exits
-      the block early and is legal, but never discharges the obligation: the list
-      may be empty and the body may never run — the same reasoning that keeps
-      sibling branches out of scope, applied to time instead of to paths.
+      not exhaustive: first-match-wins means it can match none of them.
+
+      A `core.repeat` DOES discharge it, and a `core.for_each` never does. That is
+      one rule rather than two special cases: a repeat tests its `until` after the
+      body, so the body always runs, while a for_each's list may be empty. The
+      question is only ever "is this region guaranteed to run at all" — the same
+      reasoning that keeps sibling branches out of scope, applied to time instead
+      of to paths.
 
   - code: STEP_AFTER_RETURN
     blocks: publish
