@@ -23,6 +23,8 @@ const (
 	CodeForkNeedsTwoBranches    DefinitionCode = "FORK_NEEDS_TWO_BRANCHES"
 	CodeBranchUnreachableAfter  DefinitionCode = "BRANCH_UNREACHABLE_AFTER"
 	CodeLoopHasNoBody           DefinitionCode = "LOOP_HAS_NO_BODY"
+	CodeRepeatHasNoCondition    DefinitionCode = "REPEAT_HAS_NO_CONDITION"
+	CodeVarUnknown              DefinitionCode = "VAR_UNKNOWN"
 	CodeBlockUnknown            DefinitionCode = "BLOCK_UNKNOWN"
 	CodeBlockRecursion          DefinitionCode = "BLOCK_RECURSION"
 	CodeReturnOutsideBlock      DefinitionCode = "RETURN_OUTSIDE_BLOCK"
@@ -51,6 +53,8 @@ var DefinitionDiagnostics = map[DefinitionCode]DefinitionDiagnosticSpec{
 	CodeForkNeedsTwoBranches:    {Code: CodeForkNeedsTwoBranches, Blocks: BlocksPublish, Message: "A fork needs at least two branches — add the other path."},
 	CodeBranchUnreachableAfter:  {Code: CodeBranchUnreachableAfter, Blocks: BlocksPublish, Message: "\"{label}\" has no condition, so nothing after it can ever run. Only the last branch may be unconditional."},
 	CodeLoopHasNoBody:           {Code: CodeLoopHasNoBody, Blocks: BlocksPublish, Message: "This loop repeats nothing. Add at least one Step inside it."},
+	CodeRepeatHasNoCondition:    {Code: CodeRepeatHasNoCondition, Blocks: BlocksPublish, Message: "This repeat has no condition, so nothing ever ends it. Give it an `until`."},
+	CodeVarUnknown:              {Code: CodeVarUnknown, Blocks: BlocksPublish, Message: "No variable called \"{name}\" is declared on this board."},
 	CodeBlockUnknown:            {Code: CodeBlockUnknown, Blocks: BlocksPublish, Message: "No block called \"{name}\" is declared in this workflow."},
 	CodeBlockRecursion:          {Code: CodeBlockRecursion, Blocks: BlocksPublish, Message: "\"{name}\" calls itself, directly or through another block."},
 	CodeReturnOutsideBlock:      {Code: CodeReturnOutsideBlock, Blocks: BlocksPublish, Message: "`core.return` publishes a block's outputs, and this is not inside a block."},
