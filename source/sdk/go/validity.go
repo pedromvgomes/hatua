@@ -223,6 +223,24 @@ func MissingRequiredFields(doc Definition, byUse map[string]Manifest) []Diagnost
 			return
 		}
 
+		if step.Use == SetVarVerb {
+			// Structural, for the reason a return's fields are: what a
+			// core.set_var takes is a var key and a value typed by the var that
+			// key names, and no manifest knows which Board a step is on. Its
+			// manifest declares no fields at all, so without this a set_var with
+			// nothing in it reports nothing.
+			for _, field := range setVarFields {
+				if !unfilled(values[field.key]) {
+					continue
+				}
+				subject.FieldKey = field.key
+				out = append(out, raise(CodeFieldRequired, subject, map[string]string{
+					"label": field.label,
+				}))
+			}
+			return
+		}
+
 		fromManifest(subject, step.Use, values)
 	})
 
@@ -231,6 +249,14 @@ func MissingRequiredFields(doc Definition, byUse map[string]Manifest) []Diagnost
 	}
 
 	return out
+}
+
+// setVarFields is what a core.set_var takes. Labels rather than keys in the
+// message, matching every other required-field diagnostic — the sentence is read
+// by someone looking at a form, not at YAML.
+var setVarFields = []struct{ key, label string }{
+	{"key", "Variable"},
+	{"value", "Value"},
 }
 
 // UnknownComponents reports a step or a trigger whose verb nothing declares.
@@ -319,8 +345,28 @@ func MalformedContainers(doc Definition) []Diagnostic {
 			}
 		}
 
-		if step.Use == ForEachVerb && len(step.Steps) == 0 {
+		// One code for both loop verbs: the mistake is the same and so is the
+		// fix, and the message names neither.
+		if (step.Use == ForEachVerb || step.Use == RepeatVerb) && len(step.Steps) == 0 {
 			out = append(out, raise(CodeLoopHasNoBody, subject, nil))
+		}
+
+		// Read from the tree rather than from With, because that is where it
+		// lives: FieldKindTypes has no mappable boolean, so a condition under
+		// With would type-check as text — see RepeatSlot.
+		if step.Use == RepeatVerb && strings.TrimSpace(step.Until) == "" {
+			out = append(out, raise(CodeRepeatHasNoCondition, subject, nil))
+		}
+
+		if step.Use == SetVarVerb {
+			key, named := step.With["key"].(string)
+			// A missing key is CodeFieldRequired's to report. Resolving an
+			// absent one against the Board would say no variable is called ""
+			// which names a variable the user never wrote.
+			if named && key != "" && VariableOf(doc, ref.Board, key) == nil {
+				subject.FieldKey = "key"
+				out = append(out, raise(CodeVarUnknown, subject, map[string]string{"name": key}))
+			}
 		}
 	})
 
@@ -332,13 +378,24 @@ func MalformedContainers(doc Definition) []Diagnostic {
 //
 // A fork discharges the obligation only when EVERY branch does and the fork is
 // exhaustive — a falsy `when` on the last branch, matching how
-// MalformedContainers reads one. A core.for_each never discharges it: the list
-// may be empty and the body may never run, which is the sibling-branch argument
-// applied to time rather than to paths.
+// MalformedContainers reads one.
+//
+// The two loop verbs answer differently, and the difference is the whole rule. A
+// core.for_each never discharges it: the list may be empty and the body may
+// never run. A core.repeat does, because it tests its Until AFTER the body and
+// therefore always runs it once. One question — is this region guaranteed to run
+// at all — which is the sibling-branch argument applied to time rather than to
+// paths.
 func alwaysReturns(steps []Step) bool {
 	for _, step := range steps {
 		if step.Use == ReturnVerb {
 			return true
+		}
+		if step.Use == RepeatVerb {
+			if alwaysReturns(step.Steps) {
+				return true
+			}
+			continue
 		}
 		if step.Use != ForkVerb || len(step.Branches) == 0 {
 			continue

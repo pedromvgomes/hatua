@@ -350,8 +350,8 @@ export const TypeMarkingInsideMixedText: Story = {
 }
 
 /**
- * A workflow variable: no type marking at all, because `varType` reads a
- * variable's type *from* its value and there is nothing to check it against.
+ * A Template nothing declares a type for: no marking at all, because there is
+ * nothing to check against and a rail that is always neutral is at least honest.
  */
 export const NoDeclaredType: Story = {
   args: { value: '{{ run. }}', route: 'shortcut-inside', caret: 7 },

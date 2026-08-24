@@ -44,8 +44,10 @@ triggers:
 vars:
   # Where the digest goes.
   - key: digest_to
+    t: text
     value: "ops@example.com"
   - key: threshold
+    t: number
     value: 10
 
 steps:
@@ -834,16 +836,46 @@ describe('variables', () => {
     expect(source.writes[0]).toContain('{{ var.digest_to }}')
   })
 
-  it('stores a value as what the text denotes, so the type follows the value', async () => {
-    // `varType` reads a variable's type off its value, so this box is also a
-    // type control — and typing `25` here has to mean the same as typing it in
-    // Text Mode (ADR-0001).
+  it('stores a value as what the text denotes, so Text Mode and this box agree', async () => {
+    // The type comes from `t`, but the value box still writes the scalar the
+    // text denotes: typing `25` here has to mean what typing it in Text Mode
+    // means (ADR-0001).
     const source = host()
     mount(source)
 
     type(await screen.findByLabelText('Value of threshold'), '25')
     await waitFor(() => expect(source.writes).toHaveLength(1), AUTOSAVED)
     expect(source.writes[0]).toContain('value: 25')
+  })
+
+  /*
+   * The type control, which is the one edit on the row that re-types every
+   * Expression reading the variable. The value box does not: `core.set_var`
+   * writes the same variable from a Step, so the literal in the document is
+   * only what it starts as (ADR-0013).
+   */
+  it('shows each variable’s declared type, and writes a change to it', async () => {
+    const source = host()
+    mount(source)
+
+    const control = (await screen.findByLabelText('Type of threshold')) as HTMLSelectElement
+    expect(control.value).toBe('number')
+
+    fireEvent.change(control, { target: { value: 'text' } })
+    await waitFor(() => expect(source.writes).toHaveLength(1), AUTOSAVED)
+    expect(source.writes[0]).toContain('t: text')
+    // The value beside it is untouched, because the two say different things.
+    expect(source.writes[0]).toContain('value: 10')
+  })
+
+  it('gives a new variable a type, because the schema requires one', async () => {
+    const source = host()
+    mount(source)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Add variable' }))
+    await waitFor(() => expect(source.writes).toHaveLength(1), AUTOSAVED)
+    expect(source.writes[0]).toContain('key: new_variable')
+    expect(source.writes[0]).toContain('t: text')
   })
 
   it('stores a Template as a Template, holes and all', async () => {

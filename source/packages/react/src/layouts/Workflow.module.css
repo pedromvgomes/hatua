@@ -195,6 +195,16 @@
     min-inline-size: 0;
   }
 
+  /*
+   * Its own row between the key and the value, rather than a third column in
+   * the head: the head is already a name box that must stay wide enough to read
+   * a key in, and squeezing a type box in beside the bin button makes both
+   * unreadable at the panel's width.
+   */
+  .varType {
+    inline-size: 100%;
+  }
+
   .add {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;

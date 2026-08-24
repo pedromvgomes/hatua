@@ -132,8 +132,9 @@ booleans.
 
 ### 3. Workflow variables
 
-Rows of two mono `Input size="sm"` — key 118px, value flexible — plus a ghost trash button, then
-`Button size="sm" variant="secondary" icon="plus"` **Add variable**.
+Rows of a mono `Input size="sm"` for the key plus a ghost trash button, a full-width `Select` for
+the declared type, and the value below, then `Button size="sm" variant="secondary" icon="plus"`
+**Add variable**.
 
 **A variable's value is a Template**, not a literal. It may hold `{{ … }}`, so the value input is a
 [Template input](#the-template-input) like any other, and it gets the same completion.
@@ -144,14 +145,29 @@ subset already exists inside `scopeFor`, which computes it before appending upst
 it as `boardScope(doc, board, manifests, runContext)` and let `scopeFor` be that plus the Steps, so the two readers
 share one definition.
 
-**A variable field is the one input with no type marking**, because `varType` in `model/scope.ts`
-infers a variable's type *from* its value. There is nothing to check it against.
+**A variable declares its type**, read from `t` rather than from the value beside it, because
+`core.set_var` writes the same variable from a Step — so the literal in the document is only what it
+*starts* as, and a type inferred from it would be a claim about one moment in an execution
+(ADR-0013).
 
-Editing a variable therefore changes what downstream Expressions type-check against. That is
-correct, and it needs a test: change a variable from text to a number and a field reading it changes
-verdict. It runs through `@hatua/expressions` with `scopeFor` output — not through the validation
-store, which checks required fields, unknown components and malformed containers, and does no
-expression type-checking at all.
+What that buys on this tab is the **completion list**, not a marking on the field: passing
+`expectedType` is what lets the picker rail the candidate rows that fit, where a variable's value
+input could rail none. Nothing is ever marked wrong — neutral covers "does not fit" and "cannot be
+judged" alike — so the field itself looks the same either way. The declared type also shows beside
+every `var.*` row in the reference tree, where an expression-valued variable previously read
+`unknown`.
+
+**The type control is the one edit on the row that re-types downstream Expressions**, and the value
+box is not. That needs a test on both halves: retyping `threshold` from number to text changes the
+verdict of a number field reading it, and editing its value does not. It runs through
+`@hatua/expressions` with `scopeFor` output — not through the validation store, which checks
+required fields, unknown components and malformed containers, and does no expression type-checking
+at all.
+
+A row's controls therefore map one to one onto commands: `renameVariable`, `setVariableType`,
+`setVariableValue`, `removeVariable`. `addVariable` writes `t: text` rather than leaving it out, for
+the reason it mints a key rather than leaving one blank — the schema requires it, so a row without
+one is a document that stops projecting the moment it appears.
 
 #### Renaming a key
 
@@ -221,13 +237,20 @@ names is an *undiscriminated container arm*, which this does not have.
 
 The substantial half of the builder, and the part the original handoff specified least.
 
-Three places hold a Template, and all three use the same widget:
+Four places hold a Template, and all four use the same widget:
 
 | Site | Where it is edited |
 | --- | --- |
 | A Step's mappable `with:` fields, including `map` entries | Step editor |
 | A Branch's `when` | Step editor, via its Fork |
-| A workflow variable's value | Workflow tab |
+| A `core.repeat`'s `until` | Step editor, via its Repeat |
+| A variable's value | Workflow tab |
+
+The two conditions are one row twice over. Both are a structural key on a container rather than a
+field under `with:`, so neither is reached through the **Component Manifest** and both are typed
+`boolean` by the language — which is why they are edited through the container that owns them rather
+than as a field of their own. Whatever surface holds one holds the other; a builder that could
+author a repeat's condition and not a fork's would be a worse gap than having neither.
 
 ### The Template input
 

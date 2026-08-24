@@ -84,11 +84,23 @@ type Trigger struct {
 	With map[string]any `yaml:"with,omitempty"`
 }
 
-// Variable is workflow-scoped mutable state. A list rather than a map so a type
-// or label can be added later without breaking every existing file.
+// Variable is Board-scoped mutable state: the workflow's at the root, a block's
+// inside one.
+//
+// T is declared rather than read off Value, which is the decision core.set_var
+// forced. Value is only the FIRST value — a core.set_var writes the same
+// variable from a step — so a type inferred from the literal in the document
+// would be a claim about one moment in an execution rather than about the
+// variable, and every downstream check was answered against it (ADR-0013).
+//
+// NOT a Declaration: a declaration is a contract with nothing in it, and a
+// variable's key is its own label. T and Of are spelled identically so one
+// function reads both.
 type Variable struct {
-	Key   string `yaml:"key"`
-	Value any    `yaml:"value"`
+	Key   string        `yaml:"key"`
+	T     string        `yaml:"t"`
+	Of    []Declaration `yaml:"of,omitempty"`
+	Value any           `yaml:"value"`
 }
 
 // Step is one node of the tree. Steps nest through Branches (forks) and Steps
@@ -101,6 +113,12 @@ type Step struct {
 	With     map[string]any `yaml:"with,omitempty"`
 	Branches []Branch       `yaml:"branches,omitempty"`
 	Steps    []Step         `yaml:"steps,omitempty"`
+	// Until is a core.repeat's termination condition, tested AFTER the body —
+	// so a repeat always runs its children at least once. A structural key
+	// beside Steps rather than a field under With, for the reason a branch's
+	// When is one: FieldKindTypes has no mappable boolean, so under With the
+	// condition would type-check as text.
+	Until string `yaml:"until,omitempty"`
 }
 
 // Branch is one labelled path of a fork. Order matters in a condition fork:
@@ -174,15 +192,49 @@ func WalkDocument(d Definition, visit func(StepRef, Step)) {
 // BlockPrefix is the verb root that says a step calls a block in this document.
 const BlockPrefix = "block."
 
-// ReturnVerb publishes a block's declared outputs and ends it. ForkVerb and
-// ForEachVerb are the other two Hatua reads structurally: their shape is a
-// position in the document rather than a field under `with:`, so no manifest
-// can describe them.
+// The verbs Hatua reads structurally, because their shape is a position in the
+// document rather than a field under `with:` — so no manifest can describe them.
+//
+// ReturnVerb publishes a block's declared outputs and ends it. ForkVerb
+// branches. ForEachVerb and RepeatVerb both nest, and differ in exactly one
+// way that matters here: a repeat's body always runs and a for-each's may not.
+// SetVarVerb writes one of its Board's variables, and is typed by that
+// variable's declaration.
 const (
 	ReturnVerb  = "core.return"
 	ForkVerb    = "core.fork"
 	ForEachVerb = "core.for_each"
+	RepeatVerb  = "core.repeat"
+	SetVarVerb  = "core.set_var"
 )
+
+// VarsOn reports the variables one Board declares: the workflow's at the root, a
+// block's inside one.
+//
+// This is the whole of "a core.set_var can never reach out of the Board it is
+// on" — there is no second list to fall back to, so a block naming a workflow
+// variable is an unknown name rather than a scope the runner resolves
+// differently.
+func VarsOn(doc Definition, board BoardID) []Variable {
+	if board == RootBoard {
+		return doc.Vars
+	}
+	if block := BlockOf(doc, board); block != nil {
+		return block.Vars
+	}
+	return nil
+}
+
+// VariableOf returns one Board's variable by key, or nil.
+func VariableOf(doc Definition, board BoardID, key string) *Variable {
+	vars := VarsOn(doc, board)
+	for i := range vars {
+		if vars[i].Key == key {
+			return &vars[i]
+		}
+	}
+	return nil
+}
 
 // CallsOf reports which blocks a step list reaches directly, in document order.
 //

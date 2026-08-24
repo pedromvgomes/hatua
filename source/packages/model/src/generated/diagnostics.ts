@@ -14,6 +14,8 @@ export type DefinitionCode =
   | 'FORK_NEEDS_TWO_BRANCHES'
   | 'BRANCH_UNREACHABLE_AFTER'
   | 'LOOP_HAS_NO_BODY'
+  | 'REPEAT_HAS_NO_CONDITION'
+  | 'VAR_UNKNOWN'
   | 'BLOCK_UNKNOWN'
   | 'BLOCK_RECURSION'
   | 'RETURN_OUTSIDE_BLOCK'
@@ -62,6 +64,16 @@ export const DEFINITION_DIAGNOSTICS: Record<DefinitionCode, DefinitionDiagnostic
     code: 'LOOP_HAS_NO_BODY',
     blocks: 'publish',
     message: 'This loop repeats nothing. Add at least one Step inside it.',
+  },
+  REPEAT_HAS_NO_CONDITION: {
+    code: 'REPEAT_HAS_NO_CONDITION',
+    blocks: 'publish',
+    message: 'This repeat has no condition, so nothing ever ends it. Give it an `until`.',
+  },
+  VAR_UNKNOWN: {
+    code: 'VAR_UNKNOWN',
+    blocks: 'publish',
+    message: 'No variable called "{name}" is declared on this board.',
   },
   BLOCK_UNKNOWN: {
     code: 'BLOCK_UNKNOWN',

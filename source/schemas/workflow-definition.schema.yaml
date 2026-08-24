@@ -69,6 +69,9 @@ properties:
       Mutable workflow-scoped state, readable as `{{var.<key>}}` and written by `core.set_var`.
       Distinct from trigger payloads, which arrive from outside. A value may be a literal or an
       expression, so a var can normalise differently-shaped trigger payloads into one shape.
+
+      Its type is declared, never read off that value — a `core.set_var` writing it later means
+      the value in the file is an initial value rather than a contract. See ADR-0013.
     items: { $ref: "#/$defs/variable" }
 
   blocks:
@@ -228,15 +231,39 @@ $defs:
   variable:
     type: object
     additionalProperties: false
-    required: [key, value]
+    required: [key, t, value]
     description: >-
-      A list of key/value objects rather than a map, so a `type` or `label` can be added later
-      without a breaking change to every existing file.
+      A list of key/value objects rather than a map, which is what let `t` be added here without
+      inventing a second spelling for a variable.
+
+      NOT a `declaration`. A declaration is a contract with nothing in it; a variable carries a
+      value, and its key is its own label — the builder shows `var.digest_to`, not a friendly
+      name. `t` and `of` are spelled identically to a declaration's so one function reads both,
+      but three shared fields out of five is not one idea.
     properties:
       key:
         $ref: "#/$defs/identifier"
+      t:
+        enum: [text, number, boolean, datetime, object, list]
+        description: >-
+          The type every `{{var.<key>}}` is checked against, and the type `core.set_var` must
+          write. Declared rather than inferred from `value`, because `value` is only the FIRST
+          value: a `core.set_var` writing a number into a var that started as `""` would make an
+          inferred `text` a lie, and every downstream type check was answered against it. Required
+          rather than defaulted, for the reason ADR-0014 rewrote every document at once — a
+          fallback spelling is a second definition of the thing on the day it was declared.
+
+          `item` is absent, for the reason it is absent from a declaration: it is the for-each
+          escape hatch, resolved by following a loop's `list` back to its source output, and a
+          variable is not the output of anything.
+      of:
+        type: array
+        description: Shape of each list element or object member, spelled as a declaration's `of` is.
+        items: { $ref: "#/$defs/declaration" }
       value:
-        description: A literal, or an expression evaluated by the SDK's shared evaluator.
+        description: >-
+          The initial value: a literal, or an expression evaluated by the SDK's shared evaluator.
+          Checked against `t` like any other Slot when it is a Template.
 
   step:
     type: object
@@ -261,10 +288,15 @@ $defs:
           sits at the root itself, so a Host may declare `component.block.render` and collide with
           nothing — see ADR-0014.
 
-          Hatua treats most verbs as opaque, but interprets three structurally: `core.fork` creates
-          branches, `core.for_each` nests and exposes `item`, and `core.map` derives its outputs
-          from its own `entries` field rather than from its manifest. The first two drive reference
-          scope and derived layout; the third drives reference scope alone.
+          Hatua treats most verbs as opaque, but interprets five structurally: `core.fork` creates
+          branches, `core.for_each` nests and exposes `item`, `core.repeat` nests and carries an
+          `until:` condition, `core.map` derives its outputs from its own `entries` field rather
+          than from its manifest, and `core.set_var` writes one of the Board's `vars` and is typed
+          by that var's declaration rather than by a manifest field.
+
+          The three nesting verbs drive reference scope and derived layout; `core.map` drives
+          reference scope alone; `core.set_var` drives neither and is here because its `value` is
+          a Slot no manifest can type.
 
           `core.map` is the one component whose outputs a manifest cannot declare, because they are
           whatever the user named. Its `with.entries` is a list of `{key, value, type}`, and a
@@ -281,8 +313,29 @@ $defs:
         items: { $ref: "#/$defs/branch" }
       steps:
         type: array
-        description: Loop children, nested directly with no branch wrapper. Only on `core.for_each`.
+        description: >-
+          Loop children, nested directly with no branch wrapper. On `core.for_each` and
+          `core.repeat`.
         items: { $ref: "#/$defs/step" }
+      until:
+        type: string
+        description: >-
+          A `core.repeat`'s termination condition, and only meaningful there. The body runs, then
+          this is evaluated; false runs it again. So a repeat ALWAYS runs its children at least
+          once — which is what lets one discharge a block's return obligation where a
+          `core.for_each` cannot, and what makes a pre-tested loop expressible as a body that
+          starts with a fork while the reverse costs a duplicated body.
+
+          A structural key beside `steps:` rather than a field under `with:`, for the reason a
+          Branch's `when` is one: a manifest field carries a rendering `kind` and no type, so the
+          expected type is recovered from `FIELD_KIND_TYPES` — and that vocabulary cannot express
+          "a Template that must produce a boolean" at all. Under `with:` the condition would
+          type-check as text, which is the whole half of the contract it exists to carry.
+
+          Nothing bounds the iterations, and that is deliberate rather than missing: whether an
+          `until` ever goes false depends on run-time values, so unlike recursion it is not a
+          property the document has. Hatua does not execute, so a bound written here would be a
+          number no reader could enforce. Bounding is the Host runner's obligation — see ADR-0013.
 
   branch:
     type: object

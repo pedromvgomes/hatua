@@ -83,7 +83,7 @@ that gives it a reader**, and amends this ADR when it does.
 - **`core.repeat`** — repeats its children until a condition holds. The gap `core.for_each` leaves:
   it iterates a collection, and nothing repeated on a condition. This is what "send it back for
   another revision" is, and what "ask whether to process another batch" is — the target of both is
-  the head of an enclosing container, which is why neither needs a jump.
+  the head of an enclosing container, which is why neither needs a jump. Its shape is below.
 - **`core.return`** — publishes a **Block**'s declared outputs and ends that Block. It is the mirror
   of `core.map`: the one component whose *inputs* no manifest can declare, because they are the
   enclosing Block's `outputs:`.
@@ -195,9 +195,63 @@ the ordinary missing-field diagnostic.
 condition fork is first-match-wins, so one whose every branch is conditional can match none of them
 and fall straight through. A return inside a `core.for_each` body exits the Block early and is perfectly
 legal, but it never discharges the obligation, because the list may be empty and the body may never
-run. That is the same reasoning that keeps sibling branches out of scope, applied to time instead of
-to paths. Steps sitting after a return on the same path can never run, and are reported the way an
+run. A `core.repeat`'s body does discharge it, for the mirror-image reason, and the section below
+settles why. That is the same reasoning that keeps sibling branches out of scope, applied to time
+instead of to paths. Steps sitting after a return on the same path can never run, and are reported the way an
 unconditional Branch that swallows the ones behind it already is.
+
+## `core.repeat` tests after the body, and that decides four things
+
+```yaml
+- id: revise
+  use: core.repeat
+  until: "{{ var.approved }}"
+  steps:
+    - { id: draft, use: component.agent.act }
+    - { id: record, use: core.set_var, with: { key: approved, value: "{{ steps.draft.ok }}" } }
+```
+
+**The body runs, then `until` is evaluated; false runs it again.** A pre-tested loop was the
+alternative and is refused, because the two are not symmetric. A pre-tested loop is expressible as a
+post-tested one whose body opens with a `core.fork` — a `core.return`, a future `core.stop`, or
+simply nothing on the other branch. A post-tested loop is expressible as a pre-tested one only by
+**duplicating the body** above the loop, which is the deduplication cost `blocks:` exists to pay
+back, reintroduced by a control-flow choice. The motivating cases decide the same way: "send it back
+for another revision" and "ask whether to process another batch" both have nothing to test until the
+body has run once, so a pre-tested loop would make every use of one begin with a `core.set_var`
+seeding a condition the user did not want to think about.
+
+**So a `core.repeat` discharges a Block's return obligation, and a `core.for_each` does not.** The
+question `alwaysReturns` asks is only ever *is this region guaranteed to run at all* — a list may be
+empty, a repeat's first pass cannot be skipped. That is the same reasoning that keeps sibling
+branches out of scope, applied to time rather than to paths, and it now has one answer covering both
+loop verbs rather than a special case for each.
+
+**`until:` is a structural key beside `steps:`, not a field under `with:`.** This is the wall
+`blocks:` already hit from the other side: a Component Manifest field carries a rendering `kind` and
+no type, so `slotsFor` recovers the expected type from `FIELD_KIND_TYPES`, and that vocabulary cannot
+express "a Template that must produce a boolean" at all — `bool` holds a literal rather than a
+Template. Under `with:` a condition would type-check as *text*, so `{{ steps.s2.count }}` would pass
+as a termination condition and the half of the contract the field exists to carry would be gone. A
+Branch's `when` sits in the same position for the same reason, and `repeatSlot` is `whenSlot` with a
+different name.
+
+**A repeat binds nothing.** `core.for_each` exposes `item`, and it can: `item` is resolved by
+following the loop's `list` back to its source output, so its type is derivable from the document. A
+repeat has no list. An iteration index or count would therefore be a binding nothing declares and
+nothing types — and it would have to live somewhere, which under ADR-0014's closed roots means a
+seventh root or a second bare token beside `TRIGGER`. Both are a permanent cost for a counter
+`core.set_var` already writes, which is the trade the section below makes once and should not make
+twice.
+
+**Nothing bounds the iterations, and that is a decision rather than an omission.** Recursion is
+refused above because it is a property of the *document* — a cycle in the call graph, decidable by
+reading the file. Whether an `until` ever goes false is not: it depends on values that exist only
+during a run. A `max:` written into the document would be a number Hatua could neither check nor
+enforce, and a runner ignoring it would still be conformant, which is a promise the file does not
+keep. **Bounding is the Host runner's obligation**: a runner imposes its own iteration ceiling and
+fails the execution when it is reached, the way it already owns timeouts and retries. Hatua does not
+execute, so that is the one place the contract can honestly sit.
 
 ## Loop state is a Board variable
 
@@ -206,6 +260,23 @@ draft step that runs before it. Nothing positional can do that: the writer runs 
 it is not in scope. **`core.set_var` is the mechanism**, because a `var` is scoped to its **Board**
 and readable anywhere on it regardless of where it was written.
 
+```yaml
+- id: record
+  use: core.set_var
+  with: { key: approved, value: "{{ steps.draft.ok }}" }
+```
+
+**`key` names a variable on the Step's own Board**, and there is no second list to fall back to —
+which is what makes "a Block's `core.set_var` can never reach the workflow's variables" true by
+construction rather than by a rule. A key naming nothing the Board declares is a diagnostic, and it
+blocks Publish rather than editing for the reason a stale `block.<id>` does: renaming a variable is
+ordinary building.
+
+**`value` is a Slot no manifest can type**, which makes `core.set_var` the third such verb beside a
+call and a `core.return`. Its expected type is the named variable's, read where the variable is
+declared — so a write that does not fit is the ordinary type diagnostic every other Slot already
+produces, rather than a rule of its own.
+
 A **Block** therefore declares `vars:` of its own, and `core.set_var` inside one writes those and can
 never reach out of the Board it is on. That is not a second concept: it is the same rule stated once,
 where "the Board" is the root for a Step in `steps:` and the Block for a Step inside one.
@@ -213,6 +284,47 @@ where "the Board" is the root for a Step in `steps:` and the Block for a Step in
 The alternative was iteration state declared on `core.repeat` itself, initialised and advanced by the
 container, typed, and reset structurally on re-entry. It was rejected for costing a second concept
 where one already works.
+
+## A variable's type is declared, because `core.set_var` made inference a lie
+
+`varType` read a variable's type off the literal beside it in the document, and the Workflow tab was
+built on that: *"a variable field is the one input with no type marking"*. **That stops being true
+the moment a Step can write the variable.** `value: ""` infers `text`; a `core.set_var` writing
+`{{ 1 + 1 }}` into it makes the builder say `text` while the runner produces a number, and every
+downstream answer — the type marking, the completion list's ranking, the Publish gate — was given
+against a claim about one moment in an execution rather than about the variable.
+
+So **`vars` gains a required `t`, and an optional `of` for shape**, spelled exactly as a declaration
+and a Run Context key are. The schema anticipated this in its own words — *"a list of key/value
+objects rather than a map, so a `type` or `label` can be added later without a breaking change"* —
+and ADR-0012's argument against inventing a second spelling for an idea the contract already has one
+of holds here unchanged. A variable is still **not** a declaration: it carries a value, which no
+declaration does, and its key is its own label, so three shared fields out of five is not one idea.
+
+`value` stops being the contract and becomes what it always was: the **initial** value. That is a
+gain rather than a loss, because until `t` existed there was nothing to check an initial value
+*against*, and a var seeded with `{{ … }}` was unchecked in both languages.
+
+Two alternatives were refused:
+
+- **Constrain `core.set_var` to the inferred type and report violations.** Keeps two mechanisms for
+  one idea, and makes the contract depend on how the first value happened to be written — a var
+  holding an object is unexpressible without an object literal, and an expression-valued var infers
+  `unknown`, so every write into it goes unchecked.
+- **Weaken the inference to `unknown` for any var a `core.set_var` targets.** Makes the type marking
+  depend on a Step elsewhere in the document: adding a writer silently degrades every reader, so the
+  builder gets quieter exactly as the workflow gets more complicated.
+
+The cost is paid in full and is the one ADR-0014 already priced: **every existing document, fixture
+and manifest is rewritten**, and `t` is required rather than defaulted, because a fallback spelling
+is a second definition of the thing on the day it was declared. It also settles a divergence the
+inference had no answer for — `yaml.v3` decodes `value: 2024-01-01T00:00:00Z` into a `time.Time`
+while the builder's parser leaves it a string, so the two languages typed one scalar differently and
+the Go SDK carried a comment saying so. A declared type is decoder-independent.
+
+The consequence for the builder is that the **type control**, not the value box, is what re-types
+every Expression reading the variable. `CONTEXT.md`'s Slot entry and `docs/handoff.md`'s Workflow tab
+are corrected to say so.
 
 The cost is real and is documented rather than designed away: **a var written inside a loop survives
 into the next iteration of an enclosing loop**, so a workflow that must start each pass clean resets
