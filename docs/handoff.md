@@ -30,7 +30,7 @@ file a user hand-edits must not gain keys about what a session had laid out wher
 │ 304px         │ fills                        │ 372px                 │
 │               │                              │  ← expands into the   │
 │ Components    │  the Step tree, laid out     │    Data panel         │
-│ Workflow      │  the start node on top       │                       │
+│ Workflow      │  the root node on top        │                       │
 │ (Flow)        │                              │                       │
 └───────────────┴──────────────────────────────┴───────────────────────┘
 ```
@@ -103,6 +103,13 @@ the second region of a `core.try` costs no shape the first did not already have,
 a protected body are told apart by the word over them rather than by their geometry. `<StepList>`
 gives the same answer with the chip over each region; the two surfaces draw differently but they do
 not disagree about which regions there are or what they are called.
+
+**Both draw every region the document carries, and neither reads the verb to decide.** A `handler:`
+on a `core.fork` is meaningless and has no runner, but it is not invisible: `walkSteps` yields the
+Steps inside it, so every generic rule reports against them by name — a `COMPONENT_UNKNOWN` naming a
+Step no surface draws is a problem a user cannot go and fix, because they cannot reach the Step it
+names. Refusing to draw a region does not make it not exist; it makes it undeletable. What the verb
+decides is the *word* over the region, not whether there is one.
 
 ### The root node
 
@@ -193,7 +200,7 @@ per trigger, plus a `TRIGGER` builtin when more than one exists so an Expression
 one fired. A single `core.start` Step cannot express two Triggers, and ADR-0006 makes the schema the
 source of truth, so `core.start` is retired.
 
-The canvas still draws a **start node** above the first Step, derived from `doc.triggers[]`. Drawing
+The canvas still draws a **root node** above the first Step, derived from `doc.triggers[]`. Drawing
 it as chrome rather than as a `steps[]` entry is what makes the original handoff's `once: true` and
 `fixed: true` flags unnecessary: `removeStep` cannot find it, `walkSteps` does not yield it, and
 `unknownComponents` does not flag it. The guarantees come from the model instead of from two
@@ -631,7 +638,7 @@ Recorded here so the two documents cannot disagree quietly. ADR-0011 already lis
 | `inputs[]` on the document | Retired. A Trigger's declared outputs are the parameter contract |
 | `dirty` enables **Save changes** | Editing autosaves (ADR-0005). No Save button, no flag |
 | "Are manifests served by the Host?" — open | Answered: yes, through `ManifestSource` |
-| Trigger is a Step: `core.start`, `once`, `fixed` | `doc.triggers[]` is top-level. The canvas draws a derived start node; `once`/`fixed` become unnecessary |
+| Trigger is a Step: `core.start`, `once`, `fixed` | `doc.triggers[]` is top-level. The canvas draws a derived root node; `once`/`fixed` become unnecessary |
 | The **Data tab** — reference tree over a variables editor | Split. The tree moves beside the step editor; variables move to the Workflow tab. One panel held two scopes, and listed every variable twice |
 | The tab strip is **Flow / Library / Data** | **Components / Workflow**. Flow is optional; Data is not a tab |
 | "Library" | "Components" — the glossary term, and the region's name |
