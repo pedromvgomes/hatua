@@ -1,0 +1,33 @@
+@layer hatua {
+  .root {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    justify-content: center;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    /* Dashed, like a region's frame and unlike a card: this is chrome the
+       document has no entry for, and it must not read as a Step. */
+    border: 1px dashed var(--hatua-border-strong);
+    border-radius: 999px;
+    background: var(--hatua-surface-raised);
+  }
+
+  .title {
+    overflow: hidden;
+    color: var(--hatua-text-secondary);
+    font-weight: 600;
+    font-size: 13px;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .summary {
+    overflow: hidden;
+    color: var(--hatua-text-muted);
+    font-size: 11px;
+    font-family: var(--hatua-font-mono);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+}

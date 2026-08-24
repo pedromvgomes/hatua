@@ -1,6 +1,6 @@
 import type { Manifest } from '@hatua/schema'
 import type { DraftSession, EditToken, Lease, WorkflowStore } from '@hatua/services'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ComponentPropsWithRef } from 'react'
 import { describe, expect, it } from 'vitest'
 import { HatuaProvider } from '../theme/HatuaProvider'
@@ -42,8 +42,9 @@ describe('Build', () => {
   })
 
   it('offers exactly the three tabs, opening on the step tree', () => {
-    // Flow is here only until the canvas can select a Step: dropping it before
-    // then leaves no way to choose one at all.
+    // Flow stays. The canvas selects a Step now, and the list is still where
+    // a Step is inserted, dragged and reordered — a map of cards has no gap
+    // between siblings to click, and an empty Board has no card at all.
     render(<Build />)
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
       'Flow',
@@ -155,23 +156,41 @@ describe('Build wires the Components tab to the Flow tab', () => {
       )
       .map((button) => button.firstElementChild?.textContent)
 
+  /**
+   * Scoped to one region, because both of them draw the tree now.
+   *
+   * The Flow tab and the canvas are on screen together and name the same Steps,
+   * so an unscoped `getByText('First')` finds a row AND a card. That is the
+   * thing under test rather than a nuisance: the two surfaces agreeing about
+   * what is on the Board is why this view holds one selection and one Board for
+   * both.
+   */
+  const flow = () => within(screen.getByRole('region', { name: 'Steps' }))
+  const map = () => within(screen.getByRole('region', { name: 'Flow map' }))
+  const catalogue = () => within(screen.getByRole('region', { name: 'Components' }))
+
+  /** The Step each surface shows as selected, by the name on it. */
+  const selectedIn = (region: ReturnType<typeof flow>) =>
+    region.getAllByRole('button').find((button) => button.getAttribute('aria-current') === 'true')
+      ?.firstElementChild?.textContent
+
   it('opens the Components tab when an insert point is chosen, with it pending', async () => {
     // The design: "Clicking it opens the Components tab with that insertion
     // point pending." <TabbedPanel>'s controlled `tabId` exists for this.
     wired()
-    await screen.findByText('First')
+    await flow().findByText('First')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Insert a Step after First' }))
+    fireEvent.click(flow().getByRole('button', { name: 'Insert a Step after First' }))
     expect(screen.getByRole('tab', { selected: true }).textContent).toBe('Components')
-    expect(await screen.findByRole('button', { name: /Send email/ })).toBeDefined()
+    expect(await catalogue().findByRole('button', { name: /Send email/ })).toBeDefined()
   })
 
   it('adds the chosen Component at that point and comes back to the tree', async () => {
     wired()
-    await screen.findByText('First')
+    await flow().findByText('First')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Insert a Step after First' }))
-    fireEvent.click(await screen.findByRole('button', { name: /Send email/ }))
+    fireEvent.click(flow().getByRole('button', { name: 'Insert a Step after First' }))
+    fireEvent.click(await catalogue().findByRole('button', { name: /Send email/ }))
 
     expect(screen.getByRole('tab', { selected: true }).textContent).toBe('Flow')
     await waitFor(() => expect(rowNames()).toEqual(['First', 'Send email', 'Second']))
@@ -180,10 +199,10 @@ describe('Build wires the Components tab to the Flow tab', () => {
   it('appends when a Component is picked with no insert point pending', async () => {
     // "Add this" with nowhere named means the end of the workflow.
     wired()
-    await screen.findByText('First')
+    await flow().findByText('First')
 
     fireEvent.click(screen.getByRole('tab', { name: 'Components' }))
-    fireEvent.click(await screen.findByRole('button', { name: /Send email/ }))
+    fireEvent.click(await catalogue().findByRole('button', { name: /Send email/ }))
 
     await waitFor(() => expect(rowNames()).toEqual(['First', 'Second', 'Send email']))
   })
@@ -192,10 +211,10 @@ describe('Build wires the Components tab to the Flow tab', () => {
     // `definition?.steps.length ?? 0` answers 0 for "does not project" and for
     // "no Steps" alike, which would put the Component at the front.
     const { writes } = wired('name: half written\nsteps:\n  - use: a\n  - use: b\n')
-    await screen.findByText(/not a valid Workflow Definition yet/)
+    await flow().findByText(/not a valid Workflow Definition yet/)
 
     fireEvent.click(screen.getByRole('tab', { name: 'Components' }))
-    fireEvent.click(await screen.findByRole('button', { name: /Send email/ }))
+    fireEvent.click(await catalogue().findByRole('button', { name: /Send email/ }))
 
     // Autosave waits 800ms of quiet and `waitFor` defaults to 1000ms, which is
     // not enough headroom on a machine running every suite at once.
@@ -209,17 +228,17 @@ describe('Build wires the Components tab to the Flow tab', () => {
     // Step removed in the meantime, which every command refuses, so the click
     // would do nothing and say nothing about why.
     wired()
-    await screen.findByText('First')
+    await flow().findByText('First')
 
     fireEvent.click(
-      screen.getByRole('button', { name: 'Insert a Step at the start of the workflow' }),
+      flow().getByRole('button', { name: 'Insert a Step at the start of the workflow' }),
     )
     expect(screen.getByRole('tab', { selected: true }).textContent).toBe('Components')
 
     // Thought better of it.
     fireEvent.click(screen.getByRole('tab', { name: 'Flow' }))
     fireEvent.click(screen.getByRole('tab', { name: 'Components' }))
-    fireEvent.click(await screen.findByRole('button', { name: /Send email/ }))
+    fireEvent.click(await catalogue().findByRole('button', { name: /Send email/ }))
 
     await waitFor(() => expect(rowNames()).toEqual(['First', 'Second', 'Send email']))
   })
@@ -229,11 +248,11 @@ describe('Build wires the Components tab to the Flow tab', () => {
     // open — which is what anyone does to focus it. Treating that as
     // navigating away loses the insertion point by touching nothing.
     wired()
-    await screen.findByText('First')
+    await flow().findByText('First')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Insert a Step after First' }))
+    fireEvent.click(flow().getByRole('button', { name: 'Insert a Step after First' }))
     fireEvent.click(screen.getByRole('tab', { name: 'Components' }))
-    fireEvent.click(await screen.findByRole('button', { name: /Send email/ }))
+    fireEvent.click(await catalogue().findByRole('button', { name: /Send email/ }))
 
     await waitFor(() => expect(rowNames()).toEqual(['First', 'Send email', 'Second']))
   })
@@ -251,59 +270,61 @@ describe('Build wires the Components tab to the Flow tab', () => {
    */
   it('keeps the selected Step through the round trip that adds one', async () => {
     wired()
-    await screen.findByText('First')
+    await flow().findByText('First')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Insert a Step after First' }))
-    fireEvent.click(await screen.findByRole('button', { name: /Send email/ }))
+    fireEvent.click(flow().getByRole('button', { name: 'Insert a Step after First' }))
+    fireEvent.click(await catalogue().findByRole('button', { name: /Send email/ }))
     await waitFor(() => expect(rowNames()).toEqual(['First', 'Send email', 'Second']))
 
-    const selected = screen
-      .getAllByRole('button')
-      .find((button) => button.getAttribute('aria-current') === 'true')
-    expect(selected).toBeUndefined()
+    expect(selectedIn(flow())).toBeUndefined()
+    expect(selectedIn(map())).toBeUndefined()
 
     // Select one, then add another, and the selection is still there.
-    fireEvent.click(screen.getByText('First'))
-    fireEvent.click(screen.getByRole('button', { name: 'Insert a Step after Second' }))
-    fireEvent.click(await screen.findByRole('button', { name: /Send email/ }))
+    fireEvent.click(flow().getByText('First'))
+    fireEvent.click(flow().getByRole('button', { name: 'Insert a Step after Second' }))
+    fireEvent.click(await catalogue().findByRole('button', { name: /Send email/ }))
     await waitFor(() => expect(rowNames().at(-1)).toBe('Send email'))
 
-    expect(
-      screen.getAllByRole('button').find((button) => button.getAttribute('aria-current') === 'true')
-        ?.firstElementChild?.textContent,
-    ).toBe('First')
+    // Both surfaces, because <Build> holds one selection for both — a card and
+    // a row highlighted separately would be two answers to "which Step is this
+    // screen about", and the step editor can only be handed one.
+    expect(selectedIn(flow())).toBe('First')
+    expect(selectedIn(map())).toBe('First')
   })
 
   it('keeps a collapsed container collapsed through the same round trip', async () => {
     const NESTED = `id: wf\nname: n\nversion: 1\nstatus: draft\nsteps:\n  - id: s1\n    use: core.for_each\n    name: "Each"\n    steps:\n      - id: s2\n        use: b\n        name: "Inner"\n`
     wired(NESTED)
-    await screen.findByText('Each')
+    await flow().findByText('Each')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Collapse Each' }))
-    expect(screen.queryByText('Inner')).toBeNull()
+    fireEvent.click(flow().getByRole('button', { name: 'Collapse Each' }))
+    expect(flow().queryByText('Inner')).toBeNull()
+    // Collapse is one set for both surfaces too, and it is keyed by StepRef, so
+    // folding `Each` on this Board folds this Board's and no other's.
+    expect(map().queryByText('Inner')).toBeNull()
 
     fireEvent.click(screen.getByRole('tab', { name: 'Components' }))
-    fireEvent.click(await screen.findByRole('button', { name: /Send email/ }))
+    fireEvent.click(await catalogue().findByRole('button', { name: /Send email/ }))
     await waitFor(() => expect(rowNames()).toContain('Send email'))
 
-    expect(screen.queryByText('Inner')).toBeNull()
-    expect(screen.getByRole('button', { name: 'Expand Each' })).toBeDefined()
+    expect(flow().queryByText('Inner')).toBeNull()
+    expect(flow().getByRole('button', { name: 'Expand Each' })).toBeDefined()
   })
 
   it('forgets the pending point once it has been used', async () => {
     wired()
-    await screen.findByText('First')
+    await flow().findByText('First')
 
     fireEvent.click(
-      screen.getByRole('button', { name: 'Insert a Step at the start of the workflow' }),
+      flow().getByRole('button', { name: 'Insert a Step at the start of the workflow' }),
     )
-    fireEvent.click(await screen.findByRole('button', { name: /Send email/ }))
+    fireEvent.click(await catalogue().findByRole('button', { name: /Send email/ }))
     await waitFor(() => expect(rowNames()[0]).toBe('Send email'))
 
     // A second pick with nothing pending appends rather than repeating the
     // first insertion point.
     fireEvent.click(screen.getByRole('tab', { name: 'Components' }))
-    fireEvent.click(await screen.findByRole('button', { name: /Send email/ }))
+    fireEvent.click(await catalogue().findByRole('button', { name: /Send email/ }))
     await waitFor(() => expect(rowNames().at(-1)).toBe('Send email'))
   })
 })

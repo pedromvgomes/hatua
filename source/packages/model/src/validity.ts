@@ -4,20 +4,14 @@ import { blockIdOf, blockOf, cyclicBlocks, RETURN_VERB } from './blocks'
 import type { Diagnostic } from './connections'
 import { DEFINITION_DIAGNOSTICS, type DefinitionCode } from './generated/diagnostics'
 import { scopeFor, typeAtPath } from './scope'
-import {
-  FOR_EACH_LIST_FIELD,
-  FOR_EACH_VERB,
-  FORK_VERB,
-  REPEAT_VERB,
-  SET_VAR_VERB,
-  TRY_VERB,
-} from './slots'
+import { FOR_EACH_LIST_FIELD, FOR_EACH_VERB, FORK_VERB, REPEAT_VERB, SET_VAR_VERB } from './slots'
 import {
   type BoardId,
   boards,
   own,
   regionsOf,
   stepKey,
+  TRY_VERB,
   varsOn,
   walkDocument,
   walkSteps,

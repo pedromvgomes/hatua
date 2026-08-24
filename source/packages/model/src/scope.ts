@@ -17,10 +17,9 @@ import {
   ITEM_BINDING,
   MAPPING_VERB,
   mapEntries,
-  TRY_VERB,
   variableType,
 } from './slots'
-import { type BoardId, boardOf, own, type StepRef, stepKey } from './tree'
+import { type BoardId, boardOf, own, type StepRef, stepKey, TRY_VERB } from './tree'
 
 /**
  * What a step may reference. The reference tree is built from this, which is

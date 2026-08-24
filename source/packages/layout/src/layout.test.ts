@@ -1,4 +1,4 @@
-import { type Board, boards, stepKey, walkSteps } from '@hatua/model'
+import { type Board, boards, regionsOf, stepKey, walkSteps } from '@hatua/model'
 import type { WorkflowDefinition } from '@hatua/schema'
 import { describe, expect, it } from 'vitest'
 import {
@@ -10,7 +10,7 @@ import {
   SHAPES,
   TWO_RETS,
 } from './fixtures'
-import { LAYOUT, layout, type Placement, placementOf, type Rect } from './layout'
+import { type Band, LAYOUT, layout, type Placement, placementOf, type Rect } from './layout'
 
 const boardsOf = (doc: WorkflowDefinition): Board[] => [...boards(doc)]
 
@@ -205,6 +205,127 @@ describe('regions', () => {
 
     expect(at(map, 'guarded').height).toBe(LAYOUT.nodeHeightWithMeta)
     expect(at(map, 'triage').height).toBe(LAYOUT.nodeHeight)
+  })
+})
+
+describe('bands', () => {
+  const rootOf = (doc: WorkflowDefinition) => {
+    const [board] = boardsOf(doc)
+    if (!board) throw new Error('fixture lost its root Board')
+    return layout(board)
+  }
+
+  const bandFor = (map: ReturnType<typeof layout>, id: string, keyword: string): Band => {
+    const found = map.bands.find((band) => band.owner.id === id && band.keyword === keyword)
+    if (!found) throw new Error(`No "${keyword}" band under "${id}"`)
+    return found
+  }
+
+  /**
+   * The bands are the same enumeration the cards are.
+   *
+   * A canvas draws a region because a band says there is one, so a band the
+   * layout forgets is a region the map has no frame and no word for — the same
+   * failure as a Step nothing places, one level up.
+   */
+  describe('one band per region the walk yields', () => {
+    for (const { name, doc } of SHAPES) {
+      it(name, () => {
+        for (const board of boardsOf(doc)) {
+          const map = layout(board)
+          const expected = [...walkSteps(board.steps)].flatMap((step) =>
+            [...regionsOf(step)].map((region) => `${step.id}:${region.kind}:${region.keyword}`),
+          )
+          const drawn = map.bands.map((band) => `${band.owner.id}:${band.kind}:${band.keyword}`)
+
+          expect([...drawn].sort()).toEqual([...expected].sort())
+          expect(drawn.length).toBe(expected.length)
+        }
+      })
+    }
+  })
+
+  it('has bands to check', () => {
+    expect(rootOf(ALL_REGIONS).bands.length).toBeGreaterThan(0)
+  })
+
+  it('says the word `regionsOf` says, and never works one out for itself', () => {
+    const map = rootOf(ALL_REGIONS)
+    expect(bandFor(map, 'guarded', 'try').kind).toBe('body')
+    expect(bandFor(map, 'guarded', 'on failure').kind).toBe('handler')
+    expect(bandFor(map, 'each', 'loop').kind).toBe('body')
+    expect(
+      map.bands.filter((band) => band.owner.id === 'sort').map((band) => band.keyword),
+    ).toEqual(['if', 'else'])
+  })
+
+  it('covers the region it names — the label strip and every card under it', () => {
+    const map = rootOf(ALL_REGIONS)
+    const band = bandFor(map, 'guarded', 'try')
+    const card = at(map, 'triage')
+
+    // The strip is at the band's top and the cards start below it, so the band
+    // is the whole region rather than the label over one.
+    expect(card.y).toBe(band.y + LAYOUT.regionLabel)
+    expect(card.y + card.height).toBeLessThanOrEqual(band.y + band.height)
+    expect(card.x).toBeGreaterThanOrEqual(band.x)
+    expect(card.x + card.width).toBeLessThanOrEqual(band.x + band.width)
+  })
+
+  it('is a card wide and a label tall where the region is empty', () => {
+    // The one place the band is the only thing on screen. A canvas recomputing
+    // this from the Placements inside it would have nothing to work from.
+    const map = rootOf(EMPTY_REGIONS)
+    const band = bandFor(map, 'try_nothing', 'on failure')
+
+    expect(band.height).toBe(LAYOUT.regionLabel)
+    expect(band.width).toBe(LAYOUT.nodeWidth)
+  })
+
+  it('sits inside the map it belongs to', () => {
+    for (const { doc } of SHAPES) {
+      for (const board of boardsOf(doc)) {
+        const map = layout(board)
+        for (const band of [...map.bands, ...map.joins]) {
+          expect(band.x).toBeGreaterThanOrEqual(0)
+          expect(band.y).toBeGreaterThanOrEqual(0)
+          expect(band.x + band.width).toBeLessThanOrEqual(map.width)
+          expect(band.y + band.height).toBeLessThanOrEqual(map.height)
+        }
+      }
+    }
+  })
+
+  it('drops a collapsed container’s bands with its cards', () => {
+    const [board] = boardsOf(ALL_REGIONS)
+    if (!board) throw new Error('fixture lost its root Board')
+    const map = layout(board, { collapsed: new Set(['sort']) })
+
+    expect(map.bands.filter((band) => band.owner.id === 'sort')).toEqual([])
+    expect(map.joins.filter((join) => join.owner.id === 'sort')).toEqual([])
+    // And the regions nested inside those Branches go with them.
+    expect(map.bands.filter((band) => band.owner.id === 'guarded')).toEqual([])
+  })
+
+  describe('joins', () => {
+    it('marks a Fork’s Branches and nothing else', () => {
+      const map = rootOf(ALL_REGIONS)
+      expect(map.joins.map((join) => join.owner.id)).toEqual(['sort'])
+    })
+
+    it('spans the columns, below the last of them', () => {
+      const map = rootOf(ALL_REGIONS)
+      const [mark] = map.joins
+      if (!mark) throw new Error('the Fork lost its join')
+
+      expect(mark.height).toBe(LAYOUT.joinMarker)
+      for (const keyword of ['if', 'else']) {
+        const column = bandFor(map, 'sort', keyword)
+        expect(mark.y).toBeGreaterThanOrEqual(column.y + column.height)
+        expect(mark.x).toBeLessThanOrEqual(column.x)
+        expect(mark.x + mark.width).toBeGreaterThanOrEqual(column.x + column.width)
+      }
+    })
   })
 })
 

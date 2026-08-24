@@ -32,8 +32,9 @@ _Avoid_: node type, block, plugin, component spec
 **Canvas Mode**:
 Editing a **Workflow Definition** graphically — adding, moving and configuring **Steps** on the flow
 map, and mapping outputs to inputs. There is nothing to connect: reachability is nesting, so the
-canvas has no exit handles and draws no edge a user can attach. Connectors are chrome. One **Board**
-is drawn at a time; a **Block** call is a doorway into another, never its body expanded in place.
+canvas has no exit handles, draws no edge a user can attach, and draws no line between cards at all —
+the gap, the **Band** and the **Join** carry what an edge would have. One **Board** is drawn at a
+time; a **Block** call is a doorway into another, never its body expanded in place.
 _Avoid_: visual mode, graph editor, builder, drawing connections
 
 **Text Mode**:
@@ -192,6 +193,12 @@ never by a bare id, which two **Blocks** may share. The map is laid out one **Bo
 one input that is not a function of the document, and the reason the totals describe the map that is
 actually on screen rather than one with folded regions counted into it.
 
+Cards are not all of it. A **Band** is one child region's box and the word over it, and a **Join** is
+where a **Fork**'s **Branches** come back together — both computed here, because the canvas draws what
+it is handed and works nothing out for itself. That is what makes the rule checkable rather than
+merely stated: a region with nothing in it has no card to infer a box from, so a canvas without a
+Band would have had to invent one.
+
 Positions are the builder's and nobody else's. A **Host** runner never lays anything out, so this is
 the one cross-cutting rule in the repo implemented once rather than in both languages.
 _Avoid_: auto-layout as a mere feature name — it is a constraint, not a convenience; node position
@@ -253,8 +260,16 @@ and **Derived Layout** in this same file. Resolution: there are no connections t
 is expressed by containers — `core.fork`, `core.for_each`, `core.repeat`, `core.try` — and a **Step**
 runs because of where it nests. Reuse is a **Block**, not an edge into a shared node.
 
+That refuses a connection as a *thing in the model*, and ADR-0013 refuses an edge a user can attach
+anything to; neither refuses a plain rule between two cards, which is a rendering decision and is
+settled separately. **Nothing is drawn between cards.** `LAYOUT.verticalGap` exceeds `nodeHeight` so
+the space already reads as a run of the flow, and every card is the same width on one spine — a line
+down it restates an adjacency the reader can see. What a column cannot say, a **Band** and a **Join**
+say. See `source/packages/react/src/units/README.md`, where a `Connector` unit is retired for this
+reason.
+
 **"Block" the domain term vs the React presentational layer** — a layer of presentational units
-(NodeCard, StepRow, Connector) shared the word with **Block**, which is the *Flow tab* / `FlowMap`
+(NodeCard, RegionBand, JoinMarker) shared the word with **Block**, which is the *Flow tab* / `FlowMap`
 collision again: one word, two meanings, in one repo. Resolution: the domain term wins. That layer is
 `packages/react/src/units/`, and a presentational unit is never called a block.
 See [ADR-0013](docs/adr/0013-control-flow-nests.md), which also corrects ADR-0001's reason for the
