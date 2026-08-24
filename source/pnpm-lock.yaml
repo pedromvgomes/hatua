@@ -91,6 +91,9 @@ importers:
 
   packages/layout:
     dependencies:
+      '@hatua/model':
+        specifier: workspace:*
+        version: link:../model
       '@hatua/schema':
         specifier: workspace:*
         version: link:../schema
