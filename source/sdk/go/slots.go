@@ -560,6 +560,15 @@ func loopElementType(
 	if !found || node.Type != expressions.TypeList {
 		return expressions.TypeNode{}, false
 	}
+	// A list that declared no `of:` says nothing about its elements, so there is
+	// no shape to hand back. ElementOf answers object for one — the right answer
+	// for a projection, where the question is what `.name` reads off this, and
+	// the wrong one here: it would mark item as an object nothing declared, and
+	// every scalar field it is written into would report a mismatch against a
+	// shape the document never said.
+	if len(node.Members) == 0 {
+		return expressions.TypeNode{}, false
+	}
 	return expressions.ElementOf(node), true
 }
 
@@ -590,6 +599,14 @@ func blockOutputType(block *Block) expressions.TypeNode {
 		return node
 	}
 	for _, output := range block.Outputs {
+		// First-wins, matching the TypeScript half. A repeated output key is a
+		// document a hand-edit reaches and DECLARATION_KEY_DUPLICATE only stops
+		// Publish, so both languages have to pick the same one of the two — last
+		// here and first there types the same call site number in one builder
+		// and text in the other.
+		if _, taken := node.Members[output.K]; taken {
+			continue
+		}
 		node.Members[output.K] = declarationToType(output)
 	}
 	return node

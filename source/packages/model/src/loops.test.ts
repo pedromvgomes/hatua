@@ -204,6 +204,7 @@ const listing = (): Manifest[] => [
         of: [{ k: 'subject', label: 'Subject', t: 'text' }],
       },
       { k: 'count', label: 'Count', t: 'number' },
+      { k: 'tags', label: 'Tags', t: 'list' },
     ],
   },
   {
@@ -393,6 +394,27 @@ describe('what a core.for_each binds', () => {
   it('is nothing when the list names something that is not one', () => {
     const document = looping('steps.fetch.count')
     expect(loopElementType(document, null, document.steps[1] as Step, listing())).toBeNull()
+  })
+
+  /**
+   * A list with no `of:` is a list whose elements the document says nothing
+   * about, which is not the same as a list of objects with no members. `item`
+   * stays `item` and matches anything, so writing one into a `text` field is
+   * accepted and checked at run time — EXPR_TYPE_UNKNOWN, a warning, which is
+   * the code whose own summary names `item` members as its motivating case.
+   *
+   * Answering `object` here marks `item` as a shape nothing declared, and then
+   * every scalar field it is written into reports EXPR_TYPE_MISMATCH — an error
+   * that refuses Publish on a document that is correct.
+   */
+  it('is nothing when the list declared no `of:`, so `item` still matches anything', () => {
+    const document = looping('steps.fetch.tags')
+    expect(loopElementType(document, null, document.steps[1] as Step, listing())).toBeNull()
+
+    const scope = scopeFor(document, { board: null, id: 's1' }, listing())
+    const found = validate('{{ steps.each.item }}', 'text', { scope, functions: coreFunctions() })
+    expect(found.map((one) => one.code)).toEqual(['EXPR_TYPE_UNKNOWN'])
+    expect(found.map((one) => one.severity)).toEqual(['warning'])
   })
 
   it('is nothing when the list is not a plain Reference, or names nothing at all', () => {
