@@ -109,6 +109,26 @@ which is what would otherwise force `once`/`fixed` back and a special case into
 A run drawer belongs to `views/Runs`, not to `Build`. A **Workflow Execution**
 is read-only history; nothing in the designer edits one.
 
+### The shape of each region on the map
+
+`@hatua/layout` decides where every card goes; this tier draws what it is handed
+and computes no geometry of its own. What each child region looks like is
+settled in `docs/handoff.md` § Flow map geometry, and the two answers this tier
+has to agree with are: a Fork's Branches are **columns** that converge, and every
+other region — a loop's body, a `core.try`'s body and handler — is **stacked**
+under the card that owns it, in document order, each under a band carrying the
+label that names it.
+
+`<StepList>` says the same thing in a list, with the chip over each region — the
+two surfaces draw differently and must not disagree about which regions a
+container has or what they are called.
+
+They agree by inspection and by nothing else. `@hatua/layout` asks `regionsOf`
+in `@hatua/model`; this region reads `branches`, `steps` and `handler` itself,
+both to decide what to render and to decide what gets a chevron. A region added
+to one reading and not the other is a container the map draws and the list does
+not, with nothing failing.
+
 ### The list and the map are both on screen
 
 They are not redundant, and neither replaces the other. The list is scannable at

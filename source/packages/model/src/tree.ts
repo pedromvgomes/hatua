@@ -1,4 +1,4 @@
-import type { Block, Step, Variable, WorkflowDefinition } from '@hatua/schema'
+import type { Block, Branch, Step, Variable, WorkflowDefinition } from '@hatua/schema'
 
 /**
  * Pure domain rules over the step tree. No state, no I/O, no YAML — those live
@@ -67,21 +67,64 @@ export function boardOf(doc: WorkflowDefinition, id: BoardId): Board | undefined
   return undefined
 }
 
+/** Which of a container's child regions a step list is. */
+export type RegionKind = 'branch' | 'body' | 'handler'
+
+/**
+ * One child region a container Step owns, and which region it is.
+ *
+ * A Fork contributes one per Branch, a `core.for_each` and a `core.repeat` one
+ * body each, and a `core.try` two — a body under `steps:` and a handler under
+ * `handler:` (ADR-0013).
+ */
+export interface Region {
+  readonly kind: RegionKind
+  readonly steps: readonly Step[]
+  /** The Branch this region is. Absent on a body and on a handler. */
+  readonly branch?: Branch
+}
+
+/**
+ * The regions one Step owns, in document order.
+ *
+ * The single answer to "what does this Step nest". Every traversal of the tree
+ * asks that question, and one that answers it for itself is one that can forget
+ * a region — a region no rule then sees, reported by nothing, in silence. That
+ * has to be spelled out once so a reader gains coverage of a new region by
+ * construction rather than by remembering to ask for it.
+ *
+ * The region is named rather than yielded as a bare list because a reader that
+ * draws differently per region — branches side by side, a try's two regions
+ * stacked under their own labels — still has to get its regions from here.
+ */
+export function* regionsOf(step: Step): Generator<Region> {
+  for (const branch of step.branches ?? []) yield { kind: 'branch', branch, steps: branch.steps }
+  if (step.steps) yield { kind: 'body', steps: step.steps }
+  if (step.handler) yield { kind: 'handler', steps: step.handler }
+}
+
+/**
+ * Whether a Step owns child regions at all.
+ *
+ * Asked of `regionsOf` rather than of the three keys, so "container" and "what a
+ * container nests" cannot come apart — a fourth region would otherwise be
+ * walked by every reader while still reading as a leaf to whichever surface
+ * decides how tall a card is or whether it collapses.
+ */
+export const isContainer = (step: Step): boolean => !regionsOf(step).next().done
+
 /**
  * Depth-first walk of every step in one tree, parents before children.
  *
- * Every region a container owns is walked here and nowhere else: a Fork's
- * branches, a loop body, and a `core.try`'s handler. A region this forgets is a
- * region no rule ever sees — the validator reports nothing about it, silently,
- * which is the same failure as a validator that only ever looked at the root
- * Board.
+ * Every region a container owns is walked here and nowhere else. A region
+ * `regionsOf` forgets is a region no rule ever sees — the validator reports
+ * nothing about it, silently, which is the same failure as a validator that
+ * only ever looked at the root Board.
  */
 export function* walkSteps(steps: readonly Step[]): Generator<Step> {
   for (const step of steps) {
     yield step
-    for (const branch of step.branches ?? []) yield* walkSteps(branch.steps)
-    if (step.steps) yield* walkSteps(step.steps)
-    if (step.handler) yield* walkSteps(step.handler)
+    for (const region of regionsOf(step)) yield* walkSteps(region.steps)
   }
 }
 
