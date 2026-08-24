@@ -1,7 +1,7 @@
 import { coreFunctions, validate } from '@hatua/expressions'
-import type { Step, WorkflowDefinition } from '@hatua/schema'
+import type { Manifest, Step, WorkflowDefinition } from '@hatua/schema'
 import { describe, expect, it } from 'vitest'
-import { scopeFor } from './scope'
+import { loopElementType, scopeFor } from './scope'
 import { repeatSlot, setVarSlot, variableSlot, variableType } from './slots'
 
 /**
@@ -179,5 +179,227 @@ describe('a variable’s type', () => {
     expect(
       validate('{{ var.entry.headline }}', 'number', { scope, functions: coreFunctions() }),
     ).not.toEqual([])
+  })
+})
+
+/**
+ * `core.try` and the `item` binding, on the side the rules corpus cannot reach.
+ *
+ * The corpus compares diagnostics. What a container BINDS is a type, and a type
+ * reaches a user through scope and the checker — so it is asserted here, and in
+ * `sdk/go/slots_test.go` assertion for assertion.
+ */
+
+const listing = (): Manifest[] => [
+  {
+    kind: 'component',
+    use: 'component.inbox.fetch',
+    name: 'Fetch inbox',
+    fields: [],
+    outputs: [
+      {
+        k: 'messages',
+        label: 'Messages',
+        t: 'list',
+        of: [{ k: 'subject', label: 'Subject', t: 'text' }],
+      },
+      { k: 'count', label: 'Count', t: 'number' },
+    ],
+  },
+  {
+    kind: 'component',
+    use: 'core.for_each',
+    name: 'For each',
+    fields: [{ k: 'list', label: 'List', kind: 'ref', req: true }],
+    outputs: [{ k: 'item', label: 'Item', t: 'item' }],
+  },
+  {
+    kind: 'component',
+    use: 'core.try',
+    name: 'Try',
+    fields: [],
+    outputs: [
+      {
+        k: 'error',
+        label: 'Error',
+        t: 'object',
+        of: [{ k: 'message', label: 'Message', t: 'text' }],
+      },
+    ],
+  },
+  { kind: 'component', use: 'component.email.send', name: 'Send', fields: [], outputs: [] },
+]
+
+const pathsIn = (scope: readonly { path: string }[]) => scope.map((entry) => entry.path)
+
+describe('what a core.try binds, and for whom', () => {
+  const TRIED = doc({
+    steps: [
+      { id: 'before', use: 'component.email.send' },
+      {
+        id: 'guard',
+        use: 'core.try',
+        steps: [{ id: 'body', use: 'component.email.send' }],
+        handler: [{ id: 'rescue', use: 'component.email.send' }],
+      },
+      { id: 'after', use: 'component.email.send' },
+    ],
+  })
+
+  it('is in scope for a handler’s children, and is the failure it is handling', () => {
+    const scope = scopeFor(TRIED, { board: null, id: 'rescue' }, listing())
+    expect(pathsIn(scope)).toEqual(['steps.before', 'steps.guard'])
+    expect(
+      validate('{{ steps.guard.error.message }}', 'text', {
+        scope,
+        functions: coreFunctions(),
+      }),
+    ).toEqual([])
+  })
+
+  /**
+   * The body is what PRODUCES the failure, so a body Step reading it would be
+   * reading a value that cannot exist where it stands.
+   */
+  it('is out of scope inside the body', () => {
+    const scope = scopeFor(TRIED, { board: null, id: 'body' }, listing())
+    expect(pathsIn(scope)).toEqual(['steps.before'])
+  })
+
+  /**
+   * Past the try, whether there was a failure at all is a run-time fact — so
+   * offering it would be the intersection-over-paths problem arriving through a
+   * different door.
+   */
+  it('is out of scope for a Step after the try', () => {
+    const scope = scopeFor(TRIED, { board: null, id: 'after' }, listing())
+    expect(pathsIn(scope)).toEqual(['steps.before'])
+  })
+
+  /**
+   * The two regions are siblings, which is what a Fork's branches already are.
+   * Which of the body's Steps completed before the failure is not a property of
+   * the document.
+   */
+  it('does not let a handler’s children read the body’s Steps, or the reverse', () => {
+    const scope = scopeFor(TRIED, { board: null, id: 'rescue' }, listing())
+    expect(pathsIn(scope)).not.toContain('steps.body')
+    expect(pathsIn(scopeFor(TRIED, { board: null, id: 'body' }, listing()))).not.toContain(
+      'steps.rescue',
+    )
+  })
+})
+
+describe('what a core.for_each binds', () => {
+  const looping = (list: string): WorkflowDefinition =>
+    doc({
+      steps: [
+        { id: 'fetch', use: 'component.inbox.fetch' },
+        {
+          id: 'each',
+          use: 'core.for_each',
+          with: { list: `{{ ${list} }}` },
+          steps: [{ id: 's1', use: 'component.email.send' }],
+        },
+      ],
+    })
+
+  it('is one element of the list its `list` names, with the members the source declared', () => {
+    const document = looping('steps.fetch.messages')
+    expect(loopElementType(document, null, document.steps[1] as Step, listing())).toEqual({
+      type: 'object',
+      members: { subject: { type: 'text' } },
+    })
+  })
+
+  it('reaches the checker, so a member of an item type-checks and a wrong type does not', () => {
+    const document = looping('steps.fetch.messages')
+    const scope = scopeFor(document, { board: null, id: 's1' }, listing())
+
+    expect(
+      validate('{{ steps.each.item.subject }}', 'text', { scope, functions: coreFunctions() }),
+    ).toEqual([])
+    expect(
+      validate('{{ steps.each.item.subject }}', 'number', { scope, functions: coreFunctions() }),
+    ).not.toEqual([])
+  })
+
+  /**
+   * The whole reason the binding is an output of the container rather than a
+   * bare token: two loops are two Step ids, so nesting needs no shadowing rule
+   * and there is nothing for an inner loop to hide.
+   */
+  it('is resolved per loop, so two nested loops do not shadow each other', () => {
+    const nested = doc({
+      steps: [
+        { id: 'fetch', use: 'component.inbox.threads' },
+        {
+          id: 'outer',
+          use: 'core.for_each',
+          with: { list: '{{ steps.fetch.threads }}' },
+          steps: [
+            {
+              id: 'inner',
+              use: 'core.for_each',
+              with: { list: '{{ steps.outer.item.entries }}' },
+              steps: [{ id: 's1', use: 'component.email.send' }],
+            },
+          ],
+        },
+      ],
+    })
+    const manifests: Manifest[] = [
+      ...listing(),
+      {
+        kind: 'component',
+        use: 'component.inbox.threads',
+        name: 'Threads',
+        fields: [],
+        outputs: [
+          {
+            k: 'threads',
+            label: 'Threads',
+            t: 'list',
+            of: [
+              {
+                k: 'entries',
+                label: 'Entries',
+                t: 'list',
+                of: [{ k: 'body', label: 'Body', t: 'text' }],
+              },
+            ],
+          },
+        ],
+      },
+    ]
+
+    const scope = scopeFor(nested, { board: null, id: 's1' }, manifests)
+    expect(
+      validate('{{ steps.inner.item.body }}', 'text', { scope, functions: coreFunctions() }),
+    ).toEqual([])
+    // The outer loop's element is still reachable and still its own shape — an
+    // inner `item` hides nothing, because the two live under different Step ids.
+    expect(
+      validate('{{ steps.outer.item.entries }}', 'list', { scope, functions: coreFunctions() }),
+    ).toEqual([])
+  })
+
+  /**
+   * Null rather than a guess. `item` then stays `item`, which the checker treats
+   * as matching anything — the honest answer where `object` would be a shape
+   * nothing declared, and where the wrongness is reported by
+   * LOOP_LIST_NOT_A_LIST rather than smuggled into a type.
+   */
+  it('is nothing when the list names something that is not one', () => {
+    const document = looping('steps.fetch.count')
+    expect(loopElementType(document, null, document.steps[1] as Step, listing())).toBeNull()
+  })
+
+  it('is nothing when the list is not a plain Reference, or names nothing at all', () => {
+    const computed = looping('json.parse(steps.fetch.count)')
+    expect(loopElementType(computed, null, computed.steps[1] as Step, listing())).toBeNull()
+
+    const gone = looping('steps.gone.messages')
+    expect(loopElementType(gone, null, gone.steps[1] as Step, listing())).toBeNull()
   })
 })

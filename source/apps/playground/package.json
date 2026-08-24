@@ -19,9 +19,13 @@
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
+    "@hatua/expressions": "workspace:*",
+    "@hatua/model": "workspace:*",
+    "@hatua/schema": "workspace:*",
     "@hatua/sdk": "workspace:*",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.1",
-    "@vitejs/plugin-react-swc": "^4.3.3"
+    "@vitejs/plugin-react-swc": "^4.3.3",
+    "yaml": "^2.8.1"
   }
 }

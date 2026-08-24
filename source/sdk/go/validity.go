@@ -3,6 +3,8 @@ package hatua
 import (
 	"fmt"
 	"strings"
+
+	"hatua.dev/go/expressions"
 )
 
 // Whether a Workflow Definition is filled in enough to run — the rules that read
@@ -89,7 +91,7 @@ func ValidateDefinition(doc Definition, manifests []Manifest) Validity {
 	all := []Diagnostic{}
 	all = append(all, UnknownComponents(doc, byUse)...)
 	all = append(all, MissingRequiredFields(doc, byUse)...)
-	all = append(all, MalformedContainers(doc)...)
+	all = append(all, MalformedContainers(doc, manifests)...)
 	all = append(all, BlockRules(doc)...)
 
 	found := Validity{
@@ -259,6 +261,36 @@ var setVarFields = []struct{ key, label string }{
 	{"value", "Value"},
 }
 
+// listReferenceOf is the path a loop's List names, when it names exactly one
+// value and nothing else.
+func listReferenceOf(step Step) string {
+	template, ok := step.With[ForEachListField].(string)
+	if !ok {
+		return ""
+	}
+	return expressions.SourceReference(template)
+}
+
+// loopListType is the declared type of what a loop's List names.
+//
+// Deliberately the same read LoopElementType performs, one step short of taking
+// the element: the diagnostic and the binding must agree about which lists are
+// lists, and two readings of one field are two answers waiting to disagree — a
+// loop reported as iterating a number while `item` resolved anyway, or the
+// reverse.
+func loopListType(
+	doc Definition,
+	board BoardID,
+	step Step,
+	manifests []Manifest,
+) (expressions.TypeNode, bool) {
+	path := listReferenceOf(step)
+	if path == "" {
+		return expressions.TypeNode{}, false
+	}
+	return TypeAtPath(ScopeFor(doc, StepRef{Board: board, ID: step.ID}, manifests, nil), path)
+}
+
 // UnknownComponents reports a step or a trigger whose verb nothing declares.
 //
 // The two roots fail differently, so they are two codes. A `component.*` or
@@ -308,7 +340,7 @@ func UnknownComponents(doc Definition, byUse map[string]Manifest) []Diagnostic {
 // they mean. Read from the tree rather than from a manifest, because a manifest
 // cannot express them: a fork's branches and a loop's body are positions in the
 // document, not fields under `with:`.
-func MalformedContainers(doc Definition) []Diagnostic {
+func MalformedContainers(doc Definition, manifests []Manifest) []Diagnostic {
 	out := []Diagnostic{}
 
 	WalkDocument(doc, func(ref StepRef, step Step) {
@@ -358,6 +390,47 @@ func MalformedContainers(doc Definition) []Diagnostic {
 			out = append(out, raise(CodeRepeatHasNoCondition, subject, nil))
 		}
 
+		// A core.try is two regions, so it is two codes.
+		//
+		// Not CodeLoopHasNoBody, which reads "this loop repeats nothing" — the
+		// right sentence about a for_each and the wrong one about a verb that is
+		// not a loop. The fork's pair settled this shape already: separate codes
+		// where the missing half differs, because the sentence that helps differs
+		// with it.
+		if step.Use == TryVerb {
+			if len(step.Steps) == 0 {
+				out = append(out, raise(CodeTryHasNoBody, subject, nil))
+			}
+			if len(step.Handler) == 0 {
+				out = append(out, raise(CodeTryHasNoHandler, subject, nil))
+			}
+		}
+
+		// The rule that makes `t: item` observable.
+		//
+		// List is a `ref` field and FieldKindTypes maps `ref` to unknown, so the
+		// ordinary Slot check accepts anything written there — which is how a loop
+		// pointed at a number type-checks clean while `item` quietly resolves to
+		// nothing and matches everything downstream. Only a statically-KNOWN
+		// conflict is reported, matching the lattice everywhere else.
+		if step.Use == ForEachVerb {
+			if named, found := loopListType(doc, ref.Board, step, manifests); found &&
+				named.Type != expressions.TypeList &&
+				named.Type != expressions.TypeUnknown &&
+				named.Type != expressions.TypeItem {
+				name := listReferenceOf(step)
+				if name == "" {
+					name = ForEachListField
+				}
+				subject.FieldKey = ForEachListField
+				out = append(out, raise(CodeLoopListNotAList, subject, map[string]string{
+					"name":   name,
+					"actual": string(named.Type),
+				}))
+				subject.FieldKey = ""
+			}
+		}
+
 		if step.Use == SetVarVerb {
 			key, named := step.With["key"].(string)
 			// A missing key is CodeFieldRequired's to report. Resolving an
@@ -397,6 +470,21 @@ func alwaysReturns(steps []Step) bool {
 			}
 			continue
 		}
+		// A core.try discharges the obligation only when BOTH regions do.
+		//
+		// The body always runs, so on its own it would look like a repeat. But a
+		// failure part-way through the body is exactly what a try exists to admit,
+		// and that path leaves the body without finishing it and enters the handler
+		// instead. So the guarantee is the conjunction: every path out of a try
+		// goes through the body OR through the handler, and a region that may skip
+		// its return leaves one of them open. That is the fork's all-branches
+		// reasoning, asked of two regions where one of them is conditional.
+		if step.Use == TryVerb {
+			if alwaysReturns(step.Steps) && alwaysReturns(step.Handler) {
+				return true
+			}
+			continue
+		}
 		if step.Use != ForkVerb || len(step.Branches) == 0 {
 			continue
 		}
@@ -417,8 +505,12 @@ func alwaysReturns(steps []Step) bool {
 	return false
 }
 
-// stepLists yields every step list in a tree — the root, each branch's, and each
-// loop body's.
+// stepLists yields every step list in a tree — the root, each branch's, each
+// loop body's, and each core.try's handler.
+//
+// A region missing from here is a region CodeStepAfterReturn never looks at, so
+// a step sitting after a core.return inside a handler would be reported by
+// neither language and published by both.
 func stepLists(steps []Step, visit func([]Step)) {
 	visit(steps)
 	for _, step := range steps {
@@ -426,6 +518,7 @@ func stepLists(steps []Step, visit func([]Step)) {
 			stepLists(branch.Steps, visit)
 		}
 		stepLists(step.Steps, visit)
+		stepLists(step.Handler, visit)
 	}
 }
 

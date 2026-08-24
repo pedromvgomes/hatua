@@ -48,6 +48,15 @@ components:
           - k: subject
             label: Subject
             t: text
+          # The set's one list, and what `t: item` is resolved THROUGH: a
+          # `core.for_each` pointed here binds an element carrying these members,
+          # read as `{{steps.<loop id>.item.filename}}`.
+          - k: attachments
+            label: Attachments
+            t: list
+            of:
+              - { k: filename, label: Filename, t: text }
+              - { k: bytes, label: Size, t: number }
   - kind: component
     use: component.agent.act
     name: Run agent
@@ -101,12 +110,60 @@ components:
     icon: /icons/zap.svg
     blurb: Repeat the steps inside it once per item.
     fields:
-      - k: items
-        label: Items
+      # `list`, and the name is load-bearing: `item` means "one element of
+      # whatever THIS key points at", so a reader looking under a different key
+      # resolves it to nothing and reports no type at all.
+      - k: list
+        label: List
         kind: ref
         req: true
         hint: The list to walk.
     outputs:
+      # `t: item` rather than `object`. The shape is not in this file — it is one
+      # element of whatever `list` points at, read off the source output's `of:`.
+      # Declaring `object` would be a shape nothing verified, and every
+      # `{{steps.<id>.item.<field>}}` would type-check against members the
+      # manifest never had.
       - k: item
         label: Item
+        t: item
+  - kind: component
+    use: core.try
+    name: Try
+    group: Built-in
+    icon: /icons/zap.svg
+    blurb: Run steps, and fall back to a handler if they fail.
+    # Wrapping one step is retry; wrapping a region is fallback, so one verb
+    # serves both. Its two regions are `steps:` and `handler:`, which are
+    # positions in the document rather than fields — so they are not here.
+    fields:
+      # The retry policy IS a set of ordinary fields, deliberately. A condition
+      # had to leave `with:` because `FIELD_KIND_TYPES` has no mappable boolean;
+      # a count and a delay are numbers, and `number` is mappable — so the
+      # argument that moved `until` does not reach these, and a structural key
+      # here would be a conclusion copied without its reason.
+      - k: attempts
+        label: Attempts
+        kind: number
+        hint: How many times to run the body before the handler takes over.
+      - k: backoff_ms
+        label: Backoff
+        kind: number
+        hint: Milliseconds to wait between attempts.
+    outputs:
+      # The failure, and the whole of what a try binds. Read as
+      # `{{steps.<try id>.error}}` by the handler's children and by nothing else —
+      # an ordinary output of the container step, which is how core.for_each
+      # already exposes `item`, and why neither costs a namespace root.
+      #
+      # Declared here rather than invented by a runner, because Hatua ships this
+      # verb (ADR-0014) and this shape is the contract every Host runner fills in.
+      # `type` is what a core.fork inside the handler branches on, which is why
+      # error-type matching needs no matcher of its own.
+      - k: error
+        label: Error
         t: object
+        of:
+          - { k: message, label: Message, t: text }
+          - { k: type, label: Type, t: text }
+          - { k: step, label: Failed step, t: text }

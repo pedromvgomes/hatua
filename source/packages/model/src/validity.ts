@@ -1,8 +1,17 @@
+import { sourceReference, type TypeNode } from '@hatua/expressions'
 import type { Block, Declaration, Manifest, Step, WorkflowDefinition } from '@hatua/schema'
 import { blockIdOf, blockOf, cyclicBlocks, RETURN_VERB } from './blocks'
 import type { Diagnostic } from './connections'
 import { DEFINITION_DIAGNOSTICS, type DefinitionCode } from './generated/diagnostics'
-import { FOR_EACH_VERB, FORK_VERB, REPEAT_VERB, SET_VAR_VERB } from './slots'
+import { scopeFor, typeAtPath } from './scope'
+import {
+  FOR_EACH_LIST_FIELD,
+  FOR_EACH_VERB,
+  FORK_VERB,
+  REPEAT_VERB,
+  SET_VAR_VERB,
+  TRY_VERB,
+} from './slots'
 import { type BoardId, boards, own, stepKey, varsOn, walkDocument, walkSteps } from './tree'
 
 /**
@@ -240,8 +249,12 @@ export function unknownComponents(doc: WorkflowDefinition, manifests: ManifestIn
  * cannot express them: `core.fork`'s Branches and `core.for_each`'s body are
  * positions in the document, not fields under `with:`.
  */
-export function malformedContainers(doc: WorkflowDefinition): Diagnostic[] {
+export function malformedContainers(
+  doc: WorkflowDefinition,
+  manifests: ManifestIndex = new Map(),
+): Diagnostic[] {
   const out: Diagnostic[] = []
+  const catalogue = [...manifests.values()]
 
   for (const { step, board } of walkDocument(doc)) {
     const subject: Partial<Diagnostic> = { stepId: step.id, ...boardOn(board) }
@@ -285,6 +298,46 @@ export function malformedContainers(doc: WorkflowDefinition): Diagnostic[] {
       out.push(raise('REPEAT_HAS_NO_CONDITION', subject))
     }
 
+    /*
+     * A `core.try` is two regions, so it is two codes.
+     *
+     * Not LOOP_HAS_NO_BODY, which reads "this loop repeats nothing" — the right
+     * sentence about a for_each and the wrong one about a verb that is not a
+     * loop. The Fork's pair settled this shape already: separate codes where the
+     * missing half differs, because the sentence that helps differs with it.
+     */
+    if (step.use === TRY_VERB) {
+      if ((step.steps ?? []).length === 0) out.push(raise('TRY_HAS_NO_BODY', subject))
+      if ((step.handler ?? []).length === 0) out.push(raise('TRY_HAS_NO_HANDLER', subject))
+    }
+
+    /*
+     * The rule that makes `t: item` observable.
+     *
+     * `list` is a `ref` field and `FIELD_KIND_TYPES` maps `ref` to `unknown`, so
+     * the ordinary Slot check accepts anything written there — which is how a
+     * loop pointed at a number type-checks clean while `item` quietly resolves
+     * to nothing and matches everything downstream. Only a statically-KNOWN
+     * conflict is reported, matching the lattice everywhere else: an expression
+     * with no static type is accepted with the run-time check every unknown
+     * gets.
+     */
+    if (step.use === FOR_EACH_VERB) {
+      const named = loopListType(doc, board, step, catalogue)
+      if (named && named.type !== 'list' && named.type !== 'unknown' && named.type !== 'item') {
+        out.push(
+          raise(
+            'LOOP_LIST_NOT_A_LIST',
+            { ...subject, fieldKey: FOR_EACH_LIST_FIELD },
+            {
+              name: listReferenceOf(step) ?? FOR_EACH_LIST_FIELD,
+              actual: named.type,
+            },
+          ),
+        )
+      }
+    }
+
     if (step.use === SET_VAR_VERB) {
       const key = own((step.with ?? {}) as Record<string, unknown>, 'key')
       // A missing key is FIELD_REQUIRED's to report. Resolving `undefined`
@@ -308,6 +361,33 @@ const SET_VAR_FIELDS: readonly (readonly [string, string])[] = [
   ['key', 'Variable'],
   ['value', 'Value'],
 ]
+
+/** The path a loop's `list` names, when it names exactly one and nothing else. */
+function listReferenceOf(step: Step): string | null {
+  const template = own(step.with as Record<string, unknown> | undefined, FOR_EACH_LIST_FIELD)
+  return typeof template === 'string' ? sourceReference(template) : null
+}
+
+/**
+ * The declared type of what a loop's `list` names, or null when the document
+ * does not say.
+ *
+ * Deliberately the same read `loopElementType` performs, one step short of
+ * taking the element: the diagnostic and the binding must agree about which
+ * lists are lists, and two readings of one field are two answers waiting to
+ * disagree — a loop reported as iterating a number while `item` resolved
+ * anyway, or the reverse.
+ */
+function loopListType(
+  doc: WorkflowDefinition,
+  board: BoardId,
+  step: Step,
+  manifests: readonly Manifest[],
+): TypeNode | null {
+  const path = listReferenceOf(step)
+  if (path === null) return null
+  return typeAtPath(scopeFor(doc, { board, id: step.id }, manifests), path)
+}
 
 /**
  * Whether a step list, read from its own root level, always reaches a return.
@@ -333,6 +413,21 @@ function alwaysReturns(steps: readonly Step[]): boolean {
     // both: a `core.for_each`'s list may be empty, a repeat's first pass is
     // unconditional.
     if (step.use === REPEAT_VERB) return alwaysReturns(step.steps ?? [])
+
+    /*
+     * A `core.try` discharges the obligation only when BOTH regions do.
+     *
+     * The body always runs, so on its own it would look like a repeat. But a
+     * failure part-way through the body is exactly what a try exists to admit,
+     * and that path leaves the body without finishing it and enters the handler
+     * instead. So the guarantee is the conjunction: every path out of a try goes
+     * through the body OR through the handler, and a region that may skip its
+     * return leaves one of them open. That is the Fork's all-branches reasoning,
+     * asked of two regions where one of them is conditional.
+     */
+    if (step.use === TRY_VERB) {
+      return alwaysReturns(step.steps ?? []) && alwaysReturns(step.handler ?? [])
+    }
 
     if (step.use !== FORK_VERB) return false
 
@@ -442,12 +537,20 @@ export function blockRules(doc: WorkflowDefinition): Diagnostic[] {
   return out
 }
 
-/** Every step list in a tree — the root, each Branch's, and each loop body's. */
+/**
+ * Every step list in a tree — the root, each Branch's, each loop body's, and
+ * each `core.try`'s handler.
+ *
+ * A region missing from here is a region STEP_AFTER_RETURN never looks at, so a
+ * Step sitting after a `core.return` inside a handler would be reported by
+ * neither language and published by both.
+ */
 function* stepLists(steps: readonly Step[]): Generator<readonly Step[]> {
   yield steps
   for (const step of steps) {
     for (const branch of step.branches ?? []) yield* stepLists(branch.steps)
     if (step.steps) yield* stepLists(step.steps)
+    if (step.handler) yield* stepLists(step.handler)
   }
 }
 
@@ -501,7 +604,7 @@ export function validateDefinition(doc: WorkflowDefinition, manifests: ManifestI
   const all = [
     ...unknownComponents(doc, manifests),
     ...missingRequiredFields(doc, manifests),
-    ...malformedContainers(doc),
+    ...malformedContainers(doc, manifests),
     ...blockRules(doc),
   ]
 
