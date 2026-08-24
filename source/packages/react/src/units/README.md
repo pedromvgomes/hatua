@@ -1,8 +1,8 @@
 # units
 
-Presentational domain units — `NodeCard`, `RegionBand`, `JoinMarker`, `RootNode`,
-and the `boxOf` helper that turns a `Rect` into the style that puts a box where
-it says.
+Presentational domain units — `NodeCard`, `Connectors`, `InsertDot`, `LinkLabel`,
+`RegionBand`, `JoinMarker`, `RootNode`, `IconCoin`, and the `boxOf` helper that
+turns a `Rect` into the style that puts a box where it says.
 
 **Rule:** props in, events out. No reaching into `@hatua/services`. Enforced by
 `noRestrictedImports` in the workspace `biome.json`.
@@ -35,49 +35,61 @@ numbers stayed the same — drawing a Fork's first Branch last.
 
 | Unit | What it is |
 | --- | --- |
-| `NodeCard` | One Step's card: its name, a container's summary, the chevron, and the doorway on a call site. |
-| `RegionBand` | One child region: the frame around it and the word over it. |
+| `NodeCard` | One Step's card: the icon, the name, the verb, the chips row, the chevron, and the doorway on a call site. |
+| `Connectors` | Every line on one Board, in one SVG behind everything else. |
+| `InsertDot` | The `+` on a link: where a Step is added, and where one is dropped. |
+| `LinkLabel` | The word on the line entering a region. |
+| `RegionBand` | One child region's extent: a frame, and no text. |
 | `JoinMarker` | Where a Fork's Branches come back together. |
 | `RootNode` | The node above the first Step — the Triggers, or a Block's contract. |
+| `IconCoin` | A Component's icon, as the Host serves it, in a fixed square. |
 
 `RootNode` is not a `NodeCard` variant, for the same reason `FlowMap.root` is a
 `Rect` and not a `Placement`: **it names no Step.** An optional Step on the one
 component every card goes through would push "sometimes there is no Step here"
 into every reader, to spare a file.
 
-`RegionBand` covers what an earlier plan called `BranchLabel`. Every child region
-gets a band and not only a Branch's — the band is *what tells regions apart*, so
-a `core.try`'s body and handler and a loop's body are the same shape under
-different words. A unit that only labelled Branches would have left the other
-two regions with nothing naming them.
+`IconCoin` is shared with `layouts/Components`, which drew the same coin with its
+own copy of the broken-URL fallback. One answer to "what does a Component look
+like as an icon", used by the catalogue and by the canvas.
 
-## There is no `Connector`, and there will not be
+## The word and the frame are two different jobs
 
-An earlier plan listed one. It should not exist.
+`LinkLabel` says **what** a region is — `if`, `else`, `loop`, `try`,
+`on failure` — on the line that carries a reader into it, which is where they are
+already looking. `RegionBand` says **how far it reaches**, as a quiet frame with
+no text in it at all.
 
-ADR-0013 refuses an *attachable* edge — "no connect affordance, no exit handles
-and no drawn connectors the user can attach anything to" — and CONTEXT.md
-resolves that "there are no connections to draw". Neither of those on its own
-refuses a plain rule between two cards, so this is a decision rather than a
-consequence: **nothing is drawn between cards.**
+Two things saying one word over one region would be the duplication this repo
+refuses everywhere else. The frame earns its place by saying the thing the word
+cannot: where the region stops, which matters most for a `core.try`'s two regions
+stacked on one spine.
 
-The reason is in the geometry. `LAYOUT.verticalGap` exceeds `nodeHeight` so that
-"the space between two cards reads as a run of the flow and not as a crack
-between two cards that nearly touch" (`docs/handoff.md` § Flow map geometry) —
-the gap is already carrying it. Every card on a spine is the same width and
-centred on it, so a line down that spine restates an adjacency the reader can
-already see. Where the flow does something a column cannot say — alternatives,
-and where they end — `RegionBand` and `JoinMarker` say it, and both are boxes
-`@hatua/layout` computed rather than ink a canvas invented.
+Every word comes from `regionsOf` through `Region.keyword`, so the chip here and
+the chip `<StepList>` puts over the same region are one string from one function.
 
-`StepRow` and `InsertPoint` were on the same list and are not here either. They
-live inside `<StepList>`, which is their only reader; extracting a component for
-one call site buys a file and an indirection. They move here when something else
-needs them.
+## There is a `Connector`, and it draws no edge
+
+An earlier plan listed one and this file once argued it should never exist. That
+argument was wrong, and the screen is what settled it: at `LAYOUT.verticalGap` of
+96px, a map with no lines is cards floating in a void, and the claim that "the gap
+already reads as a run of the flow" does not survive looking at it.
+
+What ADR-0013 refuses is an **attachable** edge — "no connect affordance, no exit
+handles and no drawn connectors the user can attach anything to" — and what
+CONTEXT.md refuses is a **Connection** as a thing in the model. A line that says
+"then" is neither. Nothing on it takes a pointer, nothing is stored, and its two
+endpoints come from `@hatua/layout` like every other position on the map; only the
+curve between them is this tier's, because a curve is how a line looks getting
+somewhere rather than where anything is.
+
+`StepRow` was on the same list and is not here. It lives inside `<StepList>`,
+which is its only reader; extracting a component for one call site buys a file and
+an indirection. It moves here when something else needs it.
 
 ## Every unit has a test and a story
 
-`units.test.tsx` covers all four plus `boxOf`; each has a `*.stories.tsx` beside
+`units.test.tsx` covers them all plus `boxOf`; each has a `*.stories.tsx` beside
 it. `layouts/stories.fixtures.test.ts` scans this directory as well as `layouts/`
 and asserts each one yielded story files, so a fixture holding a Workflow
 Definition is covered here the day one appears.

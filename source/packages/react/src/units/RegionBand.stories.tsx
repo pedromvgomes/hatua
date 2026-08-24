@@ -45,13 +45,9 @@ export const Handler: Story = {
   args: { band: { ...meta.args.band, kind: 'handler', keyword: 'on failure' } },
 }
 
-/** A Branch: the keyword the fork's shape decides, then the label a user wrote. */
+/** A Branch: one column among alternatives, dashed like the line that enters it. */
 export const Branch: Story = {
-  args: {
-    band: { ...meta.args.band, kind: 'branch', keyword: 'else if' },
-    label: 'Quiet',
-    when: '{{ steps.fetch.count }} == 0',
-  },
+  args: { band: { ...meta.args.band, kind: 'branch', keyword: 'else if' } },
 }
 
 /**

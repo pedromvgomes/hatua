@@ -1,0 +1,63 @@
+@layer hatua {
+  /*
+    Centred on the point the layout gave it: the box is placed at the point and
+    pulled back by half its own size, so `left`/`top` mean the middle of the
+    control rather than its corner.
+  */
+  .slot {
+    position: absolute;
+    display: grid;
+    place-items: center;
+    inline-size: 22px;
+    block-size: 22px;
+    translate: -50% -50%;
+  }
+
+  .dot {
+    display: grid;
+    place-items: center;
+    inline-size: 20px;
+    block-size: 20px;
+    padding: 0;
+    border: 1px dashed var(--hatua-border-strong);
+    border-radius: 999px;
+    background: var(--hatua-surface-page);
+    color: var(--hatua-text-muted);
+    font: inherit;
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0.7;
+    transition:
+      opacity 120ms ease,
+      border-color 120ms ease,
+      color 120ms ease;
+  }
+
+  button.dot:hover,
+  button.dot:focus-visible {
+    border-style: solid;
+    border-color: var(--hatua-border-accent);
+    color: var(--hatua-text-accent);
+    opacity: 1;
+  }
+
+  .dot:focus-visible {
+    outline: 2px solid var(--hatua-focus-ring);
+    outline-offset: 2px;
+  }
+
+  /* A drag is in progress: every gap becomes a target, so every gap says so. */
+  .live .dot {
+    border-style: solid;
+    border-color: var(--hatua-border-accent);
+    background: var(--hatua-accent-wash);
+    color: var(--hatua-text-accent);
+    opacity: 1;
+  }
+
+  .live {
+    inline-size: 48px;
+    block-size: 32px;
+  }
+}

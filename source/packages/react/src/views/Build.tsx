@@ -4,7 +4,6 @@ import { type ComponentPropsWithRef, useState } from 'react'
 import { Components } from '../layouts/Components'
 import { FlowMap } from '../layouts/FlowMap'
 import { Inspector } from '../layouts/Inspector'
-import { StepList } from '../layouts/StepList'
 import { TabbedPanel } from '../layouts/TabbedPanel'
 import { TopBar } from '../layouts/TopBar'
 import { Workflow } from '../layouts/Workflow'
@@ -19,14 +18,17 @@ export type BuildProps = ComponentPropsWithRef<'div'>
  * The designer screen: the toolbar across the top, then three columns — the
  * tabbed side panel, the canvas, and the step editor.
  *
- * The canvas has a column of its own, and did not until now. <Build> used to
- * hand the whole work area to <TabbedPanel> and mount <FlowMap> inside it as
- * the "Flow" tab, which left the screen with nowhere to put a canvas: it
- * appeared only while one of three tabs was open, and never beside the panel it
- * is edited from. The tab labelled "Flow" and the region called `FlowMap` had
- * become two different things wearing one name — the tab is the Step tree as a
- * list (<StepList>), the region is the map. Both are on screen at once now,
- * which is what the design has always shown.
+ * **The canvas is how a workflow is built.** It has a column of its own and is
+ * always on screen: every card, every `+` between two cards, and the doorway
+ * into a Block's Board are there. The side panel is **Components** and
+ * **Workflow** — the catalogue a Step is chosen from, and everything scoped to
+ * the workflow rather than to a Step.
+ *
+ * `<StepList>` is not in that set. It is a real region and a Host that wants a
+ * dense, keyboard-reorderable list of the tree mounts it — `apps/playground/src/host.tsx`
+ * does exactly that — but it is not what Hatua's own screen leads with, and a
+ * tab labelled *Flow* beside a region called `FlowMap` is the name collision
+ * this repo has already paid for once.
  *
  * <Build> is the convenience; the regions it composes are the seam. There are
  * two ways to embed and only two — write <Hatua>, which mounts this, or mount
@@ -56,7 +58,7 @@ export function Build({ className, ...rest }: BuildProps) {
    * The one thing this view does beyond placing regions: it introduces the two
    * halves of "add a Step" to each other.
    *
-   * Neither region can do it alone, and neither should. <StepList> knows where
+   * Neither region can do it alone, and neither should. The canvas knows where
    * a Step would go and nothing about the catalogue; <Components> knows the
    * Components and nothing about the tree. Both emit rather than reach — props
    * out, the rule layouts/README states — so something has to be above both,
@@ -64,19 +66,15 @@ export function Build({ className, ...rest }: BuildProps) {
    *
    * The pending point is chrome, held here and never in the document, the same
    * line drawn around which tab is open. Appending is the fallback: a Component
-   * picked with no insert point pending goes at the end of the workflow, which
-   * is what "add this" means when nowhere was named.
+   * picked with no insert point pending goes at the end of the Board on screen,
+   * which is what "add this" means when nowhere was named.
    *
-   * The Flow tab's selection and collapse are held here for a different reason,
-   * and it is this view's doing rather than that region's. <TabbedPanel>
-   * renders only the open tab, and adding a Step goes Flow → Components → Flow,
-   * so <StepList> is unmounted and remounted every time — which threw away
-   * which Step was selected and re-expanded every container the user had
-   * collapsed, on the one action most likely to follow another. The state stays
-   * chrome and never reaches the document; it just outlives the region now,
-   * which is what the design means by the composition root holding selection.
+   * Selection, collapse and which Board is open are held here for a different
+   * reason: they are one answer shared by two surfaces. The canvas and a
+   * <StepList> a Host mounts beside it must not highlight two different Steps
+   * or show two different Boards, and the step editor can only be handed one.
    */
-  const [tab, setTab] = useState('flow')
+  const [tab, setTab] = useState('components')
   const [pending, setPending] = useState<InsertPoint | null>(null)
   const [selected, setSelected] = useState<StepRef | undefined>(undefined)
   const [collapsed, setCollapsed] = useState<readonly StepRef[]>([])
@@ -138,32 +136,6 @@ export function Build({ className, ...rest }: BuildProps) {
               // layouts/README.
               tabs={[
                 {
-                  // The Flow tab stays. It was here on the strength of a gap —
-                  // nothing else could select a Step — and the canvas closes
-                  // that gap without replacing this: a list has a gap between
-                  // every two siblings and a map of cards has none, so this is
-                  // where a Step is inserted, dragged and reordered. An empty
-                  // Board settles it: a root node, no Steps, and no `+`
-                  // anywhere on the canvas unless one is invented for it.
-                  id: 'flow',
-                  label: 'Flow',
-                  content: (
-                    <StepList
-                      board={board}
-                      selected={selected}
-                      onSelect={setSelected}
-                      collapsed={collapsed}
-                      onCollapseChange={setCollapsed}
-                      onInsert={(at) => {
-                        setPending(at)
-                        // The design: "Clicking it opens the Components tab
-                        // with that insertion point pending."
-                        setTab('components')
-                      }}
-                    />
-                  ),
-                },
-                {
                   id: 'components',
                   label: 'Components',
                   content: (
@@ -176,7 +148,6 @@ export function Build({ className, ...rest }: BuildProps) {
                           ),
                         )
                         setPending(null)
-                        setTab('flow')
                       }}
                     />
                   ),
@@ -204,6 +175,19 @@ export function Build({ className, ...rest }: BuildProps) {
           </div>
           <div className={styles.map}>
             <FlowMap
+              onInsert={(at) => {
+                // The design: "Clicking it opens the Components tab with that
+                // insertion point pending."
+                setPending(at)
+                setTab('components')
+              }}
+              onDropComponent={(component, at) => {
+                // The same introduction as the click, arriving in one gesture
+                // rather than three: the canvas already knows where and the drag
+                // carried what, so nothing is left pending because nothing was
+                // left unanswered.
+                store?.apply(addStep(component, at))
+              }}
               boardId={board}
               onBoardChange={(next) => {
                 setBoard(next)

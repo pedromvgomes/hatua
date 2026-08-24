@@ -41,26 +41,22 @@ canvas that is visible only while one tab is open, and never beside the panel it
 not a canvas — `views/README` and ADR-0011 both make this argument about version navigation for the
 same reason.
 
-**The Flow tab is a default, and the reason has changed.** It was here on the strength of a gap —
-"until the canvas can select a Step, dropping it leaves no way to choose one at all" — which is a
-lower bound on when it could go, and the canvas selects a Step now. It stays on its own merits
-instead. `<StepList>` is dense, scannable and keyboard-reorderable; it is where a Step is dragged
-from; and it is where the insert points are, because a list has a gap between every two siblings and
-a map of cards has none. An empty Board is the case that settles it: a root node, no Steps, and
-therefore no `+` anywhere on the canvas unless one is invented for it.
+**The Flow tab is not in `<Build>`'s default set.** `<StepList>` is a real region and a dense,
+scannable, keyboard-reorderable view of the tree; a Host that wants it mounts it, and
+`apps/playground/src/host.tsx` does. Hatua's own screen does not, because the canvas can now select a
+Step, fold a container, open a call, and take an inserted or dropped one — which was the whole of what
+the list was still standing in for.
 
-So the two surfaces divide by affordance rather than by content. **Structural edits go through the
-list; the canvas selects, folds and opens a call.** Both show the same Board and the same selection —
-`<Build>` holds one of each for both — so neither is a partial view of the other.
-
-`packages/react/src/layouts/README.md` made this argument already, three paragraphs above the
-sentence that promised the tab would leave. The argument is the half that survives.
+`packages/react/src/layouts/README.md` argued for a while that the two were both on screen and
+neither replaced the other. That was written before the canvas had a `+` on it; what it was really
+saying is that a Host may want both, which is why the region is still exported and still mounted bare
+by the playground.
 
 ### Which tabs, in which view
 
 | View | Tabs |
 | --- | --- |
-| Build | **Flow**, **Components**, **Workflow** |
+| Build | **Components**, **Workflow** |
 | Runs | **Workflow** (read-only), **Runs** |
 
 `<TabbedPanel>` arranges regions and owns none of them, so which tabs exist is the caller's
@@ -85,9 +81,20 @@ this section; change one in either place and the other is wrong.
 
 **Cards are a fixed size, and only two heights exist.** A card sized to its content makes a column's
 rhythm a function of how long somebody's Step names are, and makes the map reflow when one is
-renamed. The meta row is the container summary — how many Branches, how many Steps, whether there is
-a handler — so a card is the taller one exactly when the Step owns child regions. That question is
-`isContainer`, answered where the regions are enumerated rather than by whatever is drawing.
+renamed. Every card carries the Component's icon, the Step's name and its verb; the taller one also
+carries a **meta row** of the Step's filled **Slots**, as chips — the connection first, then each
+value in the order the manifest declares it.
+
+So a card is the taller one exactly when it has a filled Slot, which is `slotsFor` against the
+Component Manifest. **Not `isContainer`**: `core.fork` declares `fields: []` and has nothing to say
+below its name, so a Fork is the short card while a `core.for_each` — which declares `list` — is the
+tall one. Both nest. What decides is whether there is anything to show, and the same predicate decides
+the height and the contents so a short card cannot end up with a row in it.
+
+That makes the map a function of the document **and the catalogue**, which is worth saying out loud.
+ADR-0001's promise still holds — the catalogue changes what a card says about itself, never where
+anything sits relative to anything else — and a Board laid out before the manifests land is the same
+map with shorter cards.
 
 **What the gaps have to satisfy.** `verticalGap` exceeds `nodeHeight`, so the space between two cards
 reads as a run of the flow and not as a crack between two cards that nearly touch. `branchGap` is
@@ -126,13 +133,30 @@ that tier draw what it is handed and compute no geometry of its own — and ther
 not work them out at all, which is a region with nothing in it, where the band is the only thing on
 screen.
 
-**Nothing is drawn between two cards.** ADR-0013 refuses an edge a user can attach anything to and
-CONTEXT.md resolves that there are no connections to draw; a plain rule between two cards is refused
-separately and on this section's own argument. `verticalGap` exceeds `nodeHeight` precisely so the
-space reads as a run of the flow, every card is the same width and centred on one spine, and a line
-down that spine restates an adjacency already visible. Where a column cannot carry the meaning — a
-Fork's alternatives, and where they stop — the band and the join marker carry it, and both are boxes
-this section's numbers already reserve.
+**A line is drawn between one card and the next.** ADR-0013 refuses an edge a user can attach
+anything to — no connect affordance, no exit handles — and CONTEXT.md refuses a Connection as a thing
+in the model. Neither refuses a *line*, and the map needs one: at `verticalGap` of 96px, two cards
+that follow each other read as two unrelated things. The line is what says "then". It holds nothing,
+nothing on it takes a pointer, and it is derived from the tree like every other position here.
+
+A **Link** is one gap: the point the flow leaves, the point it arrives at, and — on all but a Fork's
+join — the **InsertPoint** a Step goes to if one is added there. There is one per gap in every step
+list, which is one more than the list is long and is exactly the count `<StepList>` draws between its
+rows. That is the property that makes the canvas a surface a workflow can be built on: a `+` sits on
+every link that names a position, including the stub after the last Step and the one under the root
+node of an empty Board, which is the only way to add the first Step to a new workflow.
+
+**A Fork's last gap is its join.** The line out of the last card in a Branch goes to the mark where the
+columns converge and carries the `+` on the way. A separate stub beside it would leave two lines out
+of one card, one of them going nowhere, and a line going nowhere is the first thing a reader tries to
+follow.
+
+**The word over a region sits on the line entering it**, in the strip `regionLabel` reserves at the
+top of that region's own column — not at a fraction along the line, because both of a Fork's branch
+links leave the same point and any fraction near the start is the same place twice. The **Band** is
+the region's extent rather than its name: a frame saying how far the region reaches, which is the
+thing the word cannot say. Two things saying one word over one region would be the duplication this
+repo refuses everywhere else.
 
 **Both draw every region the document carries, and neither reads the verb to decide.** A `handler:`
 on a `core.fork` is meaningless and has no runner, but it is not invisible: `walkSteps` yields the
@@ -149,9 +173,10 @@ call sites, which would hand back everything extracting it bought and draw a Blo
 places three times.
 
 Which Board that is, is **chrome** — the document has no key for it, on the same argument that keeps
-node positions out. `<FlowMap>` holds it and lifts it into a caller; `<Build>` holds one Board for the
-canvas and the Flow tab together, so the list follows the map. The two surfaces showing two different
-Boards at once is the same defect as the map and the list disagreeing about a region.
+node positions out. `<FlowMap>` holds it and lifts it into a caller through `boardId` /
+`onBoardChange`, the way `<TabbedPanel>` lifts which tab is open, and `<StepList>` takes a plain
+`board` prop. A Host mounting both gets one Board for both, because two surfaces showing two
+different Boards at once is the same defect as the map and the list disagreeing about a region.
 
 Selection and collapse are named by a **`StepRef`** for the reason a Placement is: ids are
 Board-local, so a bare `ret` selects a Step on two Blocks and folds a container on both.

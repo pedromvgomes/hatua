@@ -82,7 +82,7 @@ because neither needs a catalogue.
 | Region | What it is |
 | --- | --- |
 | `TopBar` | The toolbar. |
-| `StepList` | The tree as a dense, ordered list, and the region behind the **Flow** tab. |
+| `StepList` | The tree as a dense, ordered list. A region a Host may mount; not in `Build`'s tab set. |
 | `FlowMap` | The canvas: one Board's tree as a map of cards and the regions around them, filling the middle column. Not a tab. |
 | `Inspector` | The step editor. |
 | `Components` | The Component Manifests a Host serves, as cards. Components only — a Trigger is not a Step, and adding one is the Workflow tab's job. |
@@ -147,14 +147,22 @@ been the third answer to a question with one right answer. `StepList.test.tsx`
 § "draws one band per region, saying what `regionsOf` calls it" hold both
 surfaces to that enumeration on a Step carrying all three keys at once.
 
-### Nothing is drawn between cards
+### The lines between the cards
 
-There is no connector on the map and no unit for one. ADR-0013 refuses an
-*attachable* edge and CONTEXT.md resolves that there are no connections to draw;
-neither of those refuses a plain rule between two cards, so the canvas settles
-it: the gap between two cards is what reads as a run of the flow, which is what
-`LAYOUT.verticalGap` exceeding `nodeHeight` is for. `units/README.md` carries the
-argument in full.
+A line is drawn from one card to the next, and it is chrome the geometry places.
+ADR-0013 refuses an edge a user can attach anything to and CONTEXT.md refuses a
+**Connection** as a thing in the model; neither refuses a line, and at
+`LAYOUT.verticalGap` of 96px the map needs one — two cards that follow each other
+read as two unrelated things without it. Nothing on the line takes a pointer and
+nothing is stored.
+
+`@hatua/layout` emits a `Link` per gap: where the flow leaves, where it arrives,
+and the `InsertPoint` a Step goes to if one is added there. **One per gap in
+every step list** — one more than the list is long, and the same count
+`<StepList>` draws between its rows. `units/Connectors` draws the curve between
+the two ends; `units/InsertDot` draws the `+` on it. That count is the property
+that makes this region a surface a workflow is built on rather than a picture of
+one, and `layout.test.ts` holds it over every fixture.
 
 ### One Board at a time, and a call is the doorway
 
@@ -180,34 +188,26 @@ and stops being latent here. `layout`'s `collapsed` option still takes bare ids,
 because a Board is already its argument — `<FlowMap>` filters the set down to the
 Board on screen, and that is the only place the two spellings meet.
 
-### The list and the map are both on screen
+### The canvas is how a workflow is built
 
-They are not redundant, and neither replaces the other. The list is scannable at
-a glance in a long workflow, is where a Step is dragged from, and makes the
-insert points unambiguous; the map shows structure — branches, joins, what runs
-in parallel — which no list does well. The tree sits in the side panel behind
-the **Flow** tab and the map fills the middle, so no fourth panel is needed for
-either.
+Mounting it as one of the tabs is the arrangement to avoid, and the one this
+repo shipped once: it would be visible only while that tab was open and never
+beside the panel it is edited from, and a canvas you have to leave the catalogue
+to look at is not a canvas. It has the middle column, it is always on screen, and
+the side panel is what a Step is chosen from.
 
-Mounting the canvas as one of the tabs is the arrangement to avoid: it would be
-visible only while that tab was open and never beside the panel it is edited
-from, and a canvas you have to leave the catalogue to look at is not a canvas.
+**The Flow tab is not in `Build`'s default set.** The design of record says the
+canvas is how a workflow is built, and it now is: every card, every `+`, the
+chevron, the doorway into a Block's Board, and the drop target a Component card
+is dragged onto. `<StepList>` stays exported and stays mounted bare by
+`apps/playground/src/host.tsx`, which is a Host that wants both — but Hatua's own
+screen leads with the canvas and the side panel is **Components** and
+**Workflow**.
 
-**The Flow tab stays.** An earlier note here said it was in `Build`'s default set
-"only until the canvas can select a Step" — which was a lower bound on when it
-*could* leave, and read as a plan for when it would. The canvas selects a Step
-now, and the paragraph above is the reason the tab is still here: the list is
-scannable in a long workflow, is where a Step is dragged from, and is where the
-insert points are unambiguous. A map of cards has no gaps between siblings to
-click, and an empty Board has a root node and no Steps at all — so a canvas that
-replaced the list would have to grow an insert affordance of its own before
-anyone could add the first Step.
-
-What that leaves is a real asymmetry worth stating: **structural edits go through
-the list, and the canvas selects, folds and navigates.** Insert, remove, drag and
-Alt+Arrow are `<StepList>`'s; the canvas reads the document and writes none of
-it. Both surfaces show the same Board and the same selection, so the split is
-about which affordances a shape affords, not about which Steps each one can see.
+An earlier draft of this file argued the two were both on screen and neither
+replaced the other. That was written when the canvas could not select a Step, let
+alone take one; what survives of it is that a Host may want the list, which is
+why the region is still a region.
 
 ### Names and labels
 

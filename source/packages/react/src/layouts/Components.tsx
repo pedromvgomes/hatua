@@ -12,8 +12,10 @@ import { Button } from '../primitives/Button'
 import { cx } from '../primitives/classNames'
 import { Input } from '../primitives/Input'
 import { useManifestStore } from '../theme/HatuaProvider'
+import { IconCoin } from '../units/IconCoin'
 import styles from './Components.module.css'
 import css from './Components.module.css?inline'
+import { COMPONENT_MIME, encodeComponent } from './dragging'
 
 export interface ComponentsProps extends Omit<ComponentPropsWithRef<'section'>, 'onSelect'> {
   /**
@@ -209,75 +211,6 @@ export function Components({ onSelect, defaultQuery = '', className, ...rest }: 
 }
 
 /**
- * The component's icon, as the Host serves it.
- *
- * `icon` is a URL, not a name. Hatua ships no icon set and should not: a name
- * is only meaningful against a set, and a Host declaring a component of its own
- * would have nothing to name — which is how this field spent a release
- * resolving to nothing and the card drawing the component's initial instead. A
- * letter is not an icon; it carries no more than the name already beside it.
- *
- * Into a fixed box, `object-fit: contain`, so a Host's artwork cannot decide
- * the row height however it is proportioned.
- *
- * `referrerPolicy` because the URL may be a third party's CDN and the Host's
- * own URL can carry a workflow id. `alt=""` because the name is right there:
- * this is decoration, and announcing it twice helps nobody.
- */
-function ComponentIcon({ manifest }: { manifest: Manifest }) {
-  // The URL that failed, not a boolean, so the flag cannot outlive the URL it
-  // was about. Cards are reconciled by `use`: were a catalogue ever to arrive
-  // with a fixed icon on the same component, a bare `broken` flag would survive
-  // the fix and keep drawing the placeholder for the life of the mount.
-  //
-  // No path reaches that today — every reload publishes `loading` first, which
-  // empties the list and unmounts these cards, so the state resets on its own.
-  // Written this way regardless: it costs a comparison, and it stops being
-  // load-bearing on a store detail this component cannot see.
-  const [failedUrl, setFailedUrl] = useState<string | null>(null)
-  const icon = textOf(manifest?.icon)
-  const broken = failedUrl !== null && failedUrl === icon
-
-  // A URL that 404s is the Host's to fix, and until it does the card still has
-  // to draw something square. The placeholder is deliberately neutral rather
-  // than a guess at what the icon would have been.
-  if (!icon || broken) {
-    return (
-      <span className={styles.icon}>
-        {/* No <title>: this is decoration inside an aria-hidden element, so a
-            title would be announced to nobody and rendered as a hover tooltip
-            to everybody — the same reason the Host's own icon files carry
-            none. */}
-        <svg
-          className={styles.placeholder}
-          viewBox="0 0 16 16"
-          focusable="false"
-          aria-hidden="true"
-        >
-          <rect x="2.5" y="2.5" width="11" height="11" rx="3" />
-        </svg>
-      </span>
-    )
-  }
-
-  return (
-    <span className={styles.icon}>
-      <img
-        className={styles.image}
-        src={icon}
-        alt=""
-        width={18}
-        height={18}
-        loading="lazy"
-        decoding="async"
-        referrerPolicy="no-referrer"
-        onError={() => setFailedUrl(icon)}
-      />
-    </span>
-  )
-}
-
-/**
  * A card is a button only when something happens on click. A control that does
  * nothing still takes a tab stop, still says "button" to a screen reader and
  * still invites a click — so the Host that mounts <Components /> to browse a
@@ -292,7 +225,7 @@ function Card({ manifest, onSelect }: { manifest: Manifest; onSelect?: (m: Manif
 
   const body = (
     <>
-      <ComponentIcon manifest={manifest} />
+      <IconCoin manifest={manifest} />
       <span className={styles.text}>
         <span className={styles.name}>{name}</span>
         {blurb ? <span className={styles.blurb}>{blurb}</span> : null}
@@ -300,11 +233,32 @@ function Card({ manifest, onSelect }: { manifest: Manifest; onSelect?: (m: Manif
     </>
   )
 
+  /*
+   * Draggable whenever it is actionable, because the canvas's `+` is a drop
+   * target and this is the other half of that gesture. The click path stays:
+   * HTML5 drag and drop is unreachable from the keyboard, so a catalogue whose
+   * only route into the tree is a drag is a catalogue some people cannot use.
+   *
+   * The payload is the verb. It is what a Step is written with, it is what the
+   * drop target needs to look the manifest back up, and it is the one field a
+   * manifest always has.
+   */
   return onSelect ? (
     <button
       type="button"
       className={cx(styles.card, styles.actionable)}
+      draggable
       onClick={() => onSelect(manifest)}
+      onDragStart={(event) => {
+        const use = textOf(manifest.use)
+        if (!use) {
+          event.preventDefault()
+          return
+        }
+        event.dataTransfer.effectAllowed = 'copy'
+        event.dataTransfer.setData(COMPONENT_MIME, encodeComponent({ use, name }))
+        event.dataTransfer.setData('text/plain', use)
+      }}
     >
       {body}
     </button>

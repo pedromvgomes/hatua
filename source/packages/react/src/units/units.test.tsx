@@ -1,6 +1,6 @@
 import type { Band, Join, Rect } from '@hatua/layout'
 import { LAYOUT } from '@hatua/layout'
-import type { Step } from '@hatua/schema'
+import type { Manifest, Step } from '@hatua/schema'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { boxOf } from './box'
@@ -21,6 +21,14 @@ import { RootNode } from './RootNode'
 const rect: Rect = { x: 40, y: 12, width: LAYOUT.nodeWidth, height: LAYOUT.nodeHeight }
 
 const leaf: Step = { id: 's1', use: 'component.email.fetch', name: 'Fetch mail', with: {} }
+const FETCH: Manifest = {
+  kind: 'component',
+  use: 'component.email.fetch',
+  name: 'Fetch mail',
+  fields: [{ k: 'query', label: 'Query', kind: 'text' }],
+  outputs: [],
+}
+
 const container: Step = {
   id: 's2',
   use: 'core.try',
@@ -64,19 +72,55 @@ describe('NodeCard', () => {
     expect(screen.getByText('lonely')).toBeDefined()
   })
 
-  /*
-   * `heightOf` returns the taller card exactly when `isContainer`, so the
-   * summary row appears on exactly those cards. Asked of the same predicate
-   * rather than of "is there a summary": `summaryOf` always returns something,
-   * and a leaf showing it would be 100px of content in a 64px box.
-   */
-  it('carries the summary on a container and nothing but a name on a leaf', () => {
-    const { unmount } = render(<NodeCard step={container} rect={rect} />)
-    expect(screen.getByText('core.try · 1 step · handler')).toBeDefined()
-    unmount()
-
+  it('shows the verb under the name, on every card', () => {
     render(<NodeCard step={leaf} rect={rect} />)
-    expect(screen.queryByText('component.email.fetch')).toBeNull()
+    expect(screen.getByText('component.email.fetch')).toBeDefined()
+  })
+
+  /*
+   * The meta row is the Step's filled Slots, and only a manifest says which
+   * keys are Slots. That is one rule for a leaf and a container alike, and it
+   * is the same predicate `heightOf` asks — so a card cannot be the short one
+   * with a row in it.
+   */
+  it('shows a filled Slot as a chip', () => {
+    render(
+      <NodeCard step={{ ...leaf, with: { query: 'is:unread' } }} rect={rect} manifest={FETCH} />,
+    )
+    expect(screen.getByText('is:unread')).toBeDefined()
+  })
+
+  it('shows a bare Reference as the path it names, not as braces', () => {
+    // The braces are syntax, and a card is not where anyone edits it.
+    render(
+      <NodeCard
+        step={{ ...leaf, with: { query: '{{ steps.s0.subject }}' } }}
+        rect={rect}
+        manifest={FETCH}
+      />,
+    )
+    expect(screen.getByText('steps.s0.subject')).toBeDefined()
+    expect(screen.queryByText(/\{\{/)).toBeNull()
+  })
+
+  it('gives a container with no declared fields no row at all', () => {
+    // A Fork declares `fields: []`, so it has nothing to say below its name —
+    // which is why it is the short card even though it nests two Branches.
+    const fork: Step = {
+      id: 'f',
+      use: 'core.fork',
+      with: { mode: 'condition' },
+      branches: [{ label: 'A', steps: [] }],
+    }
+    render(
+      <NodeCard step={fork} rect={rect} manifest={{ ...FETCH, use: 'core.fork', fields: [] }} />,
+    )
+    expect(screen.queryByText('condition')).toBeNull()
+  })
+
+  it('shows no row before a catalogue arrives, whatever the Step holds', () => {
+    render(<NodeCard step={{ ...leaf, with: { query: 'is:unread' } }} rect={rect} />)
+    expect(screen.queryByText('is:unread')).toBeNull()
   })
 
   it('offers a chevron on a container and none on a leaf', () => {
@@ -129,34 +173,13 @@ describe('RegionBand', () => {
     height: LAYOUT.regionLabel + 60,
   }
 
-  it('says the word the band carries and never works one out', () => {
-    render(<RegionBand band={band} />)
-    expect(screen.getByText('on failure')).toBeDefined()
-  })
-
-  it('shows a Branch’s own label and condition beside the keyword', () => {
-    // Two different things: the keyword comes from the fork's shape and the
-    // label is free text a user renames.
-    render(
-      <RegionBand
-        band={{ ...band, kind: 'branch', keyword: 'else if' }}
-        label="Quiet"
-        when="{{ var.quiet }}"
-      />,
-    )
-    expect(screen.getByText('else if')).toBeDefined()
-    expect(screen.getByText('Quiet')).toBeDefined()
-    expect(screen.getByText('{{ var.quiet }}')).toBeDefined()
-  })
-
-  it('takes the label strip’s height from LAYOUT rather than from a copy of the number', () => {
-    // The layout reserves exactly `regionLabel` at the top of the band and lays
-    // the cards out below it. A matching number in the stylesheet is a second
-    // copy that drifts the day the first one moves.
-    render(<RegionBand band={band} />)
-    expect((screen.getByText('on failure').parentElement as HTMLElement).style.blockSize).toBe(
-      `${LAYOUT.regionLabel}px`,
-    )
+  it('names nothing, because the chip on the entering line does', () => {
+    // Two things saying one word over one region is the duplication this repo
+    // refuses everywhere else. The frame says the thing the word cannot: how
+    // far the region reaches.
+    const { container } = render(<RegionBand band={band} />)
+    expect(container.textContent).toBe('')
+    expect(container.querySelector('[aria-hidden="true"]')).not.toBeNull()
   })
 
   it('is the whole region, so an empty one is still a box with a word over it', () => {

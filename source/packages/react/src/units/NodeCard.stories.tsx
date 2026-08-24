@@ -1,17 +1,31 @@
 import { LAYOUT } from '@hatua/layout'
-import type { Step } from '@hatua/schema'
+import type { Manifest, Step } from '@hatua/schema'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { NodeCard } from './NodeCard'
 
 /**
  * One Step as a card, in every state the canvas puts it in.
  *
- * The two heights are the point: `LAYOUT.nodeHeight` is a name and nothing
- * else, `nodeHeightWithMeta` also carries the summary row, and `heightOf` picks
- * between them on `isContainer` — so the summary is on exactly the taller cards
- * and a leaf has nowhere to put one.
+ * The two heights are the point: `LAYOUT.nodeHeight` is the name and the verb,
+ * `nodeHeightWithMeta` also carries the chips row, and `heightOf` picks between
+ * them on whether the Step has a filled **Slot** — which only a Component
+ * Manifest names. That is one rule for a leaf and a container alike: a
+ * `core.fork` declares `fields: []` and gets no row, while a
+ * `core.for_each` declares `list` and gets one.
  */
 const LEAF: Step = { id: 's1', use: 'component.email.fetch', name: 'Fetch mail', with: {} }
+
+const FETCH: Manifest = {
+  kind: 'component',
+  use: 'component.email.fetch',
+  name: 'Fetch mail',
+  icon: '/icons/mail.svg',
+  fields: [
+    { k: 'connection', label: 'Mailbox', kind: 'conn' },
+    { k: 'query', label: 'Query', kind: 'text' },
+  ],
+  outputs: [],
+}
 
 const leafRect = { x: 0, y: 0, width: LAYOUT.nodeWidth, height: LAYOUT.nodeHeight }
 const tallRect = { x: 0, y: 0, width: LAYOUT.nodeWidth, height: LAYOUT.nodeHeightWithMeta }
@@ -32,15 +46,43 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** A leaf: a name and nothing else, which is what 64px is for. */
-export const Leaf: Story = {}
+/** A leaf with nothing filled in: the name, the verb, and 64px. */
+export const Leaf: Story = { args: { manifest: FETCH } }
 
-export const Selected: Story = { args: { selected: true } }
-
-/** A container, and the summary row the taller card exists to carry. */
-export const Container: Story = {
+/** The same Step with its Slots filled — the chips row, and the taller card. */
+export const WithChips: Story = {
   args: {
     rect: tallRect,
+    manifest: FETCH,
+    step: { ...LEAF, with: { connection: 'mailbox', query: 'is:unread newer_than:1d' } },
+    connections: new Map([['mailbox', 'mcp/gmail']]),
+  },
+}
+
+/**
+ * A Slot holding a bare Reference shows the path it names rather than the
+ * braces. The braces are syntax, and a card is not where anyone edits it.
+ */
+export const Reference: Story = {
+  args: {
+    rect: tallRect,
+    manifest: FETCH,
+    step: { ...LEAF, with: { query: '{{ steps.s0.subject }}' } },
+  },
+}
+
+export const Selected: Story = { args: { manifest: FETCH, selected: true } }
+
+/**
+ * A Fork: a container, and the short card.
+ *
+ * `core.fork` declares `fields: []`, so there is nothing to put in a row — which
+ * is why "is it a container" is the wrong question and "has it anything to say"
+ * is the right one.
+ */
+export const Container: Story = {
+  args: {
+    manifest: { kind: 'component', use: 'core.fork', name: 'Branch', fields: [], outputs: [] },
     step: {
       id: 's2',
       use: 'core.fork',
@@ -50,26 +92,6 @@ export const Container: Story = {
         { label: 'Urgent', when: '{{ var.x }}', steps: [] },
         { label: 'Otherwise', steps: [] },
       ],
-    },
-  },
-}
-
-/**
- * A `core.try` carrying only a handler.
- *
- * The summary is enumerated off `regionsOf`, so it says `handler` here. Read off
- * `steps:` alone it would say `core.try` and nothing more — a card with a
- * chevron and an `on failure` region under it, describing itself as a leaf.
- */
-export const HandlerOnly: Story = {
-  args: {
-    rect: tallRect,
-    step: {
-      id: 's3',
-      use: 'core.try',
-      name: 'Publish the digest',
-      with: {},
-      handler: [{ id: 's4', use: 'core.end' }],
     },
   },
 }
@@ -90,9 +112,19 @@ export const Call: Story = {
 /** The marker is colour; the reasons are text, for everyone it does not reach. */
 export const Invalid: Story = {
   args: {
+    manifest: FETCH,
     problems: [
       { code: 'FIELD_REQUIRED', blocks: 'publish', message: 'Fill in “to”.' },
-      { code: 'COMPONENT_UNKNOWN', blocks: 'publish', message: 'Nothing declares this component.' },
+      {
+        code: 'COMPONENT_UNKNOWN',
+        blocks: 'publish',
+        message: 'Nothing declares this component.',
+      },
     ],
   },
+}
+
+/** No manifest: the neutral coin, and no row, whatever the Step's `with:` holds. */
+export const NoCatalogue: Story = {
+  args: { step: { ...LEAF, with: { query: 'is:unread' } } },
 }

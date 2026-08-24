@@ -1,55 +1,26 @@
 @layer hatua {
+  /*
+    Quiet on purpose. The chip on the entering line names the region; this only
+    says how far it reaches, so it must not compete with the cards inside it.
+  */
   .band {
     box-sizing: border-box;
-    border: 1px dashed var(--hatua-border-subtle);
-    border-radius: var(--hatua-radius-md);
-    /* Behind the cards it frames: this is the region's ground, not a box on it. */
-    background: color-mix(in oklab, var(--hatua-surface-card) 35%, transparent);
+    border: 1px solid var(--hatua-border-subtle);
+    border-radius: var(--hatua-radius-lg);
+    background: color-mix(in oklab, var(--hatua-surface-card) 22%, transparent);
     pointer-events: none;
   }
 
-  /* A handler is the region that runs because something failed, so its frame
-     says so before its word is read. */
+  /* A handler runs because something failed, so its frame says so before its
+     word is read. */
   .handler {
-    border-color: color-mix(in oklab, var(--hatua-status-error) 45%, transparent);
+    border-color: color-mix(in oklab, var(--hatua-status-error) 30%, transparent);
+    background: color-mix(in oklab, var(--hatua-status-error-wash) 30%, transparent);
   }
 
-  .header {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    box-sizing: border-box;
-    /* The strip's height comes from `LAYOUT.regionLabel`, set inline. */
-    margin: 0;
-    padding-inline: 8px;
-    overflow: hidden;
-    white-space: nowrap;
-  }
-
-  .keyword {
-    flex: none;
-    padding: 1px 7px;
-    border: 1px solid var(--hatua-border-subtle);
-    border-radius: 999px;
-    background: var(--hatua-surface-card);
-    color: var(--hatua-text-muted);
-    font-size: 11px;
-    font-family: var(--hatua-font-mono);
-    line-height: 1.5;
-  }
-
-  .label {
-    overflow: hidden;
-    color: var(--hatua-text-secondary);
-    font-size: 12px;
-    text-overflow: ellipsis;
-  }
-
-  .when {
-    overflow: hidden;
-    color: var(--hatua-text-muted);
-    font-size: 11px;
-    font-family: var(--hatua-font-mono);
-    text-overflow: ellipsis;
+  /* A Branch is one column among alternatives, and the dashes match the dashed
+     line that enters it. */
+  .branch {
+    border-style: dashed;
   }
 }
