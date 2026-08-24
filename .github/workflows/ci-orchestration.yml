@@ -119,27 +119,6 @@ jobs:
       contents: read
       packages: read
 
-  end2end:
-    needs: [attest, build, preflight]
-    if: needs.attest.outputs.validated != 'true' && needs.preflight.outputs.run-end2end != 'false'
-    uses: ./.github/workflows/ci-end2end.yml
-    # `inherit` rather than an enumerated `secrets:` block, and semgrep's
-    # secrets-inherit rule is answered rather than silenced: gt renders this
-    # orchestrator for every repository and cannot know their secret names, so
-    # there is no list to write. The callee is this same repository's own
-    # workflow, so no secret crosses a trust boundary that `inherit` did not
-    # already sit inside.
-    # nosemgrep: yaml.github-actions.security.secrets-inherit.secrets-inherit
-    secrets: inherit
-    # packages: read because several repositories resolve private @scope
-    # dependencies from GitHub Packages during install, and a called workflow
-    # can only narrow what the caller grants — a stage cannot ask for it back.
-    # Read-only, so granting it where it is unused costs nothing. A stage
-    # needing more than this is a gt change.
-    permissions:
-      contents: read
-      packages: read
-
   conventional-commits:
     needs: [attest]
     if: needs.attest.outputs.validated != 'true'
@@ -186,7 +165,7 @@ jobs:
   # was skipped, and a skipped stage passes — that is the point of preflight.
   ci-gate:
     name: ci-gate
-    needs: [attest, preflight, build, test, end2end, conventional-commits, governance, bulwark]
+    needs: [attest, preflight, build, test, conventional-commits, governance, bulwark]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

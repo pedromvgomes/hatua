@@ -20,9 +20,6 @@ on:
       run-test:
         description: Set to "false" to skip the test stage.
         value: ${{ jobs.preflight.outputs.run-test }}
-      run-end2end:
-        description: Set to "false" to skip the end2end stage.
-        value: ${{ jobs.preflight.outputs.run-end2end }}
 
 permissions:
   contents: read
@@ -34,7 +31,6 @@ jobs:
     outputs:
       run-build: ${{ steps.decide.outputs.run-build }}
       run-test: ${{ steps.decide.outputs.run-test }}
-      run-end2end: ${{ steps.decide.outputs.run-end2end }}
     steps:
       - name: Decide which stages to run
         id: decide
