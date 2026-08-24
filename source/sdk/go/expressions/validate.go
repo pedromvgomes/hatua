@@ -47,7 +47,7 @@ func Validate(template string, expectedType ValueType, ctx CheckContext) []Diagn
 	}
 
 	// Mixed text can only be text, whatever the holes hold. This is what refuses
-	// the legacy `when: "{{s2.count}} > 0"` at design time rather than letting a
+	// the legacy `when: "{{steps.s2.count}} > 0"` at design time rather than letting a
 	// runner mistake the string "24 > 0" for truth.
 	for _, segment := range parsed.Segments {
 		if hole, ok := segment.(*Hole); ok {

@@ -23,7 +23,12 @@ const DEFINITION = {
   ],
   vars: [{ key: 'digest_to', value: 'me@dane.dev' }],
   steps: [
-    { id: 's2', use: 'email.fetch', name: 'Fetch emails', with: { connection: 'mailbox' } },
+    {
+      id: 's2',
+      use: 'component.email.fetch',
+      name: 'Fetch emails',
+      with: { connection: 'mailbox' },
+    },
     {
       id: 's3',
       use: 'core.fork',
@@ -31,13 +36,13 @@ const DEFINITION = {
       branches: [
         {
           label: 'Has new mail',
-          when: '{{s2.count}} > 0',
+          when: '{{steps.s2.count}} > 0',
           steps: [
             {
               id: 's4',
               use: 'core.for_each',
-              with: { list: '{{s2.messages}}' },
-              steps: [{ id: 's5', use: 'agent.act' }],
+              with: { list: '{{steps.s2.messages}}' },
+              steps: [{ id: 's5', use: 'component.agent.act' }],
             },
           ],
         },
@@ -144,7 +149,7 @@ describe('workflowExecution', () => {
 describe('componentManifest', () => {
   const MANIFEST = {
     kind: 'component',
-    use: 'email.send',
+    use: 'component.email.send',
     name: 'Send email',
     group: 'Email',
     icon: '/icons/mail.svg',

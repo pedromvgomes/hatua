@@ -15,7 +15,7 @@ const SCOPE: ScopeEntry[] = [
   { path: 'run.tenant', kind: 'context', label: 'Tenant', type: { type: 'text' } },
   { path: 'var.digest_to', kind: 'var', label: 'digest_to', type: { type: 'text' } },
   {
-    path: 's2',
+    path: 'steps.s2',
     kind: 'step',
     label: 'Fetch emails',
     type: {
@@ -61,17 +61,17 @@ describe('the Reference tab', () => {
   it('groups by where a value comes from', () => {
     mount()
     expect(screen.getByRole('heading', { name: /Run context/ })).toBeDefined()
-    expect(screen.getByRole('heading', { name: /Fetch emails/ })).toBeDefined()
+    expect(screen.getByRole('heading', { name: /Steps/ })).toBeDefined()
     expect(rowNamed('run.tenant')).toBeDefined()
-    expect(rowNamed('s2.messages[].subject')).toBeDefined()
+    expect(rowNamed('steps.s2.messages[].subject')).toBeDefined()
   })
 
   it('narrows to one source, and drops the headings with it', () => {
     mount()
-    fireEvent.change(screen.getByLabelText('What to read from'), { target: { value: 's2' } })
+    fireEvent.change(screen.getByLabelText('What to read from'), { target: { value: 'steps' } })
     expect(screen.queryByRole('heading', { name: /Run context/ })).toBeNull()
     expect(rowNamed('run.tenant')).toBeUndefined()
-    expect(rowNamed('s2.count')).toBeDefined()
+    expect(rowNamed('steps.s2.count')).toBeDefined()
   })
 
   /* A grouping prefix is not addressable, so it contributes its children and
@@ -83,8 +83,8 @@ describe('the Reference tab', () => {
 
   it('inserts the bare path, leaving the delimiters to the field', () => {
     const { onChoose } = mount()
-    fireEvent.click(rowNamed('s2.count'))
-    expect(onChoose).toHaveBeenCalledWith('s2.count')
+    fireEvent.click(rowNamed('steps.s2.count'))
+    expect(onChoose).toHaveBeenCalledWith('steps.s2.count')
   })
 
   /*
@@ -95,23 +95,23 @@ describe('the Reference tab', () => {
   it('carries both payloads when a row is dragged', () => {
     mount()
     const setData = vi.fn()
-    fireEvent.dragStart(rowNamed('s2.count'), {
+    fireEvent.dragStart(rowNamed('steps.s2.count'), {
       dataTransfer: { setData, effectAllowed: '' },
     })
-    expect(setData).toHaveBeenCalledWith(REFERENCE_MIME, 's2.count')
-    expect(setData).toHaveBeenCalledWith('text/plain', '{{ s2.count }}')
+    expect(setData).toHaveBeenCalledWith(REFERENCE_MIME, 'steps.s2.count')
+    expect(setData).toHaveBeenCalledWith('text/plain', '{{ steps.s2.count }}')
   })
 
   /* Green means "fits here"; nothing is ever marked wrong. */
   it('marks the rows that produce what the field declares', () => {
     mount({ expected: 'number' })
-    expect(rowNamed('s2.count').getAttribute('data-fits')).toBe('true')
+    expect(rowNamed('steps.s2.count').getAttribute('data-fits')).toBe('true')
     expect(rowNamed('var.digest_to').getAttribute('data-fits')).toBeNull()
   })
 
   it('marks nothing where nothing declares a type', () => {
     mount({ expected: undefined })
-    expect(rowNamed('s2.count').getAttribute('data-fits')).toBeNull()
+    expect(rowNamed('steps.s2.count').getAttribute('data-fits')).toBeNull()
   })
 
   it('says so when there is nothing to read', () => {
@@ -193,25 +193,25 @@ describe('the inserter', () => {
   it('drops a trailing optional nobody filled in', () => {
     const { onChoose } = mount()
     openInserter(/text\.slice/)
-    fireEvent.change(screen.getByLabelText('value'), { target: { value: 's2.subject' } })
+    fireEvent.change(screen.getByLabelText('value'), { target: { value: 'steps.s2.subject' } })
     fireEvent.change(screen.getByLabelText('start'), { target: { value: '0' } })
 
     fireEvent.click(screen.getByRole('button', { name: 'Insert' }))
-    expect(onChoose).toHaveBeenCalledWith('text.slice(s2.subject, 0)')
+    expect(onChoose).toHaveBeenCalledWith('text.slice(steps.s2.subject, 0)')
   })
 
   it('keeps an optional the user did fill in', () => {
     const { onChoose } = mount()
     openInserter(/text\.slice/)
     for (const [name, value] of [
-      ['value', 's2.subject'],
+      ['value', 'steps.s2.subject'],
       ['start', '0'],
       ['end', '8'],
     ]) {
       fireEvent.change(screen.getByLabelText(name as string), { target: { value } })
     }
     fireEvent.click(screen.getByRole('button', { name: 'Insert' }))
-    expect(onChoose).toHaveBeenCalledWith('text.slice(s2.subject, 0, 8)')
+    expect(onChoose).toHaveBeenCalledWith('text.slice(steps.s2.subject, 0, 8)')
   })
 
   /* It inserts and never round-trips, so reopening starts fresh. */

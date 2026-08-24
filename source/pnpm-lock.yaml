@@ -94,6 +94,10 @@ importers:
       '@hatua/schema':
         specifier: workspace:*
         version: link:../schema
+    devDependencies:
+      yaml:
+        specifier: ^2.8.1
+        version: 2.9.0
 
   packages/react:
     dependencies:

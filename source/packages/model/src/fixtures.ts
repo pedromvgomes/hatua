@@ -15,14 +15,19 @@ export const DOC: WorkflowDefinition = {
     { id: 'nightly', use: 'core.schedule', name: 'Weekday mornings', with: {} },
     {
       id: 'on_mail',
-      use: 'email.received',
+      use: 'component.email.received',
       name: 'When mail arrives',
       with: { connection: 'mailbox' },
     },
   ],
   vars: [{ key: 'digest_to', value: 'me@dane.dev' }],
   steps: [
-    { id: 's2', use: 'email.fetch', name: 'Fetch emails', with: { connection: 'mailbox' } },
+    {
+      id: 's2',
+      use: 'component.email.fetch',
+      name: 'Fetch emails',
+      with: { connection: 'mailbox' },
+    },
     {
       id: 's3',
       use: 'core.fork',
@@ -31,18 +36,28 @@ export const DOC: WorkflowDefinition = {
       branches: [
         {
           label: 'Has new mail',
-          when: '{{s2.count}} > 0',
+          when: '{{steps.s2.count}} > 0',
           steps: [
             {
               id: 's4',
               use: 'core.for_each',
               name: 'For each message',
-              with: { list: '{{s2.messages}}' },
+              with: { list: '{{steps.s2.messages}}' },
               steps: [
-                { id: 's5', use: 'agent.act', name: 'Triage', with: { connection: 'brain' } },
+                {
+                  id: 's5',
+                  use: 'component.agent.act',
+                  name: 'Triage',
+                  with: { connection: 'brain' },
+                },
               ],
             },
-            { id: 's6', use: 'email.send', name: 'Send digest', with: { connection: 'mailbox' } },
+            {
+              id: 's6',
+              use: 'component.email.send',
+              name: 'Send digest',
+              with: { connection: 'mailbox' },
+            },
           ],
         },
         { label: 'Otherwise', steps: [{ id: 's7', use: 'core.end', name: 'End' }] },
@@ -54,14 +69,14 @@ export const DOC: WorkflowDefinition = {
 export const MANIFESTS: Manifest[] = [
   {
     kind: 'component',
-    use: 'email.send',
+    use: 'component.email.send',
     name: 'Send email',
     fields: [{ k: 'connection', label: 'Mailbox', kind: 'conn', conn_type: 'email', req: true }],
     outputs: [{ k: 'message_id', label: 'Message ID', t: 'text' }],
   },
   {
     kind: 'component',
-    use: 'email.fetch',
+    use: 'component.email.fetch',
     name: 'Fetch emails',
     fields: [{ k: 'connection', label: 'Mailbox', kind: 'conn', conn_type: 'email', req: true }],
     outputs: [{ k: 'count', label: 'Count', t: 'number' }],
@@ -70,14 +85,14 @@ export const MANIFESTS: Manifest[] = [
     // A trigger declares connections exactly as a component does — which is why
     // connection rules must check the triggers section too, not only steps.
     kind: 'trigger',
-    use: 'email.received',
+    use: 'component.email.received',
     name: 'When mail arrives',
     fields: [{ k: 'connection', label: 'Mailbox', kind: 'conn', conn_type: 'email', req: true }],
     outputs: [{ k: 'subject', label: 'Subject', t: 'text' }],
   },
   {
     kind: 'component',
-    use: 'agent.act',
+    use: 'component.agent.act',
     name: 'Run agent',
     fields: [{ k: 'connection', label: 'Model', kind: 'conn', conn_type: 'llm', req: true }],
     outputs: [{ k: 'result', label: 'Result', t: 'text' }],

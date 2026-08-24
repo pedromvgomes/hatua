@@ -1,4 +1,5 @@
 import type { WorkflowDocument } from '@hatua/document'
+import { own } from '@hatua/model'
 
 /**
  * Reaching into the document's AST, in the terms a command needs.
@@ -123,8 +124,8 @@ export function insertNode(
 
   // `steps: []` is flow style, and splicing into it keeps flow style — so the
   // first Step added to an empty Branch re-serialises the whole subtree onto
-  // one line as `[ { id: s3, use: email.send } ]`, beside siblings written in
-  // block. Only an EMPTY sequence is converted: a list the user wrote in flow
+  // one line as `[ { id: s3, use: component.email.send } ]`, beside siblings
+  // written in block. Only an EMPTY sequence is converted: a list the user wrote in flow
   // style with items in it is a formatting choice, and Hatua does not own the
   // file's formatting (ADR-0001).
   if (seq.items.length === 0) seq.flow = false
@@ -176,6 +177,31 @@ export function setScalar(
 }
 
 /**
+ * The loose projection at `path`, whether or not the document validates.
+ *
+ * Own properties only, through the same `own` every other document-supplied key
+ * goes through. Every caller builds its path from literals and list indices
+ * today, so `__proto__` cannot reach here — but a reader that walks a
+ * user-editable document by dynamic key has to be safe on its own terms rather
+ * than by every caller's discipline.
+ */
+export function readAt(document: WorkflowDocument, path: Path): unknown {
+  let value: unknown = asObject(document)
+  for (const part of path) {
+    if (value === null || typeof value !== 'object') return undefined
+    value = own(value as Record<string, unknown>, String(part))
+  }
+  return value
+}
+
+/**
+ * The key order a Block documents, which is the workflow's own argument one
+ * level down: a person reads the diff, so a key the file does not have yet is
+ * created among the keys it does rather than appended after `steps:`.
+ */
+export const BLOCK_KEY_ORDER = ['id', 'name', 'params', 'outputs', 'vars', 'steps']
+
+/**
  * The key order `workflow-definition.schema.yaml` documents.
  *
  * A key the document does not have yet is created among the keys it does rather
@@ -183,7 +209,17 @@ export function setScalar(
  * repository and a person reads the diff, which is the same reason `addStep`
  * writes a Step's keys one at a time instead of spreading an object literal.
  */
-const KEY_ORDER = ['id', 'name', 'version', 'status', 'connections', 'triggers', 'vars', 'steps']
+export const KEY_ORDER = [
+  'id',
+  'name',
+  'version',
+  'status',
+  'connections',
+  'triggers',
+  'vars',
+  'blocks',
+  'steps',
+]
 
 interface Pair {
   key?: { value?: unknown }
@@ -199,10 +235,11 @@ interface Pair {
  * same way, from a `toString()` no caller guards. `- just\n- a list` parses, so
  * it opens, so a command can be run against it.
  */
-const topLevelPairs = (document: WorkflowDocument): Pair[] | undefined => {
-  const contents = document.ast.contents
-  if (tagOf(contents) !== MAP) return undefined
-  const items = (contents as { items?: unknown }).items
+/** The pairs of the mapping at `path`, or of the document when the path is empty. */
+const pairsAt = (document: WorkflowDocument, path: Path): Pair[] | undefined => {
+  const node = path.length === 0 ? document.ast.contents : document.ast.getIn(path, true)
+  if (tagOf(node) !== MAP) return undefined
+  const items = (node as { items?: unknown }).items
   return Array.isArray(items) ? (items as Pair[]) : undefined
 }
 
@@ -223,12 +260,31 @@ const newPair = (document: WorkflowDocument, key: string, value: unknown): Pair 
  * `triggers:` written as a mapping are half-typed documents, not absent ones,
  * and overwriting either would discard text the user is in the middle of.
  */
-export function topLevelList(document: WorkflowDocument, key: string): Path {
-  const existing = document.ast.getIn([key], true)
-  if (asSeq(existing)) return [key]
+export const topLevelList = (document: WorkflowDocument, key: string): Path =>
+  listIn(document, [], key, KEY_ORDER)
+
+/**
+ * The path of a list inside the mapping at `parent`, creating an empty one in
+ * its documented position when the mapping has no such key.
+ *
+ * The same function serves a top-level `vars:` and a Block's own `vars:`,
+ * because they differ only in which mapping holds them and which key order that
+ * mapping documents. Two functions would be two answers about where a created
+ * key lands, and a Block written by the canvas would diff differently from one
+ * written by hand.
+ */
+export function listIn(
+  document: WorkflowDocument,
+  parent: Path,
+  key: string,
+  order: readonly string[],
+): Path {
+  const path = [...parent, key]
+  const existing = document.ast.getIn(path, true)
+  if (asSeq(existing)) return path
   if (existing !== undefined) throw new Error(`"${key}" is not a list`)
 
-  const pairs = topLevelPairs(document)
+  const pairs = pairsAt(document, parent)
   // A Workflow Definition is a mapping, and a document that is not one has
   // nowhere to put a top-level key: `setIn(['vars'], …)` against a sequence
   // asks it to index by a string and throws with a message about indices. The
@@ -236,16 +292,16 @@ export function topLevelList(document: WorkflowDocument, key: string): Path {
   // the difference readable.
   if (!pairs) throw new Error(`Cannot add "${key}" to a document that is not a mapping`)
 
-  const rank = KEY_ORDER.indexOf(key)
+  const rank = order.indexOf(key)
   // An unrecognised key ranks -1 and therefore sorts before everything, so a
   // new key lands after whatever the Host or the user added of their own.
   const before = pairs.findIndex((pair) => {
     const name = pair.key?.value
-    return typeof name === 'string' && KEY_ORDER.indexOf(name) > rank
+    return typeof name === 'string' && order.indexOf(name) > rank
   })
 
   pairs.splice(before === -1 ? pairs.length : before, 0, newPair(document, key, []))
-  return [key]
+  return path
 }
 
 /**
@@ -259,9 +315,9 @@ export function topLevelList(document: WorkflowDocument, key: string): Path {
  */
 export function* entriesOf(
   document: WorkflowDocument,
-  key: string,
+  where: string | Path,
 ): Generator<{ entry: Record<string, unknown>; index: number }> {
-  const list = asObject(document)[key]
+  const list = readAt(document, typeof where === 'string' ? [where] : where)
   const items = Array.isArray(list) ? list : []
   for (let index = 0; index < items.length; index++) {
     const entry = items[index]

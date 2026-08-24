@@ -180,7 +180,9 @@ export function StepList({
   }
 
   const remove = (id: string) => {
-    store?.apply(removeStep(id))
+    // <StepList> draws the root Board; a Block's Board is reached from a call
+    // chip on the canvas, which this region does not have.
+    store?.apply(removeStep({ board: null, id }))
     if (selectedId !== id) return
     setSelectedId(undefined)
     // Told, not just forgotten locally. <Build> holds this across the unmount
@@ -190,7 +192,7 @@ export function StepList({
   }
 
   const move = (id: string, to: InsertPoint) => {
-    store?.apply(moveStep(id, to))
+    store?.apply(moveStep({ board: null, id }, to))
     setDragging(null)
   }
 
@@ -236,7 +238,9 @@ export function StepList({
     if (target < 0 || target > count - 1) return
     // +1 on the way down, because `moveStep` reads its index against the list
     // as it stands BEFORE the Step is lifted out of it.
-    store?.apply(moveStep(step.id, { ...at, index: delta > 0 ? target + 1 : target }))
+    store?.apply(
+      moveStep({ board: null, id: step.id }, { ...at, index: delta > 0 ? target + 1 : target }),
+    )
   }
 
   const liveMessage =

@@ -7,19 +7,19 @@ scenarios:
   - name: >-
       a Template that is exactly one hole keeps the expression's own type: the
       number 24, not the string "24"
-    template: "{{ s2.count }}"
+    template: "{{ steps.s2.count }}"
     type: number
     context: { steps: { s2: { count: 24 } } }
     value: 24
 
   - name: any scalar may enter a text slot — it is the universal sink
-    template: "{{ s2.count }}"
+    template: "{{ steps.s2.count }}"
     type: text
     context: { steps: { s2: { count: 24 } } }
     value: "24"
 
   - name: a boolean may too
-    template: "{{ s2.urgent }}"
+    template: "{{ steps.s2.urgent }}"
     type: text
     context: { steps: { s2: { urgent: true } } }
     value: "true"
@@ -32,52 +32,52 @@ scenarios:
   - name: >-
       a list may not. `json.stringify()` says "render this as JSON" explicitly,
       and a list landing in a subject line is far more likely to be a mistake.
-    template: "{{ s2.messages }}"
+    template: "{{ steps.s2.messages }}"
     type: text
     context: { steps: { s2: { messages: [1, 2] } } }
     error: EVAL_TYPE_MISMATCH
 
   - name: text into number is not implicit — that is what num.parse is for
-    template: "{{ s2.label }}"
+    template: "{{ steps.s2.label }}"
     type: number
     context: { steps: { s2: { label: "24" } } }
     error: EVAL_TYPE_MISMATCH
 
   - name: num.parse is how it is done instead
-    template: "{{ num.parse(s2.label) }}"
+    template: "{{ num.parse(steps.s2.label) }}"
     type: number
     context: { steps: { s2: { label: "24" } } }
     value: 24
 
   - name: a boolean into a number slot is refused
-    template: "{{ s2.urgent }}"
+    template: "{{ steps.s2.urgent }}"
     type: number
     context: { steps: { s2: { urgent: true } } }
     error: EVAL_TYPE_MISMATCH
 
   - name: >-
       a multi-hole template produces text, so a number slot refuses it. This is
-      the legacy `{{s2.count}} > 0` shape, caught at run time when it reaches
+      the legacy `{{steps.s2.count}} > 0` shape, caught at run time when it reaches
       one.
-    template: "{{ s2.count }} > 0"
+    template: "{{ steps.s2.count }} > 0"
     type: boolean
     context: { steps: { s2: { count: 24 } } }
     error: EVAL_TYPE_MISMATCH
 
   - name: null satisfies a text slot
-    template: "{{ s2.total }}"
+    template: "{{ steps.s2.total }}"
     type: text
     context: { steps: { s2: { total: null } } }
     value: null
 
   - name: null satisfies a number slot
-    template: "{{ s2.total }}"
+    template: "{{ steps.s2.total }}"
     type: number
     context: { steps: { s2: { total: null } } }
     value: null
 
   - name: null satisfies a boolean slot
-    template: "{{ s2.total }}"
+    template: "{{ steps.s2.total }}"
     type: boolean
     context: { steps: { s2: { total: null } } }
     value: null
@@ -85,13 +85,13 @@ scenarios:
   - name: >-
       null satisfies a list slot too. Whether absence is *acceptable* is `req:`'s
       business, not the evaluator's.
-    template: "{{ s2.total }}"
+    template: "{{ steps.s2.total }}"
     type: list
     context: { steps: { s2: { total: null } } }
     value: null
 
   - name: an unknown slot type accepts anything, and defers the check upstream
-    template: "{{ s2.messages }}"
+    template: "{{ steps.s2.messages }}"
     type: unknown
     context: { steps: { s2: { messages: [1, 2] } } }
     value: [1, 2]
@@ -99,13 +99,13 @@ scenarios:
   - name: >-
       `item` accepts anything for the same reason — a loop's element shape is
       not known statically
-    template: "{{ s4.item }}"
+    template: "{{ steps.s4.item }}"
     type: item
     context: { steps: { s4: { item: { subject: One } } } }
     value: { subject: One }
 
   - name: an object into an object slot passes through unchanged
-    template: "{{ s2.meta }}"
+    template: "{{ steps.s2.meta }}"
     type: object
     context: { steps: { s2: { meta: { sender: Dane } } } }
     value: { sender: Dane }

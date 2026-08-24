@@ -1,0 +1,12 @@
+# expect: SCHEMA_INVALID
+#
+# A trigger is addressed as `{{triggers.<id>}}`, one segment below a reserved
+# root, so an id the grammar cannot parse is a trigger no Reference can name.
+id: wf
+name: W
+version: 1
+status: draft
+triggers:
+  - id: on-mail
+    use: component.email.received
+steps: []

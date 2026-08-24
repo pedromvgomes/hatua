@@ -202,7 +202,7 @@ scenarios:
     value: "abc"
 
   - name: it takes any scalar, because text is the universal sink
-    template: "{{ text.concat('count: ', s2.count) }}"
+    template: "{{ text.concat('count: ', steps.s2.count) }}"
     type: text
     context: { steps: { s2: { count: 24 } } }
     value: "count: 24"
@@ -308,7 +308,7 @@ scenarios:
     value: "de"
 
   - name: and so does list.slice, from the same helper
-    template: "{{ list.join(list.slice(s2.ids, -1.5), ',') }}"
+    template: "{{ list.join(list.slice(steps.s2.ids, -1.5), ',') }}"
     type: text
     context: { steps: { s2: { ids: [1, 2, 3, 4, 5] } } }
     value: "4,5"
@@ -380,49 +380,49 @@ scenarios:
   # ---- list ----------------------------------------------------------------
 
   - name: list.len
-    template: "{{ list.len(s2.ids) }}"
+    template: "{{ list.len(steps.s2.ids) }}"
     type: number
     context: { steps: { s2: { ids: [1, 2, 3] } } }
     value: 3
 
   - name: list.first
-    template: "{{ list.first(s2.ids) }}"
+    template: "{{ list.first(steps.s2.ids) }}"
     type: number
     context: { steps: { s2: { ids: [1, 2, 3] } } }
     value: 1
 
   - name: list.first of an empty list is null, not an error
-    template: "{{ list.first(s2.ids) }}"
+    template: "{{ list.first(steps.s2.ids) }}"
     type: number
     context: { steps: { s2: { ids: [] } } }
     value: null
 
   - name: list.last
-    template: "{{ list.last(s2.ids) }}"
+    template: "{{ list.last(steps.s2.ids) }}"
     type: number
     context: { steps: { s2: { ids: [1, 2, 3] } } }
     value: 3
 
   - name: list.slice
-    template: "{{ list.slice(s2.ids, 1, 3) }}"
+    template: "{{ list.slice(steps.s2.ids, 1, 3) }}"
     type: list
     context: { steps: { s2: { ids: [1, 2, 3, 4] } } }
     value: [2, 3]
 
   - name: list.contains compares by the same rule as `==`
-    template: "{{ list.contains(s2.ids, 2) }}"
+    template: "{{ list.contains(steps.s2.ids, 2) }}"
     type: boolean
     context: { steps: { s2: { ids: [1, 2, 3] } } }
     value: true
 
   - name: so a number is not its text here either
-    template: "{{ list.contains(s2.ids, '2') }}"
+    template: "{{ list.contains(steps.s2.ids, '2') }}"
     type: boolean
     context: { steps: { s2: { ids: [1, 2, 3] } } }
     value: false
 
   - name: it reaches inside objects
-    template: "{{ list.contains(s2.people, s2.needle) }}"
+    template: "{{ list.contains(steps.s2.people, steps.s2.needle) }}"
     type: boolean
     context:
       steps:
@@ -432,37 +432,37 @@ scenarios:
     value: true
 
   - name: list.join renders each element as text
-    template: "{{ list.join(s2.ids, ', ') }}"
+    template: "{{ list.join(steps.s2.ids, ', ') }}"
     type: text
     context: { steps: { s2: { ids: [1, 2, 3] } } }
     value: "1, 2, 3"
 
   - name: a null element joins as empty, the same softness interpolation has
-    template: "{{ list.join(s2.ids, ',') }}"
+    template: "{{ list.join(steps.s2.ids, ',') }}"
     type: text
     context: { steps: { s2: { ids: [1, null, 3] } } }
     value: "1,,3"
 
   - name: a list of lists does not join — json.stringify is how that is said
-    template: "{{ list.join(s2.ids, ',') }}"
+    template: "{{ list.join(steps.s2.ids, ',') }}"
     type: text
     context: { steps: { s2: { ids: [[1], [2]] } } }
     error: EVAL_BAD_ARGUMENT
 
   - name: list.unique keeps the first of each, in order
-    template: "{{ list.unique(s2.ids) }}"
+    template: "{{ list.unique(steps.s2.ids) }}"
     type: list
     context: { steps: { s2: { ids: [3, 1, 3, 2, 1] } } }
     value: [3, 1, 2]
 
   - name: list.sort ascends
-    template: "{{ list.sort(s2.ids) }}"
+    template: "{{ list.sort(steps.s2.ids) }}"
     type: list
     context: { steps: { s2: { ids: [3, 1, 2] } } }
     value: [1, 2, 3]
 
   - name: it sorts text too
-    template: "{{ list.sort(s2.names) }}"
+    template: "{{ list.sort(steps.s2.names) }}"
     type: list
     context: { steps: { s2: { names: [kai, dane] } } }
     value: [dane, kai]
@@ -470,19 +470,19 @@ scenarios:
   - name: >-
       by code point, so a character above the basic plane sorts after every one
       below it — JavaScript's UTF-16 order puts it before U+E000..U+FFFF
-    template: "{{ list.join(list.sort(s2.glyphs), '|') }}"
+    template: "{{ list.join(list.sort(steps.s2.glyphs), '|') }}"
     type: text
     context: { steps: { s2: { glyphs: ["😀", "ﬁ"] } } }
     value: "ﬁ|😀"
 
   - name: and json.stringify sorts its keys the same way, for the same reason
-    template: "{{ json.stringify(s2.payload) }}"
+    template: "{{ json.stringify(steps.s2.payload) }}"
     type: text
     context: { steps: { s2: { payload: { "😀": 1, "ﬁ": 2 } } } }
     value: '{"ﬁ":2,"😀":1}'
 
   - name: an empty list sorts to an empty list
-    template: "{{ list.sort(s2.ids) }}"
+    template: "{{ list.sort(steps.s2.ids) }}"
     type: list
     context: { steps: { s2: { ids: [] } } }
     value: []
@@ -490,13 +490,13 @@ scenarios:
   - name: >-
       a mixed list has no defensible ordering, so it is refused rather than
       given an invented one
-    template: "{{ list.sort(s2.mixed) }}"
+    template: "{{ list.sort(steps.s2.mixed) }}"
     type: list
     context: { steps: { s2: { mixed: [1, "a"] } } }
     error: EVAL_BAD_ARGUMENT
 
   - name: neither do booleans
-    template: "{{ list.sort(s2.flags) }}"
+    template: "{{ list.sort(steps.s2.flags) }}"
     type: list
     context: { steps: { s2: { flags: [true, false] } } }
     error: EVAL_BAD_ARGUMENT
@@ -504,19 +504,19 @@ scenarios:
   # ---- json ----------------------------------------------------------------
 
   - name: json.parse walks an opaque payload
-    template: "{{ json.parse(s2.body).order_id }}"
+    template: "{{ json.parse(steps.s2.body).order_id }}"
     type: text
     context: { steps: { s2: { body: '{"order_id":"abc"}' } } }
     value: abc
 
   - name: its numbers are ordinary numbers
-    template: "{{ json.parse(s2.body).count + 1 }}"
+    template: "{{ json.parse(steps.s2.body).count + 1 }}"
     type: number
     context: { steps: { s2: { body: '{"count":24}' } } }
     value: 25
 
   - name: indexing reaches a key a path cannot spell
-    template: "{{ json.parse(s2.body)['order id'] }}"
+    template: "{{ json.parse(steps.s2.body)['order id'] }}"
     type: text
     context: { steps: { s2: { body: '{"order id":"abc"}' } } }
     value: abc
@@ -524,13 +524,13 @@ scenarios:
   - name: >-
       a JSON number outside the range of a float64 is refused. JSON.parse yields
       Infinity and Go's decoder errors, and Infinity is not in the value space.
-    template: "{{ json.parse(s2.body) }}"
+    template: "{{ json.parse(steps.s2.body) }}"
     type: unknown
     context: { steps: { s2: { body: '{"n":1e400}' } } }
     error: EVAL_BAD_ARGUMENT
 
   - name: text that is not JSON is refused
-    template: "{{ json.parse(s2.body) }}"
+    template: "{{ json.parse(steps.s2.body) }}"
     type: unknown
     context: { steps: { s2: { body: "not json" } } }
     error: EVAL_BAD_ARGUMENT
@@ -539,13 +539,13 @@ scenarios:
       json.stringify sorts object keys. Go sorts and JavaScript preserves
       insertion order, so sorting in both is the only choice that can be made
       identical.
-    template: "{{ json.stringify(s2.payload) }}"
+    template: "{{ json.stringify(steps.s2.payload) }}"
     type: text
     context: { steps: { s2: { payload: { b: 2, a: 1 } } } }
     value: '{"a":1,"b":2}'
 
   - name: it renders numbers the same way everything else does
-    template: "{{ json.stringify(s2.payload) }}"
+    template: "{{ json.stringify(steps.s2.payload) }}"
     type: text
     context: { steps: { s2: { payload: { n: 0.000001 } } } }
     value: '{"n":0.000001}'
@@ -553,19 +553,19 @@ scenarios:
   - name: >-
       it does not escape HTML. Go's encoder does by default and JavaScript's
       does not, so the un-escaped spelling is the contract.
-    template: "{{ json.stringify(s2.payload) }}"
+    template: "{{ json.stringify(steps.s2.payload) }}"
     type: text
     context: { steps: { s2: { payload: { html: "<b>&</b>" } } } }
     value: '{"html":"<b>&</b>"}'
 
   - name: it accepts null, because `unknown` parameters do
-    template: "{{ json.stringify(s2.nothing) }}"
+    template: "{{ json.stringify(steps.s2.nothing) }}"
     type: text
     context: { steps: { s2: { nothing: null } } }
     value: "null"
 
   - name: it round-trips with json.parse
-    template: "{{ json.stringify(json.parse(s2.body)) }}"
+    template: "{{ json.stringify(json.parse(steps.s2.body)) }}"
     type: text
     context: { steps: { s2: { body: '{"b":2,"a":[1,true,null]}' } } }
     value: '{"a":[1,true,null],"b":2}'
@@ -629,13 +629,13 @@ scenarios:
   - name: >-
       and so is null, so `text.upper(s2.name)` on an absent name fails loudly
       instead of inventing a value
-    template: "{{ text.upper(s2.name) }}"
+    template: "{{ text.upper(steps.s2.name) }}"
     type: text
     context: { steps: { s2: { name: null } } }
     error: EVAL_BAD_ARGUMENT
 
   - name: "`??` is how a caller says otherwise"
-    template: "{{ text.upper(s2.name ?? 'unknown') }}"
+    template: "{{ text.upper(steps.s2.name ?? 'unknown') }}"
     type: text
     context: { steps: { s2: { name: null } } }
     value: "UNKNOWN"

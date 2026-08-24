@@ -97,7 +97,7 @@ editor mounts the same component when it lands.
 
 Every mappable field kind in it gets `<TemplateInput>` from `compounds/`. What
 this tier contributes is the two things that widget cannot work out for itself:
-what the field may read — `workflowScope` here, `scopeFor` in the step editor —
+what the field may read — `boardScope` here, `scopeFor` in the step editor —
 and what its value has to produce.
 
 That is the point worth keeping: **which surface edits a thing is a rendering

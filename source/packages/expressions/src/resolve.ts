@@ -45,21 +45,32 @@ export interface Slot {
   readonly expectedType: ValueType
 }
 
+/**
+ * The buckets a path can resolve into, one per root.
+ *
+ * Every root is a key here and nothing resolves outside one, which is what
+ * makes `root()` a table rather than a table with a fallback: a name the
+ * evaluator does not recognise is missing, not a step id to go looking for.
+ * ADR-0014 is the reason a step id is never at the root — `steps.run` and
+ * `run.id` are different buckets, so neither can shadow the other and no
+ * resolution order can decide which wins.
+ */
 export interface EvaluationContext {
-  /** Step outputs, keyed by step id. */
+  /** Step outputs, keyed by step id, addressed as `steps.<id>.…`. */
   readonly steps?: Readonly<Record<string, Value>>
   /** Trigger payloads, addressed as `triggers.<id>.…`. */
   readonly triggers?: Readonly<Record<string, Value>>
+  /**
+   * The values a Block was called with, addressed as `params.<k>`.
+   *
+   * Supplied per invocation rather than per run: a Block called twice is called
+   * with different arguments, and its parameters are the only part of scope
+   * that changes between two calls of the same Block.
+   */
+  readonly params?: Readonly<Record<string, Value>>
   /** Workflow variables, addressed as `var.<key>`. */
   readonly var?: Readonly<Record<string, Value>>
-  /**
-   * The Host's ambient values for this execution, addressed as `run.<key>`.
-   *
-   * A root of its own rather than a reserved step id, for the reason `triggers`
-   * and `var` are: a step may legitimately be called `run`, and resolving one
-   * root by looking in two places is how a workflow starts depending on which
-   * of them the runner checked first.
-   */
+  /** The Host's ambient values for this execution, addressed as `run.<key>`. */
   readonly run?: Readonly<Record<string, Value>>
   /** Which Trigger fired. Needed when several are declared. */
   readonly TRIGGER?: string | null
@@ -245,7 +256,7 @@ function evaluateRaw(node: Expression, context: EvaluationContext): Raw {
     case 'Index':
       // The index is evaluated *inside* `step`, so a missing object or an empty
       // projection short-circuits before it runs. Hoisting it out — as the Go
-      // side once did — makes `{{ s1.absent[1/0] }}` a division error in one
+      // side once did — makes `{{ steps.s1.absent[1/0] }}` a division error in one
       // runtime and a missing path in the other.
       return step(evaluateRaw(node.object, context), (target) =>
         index(target, evaluate(node.index, context), node.at),
@@ -288,15 +299,16 @@ function root(name: string, context: EvaluationContext): Raw {
   if (name === 'triggers') return (context.triggers ?? {}) as Value
   if (name === 'var') return (context.var ?? {}) as Value
   if (name === 'run') return (context.run ?? {}) as Value
-  const steps = context.steps ?? {}
-  return Object.hasOwn(steps, name) ? (steps[name] as Value) : MISSING
+  if (name === 'steps') return (context.steps ?? {}) as Value
+  if (name === 'params') return (context.params ?? {}) as Value
+  return MISSING
 }
 
 /**
  * Reading a property of null yields null again — there is one absent value.
  *
  * `Object.hasOwn` is the whole prototype-pollution guarantee. A Workflow
- * Definition is user-editable YAML, so `{{ s2.constructor }}` is reachable
+ * Definition is user-editable YAML, so `{{ steps.s2.constructor }}` is reachable
  * input, and an own-properties-only read makes it well defined: a plain object
  * does not *own* `constructor`, `prototype` or `__proto__`, so all three miss.
  *

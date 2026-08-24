@@ -27,5 +27,8 @@
     "@hatua/expressions": "workspace:*",
     "@hatua/schema": "workspace:*",
     "@hatua/document": "workspace:*"
+  },
+  "devDependencies": {
+    "yaml": "^2.8.1"
   }
 }

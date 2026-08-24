@@ -1,3 +1,4 @@
+export * from './blocks'
 export * from './connections'
 export * from './metadata'
 export * from './scope'

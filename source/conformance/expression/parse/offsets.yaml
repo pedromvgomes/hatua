@@ -26,9 +26,9 @@ scenarios:
     sexp: '(template (text "日本語 ") (hole@7 x@7))'
 
   - name: a hole starts after the braces and the whitespace
-    template: "{{ s2.count }}"
+    template: "{{ steps.s2.count }}"
     offsets: true
-    sexp: "(template (hole@3 (.@3 s2@3 count)))"
+    sexp: "(template (hole@3 (.@3 (.@3 steps@3 s2) count)))"
 
   - name: a second hole counts from the start of the whole Template
     template: "Hi {{ a }} and {{ b }}"

@@ -6,7 +6,7 @@ about: >-
 
 scenarios:
   - name: a step output keeps its own type
-    template: "{{ s2.count }}"
+    template: "{{ steps.s2.count }}"
     type: number
     context: { steps: { s2: { count: 24 } } }
     value: 24
@@ -16,6 +16,29 @@ scenarios:
     type: text
     context: { triggers: { nightly: { triggered_at: "07:00" } } }
     value: "07:00"
+
+  - name: >-
+      a block's parameter is addressed through `params` — the root a call fills
+      in, and the only part of a block's scope that differs between two calls of
+      the same block
+    template: "{{ params.entry.headline }}"
+    type: text
+    context: { params: { entry: { headline: "Inbox digest" } } }
+    value: "Inbox digest"
+
+  - name: >-
+      `params` is a root of its own, so a step called `params` neither shadows it
+      nor is shadowed by it
+    template: "{{ params.at }}"
+    type: text
+    context: { params: { at: "07:00" }, steps: { params: { at: "nope" } } }
+    value: "07:00"
+
+  - name: a parameter the caller did not supply is an error by default
+    template: "{{ params.missing }}"
+    type: text
+    context: { params: { entry: {} } }
+    error: EVAL_MISSING_PATH
 
   - name: a workflow variable is addressed through `var`
     template: "{{ var.digest_to }}"
@@ -59,38 +82,38 @@ scenarios:
     error: EVAL_MISSING_PATH
 
   - name: a nested path walks objects
-    template: "{{ s2.meta.sender.name }}"
+    template: "{{ steps.s2.meta.sender.name }}"
     type: text
     context: { steps: { s2: { meta: { sender: { name: Dane } } } } }
     value: Dane
 
   - name: a missing step is an error by default
-    template: "{{ s9.count }}"
+    template: "{{ steps.s9.count }}"
     type: number
     context: { steps: { s2: { count: 24 } } }
     error: EVAL_MISSING_PATH
 
   - name: a missing key is an error by default
-    template: "{{ s2.total }}"
+    template: "{{ steps.s2.total }}"
     type: number
     context: { steps: { s2: { count: 24 } } }
     error: EVAL_MISSING_PATH
 
   - name: "under onMissing: null the same path simply yields null"
-    template: "{{ s2.total }}"
+    template: "{{ steps.s2.total }}"
     type: number
     on_missing: "null"
     context: { steps: { s2: { count: 24 } } }
     value: null
 
   - name: a present null is not missing, so it never raises
-    template: "{{ s2.total }}"
+    template: "{{ steps.s2.total }}"
     type: number
     context: { steps: { s2: { total: null } } }
     value: null
 
   - name: reading a property of null yields null again
-    template: "{{ s2.meta.sender.name }}"
+    template: "{{ steps.s2.meta.sender.name }}"
     type: text
     context: { steps: { s2: { meta: null } } }
     value: null
@@ -103,7 +126,7 @@ scenarios:
     value: null
 
   - name: projection reads a field of every element
-    template: "{{ s2.messages[].subject }}"
+    template: "{{ steps.s2.messages[].subject }}"
     type: list
     context:
       steps:
@@ -114,7 +137,7 @@ scenarios:
     value: [One, Two]
 
   - name: projection over a missing field in one element yields null there
-    template: "{{ s2.messages[].subject }}"
+    template: "{{ steps.s2.messages[].subject }}"
     type: list
     on_missing: "null"
     context:
@@ -126,37 +149,37 @@ scenarios:
     value: [One, null]
 
   - name: numeric indexing selects one element
-    template: "{{ s2.messages[0].subject }}"
+    template: "{{ steps.s2.messages[0].subject }}"
     type: text
     context: { steps: { s2: { messages: [{ subject: One }, { subject: Two }] } } }
     value: One
 
   - name: a negative index counts from the end
-    template: "{{ s2.messages[-1].subject }}"
+    template: "{{ steps.s2.messages[-1].subject }}"
     type: text
     context: { steps: { s2: { messages: [{ subject: One }, { subject: Two }] } } }
     value: Two
 
   - name: an index past the end is missing
-    template: "{{ s2.messages[9] }}"
+    template: "{{ steps.s2.messages[9] }}"
     type: object
     context: { steps: { s2: { messages: [] } } }
     error: EVAL_MISSING_PATH
 
   - name: text indexing reads a key, which is how opaque payloads are walked
-    template: "{{ s2.body['order id'] }}"
+    template: "{{ steps.s2.body['order id'] }}"
     type: text
     context: { steps: { s2: { body: { "order id": abc } } } }
     value: abc
 
   - name: indexing a non-list with a number is a type error, not a miss
-    template: "{{ s2.count[0] }}"
+    template: "{{ steps.s2.count[0] }}"
     type: number
     context: { steps: { s2: { count: 24 } } }
     error: EVAL_OPERAND_TYPE
 
   - name: projecting something that is not a list is a type error
-    template: "{{ s2.count[] }}"
+    template: "{{ steps.s2.count[] }}"
     type: list
     context: { steps: { s2: { count: 24 } } }
     error: EVAL_OPERAND_TYPE
@@ -165,19 +188,19 @@ scenarios:
       `__proto__` does not resolve on an object that does not own it. A Workflow
       Definition is user-editable YAML, so this is reachable input rather than a
       hypothetical — and reading own properties only is the whole guarantee.
-    template: "{{ s2.__proto__ }}"
+    template: "{{ steps.s2.__proto__ }}"
     type: object
     context: { steps: { s2: { count: 24 } } }
     error: EVAL_MISSING_PATH
 
   - name: neither does `constructor`
-    template: "{{ s2.constructor }}"
+    template: "{{ steps.s2.constructor }}"
     type: object
     context: { steps: { s2: { count: 24 } } }
     error: EVAL_MISSING_PATH
 
   - name: nor `prototype`
-    template: "{{ s2.prototype }}"
+    template: "{{ steps.s2.prototype }}"
     type: object
     context: { steps: { s2: { count: 24 } } }
     error: EVAL_MISSING_PATH
@@ -186,19 +209,19 @@ scenarios:
       but a payload that genuinely *holds* one of those keys reads back — it is
       ordinary data, and a deny list here would have made the two runtimes
       disagree about it, since Go has no prototype chain to defend
-    template: "{{ s2.constructor }}"
+    template: "{{ steps.s2.constructor }}"
     type: text
     context: { steps: { s2: { constructor: Acme Corp } } }
     value: Acme Corp
 
   - name: including `__proto__`, which JSON.parse creates as a real own property
-    template: "{{ s2.__proto__ }}"
+    template: "{{ steps.s2.__proto__ }}"
     type: text
     context: { steps: { s2: { __proto__: inherited } } }
     value: inherited
 
   - name: and one reached through json.parse, which is how it usually arrives
-    template: "{{ json.parse(s2.body).constructor }}"
+    template: "{{ json.parse(steps.s2.body).constructor }}"
     type: text
     context: { steps: { s2: { body: '{"constructor":"Acme"}' } } }
     value: Acme
@@ -207,13 +230,13 @@ scenarios:
       the index is evaluated only once the object resolves, so a missing path
       short-circuits before it. Evaluating it first — as Go once did — made this
       a division error in one runtime and a missing path in the other.
-    template: "{{ s1.absent[1 / 0] }}"
+    template: "{{ steps.s1.absent[1 / 0] }}"
     type: number
     context: { steps: { s1: {} } }
     error: EVAL_MISSING_PATH
 
   - name: and an empty projection short-circuits it too
-    template: "{{ list.len(s1.xs[][1 / 0]) }}"
+    template: "{{ list.len(steps.s1.xs[][1 / 0]) }}"
     type: number
     context: { steps: { s1: { xs: [] } } }
     value: 0
@@ -221,13 +244,13 @@ scenarios:
   - name: >-
       a fractional index is neither a position nor a key — JavaScript would hand
       back undefined and Go would truncate, so it is refused instead
-    template: "{{ s2.ids[3 / 2] }}"
+    template: "{{ steps.s2.ids[3 / 2] }}"
     type: number
     context: { steps: { s2: { ids: [1, 2, 3] } } }
     error: EVAL_OPERAND_TYPE
 
   - name: written as a literal it is refused just the same
-    template: "{{ s2.ids[1.5] }}"
+    template: "{{ steps.s2.ids[1.5] }}"
     type: number
     context: { steps: { s2: { ids: [1, 2, 3] } } }
     error: EVAL_OPERAND_TYPE

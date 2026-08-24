@@ -11,7 +11,7 @@ func TestLoadManifestsAcceptsEveryDocumentedFieldKey(t *testing.T) {
 	manifests, err := LoadManifests([]byte(`
 components:
   - kind: component
-    use: data.map
+    use: core.map
     name: Map values
     fields:
       - k: entries

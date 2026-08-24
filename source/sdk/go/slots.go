@@ -18,7 +18,7 @@ import (
 // The TypeScript half is packages/model/src/slots.ts and scope.ts.
 
 // MappingVerb is the component whose outputs come from its own configuration.
-const MappingVerb = "data.map"
+const MappingVerb = "core.map"
 
 // FieldKindTypes says what each mappable field kind's value must produce. The
 // kinds absent from it hold literal values, not Templates.
@@ -82,11 +82,71 @@ func SlotsFor(step Step, manifest Manifest) []expressions.Slot {
 	return slots
 }
 
+// CallSlots is the Slots a call's `with:` map resolves into: one per declared
+// parameter, typed by the declaration.
+//
+// Separate from SlotsFor because a call has no manifest — `block.<id>` names a
+// block in this document, and its parameters are the contract that block
+// declares. A runner that only asked SlotsFor would evaluate nothing at a call
+// site at all.
+func CallSlots(step Step, block Block) []expressions.Slot {
+	return declaredSlots(block.Params, step)
+}
+
+// ReturnSlots is the Slots a core.return's `with:` map resolves into: one per
+// declared output of the block it sits on.
+//
+// The mirror of core.map. A mapping's outputs come from its own field values
+// because no manifest can declare them; a return's inputs come from the
+// enclosing block's outputs for the same reason — no manifest knows which board
+// a step is on.
+func ReturnSlots(step Step, block Block) []expressions.Slot {
+	return declaredSlots(block.Outputs, step)
+}
+
+func declaredSlots(declarations []Declaration, step Step) []expressions.Slot {
+	slots := []expressions.Slot{}
+	for _, declaration := range declarations {
+		// One nobody filled in is reported as missing by its own rule; resolving
+		// an absent value as a Template would name the wrong problem.
+		template, ok := step.With[declaration.K].(string)
+		if !ok {
+			continue
+		}
+		slots = append(slots, expressions.Slot{
+			Name:         declaration.K,
+			Template:     template,
+			ExpectedType: expressions.ValueType(declaration.T),
+		})
+	}
+	return slots
+}
+
+// SlotsForStep is the Slots any step resolves into, whichever kind it is.
+//
+// One entry point so a runner never has to know that a call and a return are
+// the two verbs a manifest cannot describe.
+func SlotsForStep(doc Definition, board BoardID, step Step, manifest Manifest) []expressions.Slot {
+	if called, ok := BlockIDOf(step.Use); ok {
+		if block := BlockOf(doc, called); block != nil {
+			return CallSlots(step, *block)
+		}
+		return []expressions.Slot{}
+	}
+	if step.Use == ReturnVerb && board != RootBoard {
+		if block := BlockOf(doc, board); block != nil {
+			return ReturnSlots(step, *block)
+		}
+		return []expressions.Slot{}
+	}
+	return SlotsFor(step, manifest)
+}
+
 // WhenSlot is the Slot a branch's condition resolves into.
 //
 // Separate from SlotsFor because a branch is not a step and has no manifest —
 // and because its type is not declared anywhere: a condition is a boolean, and
-// that is the whole reason `when: "{{s2.count}} > 0"` can be refused at design
+// that is the whole reason `when: "{{steps.s2.count}} > 0"` can be refused at design
 // time rather than misread at run time.
 func WhenSlot(when string) expressions.Slot {
 	return expressions.Slot{Name: "when", Template: when, ExpectedType: expressions.TypeBoolean}
@@ -122,8 +182,15 @@ func MapEntries(value any) []MapEntry {
 // UpstreamOf reports the steps a given step may reference: its ancestors and the
 // earlier siblings of every ancestor. Sibling branches are deliberately out of
 // scope, so a user cannot express a mapping that could not resolve at run time.
-func UpstreamOf(doc Definition, id string) []Step {
-	if found := collectUpstream(doc.Steps, id, nil); found != nil {
+// The walk is rooted at the step's own Board and never leaves it. A block's
+// steps do not see the call site's ancestry, which is the whole reason a call is
+// a cross-link with a contract and a jump is not (ADR-0013).
+func UpstreamOf(doc Definition, ref StepRef) []Step {
+	board := BoardOf(doc, ref.Board)
+	if board == nil {
+		return []Step{}
+	}
+	if found := collectUpstream(board.Steps, ref.ID, nil); found != nil {
 		return found
 	}
 	return []Step{}
@@ -151,20 +218,32 @@ func collectUpstream(steps []Step, id string, ancestors []Step) []Step {
 	return nil
 }
 
-// WorkflowScope is everything addressable with no position in the tree: Run
-// Context, the Triggers, the TRIGGER built-in, and the workflow's variables.
+// BoardScope is everything a Board offers with no position in its tree.
 //
-// Never a step's output. A workflow variable's value has no position — it is
-// not reached by running anything — so no step is guaranteed to have run by the
-// time it is evaluated. Everything here is available unconditionally for the
-// mirror-image reason: a workflow cannot run without a trigger firing, the Host
-// supplies Run Context to every execution, and a var is workflow-scoped rather
-// than positional.
+// Never a step's output. A variable's value has no position — it is not reached
+// by running anything — so no step is guaranteed to have run by the time it is
+// evaluated. Everything here is available unconditionally for the mirror-image
+// reason: a workflow cannot run without a trigger firing, the Host supplies Run
+// Context to every execution, a parameter is filled by the caller before the
+// block starts, and a var is Board-scoped rather than positional.
+//
+// The two Boards offer different things, and the difference IS the contract:
+//
+//	                    root Board            a block's
+//	run.*               Run Context           the same — the one thing that crosses
+//	triggers.*/TRIGGER  the contract          absent
+//	params.*            absent                the contract
+//	var.*               the workflow's        the block's, rebuilt per call
+//
+// A block cannot read the workflow's variables or ask which trigger fired. Run
+// Context is the single exception because nothing in the document declares it:
+// the Host supplies it to every execution, so it is exact on every path of every
+// Board with no intersection to compute.
 //
 // Split out because the builder needs scope without a step to ask about, and
 // ScopeFor is this plus the upstream steps — one definition of the unpositioned
 // half, two readers.
-func WorkflowScope(doc Definition, manifests []Manifest, context []ContextKey) []expressions.ScopeEntry {
+func BoardScope(doc Definition, board BoardID, manifests []Manifest, context []ContextKey) []expressions.ScopeEntry {
 	byUse := make(map[string]Manifest, len(manifests))
 	for _, manifest := range manifests {
 		byUse[manifest.Use] = manifest
@@ -174,28 +253,69 @@ func WorkflowScope(doc Definition, manifests []Manifest, context []ContextKey) [
 
 	// First, because it is the only part of scope no document declares: it is
 	// there before a workflow has a trigger, a var or a step.
+	//
+	// The first of any repeated key wins, the way every other lookup here
+	// resolves one: nothing stops a Host assembling its list from several
+	// sources, and the TypeScript half resolves a repeat the same way.
+	declared := make(map[string]bool, len(context))
 	for _, key := range context {
+		if declared[key.K] {
+			continue
+		}
+		declared[key.K] = true
 		entries = append(entries, expressions.ScopeEntry{
 			Path: "run." + key.K,
 			Type: contextKeyType(key),
 		})
 	}
 
-	for _, trigger := range doc.Triggers {
-		entries = append(entries, expressions.ScopeEntry{
-			Path: "triggers." + trigger.ID,
-			Type: outputsToType(byUse[trigger.Use].Outputs),
-		})
+	// The root check comes FIRST: BoardID is a bare string with "" as the root,
+	// so looking a block up by "" would let one whose id is empty answer for the
+	// root Board — handing the root a block's params and losing its triggers.
+	// The schema forbids an empty id, but this must not depend on validation
+	// having run.
+	var block *Block
+	if board != RootBoard {
+		block = BlockOf(doc, board)
+		if block == nil {
+			return []expressions.ScopeEntry{}
+		}
 	}
 
-	if len(doc.Triggers) > 1 {
-		entries = append(entries, expressions.ScopeEntry{
-			Path: "TRIGGER",
-			Type: expressions.TypeNode{Type: expressions.TypeText},
-		})
+	if block != nil {
+		for _, param := range block.Params {
+			entries = append(entries, expressions.ScopeEntry{
+				Path: "params." + param.K,
+				Type: declarationToType(param),
+			})
+		}
+	} else {
+		for _, trigger := range doc.Triggers {
+			entries = append(entries, expressions.ScopeEntry{
+				Path: "triggers." + trigger.ID,
+				Type: outputsToType(byUse[trigger.Use].Outputs),
+			})
+		}
+
+		// Absent on a block's Board for the reason `triggers.` is: a block
+		// cannot ask which trigger fired, because it cannot see the triggers at
+		// all. A block that needs to know takes it as a parameter.
+		if len(doc.Triggers) > 1 {
+			entries = append(entries, expressions.ScopeEntry{
+				Path: "TRIGGER",
+				Type: expressions.TypeNode{Type: expressions.TypeText},
+			})
+		}
 	}
 
-	for _, variable := range doc.Vars {
+	// The Board's own variables: the workflow's at the root, the block's inside
+	// one. A block called twice starts clean both times, because these are
+	// rebuilt per invocation rather than carried.
+	vars := doc.Vars
+	if block != nil {
+		vars = block.Vars
+	}
+	for _, variable := range vars {
 		entries = append(entries, expressions.ScopeEntry{
 			Path: "var." + variable.Key,
 			Type: expressions.TypeNode{Type: varType(variable.Value)},
@@ -211,23 +331,65 @@ func WorkflowScope(doc Definition, manifests []Manifest, context []ContextKey) [
 // Scope position comes from the tree; the shapes come from the manifests. The
 // two are joined here because neither side owns both. Only steps are
 // constrained by tree position, because only a step can fail to run.
-func ScopeFor(doc Definition, stepID string, manifests []Manifest, context []ContextKey) []expressions.ScopeEntry {
+func ScopeFor(doc Definition, ref StepRef, manifests []Manifest, context []ContextKey) []expressions.ScopeEntry {
 	byUse := make(map[string]Manifest, len(manifests))
 	for _, manifest := range manifests {
 		byUse[manifest.Use] = manifest
 	}
 
-	entries := WorkflowScope(doc, manifests, context)
+	// Indexed once, beside byUse, for the reason byUse is: stepOutputType asks
+	// for a block on every upstream step that is a call, and a linear scan there
+	// makes one ScopeFor quadratic in a document with many blocks.
+	byID := make(map[string]*Block, len(doc.Blocks))
+	for i := range doc.Blocks {
+		if _, held := byID[doc.Blocks[i].ID]; !held {
+			byID[doc.Blocks[i].ID] = &doc.Blocks[i]
+		}
+	}
 
-	for _, step := range UpstreamOf(doc, stepID) {
+	entries := BoardScope(doc, ref.Board, manifests, context)
+
+	for _, step := range UpstreamOf(doc, ref) {
 		manifest := byUse[step.Use]
 		entries = append(entries, expressions.ScopeEntry{
-			Path: step.ID,
-			Type: stepOutputType(step, manifest),
+			Path: "steps." + step.ID,
+			Type: stepOutputType(byID, step, manifest),
 		})
 	}
 
 	return entries
+}
+
+// declarationToType turns a block's parameter or output into the shape the
+// checker wants. Three lines rather than a second traversal, because a
+// Declaration is spelled exactly as an Output is.
+func declarationToType(declaration Declaration) expressions.TypeNode {
+	node := expressions.TypeNode{Type: expressions.ValueType(declaration.T)}
+	if len(declaration.Of) > 0 {
+		node.Members = make(map[string]expressions.TypeNode, len(declaration.Of))
+		for _, member := range declaration.Of {
+			node.Members[member.K] = declarationToType(member)
+		}
+	}
+	return node
+}
+
+// blockOutputType is what a call publishes, read where the block is declared
+// rather than from a manifest. That is what makes a call type-check before its
+// body is written: the declaration is the contract, and core.return only binds
+// values to it.
+func blockOutputType(block *Block) expressions.TypeNode {
+	node := expressions.TypeNode{
+		Type:    expressions.TypeObject,
+		Members: map[string]expressions.TypeNode{},
+	}
+	if block == nil {
+		return node
+	}
+	for _, output := range block.Outputs {
+		node.Members[output.K] = declarationToType(output)
+	}
+	return node
 }
 
 // contextKeyType turns a Run Context key into the shape the checker wants.
@@ -280,11 +442,14 @@ func varType(value any) expressions.ValueType {
 
 // stepOutputType reports a step's outputs as a type.
 //
-// data.map is the one component whose outputs a manifest cannot declare, because
+// core.map is the one component whose outputs a manifest cannot declare, because
 // they are whatever the user named. It is the third verb Hatua interprets
 // structurally, alongside core.fork and core.for_each — and the only one that
 // does so by reading a field's value rather than its position in the tree.
-func stepOutputType(step Step, manifest Manifest) expressions.TypeNode {
+func stepOutputType(blocks map[string]*Block, step Step, manifest Manifest) expressions.TypeNode {
+	if called, ok := BlockIDOf(step.Use); ok {
+		return blockOutputType(blocks[called])
+	}
 	if step.Use == MappingVerb {
 		members := map[string]expressions.TypeNode{}
 		for _, entry := range MapEntries(step.With["entries"]) {

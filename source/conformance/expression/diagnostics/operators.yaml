@@ -6,10 +6,10 @@ about: >-
 
 scenarios:
   - name: arithmetic on numbers
-    template: "{{ s2.count + 1 }}"
+    template: "{{ steps.s2.count + 1 }}"
     type: number
     scope: &inbox
-      - path: s2
+      - path: steps.s2
         type:
           type: object
           members:
@@ -21,7 +21,7 @@ scenarios:
     expect: []
 
   - name: arithmetic on text is a known conflict
-    template: "{{ s2.subject + 1 }}"
+    template: "{{ steps.s2.subject + 1 }}"
     type: number
     scope: *inbox
     expect:
@@ -30,46 +30,46 @@ scenarios:
   - name: >-
       arithmetic on an unknown type defers to run time, where the value itself
       decides
-    template: "{{ json.parse(s2.output).count + 1 }}"
+    template: "{{ json.parse(steps.s2.output).count + 1 }}"
     type: number
     scope: *inbox
     expect: []
 
   - name: a boolean context needs a boolean
-    template: "{{ s2.urgent && true }}"
+    template: "{{ steps.s2.urgent && true }}"
     type: boolean
     scope: *inbox
     expect: []
 
   - name: and a number in one is a known conflict
-    template: "{{ s2.count && true }}"
+    template: "{{ steps.s2.count && true }}"
     type: boolean
     scope: *inbox
     expect:
       - { code: EXPR_OPERAND_TYPE, severity: error }
 
   - name: so is a number under `!`
-    template: "{{ !s2.count }}"
+    template: "{{ !steps.s2.count }}"
     type: boolean
     scope: *inbox
     expect:
       - { code: EXPR_OPERAND_TYPE, severity: error }
 
   - name: comparison across two known types is a known conflict
-    template: "{{ s2.count > s2.subject }}"
+    template: "{{ steps.s2.count > steps.s2.subject }}"
     type: boolean
     scope: *inbox
     expect:
       - { code: EXPR_OPERAND_TYPE, severity: error }
 
   - name: comparing two instants is fine
-    template: "{{ s2.at > s2.at }}"
+    template: "{{ steps.s2.at > steps.s2.at }}"
     type: boolean
     scope: *inbox
     expect: []
 
   - name: booleans have no order
-    template: "{{ s2.urgent > s2.urgent }}"
+    template: "{{ steps.s2.urgent > steps.s2.urgent }}"
     type: boolean
     scope: *inbox
     expect:
@@ -79,13 +79,13 @@ scenarios:
   - name: >-
       equality is total, so it accepts any two types without complaint — and
       answers false
-    template: "{{ s2.count == s2.subject }}"
+    template: "{{ steps.s2.count == steps.s2.subject }}"
     type: boolean
     scope: *inbox
     expect: []
 
   - name: a conditional's arms agreeing gives that type
-    template: "{{ s2.urgent ? s2.count : 0 }}"
+    template: "{{ steps.s2.urgent ? steps.s2.count : 0 }}"
     type: number
     scope: *inbox
     expect: []
@@ -93,27 +93,27 @@ scenarios:
   - name: >-
       arms that disagree give an unknown type, which is honest rather than
       picking one of them
-    template: "{{ s2.urgent ? s2.count : s2.subject }}"
+    template: "{{ steps.s2.urgent ? steps.s2.count : steps.s2.subject }}"
     type: number
     scope: *inbox
     expect:
       - { code: EXPR_TYPE_UNKNOWN, severity: warning }
 
   - name: a non-boolean condition is a known conflict
-    template: "{{ s2.count ? 1 : 2 }}"
+    template: "{{ steps.s2.count ? 1 : 2 }}"
     type: number
     scope: *inbox
     expect:
       - { code: EXPR_OPERAND_TYPE, severity: error }
 
   - name: "`??` takes the arms' type when they agree"
-    template: "{{ s2.count ?? 0 }}"
+    template: "{{ steps.s2.count ?? 0 }}"
     type: number
     scope: *inbox
     expect: []
 
   - name: and is unknown when they do not
-    template: "{{ s2.count ?? s2.subject }}"
+    template: "{{ steps.s2.count ?? steps.s2.subject }}"
     type: number
     scope: *inbox
     expect:

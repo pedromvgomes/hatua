@@ -101,7 +101,7 @@ describe('reaching into a document that is barely one', () => {
     ].join('\n')
 
     const document = parse(both)
-    removeStep('s1').apply(document)
+    removeStep({ board: null, id: 's1' }).apply(document)
 
     const text = document.toString()
     expect(text).not.toContain('about this step')
@@ -123,7 +123,7 @@ describe('reaching into a document that is barely one', () => {
     ].join('\n')
 
     const document = parse(both)
-    addStep({ use: 'email.send' }, { index: 0 }).apply(document)
+    addStep({ use: 'component.email.send' }, { index: 0 }).apply(document)
 
     const text = document.toString()
     expect(text).toContain('# about the list')
@@ -135,7 +135,7 @@ describe('reaching into a document that is barely one', () => {
     // against has moved on, and splicing at a position past the end would take
     // nothing out and report success.
     const document = parse(VALID)
-    expect(() => removeStep('s99').apply(document)).toThrow(/No Step with id/)
+    expect(() => removeStep({ board: null, id: 's99' }).apply(document)).toThrow(/No Step with id/)
     expect(document.toString()).toBe(VALID)
   })
 
@@ -148,7 +148,7 @@ describe('reaching into a document that is barely one', () => {
     const source = '- just\n- a list\n'
     const document = parse(source)
 
-    expect(() => addStep({ use: 'email.send' }, { index: 0 }).apply(document)).toThrow()
+    expect(() => addStep({ use: 'component.email.send' }, { index: 0 }).apply(document)).toThrow()
     expect(document.toString()).toBe(source)
   })
 })
@@ -168,14 +168,16 @@ describe('a list that is not a list', () => {
 
   it('refuses to add into it, and leaves the text untouched', () => {
     const document = parse(MAPPING)
-    expect(() => addStep({ use: 'email.send' }, { index: 0 }).apply(document)).toThrow(/not a list/)
+    expect(() => addStep({ use: 'component.email.send' }, { index: 0 }).apply(document)).toThrow(
+      /not a list/,
+    )
     expect(document.toString()).toBe(MAPPING)
   })
 
   it('still serialises afterwards, which is the failure worth preventing', () => {
     const document = parse(MAPPING)
     try {
-      addStep({ use: 'email.send' }, { index: 0 }).apply(document)
+      addStep({ use: 'component.email.send' }, { index: 0 }).apply(document)
     } catch {
       // The command refuses; what matters is the state it left behind.
     }
@@ -189,7 +191,9 @@ describe('a list that is not a list', () => {
   it('refuses an empty mapping too, which no shape check can tell from `[]`', () => {
     const empty = 'id: wf\nname: n\nversion: 1\nstatus: draft\nsteps: {}\n'
     const document = parse(empty)
-    expect(() => addStep({ use: 'email.send' }, { index: 0 }).apply(document)).toThrow(/not a list/)
+    expect(() => addStep({ use: 'component.email.send' }, { index: 0 }).apply(document)).toThrow(
+      /not a list/,
+    )
     expect(document.toString()).toBe(empty)
   })
 })
@@ -204,22 +208,22 @@ describe('commands against a document that does not project', () => {
    */
   it('adds a Step to a document with no `id` or `version` yet', () => {
     const doc = parse('name: half written\nsteps:\n  - id: s1\n    use: a\n')
-    addStep({ use: 'email.send' }, { index: 1 }).apply(doc)
+    addStep({ use: 'component.email.send' }, { index: 1 }).apply(doc)
 
-    expect(doc.toString()).toContain('use: email.send')
+    expect(doc.toString()).toContain('use: component.email.send')
     expect(doc.validate().success).toBe(false)
   })
 
   it('creates the `steps:` key when the document has none', () => {
     const doc = parse('name: nothing here yet\n')
-    addStep({ use: 'email.send' }, { index: 0 }).apply(doc)
+    addStep({ use: 'component.email.send' }, { index: 0 }).apply(doc)
     expect(doc.toString()).toContain('steps:')
-    expect(doc.toString()).toContain('use: email.send')
+    expect(doc.toString()).toContain('use: component.email.send')
   })
 
   it('removes one from such a document', () => {
     const doc = parse('name: half\nsteps:\n  - id: s1\n    use: a\n  - id: s2\n    use: b\n')
-    removeStep('s1').apply(doc)
+    removeStep({ board: null, id: 's1' }).apply(doc)
     expect(doc.toString()).not.toContain('id: s1')
     expect(doc.toString()).toContain('id: s2')
   })
@@ -252,15 +256,15 @@ describe('minting ids', () => {
 
   it('writes `id`, `use` then `name`, because a person reads the diff', () => {
     const doc = parse(VALID)
-    addStep({ use: 'email.send', name: 'Reply' }, { index: 0 }).apply(doc)
+    addStep({ use: 'component.email.send', name: 'Reply' }, { index: 0 }).apply(doc)
     const text = doc.toString()
-    expect(text.indexOf('id: s3')).toBeLessThan(text.indexOf('use: email.send'))
-    expect(text.indexOf('use: email.send')).toBeLessThan(text.indexOf('name: Reply'))
+    expect(text.indexOf('id: s3')).toBeLessThan(text.indexOf('use: component.email.send'))
+    expect(text.indexOf('use: component.email.send')).toBeLessThan(text.indexOf('name: Reply'))
   })
 
   it('omits `name` entirely when there is none, rather than writing an empty one', () => {
     const doc = parse(VALID)
-    addStep({ use: 'email.send' }, { index: 0 }).apply(doc)
+    addStep({ use: 'component.email.send' }, { index: 0 }).apply(doc)
     // The workflow's own `name:` is the only one in the file; the new Step
     // brought none with it.
     expect(doc.toString().match(/name:/g)).toHaveLength(1)
@@ -276,11 +280,15 @@ describe('what a command refuses', () => {
   })
 
   it('throws when moving a Step that is not there', () => {
-    expect(() => moveStep('s99', { index: 0 }).apply(parse(VALID))).toThrow(/No Step with id/)
+    expect(() => moveStep({ board: null, id: 's99' }, { index: 0 }).apply(parse(VALID))).toThrow(
+      /No Step with id/,
+    )
   })
 
   it('throws when removing a Step that is not there', () => {
-    expect(() => removeStep('s99').apply(parse(VALID))).toThrow(/No Step with id/)
+    expect(() => removeStep({ board: null, id: 's99' }).apply(parse(VALID))).toThrow(
+      /No Step with id/,
+    )
   })
 
   it('leaves the document untouched when it refuses', () => {
@@ -289,17 +297,21 @@ describe('what a command refuses', () => {
     // mutation. Half-applied is the failure worth preventing.
     const doc = parse(VALID)
     const before = doc.toString()
-    expect(() => removeStep('s99').apply(doc)).toThrow()
+    expect(() => removeStep({ board: null, id: 's99' }).apply(doc)).toThrow()
     expect(doc.toString()).toBe(before)
   })
 })
 
 describe('labels', () => {
   it('names the Component when the Step has no name of its own', () => {
-    expect(addStep({ use: 'email.send' }, { index: 0 }).label).toBe('Add email.send')
-    expect(addStep({ use: 'email.send', name: 'Reply' }, { index: 0 }).label).toBe('Add Reply')
-    expect(removeStep('s1').label).toBe('Remove s1')
-    expect(moveStep('s1', { index: 0 }).label).toBe('Move s1')
+    expect(addStep({ use: 'component.email.send' }, { index: 0 }).label).toBe(
+      'Add component.email.send',
+    )
+    expect(addStep({ use: 'component.email.send', name: 'Reply' }, { index: 0 }).label).toBe(
+      'Add Reply',
+    )
+    expect(removeStep({ board: null, id: 's1' }).label).toBe('Remove s1')
+    expect(moveStep({ board: null, id: 's1' }, { index: 0 }).label).toBe('Move s1')
   })
 })
 
@@ -311,7 +323,9 @@ describe('formatting the user chose', () => {
     const doc = parse(
       'id: w\nname: n\nversion: 1\nstatus: draft\nsteps:\n  - id: s1\n    use: core.fork\n    branches:\n      - label: A\n        steps:\n          - id: s2\n            use: a\n      - label: Otherwise\n        steps: []\n',
     )
-    addStep({ use: 'email.send' }, { parentId: 's1', branchIndex: 1, index: 0 }).apply(doc)
+    addStep({ use: 'component.email.send' }, { parentId: 's1', branchIndex: 1, index: 0 }).apply(
+      doc,
+    )
 
     expect(doc.toString()).not.toContain('[')
     expect(doc.toString()).toContain('        steps:\n          - id: s3')
@@ -335,7 +349,7 @@ describe('formatting the user chose', () => {
     const doc = parse(
       'id: w\nname: n\nversion: 1\nstatus: draft\nsteps:\n  # note\n  [{ id: s1, use: a }]\n',
     )
-    removeStep('s1').apply(doc)
+    removeStep({ board: null, id: 's1' }).apply(doc)
     expect(doc.toString()).toContain('# note')
   })
 
@@ -360,7 +374,7 @@ describe('a comment stays with the Step it describes', () => {
 
   it('takes the first Step’s comment with it when it moves', () => {
     const doc = parse(COMMENTED)
-    moveStep('s1', { index: 2 }).apply(doc)
+    moveStep({ board: null, id: 's1' }, { index: 2 }).apply(doc)
 
     const text = doc.toString()
     expect(text.indexOf('# about s2')).toBeLessThan(text.indexOf('id: s2'))
@@ -370,7 +384,7 @@ describe('a comment stays with the Step it describes', () => {
 
   it('takes it away when the first Step is removed', () => {
     const doc = parse(COMMENTED)
-    removeStep('s1').apply(doc)
+    removeStep({ board: null, id: 's1' }).apply(doc)
 
     const text = doc.toString()
     expect(text).not.toContain('# about s1')
@@ -388,7 +402,7 @@ describe('a comment stays with the Step it describes', () => {
 
   it('keeps every other Step’s comment where it was', () => {
     const doc = parse(COMMENTED)
-    moveStep('s2', { index: 0 }).apply(doc)
+    moveStep({ board: null, id: 's2' }, { index: 0 }).apply(doc)
 
     const text = doc.toString()
     expect(text.indexOf('# about s2')).toBeLessThan(text.indexOf('id: s2'))

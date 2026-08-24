@@ -8,7 +8,7 @@
 # equally valid.
 components:
   - kind: component
-    use: email.send
+    use: component.email.send
     name: Send email
     group: Email
     icon: /icons/mail.svg
@@ -29,7 +29,7 @@ components:
         label: Message ID
         t: text
   - kind: trigger
-    use: email.received
+    use: component.email.received
     name: When mail arrives
     group: Email
     icon: /icons/inbox.svg
@@ -49,7 +49,7 @@ components:
             label: Subject
             t: text
   - kind: component
-    use: agent.act
+    use: component.agent.act
     name: Run agent
     group: Intelligence
     icon: /icons/zap.svg
@@ -80,6 +80,18 @@ components:
     group: Built-in
     icon: /icons/zap.svg
     blurb: Take one path or several, on a condition.
+    fields: []
+    outputs: []
+  - kind: component
+    use: core.return
+    name: Return
+    group: Built-in
+    icon: /icons/zap.svg
+    blurb: Publish a block's declared outputs and end it.
+    # Its fields are the enclosing block's `outputs:`, which no manifest can
+    # declare — the mirror of core.map, whose outputs no manifest can declare
+    # either. The entry exists so a return is a component like any other; the
+    # contract it is held to comes from the Board it sits on.
     fields: []
     outputs: []
   - kind: component

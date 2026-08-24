@@ -1,13 +1,31 @@
 import type { WorkflowDocument } from '@hatua/document'
-import { asObject, detachNode, entriesOf, insertNode, setScalar, topLevelList } from './ast'
+import type { BoardId } from '@hatua/model'
+import {
+  BLOCK_KEY_ORDER,
+  detachNode,
+  entriesOf,
+  insertNode,
+  KEY_ORDER,
+  listIn,
+  type Path,
+  readAt,
+  setScalar,
+} from './ast'
+import { blockPath } from './blocks'
 import type { EditCommand } from './command'
 
 /**
  * The commands that address a workflow variable.
  *
- * A variable is `{key, value}` in the top-level `vars:` list, read as
- * `{{ var.<key> }}` from anywhere — it has no position in the tree, so unlike a
- * Step it is never out of scope.
+ * A variable is `{key, value}` in a `vars:` list, read as `{{ var.<key> }}` from
+ * anywhere on its Board — it has no position in the tree, so unlike a Step it is
+ * never out of scope.
+ *
+ * Every command below takes a Board. The workflow's variables live in the
+ * top-level `vars:`; a Block's live in its own, are rebuilt on every invocation,
+ * and are invisible outside it. One set of commands rather than two, because the
+ * two differ only in which mapping holds the list — and two would be two answers
+ * about where a created key lands.
  *
  * **A variable's value is a Template**, not a literal. It may hold `{{ … }}`,
  * and what it can read is the unpositioned scope: Run Context, Triggers and
@@ -27,9 +45,21 @@ import type { EditCommand } from './command'
  * appeared. `new_variable`, then `new_variable_2` — deterministic, so the same
  * edits produce the same document twice.
  */
-function mintKey(document: WorkflowDocument): string {
+/** Where a Board's variables live: the document's own list, or a Block's. */
+function varsPath(document: WorkflowDocument, board: BoardId): Path {
+  return board === null ? ['vars'] : [...blockPath(document, board), 'vars']
+}
+
+/** The same, creating the list in its documented position when there is none. */
+function ensureVars(document: WorkflowDocument, board: BoardId): Path {
+  return board === null
+    ? listIn(document, [], 'vars', KEY_ORDER)
+    : listIn(document, blockPath(document, board), 'vars', BLOCK_KEY_ORDER)
+}
+
+function mintKey(document: WorkflowDocument, board: BoardId): string {
   const taken = new Set<string>()
-  for (const { entry } of entriesOf(document, 'vars')) {
+  for (const { entry } of entriesOf(document, varsPath(document, board))) {
     if (typeof entry.key === 'string') taken.add(entry.key)
   }
   if (!taken.has('new_variable')) return 'new_variable'
@@ -40,8 +70,8 @@ function mintKey(document: WorkflowDocument): string {
 }
 
 /** The index of the variable under `key`, against the list as the document holds it. */
-function locateVariable(document: WorkflowDocument, key: string): number {
-  for (const { entry, index } of entriesOf(document, 'vars')) {
+function locateVariable(document: WorkflowDocument, board: BoardId, key: string): number {
+  for (const { entry, index } of entriesOf(document, varsPath(document, board))) {
     if (entry.key === key) return index
   }
   throw new Error(`No variable named "${key}"`)
@@ -54,14 +84,14 @@ function locateVariable(document: WorkflowDocument, key: string): number {
  * read the ones declared before it, so a new row inserted above an existing one
  * would silently change what that one is allowed to see.
  */
-export function addVariable(key?: string): EditCommand {
+export function addVariable(key?: string, board: BoardId = null): EditCommand {
   return {
     label: 'Add a variable',
     apply(document) {
-      const listPath = topLevelList(document, 'vars')
-      const list = asObject(document).vars
+      const listPath = ensureVars(document, board)
+      const list = readAt(document, listPath)
       const index = Array.isArray(list) ? list.length : 0
-      const value: Record<string, unknown> = { key: key ?? mintKey(document), value: '' }
+      const value: Record<string, unknown> = { key: key ?? mintKey(document, board), value: '' }
       insertNode(document, listPath, index, document.ast.createNode(value))
     },
   }
@@ -71,11 +101,11 @@ export function addVariable(key?: string): EditCommand {
  * Remove a variable. Every `{{ var.<key> }}` pointing at it goes stale and is
  * reported, for the reason `renameVariable` gives.
  */
-export function removeVariable(key: string): EditCommand {
+export function removeVariable(key: string, board: BoardId = null): EditCommand {
   return {
     label: `Remove ${key}`,
     apply(document) {
-      detachNode(document, ['vars'], locateVariable(document, key))
+      detachNode(document, varsPath(document, board), locateVariable(document, board, key))
     },
   }
 }
@@ -94,24 +124,25 @@ export function removeVariable(key: string): EditCommand {
  * surfaces. This adds no failure mode; it declines to invent a repair for one
  * that is visible. See `docs/handoff.md`, which settles it.
  */
-export function renameVariable(from: string, to: string): EditCommand {
+export function renameVariable(from: string, to: string, board: BoardId = null): EditCommand {
   return {
     label: `Rename ${from}`,
     apply(document) {
-      const index = locateVariable(document, from)
+      const listPath = varsPath(document, board)
+      const index = locateVariable(document, board, from)
 
       // Two variables under one key is worse than a refused rename. Every
       // reader here finds the FIRST match, so the second row's bin button
       // deletes the first row and its value box edits the first row's value —
       // and `{{ var.<key> }}` becomes a Reference with two answers and no
       // diagnostic, because nothing in the model checks for a duplicate.
-      for (const other of entriesOf(document, 'vars')) {
+      for (const other of entriesOf(document, listPath)) {
         if (other.index !== index && other.entry.key === to) {
           throw new Error(`A variable named "${to}" already exists`)
         }
       }
 
-      setScalar(document, ['vars', index, 'key'], to)
+      setScalar(document, [...listPath, index, 'key'], to)
     },
   }
 }
@@ -147,12 +178,17 @@ const scalarFor = (text: string): string | number | boolean => {
  * in would make a variable that starts out quoted impossible to turn into a
  * number. Everywhere else the quoting is the user's and stays.
  */
-export function setVariableValue(key: string, template: string): EditCommand {
+export function setVariableValue(
+  key: string,
+  template: string,
+  board: BoardId = null,
+): EditCommand {
   return {
     label: `Edit ${key}`,
     apply(document) {
-      const index = locateVariable(document, key)
-      document.ast.setIn(['vars', index, 'value'], scalarFor(template))
+      const listPath = varsPath(document, board)
+      const index = locateVariable(document, board, key)
+      document.ast.setIn([...listPath, index, 'value'], scalarFor(template))
     },
   }
 }

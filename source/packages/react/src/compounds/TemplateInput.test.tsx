@@ -9,7 +9,7 @@ const SCOPE: ScopeEntry[] = [
   { path: 'run.tenant', kind: 'context', label: 'Tenant', type: { type: 'text' } },
   { path: 'var.digest_to', kind: 'var', label: 'digest_to', type: { type: 'text' } },
   {
-    path: 's2',
+    path: 'steps.s2',
     kind: 'step',
     label: 'Fetch emails',
     type: { type: 'object', members: { count: { type: 'number' } } },
@@ -73,7 +73,7 @@ describe('TemplateInput', () => {
     type(field, '{{')
     for (let i = 0; i < 6; i++) fireEvent.keyDown(field, { key: 'ArrowDown' })
 
-    for (const more of ['s', '2', '.']) {
+    for (const more of ['s', 't', 'e', 'p', 's', '.']) {
       type(field, more)
       const active = field.getAttribute('aria-activedescendant')
       expect(active, `after "${more}"`).not.toBeNull()
@@ -87,13 +87,13 @@ describe('TemplateInput', () => {
    * character, which made an existing Template harder to edit than to write.
    */
   it('does not open when the caret is merely placed inside a hole', () => {
-    const { field } = mount({ value: '{{ s2.count }}' })
+    const { field } = mount({ value: '{{ steps.s2.count }}' })
     fireEvent.click(field, { target: { selectionStart: 6 } })
     expect(field.getAttribute('aria-expanded')).toBe('false')
   })
 
   it('opens the list on Ctrl+Space inside a hole', () => {
-    const { field } = mount({ value: '{{ s2. }}' })
+    const { field } = mount({ value: '{{ steps.s2. }}' })
     fireEvent.keyDown(field, { key: ' ', ctrlKey: true, target: { selectionStart: 6 } })
     expect(screen.getByRole('listbox')).toBeDefined()
   })
@@ -112,9 +112,9 @@ describe('TemplateInput', () => {
 
   it('moves with the arrow keys and accepts with Enter', () => {
     const { field } = mount()
-    type(field, '{{s2.')
+    type(field, '{{steps.s2.')
     fireEvent.keyDown(field, { key: 'Enter' })
-    expect((field as HTMLInputElement).value).toBe('{{ s2.count }}')
+    expect((field as HTMLInputElement).value).toBe('{{ steps.s2.count }}')
   })
 
   /*
@@ -129,9 +129,9 @@ describe('TemplateInput', () => {
 
   it('takes Tab while the list is open', () => {
     const { field } = mount()
-    type(field, '{{s2.')
+    type(field, '{{steps.s2.')
     fireEvent.keyDown(field, { key: 'Tab' })
-    expect((field as HTMLInputElement).value).toBe('{{ s2.count }}')
+    expect((field as HTMLInputElement).value).toBe('{{ steps.s2.count }}')
   })
 
   /*
@@ -141,39 +141,39 @@ describe('TemplateInput', () => {
    * at all, in the one place they most obviously wanted some.
    */
   it('offers the list while a hole is being edited, not only when one is opened', () => {
-    const { field } = mount({ value: '{{ s2.count }}' })
+    const { field } = mount({ value: '{{ steps.s2.count }}' })
     const input = field as HTMLInputElement
     fireEvent.focus(field)
     fireEvent.change(field, {
-      target: { value: '{{ s2.coun }}', selectionStart: 10, selectionEnd: 10 },
+      target: { value: '{{ steps.s2.coun }}', selectionStart: 16, selectionEnd: 16 },
     })
     expect(screen.getByRole('listbox')).toBeDefined()
-    expect(input.value).toBe('{{ s2.coun }}')
+    expect(input.value).toBe('{{ steps.s2.coun }}')
   })
 
   it('keeps it shut after Escape until the caret leaves the hole', () => {
-    const { field } = mount({ value: '{{ s2.count }}' })
+    const { field } = mount({ value: '{{ steps.s2.count }}' })
     fireEvent.focus(field)
     fireEvent.change(field, {
-      target: { value: '{{ s2.coun }}', selectionStart: 10, selectionEnd: 10 },
+      target: { value: '{{ steps.s2.coun }}', selectionStart: 16, selectionEnd: 16 },
     })
     fireEvent.keyDown(field, { key: 'Escape' })
     fireEvent.change(field, {
-      target: { value: '{{ s2.cou }}', selectionStart: 9, selectionEnd: 9 },
+      target: { value: '{{ steps.s2.cou }}', selectionStart: 15, selectionEnd: 15 },
     })
     expect(screen.queryByRole('listbox')).toBeNull()
 
     // Asking again is what reopens it.
-    fireEvent.keyDown(field, { key: ' ', ctrlKey: true, target: { selectionStart: 9 } })
+    fireEvent.keyDown(field, { key: ' ', ctrlKey: true, target: { selectionStart: 15 } })
     expect(screen.getByRole('listbox')).toBeDefined()
   })
 
   it('dismisses on Escape without discarding what was typed', () => {
     const { field } = mount()
-    type(field, '{{s2.')
+    type(field, '{{steps.s2.')
     fireEvent.keyDown(field, { key: 'Escape' })
     expect(screen.queryByRole('listbox')).toBeNull()
-    expect((field as HTMLInputElement).value).toBe('{{ s2. }}')
+    expect((field as HTMLInputElement).value).toBe('{{ steps.s2. }}')
   })
 
   /*
@@ -189,17 +189,17 @@ describe('TemplateInput', () => {
 
   /*
    * Asked of the two characters before the caret alone, the auto-close fires on
-   * the way out as well as on the way in: backspacing through `{{ s2.count }}`
+   * the way out as well as on the way in: backspacing through `{{ steps.s2.count }}`
    * reaches a caret sitting just after a `{{`, and every further press added
    * another `}}`.
    */
   it('does not close the hole again on the way back out of one', () => {
-    const { field } = mount({ value: '{{ s2.count }}' })
+    const { field } = mount({ value: '{{ steps.s2.count }}' })
     const input = field as HTMLInputElement
     fireEvent.focus(field)
 
-    // Backspace, character by character, from just after `s2.count`.
-    for (let caret = 11; caret > 2; caret--) {
+    // Backspace, character by character, from just after `steps.s2.count`.
+    for (let caret = 17; caret > 2; caret--) {
       fireEvent.change(field, {
         target: {
           value: input.value.slice(0, caret - 1) + input.value.slice(caret),
@@ -221,12 +221,12 @@ describe('TemplateInput', () => {
   it('steps over the closing braces when they are typed', () => {
     const { field } = mount()
     const input = field as HTMLInputElement
-    type(field, '{{s2.count')
-    expect(input.value).toBe('{{ s2.count }}')
+    type(field, '{{steps.s2.count')
+    expect(input.value).toBe('{{ steps.s2.count }}')
 
-    fireEvent.keyDown(field, { key: '}', target: { selectionStart: 11 } })
-    expect(input.selectionStart).toBe(14)
-    expect(input.value).toBe('{{ s2.count }}')
+    fireEvent.keyDown(field, { key: '}', target: { selectionStart: 17 } })
+    expect(input.selectionStart).toBe(20)
+    expect(input.value).toBe('{{ steps.s2.count }}')
   })
 
   it('types a brace normally where there is no closer to step over', () => {
@@ -240,9 +240,9 @@ describe('TemplateInput', () => {
   it('does not close a `{{` that arrived by paste', () => {
     const { field } = mount()
     fireEvent.change(field, {
-      target: { value: '{{ s2.count }}', selectionStart: 14, selectionEnd: 14 },
+      target: { value: '{{ steps.s2.count }}', selectionStart: 20, selectionEnd: 20 },
     })
-    expect((field as HTMLInputElement).value).toBe('{{ s2.count }}')
+    expect((field as HTMLInputElement).value).toBe('{{ steps.s2.count }}')
   })
 
   it('commits on blur, not on every keystroke', () => {
@@ -299,16 +299,16 @@ describe('TemplateInput', () => {
     it('drops a path in as a hole, spaced away from its neighbours', () => {
       const { field, onCommit } = mount({ value: 'Hithere' })
       fireEvent.drop(field, {
-        dataTransfer: transfer('s2.count'),
+        dataTransfer: transfer('steps.s2.count'),
         target: { selectionStart: 2 },
       })
-      expect(onCommit).toHaveBeenCalledWith('Hi {{ s2.count }} there')
+      expect(onCommit).toHaveBeenCalledWith('Hi {{ steps.s2.count }} there')
     })
 
     it('replaces the whole value in a field that holds exactly one Reference', () => {
       const { field, onCommit } = mount({ value: '{{ old }}', single: true })
-      fireEvent.drop(field, { dataTransfer: transfer('s2.count') })
-      expect(onCommit).toHaveBeenCalledWith('{{ s2.count }}')
+      fireEvent.drop(field, { dataTransfer: transfer('steps.s2.count') })
+      expect(onCommit).toHaveBeenCalledWith('{{ steps.s2.count }}')
     })
 
     it('ignores a drop carrying something that is not one of ours', () => {
@@ -326,20 +326,20 @@ describe('TemplateInput', () => {
 
     it('marks the rows that produce what the field declares', () => {
       const { field } = mount({ expectedType: 'number' })
-      type(field, '{{s2.')
-      // `s2.count` is the number; nothing else in the list is.
+      type(field, '{{steps.s2.')
+      // `steps.s2.count` is the number; nothing else in the list is.
       expect(railed()).toEqual([true])
     })
 
     it('marks any scalar inside mixed text, because that is what interpolation is', () => {
       const { field } = mount({ expectedType: 'number', value: 'Order ' })
-      type(field, 'Order {{s2.')
+      type(field, 'Order {{steps.s2.')
       expect(railed()).toEqual([true])
     })
 
     it('marks nothing where nothing declares a type', () => {
       const { field } = mount()
-      type(field, '{{s2.')
+      type(field, '{{steps.s2.')
       expect(railed()).toEqual([false])
     })
   })
@@ -358,14 +358,14 @@ describe('at rest', () => {
    * a path requires.
    */
   it('draws a whole-value Reference as what it names', () => {
-    mount({ value: '{{ s2.count }}' })
+    mount({ value: '{{ steps.s2.count }}' })
     // The source and the value, in that order — a chip carrying only a label
     // loses the half that says where the value is from.
     expect(chips()).toEqual(['Fetch emailscount'])
   })
 
   it('draws a Reference inside a sentence the same way', () => {
-    mount({ value: 'Inbox digest · {{ s2.count }} messages' })
+    mount({ value: 'Inbox digest · {{ steps.s2.count }} messages' })
     expect(chips()).toEqual(['Fetch emailscount'])
   })
 
@@ -377,7 +377,7 @@ describe('at rest', () => {
    * single source to name — so the chip shows its own text instead.
    */
   it('draws an expression that computes something as its own text', () => {
-    mount({ value: '{{ s2.count + 1 }}' })
+    mount({ value: '{{ steps.s2.count + 1 }}' })
     // `s2` is a Step's id, and putting it on a chip is the thing a chip exists
     // to stop — so the Reference inside is named too, and only the operators
     // and literals are left as they were written.
@@ -387,30 +387,30 @@ describe('at rest', () => {
   /* The path is what the checker names and what has to be edited, so a stale
      Reference keeps showing it — and the missing source is the signal. */
   it('draws a stale Reference as its path, with no source', () => {
-    mount({ value: '{{ s9.gone }}' })
-    expect(chips()).toEqual(['s9.gone'])
+    mount({ value: '{{ steps.s9.gone }}' })
+    expect(chips()).toEqual(['steps.s9.gone'])
   })
 
   it('names every Reference in a computed hole, and leaves the rest verbatim', () => {
-    mount({ value: '{{ s2.count + run.tenant }}' })
+    mount({ value: '{{ steps.s2.count + run.tenant }}' })
     expect(chips()).toEqual(['Fetch emailscount + Run contextTenant'])
   })
 
   /* Substituted by span and only where the source agrees, so nothing is ever
      reconstructed from the tree — that would be AST→text (ADR-0008). */
   it('leaves a path it cannot match character for character alone', () => {
-    mount({ value: '{{ s9.gone + 1 }}' })
-    expect(chips()).toEqual(['s9.gone + 1'])
+    mount({ value: '{{ steps.s9.gone + 1 }}' })
+    expect(chips()).toEqual(['steps.s9.gone + 1'])
   })
 
   /* Its characters are the only thing that can be edited back into shape. */
   it('leaves a hole that does not parse as its own characters', () => {
-    mount({ value: '{{ s2. + }}' })
+    mount({ value: '{{ steps.s2. + }}' })
     expect(chips()).toEqual([])
   })
 
   it('puts the characters back on focus, so the text is the editing surface', () => {
-    const { field } = mount({ value: '{{ s2.count }}' })
+    const { field } = mount({ value: '{{ steps.s2.count }}' })
     fireEvent.focus(field)
     expect(chips()).toEqual([])
   })
@@ -429,7 +429,7 @@ describe('how the mirror is built', () => {
    * the text it stands in for.
    */
   it('steps the delimiters back while the characters are showing', () => {
-    const { field } = mount({ value: 'Hi {{ s2.count }} there' })
+    const { field } = mount({ value: 'Hi {{ steps.s2.count }} there' })
     fireEvent.focus(field)
     expect(braces()).toEqual(['{{', '}}'])
   })
@@ -447,7 +447,7 @@ describe('how the mirror is built', () => {
    * the caret somewhere else entirely.
    */
   it('gives every run the offset its text actually begins at', () => {
-    const value = 'Hi {{ s2.count }} and {{ s9.gone }} end'
+    const value = 'Hi {{ steps.s2.count }} and {{ steps.s9.gone }} end'
     const { field } = mount({ value })
     fireEvent.focus(field)
 
@@ -460,7 +460,7 @@ describe('how the mirror is built', () => {
   })
 
   it('holds it at rest too, where a click is the only way in', () => {
-    const value = 'Inbox digest · {{ s2.count }} messages'
+    const value = 'Inbox digest · {{ steps.s2.count }} messages'
     mount({ value })
     for (const run of runs().filter((r) => !r.hasAttribute('data-hole'))) {
       const at = Number(run.getAttribute('data-at'))
@@ -501,9 +501,9 @@ describe('the rest of the ways through', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Insert into To' }))
     const row = screen
       .getAllByRole('button')
-      .find((button) => button.textContent?.startsWith('s2.count')) as HTMLElement
+      .find((button) => button.textContent?.startsWith('steps.s2.count')) as HTMLElement
     fireEvent.click(row)
-    expect(onCommit).toHaveBeenCalledWith('{{ s2.count }}')
+    expect(onCommit).toHaveBeenCalledWith('{{ steps.s2.count }}')
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
@@ -516,24 +516,24 @@ describe('the rest of the ways through', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Insert into To' }))
     const row = screen
       .getAllByRole('button')
-      .find((button) => button.textContent?.startsWith('s2.count')) as HTMLElement
+      .find((button) => button.textContent?.startsWith('steps.s2.count')) as HTMLElement
     fireEvent.click(row)
     expect((screen.getByRole('combobox', { name: 'To' }) as HTMLInputElement).value).toBe(
-      '{{ s2.count }}',
+      '{{ steps.s2.count }}',
     )
   })
 
   it('leaves a click alone once the characters are showing', () => {
     // With the text back, the platform is measuring what is actually on screen
     // and does it better than this can.
-    const { field } = mount({ value: 'Hi {{ s2.count }}' })
+    const { field } = mount({ value: 'Hi {{ steps.s2.count }}' })
     fireEvent.focus(field)
     const event = fireEvent.mouseDown(field, { clientX: 10, clientY: 10 })
     expect(event).toBe(true)
   })
 
   it('draws a mark for every kind a value can come from', () => {
-    mount({ value: '{{ s2.count }} {{ var.digest_to }} {{ run.tenant }}' })
+    mount({ value: '{{ steps.s2.count }} {{ var.digest_to }} {{ run.tenant }}' })
     const marks = [...document.querySelectorAll('svg')].filter((svg) =>
       svg.className.baseVal.startsWith('_mark'),
     )
@@ -570,13 +570,13 @@ describe('double-clicking a hole', () => {
   }
 
   it('opens the picker scoped to the hole under it', () => {
-    const { field } = mount({ value: 'Hi {{ s2.count }} there' })
+    const { field } = mount({ value: 'Hi {{ steps.s2.count }} there' })
     retarget(field, 10)
     expect(screen.getByRole('dialog', { name: 'Insert' })).toBeDefined()
   })
 
   it('replaces that hole rather than writing into it', () => {
-    const { field, onCommit } = mount({ value: 'Hi {{ s2.count }} there' })
+    const { field, onCommit } = mount({ value: 'Hi {{ steps.s2.count }} there' })
     retarget(field, 10)
     const row = screen
       .getAllByRole('button')
@@ -586,7 +586,7 @@ describe('double-clicking a hole', () => {
   })
 
   it('replaces it with a call just as readily', () => {
-    const { field, onCommit } = mount({ value: '{{ s2.count }}' })
+    const { field, onCommit } = mount({ value: '{{ steps.s2.count }}' })
     retarget(field, 6)
     fireEvent.click(screen.getByRole('tab', { name: 'Function' }))
     fireEvent.click(screen.getByRole('button', { name: /dt\.now/ }))
@@ -602,14 +602,14 @@ describe('double-clicking a hole', () => {
    * closed.
    */
   it('refuses to retarget where a stray brace has swallowed the hole after it', () => {
-    const { field, onCommit } = mount({ value: 'Hi {{ oops, then {{ s2.count }} end' })
+    const { field, onCommit } = mount({ value: 'Hi {{ oops, then {{ steps.s2.count }} end' })
     retarget(field, 24)
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(onCommit).not.toHaveBeenCalled()
   })
 
   it('retargets a hole that parsed, beside one that did not', () => {
-    const { field, onCommit } = mount({ value: '{{ a. }}{{ s2.count }}' })
+    const { field, onCommit } = mount({ value: '{{ a. }}{{ steps.s2.count }}' })
     retarget(field, 14)
     const row = screen
       .getAllByRole('button')
@@ -619,7 +619,7 @@ describe('double-clicking a hole', () => {
   })
 
   it('refuses the one that did not parse', () => {
-    const { field } = mount({ value: '{{ a. }}{{ s2.count }}' })
+    const { field } = mount({ value: '{{ a. }}{{ steps.s2.count }}' })
     retarget(field, 5)
     expect(screen.queryByRole('dialog')).toBeNull()
   })
@@ -630,23 +630,23 @@ describe('double-clicking a hole', () => {
    * character at the start turned the retarget into `!Hi{{ … }}} there`.
    */
   it('forgets what it was aiming at once the text moves', () => {
-    const { field, onCommit } = mount({ value: 'Hi {{ s2.count }} there' })
+    const { field, onCommit } = mount({ value: 'Hi {{ steps.s2.count }} there' })
     retarget(field, 10)
     fireEvent.change(field, {
-      target: { value: '!Hi {{ s2.count }} there', selectionStart: 1 },
+      target: { value: '!Hi {{ steps.s2.count }} there', selectionStart: 1 },
     })
     const row = screen
       .getAllByRole('button')
       .find((button) => button.textContent?.startsWith('var.digest_to')) as HTMLElement
     fireEvent.click(row)
     // Landed at the caret, and nothing was spliced away.
-    expect(onCommit).toHaveBeenCalledWith('!{{ var.digest_to }}Hi {{ s2.count }} there')
+    expect(onCommit).toHaveBeenCalledWith('!{{ var.digest_to }}Hi {{ steps.s2.count }} there')
   })
 
   /* Outside a hole there is nothing to retarget, so a double-click is what the
      platform makes of it — selecting a word. */
   it('leaves a double-click in the surrounding text alone', () => {
-    const { field } = mount({ value: 'Hi {{ s2.count }} there' })
+    const { field } = mount({ value: 'Hi {{ steps.s2.count }} there' })
     fireEvent.focus(field)
     fireEvent.click(field, { target: { selectionStart: 1 } })
     const event = fireEvent.mouseDown(field, { detail: 2 })
@@ -657,14 +657,14 @@ describe('double-clicking a hole', () => {
   /* Opened any other way, the choice lands at the caret and the hole beside it
      is untouched. */
   it('does not replace anything when the picker was opened from the button', () => {
-    const { field, onCommit } = mount({ value: '{{ s2.count }} ' })
+    const { field, onCommit } = mount({ value: '{{ steps.s2.count }} ' })
     fireEvent.focus(field)
-    fireEvent.click(field, { target: { selectionStart: 15 } })
+    fireEvent.click(field, { target: { selectionStart: 21 } })
     fireEvent.click(screen.getByRole('button', { name: 'Insert into To' }))
     const row = screen
       .getAllByRole('button')
       .find((button) => button.textContent?.startsWith('var.digest_to')) as HTMLElement
     fireEvent.click(row)
-    expect(onCommit).toHaveBeenCalledWith('{{ s2.count }} {{ var.digest_to }}')
+    expect(onCommit).toHaveBeenCalledWith('{{ steps.s2.count }} {{ var.digest_to }}')
   })
 })

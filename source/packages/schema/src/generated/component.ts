@@ -9,7 +9,7 @@ export const manifest = z.strictObject({
    */
   kind: z.enum(['component', 'trigger']),
   /**
-   * The YAML verb a step or trigger writes, e.g. `email.send`.
+   * The YAML verb a step or trigger writes. A Host's own verbs sit under `component.`, which is what leaves the Host's namespace below it entirely unconstrained: `component.email.send`, `component.block.render`. `core.` is Hatua's and `block.` names a Block declared in a Workflow Definition, so neither is a name a manifest may claim (ADR-0014).
    */
   use: z.string().min(1),
   /**
@@ -66,7 +66,7 @@ export const field = z.strictObject({
   label: z.string().min(1),
   /**
    * `text`, `mono`, `number`, `textarea`, `ref` and `map` accept Expressions; the rest hold literals only. `ref` holds exactly one expression and replaces rather than appends.
-   * `map` is a list of named, typed entries the user builds — the shape a component like `data.map` needs, where the outputs are not fixed by the manifest but by what the user wrote into the field. It is the third field kind Hatua interprets structurally, alongside the two control-flow verbs, and the only one whose value decides a step's outputs.
+   * `map` is a list of named, typed entries the user builds — the shape a component like `core.map` needs, where the outputs are not fixed by the manifest but by what the user wrote into the field. It is the third field kind Hatua interprets structurally, alongside the two control-flow verbs, and the only one whose value decides a step's outputs.
    */
   kind: z.enum([
     'text',

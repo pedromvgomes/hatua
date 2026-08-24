@@ -36,7 +36,7 @@ status: draft
 
 triggers:
   - id: t1
-    use: schedule.cron
+    use: component.schedule.cron
     name: "Every morning"
     with:
       at: "0 6 * * 1-5"
@@ -50,13 +50,13 @@ vars:
 
 steps:
   - id: s1
-    use: email.fetch
+    use: component.email.fetch
 `
 
 const CATALOGUE: Manifest[] = [
   {
     kind: 'trigger',
-    use: 'schedule.cron',
+    use: 'component.schedule.cron',
     name: 'On a schedule',
     fields: [
       { k: 'at', label: 'Runs at', kind: 'mono', req: true, hint: 'A cron expression.' },
@@ -79,7 +79,7 @@ const CATALOGUE: Manifest[] = [
   },
   {
     kind: 'trigger',
-    use: 'email.received',
+    use: 'component.email.received',
     name: 'When mail arrives',
     fields: [
       { k: 'folder', label: 'Folder', kind: 'text' },
@@ -89,7 +89,7 @@ const CATALOGUE: Manifest[] = [
     ],
     outputs: [],
   },
-  { kind: 'component', use: 'email.fetch', name: 'Fetch mail', fields: [], outputs: [] },
+  { kind: 'component', use: 'component.email.fetch', name: 'Fetch mail', fields: [], outputs: [] },
 ]
 
 const token = 'tok_test' as EditToken
@@ -177,8 +177,8 @@ const AVAILABLE = [
 
 /** A workflow whose Trigger has a `conn` field to fill in. */
 const WITH_MAILBOX = SOURCE.replace(
-  '  - id: t1\n    use: schedule.cron\n    name: "Every morning"\n    with:\n      at: "0 6 * * 1-5"\n',
-  '  - id: t1\n    use: email.received\n    name: "Every morning"\n',
+  '  - id: t1\n    use: component.schedule.cron\n    name: "Every morning"\n    with:\n      at: "0 6 * * 1-5"\n',
+  '  - id: t1\n    use: component.email.received\n    name: "Every morning"\n',
 )
 
 /**
@@ -376,7 +376,7 @@ describe('triggers', () => {
   it('lists what the document declares, with the id a Template addresses', async () => {
     mount(host())
     expect(await screen.findByDisplayValue('Every morning')).toBeDefined()
-    expect(screen.getByText('schedule.cron · t1')).toBeDefined()
+    expect(screen.getByText('component.schedule.cron · t1')).toBeDefined()
   })
 
   it('renders each declared field from the manifest, by kind', async () => {
@@ -421,11 +421,11 @@ describe('triggers', () => {
       'When mail arrives',
     ])
 
-    fireEvent.change(picker, { target: { value: 'email.received' } })
+    fireEvent.change(picker, { target: { value: 'component.email.received' } })
     fireEvent.click(screen.getByRole('button', { name: 'Add trigger' }))
 
     await waitFor(() => expect(source.writes).toHaveLength(1), AUTOSAVED)
-    expect(source.writes[0]).toContain('use: email.received')
+    expect(source.writes[0]).toContain('use: component.email.received')
     expect(source.writes[0]).toContain('id: t2')
   })
 
@@ -452,7 +452,7 @@ describe('triggers', () => {
     // The checker's words, not a second sentence of this region's. Both ports
     // are wired here, so `unknownComponents` reports it and the card renders
     // what it said.
-    expect(await screen.findByText(/Nothing declares "schedule.cron"/)).toBeDefined()
+    expect(await screen.findByText(/Nothing declares "component.schedule.cron"/)).toBeDefined()
     expect(screen.queryByText(/Nothing declares this trigger type/)).toBeNull()
   })
 
@@ -577,7 +577,7 @@ describe('a field the form shows and does not edit', () => {
     const mapped: Manifest[] = [
       {
         kind: 'trigger',
-        use: 'email.received',
+        use: 'component.email.received',
         name: 'When mail arrives',
         fields: [{ k: 'headers', label: 'Headers', kind: 'map' }],
         outputs: [],
@@ -627,7 +627,7 @@ describe('the shared field form', () => {
     const conditional: Manifest[] = [
       {
         kind: 'trigger',
-        use: 'email.received',
+        use: 'component.email.received',
         name: 'When mail arrives',
         fields: [
           {

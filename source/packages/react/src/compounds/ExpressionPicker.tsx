@@ -242,7 +242,7 @@ function ReferenceTab({
  * A grouping prefix — `run`, `triggers`, `var` — is not itself addressable, so
  * it contributes its children and not itself. Everything else contributes its
  * whole subtree, because a Reference may name a branch as readily as a leaf:
- * `{{ s2.messages }}` is the list, and `{{ s2.messages[].subject }}` is a value
+ * `{{ steps.s2.messages }}` is the list, and `{{ steps.s2.messages[].subject }}` is a value
  * per element.
  */
 const leaves = (group: RefNode): RefNode[] =>

@@ -30,7 +30,7 @@ vars:
 
 steps:
   - id: s1
-    use: email.fetch
+    use: component.email.fetch
 `
 
 const apply = (yaml: string, ...commands: ReturnType<typeof addVariable>[]) => {
@@ -200,7 +200,7 @@ describe('editing a variable changes what an Expression checks against', () => {
     const projected = parseWorkflow(yaml).validate()
     if (!projected.success) throw new Error('not a Workflow Definition')
     return validate(template, expected, {
-      scope: scopeFor(projected.data, 's1'),
+      scope: scopeFor(projected.data, { board: null, id: 's1' }),
       functions: coreFunctions(),
     })
   }
