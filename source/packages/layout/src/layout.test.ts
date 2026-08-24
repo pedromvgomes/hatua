@@ -1,11 +1,12 @@
 import { type Board, boards, regionsOf, stepKey, walkSteps } from '@hatua/model'
-import type { WorkflowDefinition } from '@hatua/schema'
+import type { Step, WorkflowDefinition } from '@hatua/schema'
 import { describe, expect, it } from 'vitest'
 import {
   ALL_REGIONS,
   DEEP,
   EMPTY_BOARD,
   EMPTY_REGIONS,
+  MANIFESTS,
   MIXED_REGIONS,
   SHAPES,
   TWO_RETS,
@@ -193,18 +194,60 @@ describe('regions', () => {
     const below = at(map, 'wide')
 
     // `steps: []` and `handler: []` are regions with nothing in them, not absent
-    // regions: the card stays the taller one and each band still takes its room,
-    // so an empty `handler:` is somewhere a Step can be dropped.
-    expect(container.height).toBe(LAYOUT.nodeHeightWithMeta)
+    // regions: each band still takes its room, so an empty `handler:` is
+    // somewhere a Step can be dropped.
     const bands = 2 * (LAYOUT.verticalGap + LAYOUT.regionLabel)
     expect(below.y - (container.y + container.height)).toBe(bands + LAYOUT.verticalGap)
   })
+})
 
-  it('gives a container the taller card and a leaf the shorter one', () => {
-    const map = rootOf(ALL_REGIONS)
+/**
+ * A card is the taller one when it has something to say below its name, and what
+ * it has to say is its filled Slots — which only a Component Manifest names.
+ *
+ * `isContainer` was the rule and it is not: `core.fork` declares `fields: []`, so
+ * a Fork has nothing to show and is the short card, while a `core.for_each`
+ * declares `list` and is the tall one. Both are containers.
+ */
+describe('the two heights', () => {
+  const laid = (doc: WorkflowDefinition) => {
+    const [board] = boardsOf(doc)
+    if (!board) throw new Error('fixture lost its root Board')
+    return layout(board, { manifests: MANIFESTS })
+  }
+  const bare = (doc: WorkflowDefinition) => {
+    const [board] = boardsOf(doc)
+    if (!board) throw new Error('fixture lost its root Board')
+    return layout(board)
+  }
+  const heightOfId = (map: ReturnType<typeof layout>, id: string) =>
+    map.placements.find((one) => one.ref.id === id)?.height
 
-    expect(at(map, 'guarded').height).toBe(LAYOUT.nodeHeightWithMeta)
-    expect(at(map, 'triage').height).toBe(LAYOUT.nodeHeight)
+  it('gives a Step with a filled Slot the taller card', () => {
+    // `core.for_each` declares `list`, and this one fills it.
+    expect(heightOfId(laid(ALL_REGIONS), 'each')).toBe(LAYOUT.nodeHeightWithMeta)
+  })
+
+  it('gives a container with no fields the shorter card, the same as a leaf', () => {
+    const map = laid(ALL_REGIONS)
+    // A Fork is a container and has nothing to show; `core.end` is a leaf with
+    // nothing to show. One rule, and it is not about nesting.
+    expect(heightOfId(map, 'sort')).toBe(LAYOUT.nodeHeight)
+    expect(heightOfId(map, 'quiet')).toBe(LAYOUT.nodeHeight)
+  })
+
+  it('gives a Step whose declared Slot is empty the shorter card', () => {
+    // `component.agent.act` declares `prompt` and this Step fills nothing, so
+    // there is no chip to reserve a row for.
+    expect(heightOfId(laid(ALL_REGIONS), 'triage')).toBe(LAYOUT.nodeHeight)
+  })
+
+  it('gives every card the shorter one before a catalogue arrives', () => {
+    // A verb no manifest declares has no contract to state, so reserving a row
+    // for it would be the taller card with nothing in it.
+    for (const placement of bare(ALL_REGIONS).placements) {
+      expect(placement.height).toBe(LAYOUT.nodeHeight)
+    }
   })
 })
 
@@ -326,6 +369,203 @@ describe('bands', () => {
         expect(mark.x + mark.width).toBeGreaterThanOrEqual(column.x + column.width)
       }
     })
+  })
+})
+
+/**
+ * The gaps. This is what makes the canvas the surface a workflow is built on
+ * rather than a picture of one: a Step goes in where a link says it goes.
+ */
+describe('links', () => {
+  const rootOf = (doc: WorkflowDefinition) => {
+    const [board] = boardsOf(doc)
+    if (!board) throw new Error('fixture lost its root Board')
+    return layout(board)
+  }
+
+  /** Every step list on one Board, as the insert-point prefix that names it. */
+  const listsOn = (board: Board): number[] => {
+    const lengths: number[] = []
+    const walk = (steps: readonly Step[]) => {
+      lengths.push(steps.length)
+      for (const step of steps) for (const region of regionsOf(step)) walk(region.steps)
+    }
+    walk(board.steps)
+    return lengths
+  }
+
+  /**
+   * One link per gap, and a list of three Steps has four — the same count
+   * `<StepList>` draws between its rows. A map offering fewer insert points than
+   * the list is a canvas a workflow cannot be built on.
+   */
+  describe('one per gap in every step list', () => {
+    for (const { name, doc } of SHAPES) {
+      it(name, () => {
+        for (const board of boardsOf(doc)) {
+          const map = layout(board)
+          const expected = listsOn(board).reduce((total, length) => total + length + 1, 0)
+          const insertable = map.links.filter((link) => link.at !== undefined)
+
+          expect(insertable).toHaveLength(expected)
+          // Every one names a distinct position: two links onto one gap would be
+          // two `+` buttons doing the same thing.
+          expect(new Set(insertable.map((link) => JSON.stringify(link.at))).size).toBe(expected)
+        }
+      })
+    }
+  })
+
+  it('puts a `+` under the root node of an empty Board, and nothing else', () => {
+    const map = rootOf(EMPTY_BOARD)
+    expect(map.links).toHaveLength(1)
+    expect(map.links[0]?.at).toEqual({ board: null, index: 0 })
+    // It leaves from the root node, which is the only thing drawn.
+    expect(map.links[0]?.from.y).toBe(map.root.y + map.root.height)
+  })
+
+  it('names the Board every insert point is on', () => {
+    for (const board of boardsOf(TWO_RETS)) {
+      for (const link of layout(board).links) {
+        if (link.at) expect(link.at.board).toBe(board.id)
+      }
+    }
+  })
+
+  it('leaves a container below everything it nests, not out of the middle of it', () => {
+    // The line out of a loop starts under its body. Taken from the card's own
+    // bottom it would cross every region the container owns.
+    const map = rootOf(ALL_REGIONS)
+    const loop = at(map, 'each')
+    const inside = at(map, 'triage')
+    const after = map.links.find(
+      (link) => link.at?.parentId === undefined && link.at?.index === 2 && link.at.board === null,
+    )
+
+    expect(after).toBeDefined()
+    expect(loop.y).toBeLessThan(inside.y)
+    const leaving = map.links.find((link) => link.at?.parentId === 'each' && link.at.index === 1)
+    expect(leaving?.from.y).toBeGreaterThan(inside.y + inside.height)
+  })
+
+  it('enters each Branch with the word that names it, and comes back to the join', () => {
+    const map = rootOf(ALL_REGIONS)
+    const branches = map.links.filter((link) => link.kind === 'branch')
+    expect(branches.map((link) => link.label)).toEqual(['if', 'else'])
+    for (const link of branches) expect(link.owner?.id).toBe('sort')
+
+    const joins = map.links.filter((link) => link.kind === 'join')
+    expect(joins).toHaveLength(2)
+    // The join IS the last gap of its Branch. A stub beside it would leave two
+    // lines out of one card — one to the mark and one to nothing.
+    for (const link of joins) expect(link.at?.parentId).toBe('sort')
+    const [mark] = map.joins
+    for (const link of joins) expect(link.to.y).toBe((mark?.y ?? 0) + (mark?.height ?? 0) / 2)
+  })
+
+  it('puts a Branch’s label in its own column, where two cannot collide', () => {
+    // Both of a Fork's branch links leave the same point, so a fraction along
+    // the line is the same place twice. The strip `regionLabel` reserves at the
+    // top of each column cannot collide: the columns are `branchGap` apart.
+    const map = rootOf(ALL_REGIONS)
+    const labelled = map.links.filter(
+      (link) => link.label !== undefined && link.branchIndex !== undefined,
+    )
+    expect(labelled).toHaveLength(2)
+
+    const [first, second] = labelled
+    expect(first?.labelAt?.x).not.toBe(second?.labelAt?.x)
+    for (const link of labelled) {
+      const band = map.bands.find(
+        (one) => one.owner.id === 'sort' && one.x + one.width / 2 === link.labelAt?.x,
+      )
+      expect(band).toBeDefined()
+      expect(link.labelAt?.y).toBe((band?.y ?? 0) + LAYOUT.regionLabel / 2)
+    }
+  })
+
+  it('carries the region keyword onto the link that enters it', () => {
+    const map = rootOf(ALL_REGIONS)
+    const entering = (parentId: string, region?: 'handler') =>
+      map.links.find(
+        (link) =>
+          link.at?.parentId === parentId && link.at.index === 0 && link.at.region === region,
+      )
+
+    expect(entering('guarded')?.label).toBe('try')
+    expect(entering('guarded', 'handler')?.label).toBe('on failure')
+    expect(entering('each')?.label).toBe('loop')
+  })
+
+  /**
+   * The line into an empty region has to arrive *in* that region.
+   *
+   * With nothing inside it there is no card to aim at, so the anchor is the
+   * region's own band. Without it the link runs from the container straight to
+   * wherever the list ends — down the spine, past the column its own label is
+   * sitting over, which is a line that says the Branch is somewhere it is not.
+   */
+  it('lands a link inside an empty region rather than past it', () => {
+    const map = rootOf(EMPTY_REGIONS)
+
+    // Every region with nothing in it: the Fork's middle Branch, and a
+    // `core.try` whose body and handler are both empty.
+    const empties = map.links.filter((link) => {
+      const band = map.bands.find(
+        (one) =>
+          one.owner.id === link.at?.parentId &&
+          one.x + one.width / 2 === link.to.x &&
+          one.y + LAYOUT.regionLabel === link.to.y,
+      )
+      return link.at?.index === 0 && band !== undefined
+    })
+    expect(empties.length).toBeGreaterThanOrEqual(3)
+
+    for (const region of ['try_nothing', 'wide']) {
+      const bands = map.bands.filter((one) => one.owner.id === region)
+      for (const band of bands) {
+        if (band.height !== LAYOUT.regionLabel) continue
+        // An empty region is exactly its label strip tall. The link into it
+        // ends under that strip, on that column.
+        const into = map.links.find(
+          (link) =>
+            link.to.x === band.x + band.width / 2 && link.to.y === band.y + LAYOUT.regionLabel,
+        )
+        expect(into, `nothing lands in the empty ${band.keyword} under ${region}`).toBeDefined()
+        expect(into?.at?.index).toBe(0)
+      }
+    }
+  })
+
+  it('offers the gap inside an empty region, which is the only way to fill it', () => {
+    const map = rootOf(EMPTY_REGIONS)
+    const into = map.links.filter((link) => link.at?.parentId === 'try_nothing')
+    expect(into.map((link) => link.at?.region)).toEqual([undefined, 'handler'])
+    for (const link of into) expect(link.at?.index).toBe(0)
+  })
+
+  it('drops a collapsed container’s gaps with its cards', () => {
+    const [board] = boardsOf(ALL_REGIONS)
+    if (!board) throw new Error('fixture lost its root Board')
+    const map = layout(board, { collapsed: new Set(['sort']) })
+
+    expect(map.links.filter((link) => link.at?.parentId === 'sort')).toEqual([])
+    expect(map.links.filter((link) => link.kind === 'join')).toEqual([])
+  })
+
+  it('stays inside the map it belongs to', () => {
+    for (const { doc } of SHAPES) {
+      for (const board of boardsOf(doc)) {
+        const map = layout(board)
+        for (const link of map.links) {
+          for (const point of [link.from, link.to]) {
+            expect(point.x).toBeGreaterThanOrEqual(0)
+            expect(point.y).toBeGreaterThanOrEqual(0)
+            expect(point.x).toBeLessThanOrEqual(map.width)
+          }
+        }
+      }
+    }
   })
 })
 

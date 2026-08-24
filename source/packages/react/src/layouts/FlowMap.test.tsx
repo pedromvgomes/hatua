@@ -1,9 +1,9 @@
 import { parseWorkflow } from '@hatua/document'
 import { layout } from '@hatua/layout'
 import { boardOf, nameOf, stepKey, walkSteps } from '@hatua/model'
-import type { WorkflowDefinition } from '@hatua/schema'
+import type { Manifest, WorkflowDefinition } from '@hatua/schema'
 import type { Cursor, DraftSession, EditToken, Lease, WorkflowStore } from '@hatua/services'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { HatuaProvider } from '../theme/HatuaProvider'
 import { FlowMap } from './FlowMap'
@@ -144,12 +144,39 @@ const mount = (yaml = SOURCE, props: Parameters<typeof FlowMap>[0] = {}) =>
 
 const canvas = () => within(screen.getByRole('region', { name: 'Flow map' }))
 
+/**
+ * A `DataTransfer` jsdom does not implement.
+ *
+ * Only the two methods a drop target uses, because that is the whole of the
+ * platform surface this code touches — and a fuller fake would be a second
+ * implementation of a browser API to check code that only ever asks it two
+ * questions.
+ */
+const transfer = (data: Record<string, string>) => {
+  const held = { ...data }
+  return {
+    effectAllowed: 'none',
+    dropEffect: 'none',
+    getData: (type: string) => held[type] ?? '',
+    setData: (type: string, value: string) => {
+      held[type] = value
+    },
+  }
+}
+
 /** The name on every card drawn, in DOM order. */
 const cardNames = () =>
   canvas()
     .getAllByRole('button')
     .filter((button) => !button.hasAttribute('aria-label'))
     .map((button) => button.firstElementChild?.textContent)
+
+/** The root Board of the fixture the region is reading. */
+const rootBoard = () => {
+  const board = boardOf(definitionOf(SOURCE), null)
+  if (!board) throw new Error('the fixture lost its root Board')
+  return board
+}
 
 /** The same document the region is reading, projected here. */
 const definitionOf = (yaml: string): WorkflowDefinition => {
@@ -183,9 +210,7 @@ describe('FlowMap', () => {
     mount()
     await canvas().findByText('Fetch mail')
 
-    const definition = definitionOf(SOURCE)
-    const board = boardOf(definition, null)
-    if (!board) throw new Error('the fixture lost its root Board')
+    const board = rootBoard()
     const placed = layout(board).placements.map((placement) => {
       const step = [...walkSteps(board.steps)].find((one) => one.id === placement.ref.id)
       if (!step) throw new Error(`a Placement names no Step: ${stepKey(placement.ref)}`)
@@ -221,24 +246,209 @@ describe('FlowMap', () => {
     ])
   })
 
-  it('shows a container’s summary and gives a leaf nothing to say about itself', async () => {
-    // `heightOf` makes a card taller exactly when `isContainer`, so the summary
-    // appears on exactly those cards. A leaf card is 64px — "a name and nothing
-    // else" — and a summary on it would be 100px of content in it.
+  it('names every card by its verb, which is what a Step is written with', async () => {
     mount()
     await canvas().findByText('Fetch mail')
-
-    expect(canvas().getByText('core.fork · 2 branches')).toBeDefined()
-    expect(canvas().queryByText('component.email.fetch')).toBeNull()
+    expect(canvas().getByText('component.email.fetch')).toBeDefined()
+    expect(canvas().getByText('core.fork')).toBeDefined()
   })
 
-  it('draws no connector between cards, because there is no edge to draw', async () => {
-    // ADR-0013 refuses an attachable edge; a plain rule between two cards is
-    // refused too, because the gap is what reads as a run of the flow. The only
-    // mark that is not a card or a region frame is the join.
+  it('draws a line for every gap, and a `+` on each one', async () => {
+    // The lines are what make 96px of vertical gap read as "then" rather than
+    // as two unrelated cards. ADR-0013 refuses an edge a user can attach
+    // anything to, and there is nothing here to attach to: no exit handle, no
+    // endpoint that takes a pointer, and no Connection in the document.
+    mount(SOURCE, { onInsert: () => {} })
+    await canvas().findByText('Fetch mail')
+
+    const board = rootBoard()
+    const { links } = layout(board)
+    const paths = screen.getByRole('region', { name: 'Flow map' }).querySelectorAll('path')
+
+    // One drawn line per link, and one `+` per link that names a position. A
+    // join arrives at a mark rather than at a gap, so it carries no `+`.
+    expect(links.length).toBeGreaterThan(0)
+    expect(paths).toHaveLength(links.length)
+    // `Add the first Step to …` as well as `Insert a Step …`: an empty region's
+    // only gap is its empty state, and it says so.
+    const dots = canvas().getAllByRole('button', { name: /Step/ })
+    expect(dots).toHaveLength(links.filter((link) => link.at !== undefined).length)
+    // Every one names a different place, which is the whole reason they are
+    // spelled out rather than numbered.
+    expect(new Set(dots.map((dot) => dot.getAttribute('aria-label'))).size).toBe(dots.length)
+  })
+})
+
+/**
+ * The canvas is how a workflow is built, so the gestures that build one are
+ * here: a `+` in every gap, a Component dropped onto one, and a Step dragged
+ * from one gap to another.
+ */
+describe('building on the canvas', () => {
+  const CATALOGUE: Manifest[] = [
+    {
+      kind: 'component',
+      use: 'component.email.send',
+      name: 'Send email',
+      blurb: 'Send a message.',
+      icon: '/icons/mail.svg',
+      fields: [{ k: 'to', label: 'To', kind: 'text' }],
+      outputs: [],
+    },
+  ]
+
+  const withCatalogue = (props: Parameters<typeof FlowMap>[0] = {}) =>
+    render(
+      <HatuaProvider
+        ports={{
+          workflows: serving(SOURCE),
+          manifests: { loadManifests: async () => CATALOGUE },
+        }}
+        workflowId="wf_map"
+      >
+        <FlowMap {...props} />
+      </HatuaProvider>,
+    )
+
+  it('hands an insert point out rather than guessing at a Component', async () => {
+    // The canvas knows where a Step would go and nothing about what to put
+    // there — the catalogue is the Components tab's. So the point goes out.
+    const onInsert = vi.fn()
+    mount(SOURCE, { onInsert })
+    await canvas().findByText('Fetch mail')
+
+    fireEvent.click(canvas().getByRole('button', { name: 'Insert a Step after Fetch mail' }))
+    expect(onInsert).toHaveBeenCalledWith({ board: null, index: 1 })
+  })
+
+  it('renders no insert control at all without a handler for it', async () => {
+    // The state `apps/playground/src/host.tsx` mounts. The lines are still
+    // drawn, because the flow is still the flow.
     mount()
     await canvas().findByText('Fetch mail')
-    expect(canvas().queryByText(/connector/i)).toBeNull()
+    expect(canvas().queryByRole('button', { name: /Step/ })).toBeNull()
+  })
+
+  it('offers a `+` inside an empty Branch, which is the only way to fill it', async () => {
+    mount(SOURCE, { onInsert: () => {} })
+    await canvas().findByText('Fetch mail')
+    expect(
+      canvas().getByRole('button', { name: 'Add the first Step to the “Otherwise” branch' }),
+    ).toBeDefined()
+  })
+
+  it('offers a `+` under the root node of an empty Board, which has no cards at all', async () => {
+    const EMPTY = `id: wf_empty\nname: n\nversion: 1\nstatus: draft\nsteps: []\n`
+    mount(EMPTY, { onInsert: () => {} })
+    // Without this there is no way to add the first Step to a new workflow.
+    expect(
+      await canvas().findByRole('button', { name: 'Add the first Step to the workflow' }),
+    ).toBeDefined()
+  })
+
+  it('names the Board a `+` adds to, so a Block gets its own Step', async () => {
+    const onInsert = vi.fn()
+    mount(SOURCE, { defaultBoardId: 'alpha', onInsert })
+    await canvas().findByText('Alpha returns')
+
+    fireEvent.click(canvas().getByRole('button', { name: 'Insert a Step after Alpha returns' }))
+    expect(onInsert).toHaveBeenCalledWith({ board: 'alpha', index: 1 })
+  })
+
+  it('turns a Component dropped on a `+` into that point and that verb', async () => {
+    const onDropComponent = vi.fn()
+    mount(SOURCE, { onDropComponent, onInsert: () => {} })
+    await canvas().findByText('Fetch mail')
+
+    const dot = canvas().getByRole('button', { name: 'Insert a Step after Fetch mail' })
+      .parentElement as HTMLElement
+    const data = transfer({
+      'application/x-hatua-component': JSON.stringify({
+        use: 'component.email.send',
+        name: 'Send email',
+      }),
+    })
+    fireEvent.drop(dot, { dataTransfer: data })
+
+    expect(onDropComponent).toHaveBeenCalledWith(
+      { use: 'component.email.send', name: 'Send email' },
+      { board: null, index: 1 },
+    )
+  })
+
+  it('ignores a drop it cannot read rather than adding a Step nobody asked for', async () => {
+    const onDropComponent = vi.fn()
+    mount(SOURCE, { onDropComponent, onInsert: () => {} })
+    await canvas().findByText('Fetch mail')
+
+    const dot = canvas().getByRole('button', { name: 'Insert a Step after Fetch mail' })
+      .parentElement as HTMLElement
+    fireEvent.drop(dot, { dataTransfer: transfer({ 'application/x-hatua-component': 'not json' }) })
+    expect(onDropComponent).not.toHaveBeenCalled()
+  })
+
+  it('moves a Step dragged from one gap to another', async () => {
+    const source = serving(SOURCE)
+    const writes: string[] = []
+    render(
+      <HatuaProvider
+        ports={{
+          workflows: {
+            ...source,
+            async saveDraft(_t, text) {
+              writes.push(text)
+            },
+          },
+        }}
+        workflowId="wf_map"
+      >
+        <FlowMap onInsert={() => {}} />
+      </HatuaProvider>,
+    )
+    await canvas().findByText('Fetch mail')
+
+    const card = canvas().getByText('Fetch mail').closest('[draggable]') as HTMLElement
+    fireEvent.dragStart(card, { dataTransfer: transfer({}) })
+    const dot = canvas().getByLabelText('Insert a Step after Archive another')
+      .parentElement as HTMLElement
+    fireEvent.drop(dot, { dataTransfer: transfer({}) })
+
+    await waitFor(() => expect(cardNames()[0]).not.toBe('Fetch mail'), { timeout: 5000 })
+  })
+
+  it('draws the Component’s icon, which is a URL the Host serves', async () => {
+    withCatalogue()
+    await canvas().findByText('Fetch mail')
+    // `component.email.send` is the one verb the catalogue declares an icon for.
+    await waitFor(() =>
+      expect(
+        [...document.querySelectorAll('img')].some(
+          (img) => img.getAttribute('src') === '/icons/mail.svg',
+        ),
+      ).toBe(true),
+    )
+  })
+
+  it('shows a filled Slot as a chip, and shows none before the catalogue lands', async () => {
+    const WITH_ARGS = `id: wf_args\nname: n\nversion: 1\nstatus: draft\nsteps:\n  - id: s1\n    use: component.email.send\n    name: "Send it"\n    with: { to: "me@example.com" }\n`
+    const { unmount } = mount(WITH_ARGS)
+    await canvas().findByText('Send it')
+    // No catalogue: nothing declares `to` a Slot, so there is nothing to show.
+    expect(canvas().queryByText('me@example.com')).toBeNull()
+    unmount()
+
+    render(
+      <HatuaProvider
+        ports={{
+          workflows: serving(WITH_ARGS),
+          manifests: { loadManifests: async () => CATALOGUE },
+        }}
+        workflowId="wf_args"
+      >
+        <FlowMap />
+      </HatuaProvider>,
+    )
+    expect(await canvas().findByText('me@example.com')).toBeDefined()
   })
 })
 

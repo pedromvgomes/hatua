@@ -1,0 +1,31 @@
+@layer hatua {
+  /* A fixed square everything that shows one shares, so a row's or a card's
+     height never depends on how the Host proportioned its artwork. */
+  .coin {
+    display: grid;
+    place-items: center;
+    flex: none;
+    inline-size: 26px;
+    block-size: 26px;
+    border: 1px solid var(--hatua-border-subtle);
+    border-radius: var(--hatua-radius-sm);
+    background: var(--hatua-surface-sunken);
+    color: var(--hatua-text-muted);
+  }
+
+  .image {
+    inline-size: 18px;
+    block-size: 18px;
+    object-fit: contain;
+  }
+
+  /* Drawn when the manifest declares no icon, or the URL fails to load. */
+  .placeholder {
+    inline-size: 14px;
+    block-size: 14px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.25;
+    opacity: 0.55;
+  }
+}

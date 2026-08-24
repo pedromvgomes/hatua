@@ -1,15 +1,19 @@
 @layer hatua {
   .join {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    display: grid;
+    place-items: center;
     pointer-events: none;
   }
 
-  .rule {
-    inline-size: 100%;
-    block-size: 0;
-    border-block-start: 1px solid var(--hatua-border-strong);
+  .pill {
+    padding: 1px 9px;
+    border: 1px solid var(--hatua-border-subtle);
+    border-radius: 999px;
+    background: var(--hatua-surface-page);
+    color: var(--hatua-text-muted);
+    font-size: 11px;
+    font-family: var(--hatua-font-mono);
+    line-height: 1.5;
   }
 
   .offscreen {

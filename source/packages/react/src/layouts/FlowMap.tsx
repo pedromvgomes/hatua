@@ -1,4 +1,4 @@
-import type { Band } from '@hatua/layout'
+import type { Link } from '@hatua/layout'
 import { layout } from '@hatua/layout'
 import {
   type Board,
@@ -7,20 +7,37 @@ import {
   blockOf,
   boardOf,
   type Diagnostic,
+  type InsertPoint,
   nameOf,
   regionsOf,
   type StepRef,
   stepKey,
 } from '@hatua/model'
-import type { Branch, Step, WorkflowDefinition } from '@hatua/schema'
-import type { EditingState, ValidationState } from '@hatua/services'
-import { type ComponentPropsWithRef, useEffect, useState, useSyncExternalStore } from 'react'
+import type { Manifest, ManifestEntry, Step, WorkflowDefinition } from '@hatua/schema'
+import { manifestsIn } from '@hatua/schema'
+import {
+  type EditingState,
+  type ManifestState,
+  moveStep,
+  type ValidationState,
+} from '@hatua/services'
+import {
+  type ComponentPropsWithRef,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from 'react'
 import { cx } from '../primitives/classNames'
-import { useEditingStore, useValidationStore } from '../theme/HatuaProvider'
+import { useEditingStore, useManifestStore, useValidationStore } from '../theme/HatuaProvider'
+import { Connectors, pointOn } from '../units/Connectors'
+import { InsertDot } from '../units/InsertDot'
 import { JoinMarker } from '../units/JoinMarker'
+import { LinkLabel } from '../units/LinkLabel'
 import { NodeCard } from '../units/NodeCard'
 import { RegionBand } from '../units/RegionBand'
 import { RootNode } from '../units/RootNode'
+import { COMPONENT_MIME, type ComponentDrag, decodeComponent } from './dragging'
 import styles from './FlowMap.module.css'
 import css from './FlowMap.module.css?inline'
 
@@ -101,6 +118,26 @@ export interface FlowMapProps extends Omit<ComponentPropsWithRef<'section'>, 'on
   collapsed?: readonly StepRef[]
   defaultCollapsed?: readonly StepRef[]
   onCollapseChange?: (collapsed: StepRef[]) => void
+  /**
+   * Fired when a `+` on the map is chosen. Optional — this region knows where a
+   * Step would go and nothing at all about which Component to put there, so it
+   * hands the point out and the Components tab fills it in.
+   *
+   * Its absence is meaningful and is a state the playground mounts: with no
+   * handler the `+` is a drop target and nothing else, because moving an
+   * existing Step needs no catalogue while adding a new one does.
+   */
+  onInsert?: (at: InsertPoint) => void
+  /**
+   * Fired when a Component card is dropped onto a `+`, with what it carried.
+   *
+   * What the drag holds rather than the Manifest: `dataTransfer` holds strings,
+   * and this region has no catalogue to resolve one against anyway. Whatever is
+   * above both regions turns it into a Step, the same way it does for a click —
+   * so the two gestures produce the same command, and only one of them costs a
+   * round trip through the tab strip.
+   */
+  onDropComponent?: (component: ComponentDrag, at: InsertPoint) => void
 }
 
 /** "The Host wired nothing" is not a phase of the load, so it is not the store's to report. */
@@ -120,6 +157,12 @@ const UNCHECKED: ValidationState = {
   all: [],
   ready: false,
 }
+type CatalogueState = ManifestState | { status: 'unconfigured' }
+const CATALOGUE_UNCONFIGURED = { status: 'unconfigured' } as const
+const CATALOGUE_LOADING = { status: 'loading' } as const
+const NO_ENTRIES: ManifestEntry[] = []
+const readCatalogueUnconfigured = (): CatalogueState => CATALOGUE_UNCONFIGURED
+const readCatalogueLoading = (): CatalogueState => CATALOGUE_LOADING
 const readUnchecked = (): ValidationState => UNCHECKED
 const readUnconfigured = (): MapState => UNCONFIGURED
 const readOpening = (): MapState => OPENING
@@ -134,21 +177,27 @@ export function FlowMap({
   collapsed,
   defaultCollapsed,
   onCollapseChange,
+  onInsert,
+  onDropComponent,
   className,
   ...rest
 }: FlowMapProps) {
   const store = useEditingStore()
+  const catalogue = useManifestStore()
   const validation = useValidationStore()
   const [ownBoard, setOwnBoard] = useState<BoardId>(defaultBoardId)
   const [ownSelected, setOwnSelected] = useState<StepRef | undefined>(defaultSelected)
   const [ownCollapsed, setOwnCollapsed] = useState<readonly StepRef[]>(defaultCollapsed ?? [])
+  const [dragging, setDragging] = useState<string | null>(null)
 
-  // The one side effect: tell the store somebody is reading. Idempotent, so
-  // every region that mounts may call it and only the first opens the Draft.
+  // The one side effect: tell each store somebody is reading. Both are
+  // idempotent, so every region that mounts may call them and only the first
+  // opens the Draft or fetches the catalogue.
   useEffect(() => {
     if (validation) validation.load()
     else store?.open()
-  }, [store, validation])
+    catalogue?.load()
+  }, [store, validation, catalogue])
 
   const state = useSyncExternalStore<MapState>(
     store ? store.subscribe : subscribeToNothing,
@@ -157,6 +206,20 @@ export function FlowMap({
     // built to render there (ADR-0003). Opening is the honest answer.
     store ? readOpening : readUnconfigured,
   )
+
+  const served = useSyncExternalStore<CatalogueState>(
+    catalogue ? catalogue.subscribe : subscribeToNothing,
+    catalogue ? catalogue.getSnapshot : readCatalogueUnconfigured,
+    catalogue ? readCatalogueLoading : readCatalogueUnconfigured,
+  )
+  // Keyed by `use`, which is how both `layout` and a card ask for one. Built
+  // here rather than in the layout so the two readers cannot key it differently.
+  const manifests = useMemo(() => {
+    const entries = served.status === 'ready' ? served.manifests : NO_ENTRIES
+    return new Map<string, Manifest>(
+      manifestsIn(entries).map((manifest) => [manifest.use, manifest]),
+    )
+  }, [served])
 
   const checks = useSyncExternalStore<ValidationState>(
     validation ? validation.subscribe : subscribeToNothing,
@@ -199,6 +262,11 @@ export function FlowMap({
     onCollapseChange?.([...next])
   }
 
+  const move = (id: string, to: InsertPoint) => {
+    store?.apply(moveStep({ board: board?.id ?? null, id }, to))
+    setDragging(null)
+  }
+
   return (
     <>
       <style href="hatua-flow-map" precedence="hatua">
@@ -239,12 +307,19 @@ export function FlowMap({
           <Canvas
             definition={definition}
             board={board}
+            manifests={manifests}
             selection={selection}
             folded={folded}
             problems={problems}
+            dragging={dragging}
             onSelect={select}
             onToggle={toggle}
             onOpenBoard={openBoard}
+            onInsert={onInsert}
+            onDropComponent={onDropComponent}
+            onDragStart={setDragging}
+            onDragEnd={() => setDragging(null)}
+            onDropStep={move}
           />
         ) : null}
       </section>
@@ -255,53 +330,63 @@ export function FlowMap({
 function Canvas({
   definition,
   board,
+  manifests,
   selection,
   folded,
   problems,
+  dragging,
   onSelect,
   onToggle,
   onOpenBoard,
+  onInsert,
+  onDropComponent,
+  onDragStart,
+  onDragEnd,
+  onDropStep,
 }: {
   definition: WorkflowDefinition
   board: Board
+  manifests: ReadonlyMap<string, Manifest>
   selection: StepRef | undefined
   folded: readonly StepRef[]
   problems: ReadonlyMap<string, Diagnostic[]>
+  dragging: string | null
   onSelect: (ref: StepRef) => void
   onToggle: (ref: StepRef) => void
   onOpenBoard: (board: BoardId) => void
+  onInsert?: (at: InsertPoint) => void
+  onDropComponent?: (component: ComponentDrag, at: InsertPoint) => void
+  onDragStart: (id: string) => void
+  onDragEnd: () => void
+  onDropStep: (id: string, to: InsertPoint) => void
 }) {
   // Bare ids, because a Board is already `layout`'s argument. This is where a
   // set that spans Boards becomes the set for one of them, and it is the only
   // place the two spellings meet.
   const collapsed = new Set(folded.filter((ref) => ref.board === board.id).map((ref) => ref.id))
-  const map = layout(board, { collapsed })
+  const map = layout(board, { collapsed, manifests })
   const steps = new Map<string, Step>()
   for (const { step, ref } of walk(board)) steps.set(stepKey(ref), step)
-  const branches = branchesByBand(map.bands, steps)
+  const connections = new Map(
+    (definition.connections ?? []).map((one) => [one.id, one.ref ?? one.id]),
+  )
 
   return (
     <div className={styles.viewport}>
       <Breadcrumb board={board} onOpenBoard={onOpenBoard} />
       <div className={styles.surface} style={{ width: map.width, height: map.height }}>
+        {/* Frames first, then the lines, then everything that takes a pointer. */}
+        {map.bands.map((band) => (
+          <RegionBand key={`${stepKey(band.owner)}:${band.kind}:${band.x}:${band.y}`} band={band} />
+        ))}
+
+        <Connectors links={map.links} width={map.width} height={map.height} />
+
         <RootNode
           rect={map.root}
           title={rootTitle(board)}
           summary={rootSummary(definition, board)}
         />
-
-        {/* Bands first, so a region's frame sits behind the cards it holds. */}
-        {map.bands.map((band) => {
-          const branch = branches.get(band)
-          return (
-            <RegionBand
-              key={`${stepKey(band.owner)}:${band.kind}:${band.x}:${band.y}`}
-              band={band}
-              label={branch?.label}
-              when={branch?.when}
-            />
-          )
-        })}
 
         {map.joins.map((join) => {
           const owner = steps.get(stepKey(join.owner))
@@ -314,29 +399,142 @@ function Canvas({
           )
         })}
 
-        {map.placements.map((placement) => {
-          const key = stepKey(placement.ref)
-          const step = steps.get(key)
-          if (!step) return null
-          const opens = blockIdOf(step.use)
-          return (
-            <NodeCard
-              key={key}
-              step={step}
-              rect={placement}
-              selected={selection !== undefined && stepKey(selection) === key}
-              expanded={!collapsed.has(placement.ref.id)}
-              opens={opens && blockOf(definition, opens) ? opens : undefined}
-              problems={problems.get(key)}
-              onSelect={() => onSelect(placement.ref)}
-              onToggle={() => onToggle(placement.ref)}
-              onOpen={() => opens && onOpenBoard(opens)}
+        {/* The word on each line that enters a region. Decoration, and outside
+            the list below because a <p> is not a list item. */}
+        {map.links.map((link, index) =>
+          link.label && link.labelAt ? (
+            <LinkLabel
+              // biome-ignore lint/suspicious/noArrayIndexKey: a link has no identity of its own — it is a gap between two things, and `layout` emits them in a fixed order. The index IS the identity here, not a stand-in for one.
+              key={`label:${index}`}
+              at={link.labelAt}
+              keyword={link.label}
+              label={branchOn(link, steps)?.label}
+              when={branchOn(link, steps)?.when}
             />
-          )
-        })}
+          ) : null,
+        )}
+
+        {/*
+          The cards and the gaps between them are one list, the way <StepList>'s
+          rows and its insert points are: a screen reader hears a list of Steps
+          with somewhere to add one between each, rather than a flat set of
+          buttons whose relationship is drawn and nothing else.
+        */}
+        <ul className={styles.cards} aria-label="Steps">
+          {map.links.map((link, index) =>
+            link.at ? (
+              <InsertDot
+                // biome-ignore lint/suspicious/noArrayIndexKey: as above — a gap is identified by where it is in the emitted order.
+                key={`gap:${index}`}
+                at={pointOn(link, DOT_AT)}
+                label={insertLabel(link, steps, board)}
+                active={dragging !== null}
+                onInsert={onInsert ? () => onInsert(link.at as InsertPoint) : undefined}
+                onDrop={
+                  dragging || onDropComponent
+                    ? (data) => {
+                        const at = link.at as InsertPoint
+                        // A Component card carries what it is under a private
+                        // type; a Step being moved is one this canvas already
+                        // knows about, held in state because `dataTransfer` is
+                        // unreadable while a drag is over a target.
+                        const component = decodeComponent(data.getData(COMPONENT_MIME))
+                        if (component) onDropComponent?.(component, at)
+                        else if (dragging) onDropStep(dragging, at)
+                      }
+                    : undefined
+                }
+              />
+            ) : null,
+          )}
+
+          {map.placements.map((placement) => {
+            const key = stepKey(placement.ref)
+            const step = steps.get(key)
+            if (!step) return null
+            const opens = blockIdOf(step.use)
+            return (
+              <NodeCard
+                key={key}
+                step={step}
+                rect={placement}
+                manifest={manifests.get(step.use)}
+                connections={connections}
+                selected={selection !== undefined && stepKey(selection) === key}
+                expanded={!collapsed.has(placement.ref.id)}
+                opens={opens && blockOf(definition, opens) ? opens : undefined}
+                problems={problems.get(key)}
+                onSelect={() => onSelect(placement.ref)}
+                onToggle={() => onToggle(placement.ref)}
+                onOpen={() => opens && onOpenBoard(opens)}
+                onDragStart={() => onDragStart(step.id)}
+                onDragEnd={onDragEnd}
+              />
+            )
+          })}
+        </ul>
       </div>
     </div>
   )
+}
+
+/**
+ * The Branch a link enters, when it enters one — for the label and the condition
+ * beside the keyword.
+ *
+ * By the index `layout` put on the link, never by matching the keyword: a fork
+ * of four conditions carries three links all reading `else if`.
+ */
+const branchOn = (link: Link, steps: ReadonlyMap<string, Step>) =>
+  link.branchIndex === undefined || !link.owner
+    ? undefined
+    : steps.get(stepKey(link.owner))?.branches?.[link.branchIndex]
+
+/**
+ * Where the `+` sits along a link: the middle of it.
+ *
+ * The label does not ride the line — `Link.labelAt` puts it in the strip
+ * `LAYOUT.regionLabel` reserves at the top of the region, because a Fork's two
+ * branch links leave the same point and any fraction along them near the start
+ * is the same place twice.
+ */
+const DOT_AT = 0.5
+
+/**
+ * What an insert point is called, spelled out rather than numbered.
+ *
+ * "Insert a Step at position 3" names three different places on a map with two
+ * Branches. The sentence says which list and where in it, which is the same
+ * thing `<StepList>`'s gaps say — the two surfaces offer the same insert points
+ * and describe them the same way.
+ */
+function insertLabel(link: Link, steps: ReadonlyMap<string, Step>, board: Board): string {
+  const at = link.at
+  if (!at) return 'Insert a Step'
+
+  const owner = at.parentId ? steps.get(stepKey({ board: board.id, id: at.parentId })) : undefined
+  const scope = owner
+    ? at.branchIndex !== undefined
+      ? `the “${owner.branches?.[at.branchIndex]?.label ?? at.branchIndex}” branch`
+      : at.region === 'handler'
+        ? `the “${nameOf(owner)}” handler`
+        : `the “${nameOf(owner)}” ${link.label === 'try' ? 'body' : 'loop'}`
+    : board.id === null
+      ? 'the workflow'
+      : `the “${board.block?.name || board.id}” block`
+
+  const list = owner
+    ? at.branchIndex !== undefined
+      ? (owner.branches?.[at.branchIndex]?.steps ?? [])
+      : at.region === 'handler'
+        ? (owner.handler ?? [])
+        : (owner.steps ?? [])
+    : board.steps
+
+  if (list.length === 0) return `Add the first Step to ${scope}`
+  if (at.index === 0) return `Insert a Step at the start of ${scope}`
+  const after = list[at.index - 1]
+  return after ? `Insert a Step after ${nameOf(after)}` : `Insert a Step at the end of ${scope}`
 }
 
 /**
@@ -374,34 +572,6 @@ function* walk(board: Board): Generator<{ step: Step; ref: StepRef }> {
     }
   }
   yield* from(board.steps)
-}
-
-/**
- * Which Branch each branch band is, so the band can show the label and the
- * condition beside the keyword.
- *
- * By position, never by the keyword: a fork of four conditions carries three
- * bands all reading `else if`. `regionsOf` yields a Step's Branches in document
- * order and `layout` keeps that order, so the nth branch band under one owner is
- * that owner's nth Branch.
- */
-function branchesByBand(
-  bands: readonly Band[],
-  steps: ReadonlyMap<string, Step>,
-): Map<Band, Branch> {
-  const seen = new Map<string, number>()
-  const found = new Map<Band, Branch>()
-
-  for (const band of bands) {
-    if (band.kind !== 'branch') continue
-    const key = stepKey(band.owner)
-    const index = seen.get(key) ?? 0
-    seen.set(key, index + 1)
-    const branch = steps.get(key)?.branches?.[index]
-    if (branch) found.set(band, branch)
-  }
-
-  return found
 }
 
 /** The Triggers at the root, the Block's name inside one. */

@@ -49,6 +49,41 @@ export interface StepRef {
   readonly id: string
 }
 
+/** A position among a list of sibling Steps, named in domain terms rather than YAML paths. */
+export interface InsertPoint {
+  /**
+   * Which Board the position is on: a Block's id, or absent for the root.
+   *
+   * Every path below is rooted here rather than at `['steps']`. That single
+   * parameter is what makes an edit on a Block's Board the same command as an
+   * edit on the root's — which is the property the extract-into-a-block gesture
+   * needs, and what keeps a Block built on the canvas and one hand-written in
+   * Text Mode the same document.
+   */
+  board?: BoardId
+  /**
+   * The container Step whose children receive it. Absent for the Board's
+   * root sequence.
+   */
+  parentId?: string
+  /**
+   * Which of a `core.fork`'s branches, by index. Absent for a `core.for_each`'s
+   * own nested `steps`, and absent at the root.
+   */
+  branchIndex?: number
+  /**
+   * Which of a `core.try`'s two regions. Absent means the body under `steps:`,
+   * which is the same key a loop's children sit under.
+   *
+   * A named region rather than a second index, because the two are not a list:
+   * a try has exactly one body and exactly one handler, and an index would let
+   * a caller ask for the third one.
+   */
+  region?: 'handler'
+  /** Position among the siblings. The list's length appends. */
+  index: number
+}
+
 /**
  * Every Board in the document, root first.
  *

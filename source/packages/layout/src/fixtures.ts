@@ -1,4 +1,4 @@
-import type { WorkflowDefinition } from '@hatua/schema'
+import type { Manifest, WorkflowDefinition } from '@hatua/schema'
 
 /** The shell every fixture below fills in, so each one is only its Step tree. */
 const workflow = (name: string, rest: Partial<WorkflowDefinition>): WorkflowDefinition => ({
@@ -198,3 +198,58 @@ export const SHAPES: readonly { name: string; doc: WorkflowDefinition }[] = [
   { name: 'deep', doc: DEEP },
   { name: 'mixed regions', doc: MIXED_REGIONS },
 ]
+
+/**
+ * The Component Manifests the height rule is read against.
+ *
+ * A card's meta row is its filled **Slots**, and only a manifest says which keys
+ * are Slots — so `core.fork` declaring `fields: []` is the reason a Fork is the
+ * short card while a loop is not. Mirrors `conformance/manifest/catalogue.yaml`
+ * in the two entries that decide it, rather than inventing a shape the corpus
+ * would not recognise.
+ */
+export const MANIFESTS: ReadonlyMap<string, Manifest> = new Map(
+  (
+    [
+      { kind: 'component', use: 'core.fork', name: 'Branch', fields: [], outputs: [] },
+      { kind: 'component', use: 'core.try', name: 'Try', fields: [], outputs: [] },
+      { kind: 'component', use: 'core.end', name: 'End', fields: [], outputs: [] },
+      { kind: 'component', use: 'core.return', name: 'Return', fields: [], outputs: [] },
+      {
+        kind: 'component',
+        use: 'core.for_each',
+        name: 'For each',
+        fields: [{ k: 'list', label: 'List', kind: 'ref', req: true }],
+        outputs: [],
+      },
+      {
+        kind: 'component',
+        use: 'core.repeat',
+        name: 'Repeat',
+        fields: [{ k: 'until', label: 'Until', kind: 'text' }],
+        outputs: [],
+      },
+      {
+        kind: 'component',
+        use: 'component.email.fetch',
+        name: 'Fetch mail',
+        fields: [{ k: 'query', label: 'Query', kind: 'text' }],
+        outputs: [],
+      },
+      {
+        kind: 'component',
+        use: 'component.email.send',
+        name: 'Send email',
+        fields: [{ k: 'to', label: 'To', kind: 'text' }],
+        outputs: [],
+      },
+      {
+        kind: 'component',
+        use: 'component.agent.act',
+        name: 'Act',
+        fields: [{ k: 'prompt', label: 'Prompt', kind: 'text' }],
+        outputs: [],
+      },
+    ] as Manifest[]
+  ).map((manifest) => [manifest.use, manifest]),
+)
