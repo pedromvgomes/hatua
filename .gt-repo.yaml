@@ -36,5 +36,10 @@ dependabot:
       setup-go reads out of this go.mod through go-version-file, so this entry
       is what moves that version as well as the module's dependencies.
 pipeline:
+  ci:
+    stages:
+      - preflight
+      - build
+      - test
   cd:
     enabled: false
