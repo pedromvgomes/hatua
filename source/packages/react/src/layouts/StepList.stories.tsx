@@ -98,6 +98,19 @@ steps:
       - id: s11
         use: component.email.archive
         name: "Archive"
+  - id: s12
+    use: core.try
+    name: "Publish the digest"
+    with:
+      attempts: 3
+    steps:
+      - id: s13
+        use: component.email.send
+        name: "Send it"
+    handler:
+      - id: s14
+        use: component.chat.post
+        name: "Say it failed"
 `
 
 const EMPTY = `id: wf_empty\nname: "Nothing yet"\nversion: 1\nstatus: draft\nsteps: []\n`
@@ -162,10 +175,16 @@ type Story = StoryObj<typeof meta>
 export const Flat: Story = { parameters: wired(serving(SIMPLE)) }
 
 /**
- * Forks, a fallback Branch, a nested loop and an empty Branch — the whole
- * vocabulary in one document. `if` / `else if` / `else` for a condition fork
- * and `and` for a parallel one, read from whether any Branch carries `when`,
- * because the schema has no mode field.
+ * Forks, a fallback Branch, a nested loop, an empty Branch and a `core.try` with
+ * both of its regions — the whole vocabulary in one document. `if` / `else if` /
+ * `else` for a condition fork and `and` for a parallel one, read from whether
+ * any Branch carries `when`, because the schema has no mode field.
+ *
+ * The try is the one Step here with TWO child regions, and the chips say which
+ * is which: `try` over the protected body and `on failure` over the handler.
+ * `steps:` holds a loop's children and a try's body alike, so the word comes
+ * from the verb — reading "loop" over the Steps a try is protecting would name
+ * the wrong control flow.
  */
 export const DeepTree: Story = { parameters: wired(serving(DEEP)) }
 

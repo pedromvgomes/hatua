@@ -115,6 +115,46 @@ export const FORK_VERB = 'core.fork'
 export const SET_VAR_VERB = 'core.set_var'
 
 /**
+ * The verb that protects a region and falls back to a handler.
+ *
+ * The one container with two child regions: a body under `steps:` and a handler
+ * under `handler:`. Wrapping one Step is retry, wrapping a region is fallback,
+ * so one verb serves both (ADR-0013).
+ *
+ * Its retry policy — how many attempts, how long to wait — sits in `with:` as
+ * ordinary manifest fields, and deliberately NOT in a structural key. `until`
+ * had to leave `with:` because `FIELD_KIND_TYPES` has no mappable boolean, so a
+ * condition there would have type-checked as text. An attempt count is a number
+ * and `number` IS a mappable field kind, so the argument that moved `until` does
+ * not reach here at all — following it anyway would be copying a conclusion
+ * without its reason, and would cost a structural key, a diagnostic and a form
+ * control that the manifest already gives for nothing.
+ */
+export const TRY_VERB = 'core.try'
+
+/**
+ * The field a `core.for_each` iterates, and the one `item` is resolved through.
+ *
+ * A constant rather than a literal at three call sites, because it is a name two
+ * languages and one manifest have to agree on: `item` means "one element of
+ * whatever THIS key points at", so a reader looking under a different key
+ * resolves `item` to nothing and reports no type at all.
+ */
+export const FOR_EACH_LIST_FIELD = 'list'
+
+/**
+ * The output key a container binds for the children it owns.
+ *
+ * Both are ordinary manifest outputs of the container Step, read as
+ * `{{steps.<container id>.<key>}}`. That is the whole binding mechanism, and it
+ * is one mechanism rather than two: ADR-0014 closed the path roots so that a
+ * structural idea could not take a bare word away from users, and a Step id is
+ * already one segment below `steps.`. Two nested loops cannot shadow each other,
+ * because two Steps cannot share an id on one Board.
+ */
+export const ITEM_BINDING = 'item'
+
+/**
  * The Slot a `core.repeat`'s `until` resolves into.
  *
  * The mirror of `whenSlot`, and for the same reason: a condition is a boolean,

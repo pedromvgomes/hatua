@@ -75,7 +75,10 @@ const declaredSlots = (declarations: readonly Declaration[] | undefined, step: S
  * Which Blocks a Block reaches directly, in document order.
  *
  * Reads the whole Board rather than its top level: a call nested inside a Fork
- * branch or a loop body still reaches, which is the entire point of asking.
+ * branch, a loop body or a `core.try`'s handler still reaches, which is the
+ * entire point of asking. A region missing from this walk is a region recursion
+ * can hide in: the call graph comes out short an edge, the cycle is not found,
+ * and the document publishes.
  */
 export function callsOf(steps: readonly Step[]): string[] {
   const found: string[] = []
@@ -85,6 +88,7 @@ export function callsOf(steps: readonly Step[]): string[] {
       if (id !== null) found.push(id)
       for (const branch of step.branches ?? []) walk(branch.steps)
       if (step.steps) walk(step.steps)
+      if (step.handler) walk(step.handler)
     }
   }
   walk(steps)

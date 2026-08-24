@@ -1,6 +1,8 @@
 package hatua
 
 import (
+	"strings"
+
 	"hatua.dev/go/expressions"
 )
 
@@ -257,6 +259,21 @@ func UpstreamOf(doc Definition, ref StepRef) []Step {
 	return []Step{}
 }
 
+// collectUpstream walks one Board, and treats exactly one verb as more than a
+// container.
+//
+// A core.try has two child regions and they are SIBLINGS, so the body cannot see
+// the handler and the handler cannot see the body's steps, with no code saying
+// so — the same rule that keeps a fork's branches out of each other's scope. It
+// is the right rule for the right reason: the body failed somewhere, and which
+// of its steps completed before it did is not a fact the document holds, so
+// offering them would make scope an intersection over paths.
+//
+// What IS special is the try step itself. It appears in the upstream list only
+// for steps inside its Handler, because that is where its binding means
+// something. Its body cannot read it — the body is what produces it — and
+// neither can a step after the try, because whether there was a failure at all
+// is decided during a run.
 func collectUpstream(steps []Step, id string, ancestors []Step) []Step {
 	var earlier []Step
 
@@ -265,16 +282,29 @@ func collectUpstream(steps []Step, id string, ancestors []Step) []Step {
 			return append(append([]Step{}, ancestors...), earlier...)
 		}
 
-		seen := append(append(append([]Step{}, ancestors...), earlier...), step)
+		above := append(append([]Step{}, ancestors...), earlier...)
+		// The handler is the one region the try itself is in scope for.
+		inHandler := append(append([]Step{}, above...), step)
+		outside := inHandler
+		if step.Use == TryVerb {
+			outside = above
+		}
+
 		for _, branch := range step.Branches {
-			if found := collectUpstream(branch.Steps, id, seen); found != nil {
+			if found := collectUpstream(branch.Steps, id, outside); found != nil {
 				return found
 			}
 		}
-		if found := collectUpstream(step.Steps, id, seen); found != nil {
+		if found := collectUpstream(step.Steps, id, outside); found != nil {
 			return found
 		}
-		earlier = append(earlier, step)
+		if found := collectUpstream(step.Handler, id, inHandler); found != nil {
+			return found
+		}
+
+		if step.Use != TryVerb {
+			earlier = append(earlier, step)
+		}
 	}
 	return nil
 }
@@ -393,6 +423,25 @@ func BoardScope(doc Definition, board BoardID, manifests []Manifest, context []C
 // two are joined here because neither side owns both. Only steps are
 // constrained by tree position, because only a step can fail to run.
 func ScopeFor(doc Definition, ref StepRef, manifests []Manifest, context []ContextKey) []expressions.ScopeEntry {
+	return scopeAt(doc, ref, manifests, context, nil)
+}
+
+// scopeAt is ScopeFor plus the set of loops already being resolved.
+//
+// `item` is typed by reading the loop's own List field, which means typing an
+// expression against the loop step's scope — so building one step's scope can
+// ask for another's. The walk terminates on its own, because a step's upstream
+// is always strictly earlier in the tree than the step itself and a loop can
+// therefore never be its own. resolving is not that argument: it is the guard for
+// a document where two steps share an id, which the schema permits into a file
+// and StepIdDuplicate reports rather than refuses.
+func scopeAt(
+	doc Definition,
+	ref StepRef,
+	manifests []Manifest,
+	context []ContextKey,
+	resolving map[string]bool,
+) []expressions.ScopeEntry {
 	byUse := make(map[string]Manifest, len(manifests))
 	for _, manifest := range manifests {
 		byUse[manifest.Use] = manifest
@@ -414,11 +463,104 @@ func ScopeFor(doc Definition, ref StepRef, manifests []Manifest, context []Conte
 		manifest := byUse[step.Use]
 		entries = append(entries, expressions.ScopeEntry{
 			Path: "steps." + step.ID,
-			Type: stepOutputType(byID, step, manifest),
+			Type: stepOutputType(doc, ref.Board, byID, step, manifest, manifests, context, resolving),
 		})
 	}
 
 	return entries
+}
+
+// TypeAtPath is the type one path names, read out of a scope, or false when
+// nothing declares it.
+//
+// Longest prefix first, because a scope path is dotted and is one entry rather
+// than two: `steps.s2` is an entry and `steps` is not, so `steps.s2.messages` has
+// to try three segments before two. The same rule validate.go walks a member
+// chain by, restated for a caller that has a path and no expression — reading a
+// declared type is not checking one, and reaching for the checker would mean
+// manufacturing diagnostics nobody asked for in order to throw them away.
+func TypeAtPath(scope []expressions.ScopeEntry, path string) (expressions.TypeNode, bool) {
+	segments := strings.Split(path, ".")
+	for take := len(segments); take > 0; take-- {
+		head := strings.Join(segments[:take], ".")
+		var node expressions.TypeNode
+		found := false
+		for _, entry := range scope {
+			if entry.Path == head {
+				node = entry.Type
+				found = true
+				break
+			}
+		}
+		if !found {
+			continue
+		}
+
+		for _, name := range segments[take:] {
+			member, held := node.Members[name]
+			if !held {
+				return expressions.TypeNode{}, false
+			}
+			node = member
+		}
+		return node, true
+	}
+	return expressions.TypeNode{}, false
+}
+
+// LoopElementType is what one element of a core.for_each's list is, or false when
+// the document does not say.
+//
+// This is the whole of `t: item`. The loop's List is a `ref` field, so its
+// declared type is unknown and the ordinary Slot check learns nothing from it;
+// the shape is one level below whatever it points at, which is exactly the `of:`
+// the source output declared. False when List is missing, is not a plain
+// Reference, names nothing, or names something that is not a list — and false
+// means `item` stays `item`, which the checker treats as matching anything.
+// Guessing `object` instead would be a shape nothing declared.
+func LoopElementType(
+	doc Definition,
+	board BoardID,
+	step Step,
+	manifests []Manifest,
+	context []ContextKey,
+) (expressions.TypeNode, bool) {
+	return loopElementType(doc, board, step, manifests, context, nil)
+}
+
+func loopElementType(
+	doc Definition,
+	board BoardID,
+	step Step,
+	manifests []Manifest,
+	context []ContextKey,
+	resolving map[string]bool,
+) (expressions.TypeNode, bool) {
+	template, ok := step.With[ForEachListField].(string)
+	if !ok {
+		return expressions.TypeNode{}, false
+	}
+	path := expressions.SourceReference(template)
+	if path == "" {
+		return expressions.TypeNode{}, false
+	}
+
+	key := StepKey(board, step.ID)
+	if resolving[key] {
+		return expressions.TypeNode{}, false
+	}
+	deeper := make(map[string]bool, len(resolving)+1)
+	for held := range resolving {
+		deeper[held] = true
+	}
+	deeper[key] = true
+
+	scope := scopeAt(doc, StepRef{Board: board, ID: step.ID}, manifests, context, deeper)
+	node, found := TypeAtPath(scope, path)
+	if !found || node.Type != expressions.TypeList {
+		return expressions.TypeNode{}, false
+	}
+	return expressions.ElementOf(node), true
 }
 
 // declarationToType turns a block's parameter or output into the shape the
@@ -511,7 +653,16 @@ func variableToType(variable Variable) expressions.TypeNode {
 // they are whatever the user named. It is the third verb Hatua interprets
 // structurally, alongside core.fork and core.for_each — and the only one that
 // does so by reading a field's value rather than its position in the tree.
-func stepOutputType(blocks map[string]*Block, step Step, manifest Manifest) expressions.TypeNode {
+func stepOutputType(
+	doc Definition,
+	board BoardID,
+	blocks map[string]*Block,
+	step Step,
+	manifest Manifest,
+	manifests []Manifest,
+	context []ContextKey,
+	resolving map[string]bool,
+) expressions.TypeNode {
 	if called, ok := BlockIDOf(step.Use); ok {
 		return blockOutputType(blocks[called])
 	}
@@ -522,7 +673,33 @@ func stepOutputType(blocks map[string]*Block, step Step, manifest Manifest) expr
 		}
 		return expressions.TypeNode{Type: expressions.TypeObject, Members: members}
 	}
-	return outputsToType(manifest.Outputs)
+
+	declared := outputsToType(manifest.Outputs)
+	if step.Use != ForEachVerb {
+		return declared
+	}
+
+	// A loop's binding, and the one output whose type is not in the manifest.
+	//
+	// Substituted here rather than in outputsToType because it is a property of
+	// the STEP and not of the declaration: two core.for_each steps share one
+	// manifest and iterate two different lists. Only a top-level output is
+	// substituted — `item` nested inside another output's `of:` would be a loop's
+	// element appearing as a member of something that is not the loop, which no
+	// manifest can mean.
+	element, resolved := loopElementType(doc, board, step, manifests, context, resolving)
+	if !resolved {
+		return declared
+	}
+	members := make(map[string]expressions.TypeNode, len(declared.Members))
+	for key, node := range declared.Members {
+		if node.Type == expressions.TypeItem {
+			members[key] = element
+			continue
+		}
+		members[key] = node
+	}
+	return expressions.TypeNode{Type: expressions.TypeObject, Members: members}
 }
 
 // outputsToType turns a manifest's list of {k, t, of} into the tree the checker

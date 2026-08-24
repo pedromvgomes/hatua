@@ -130,7 +130,8 @@ export const output = z.strictObject({
    */
   label: z.string().min(1),
   /**
-   * `item` is the for-each escape hatch: the shape is not known statically, so it is resolved by following the loop's `list` reference to the source output's `of`.
+   * `item` is the for-each escape hatch, and the one type whose meaning depends on the step declaring it: a `core.for_each`'s `item` output is whatever its `list` field points at, one element deep. It is resolved by reading that field as a Reference, typing the path against the loop step's own scope, and taking the element shape of the `list` it names — which is the `of:` the source output declared.
+   * Declaring it anywhere else is a promise nothing can keep. A component that is not a loop has no `list` to follow, so its `item` resolves to nothing and the checker treats it as `unknown` — which switches the type gate off for that output rather than narrowing it. That is also why a Block's declaration and a Board's variable refuse `item` outright: neither is the output of anything.
    */
   t: z.enum(['text', 'number', 'boolean', 'datetime', 'object', 'list', 'item']),
   /**

@@ -1,0 +1,501 @@
+about: >-
+  `core.try` and the `item` binding, as both languages must report them.
+
+  These are one decision asked twice. A container that binds a name for the
+  children it owns binds it as an OUTPUT OF ITSELF — `{{steps.<container id>.item}}`
+  and `{{steps.<container id>.error}}` — so neither costs a namespace root nor a
+  bare token, which is what ADR-0014 closed the roots to prevent, and two nested
+  containers cannot shadow each other because two Steps cannot share an id on one
+  Board.
+
+  A try's two regions are siblings. The handler sees the try itself and therefore
+  the failure; the body does not, because the body is what produces it; a Step
+  after the try does not either, because whether there was a failure at all is a
+  run-time fact. The handler cannot read the body's Steps, for the reason sibling
+  Branches cannot read each other's — which of them completed before the failure
+  is not a property of the document.
+
+  The load-bearing pair for the return obligation is here: a try discharges it
+  only when BOTH regions do. The body always runs, but a failure part-way through
+  it leaves the body unfinished and enters the handler instead, so the guarantee
+  is a conjunction rather than the repeat's "the body always runs".
+
+  LOOP_LIST_NOT_A_LIST is the one rule that makes `t: item` observable at all.
+  `list` is a `ref` field and `FIELD_KIND_TYPES` maps `ref` to `unknown`, so
+  without it a loop pointed at a number type-checks clean while `item` resolves to
+  nothing and matches everything downstream.
+
+manifests:
+  - kind: component
+    use: component.email.send
+    name: Send email
+    fields:
+      - { k: to, label: To, kind: text, req: true }
+    outputs: []
+  - kind: component
+    use: component.inbox.fetch
+    name: Fetch inbox
+    fields: []
+    outputs:
+      - k: messages
+        label: Messages
+        t: list
+        of:
+          - { k: subject, label: Subject, t: text }
+          - k: sender
+            label: Sender
+            t: object
+            of:
+              - { k: address, label: Address, t: text }
+      - { k: count, label: Count, t: number }
+  - kind: component
+    use: component.inbox.threads
+    name: Fetch threads
+    fields: []
+    outputs:
+      - k: threads
+        label: Threads
+        t: list
+        of:
+          - k: entries
+            label: Entries
+            t: list
+            of:
+              - { k: body, label: Body, t: text }
+  - kind: component
+    use: core.fork
+    name: Branch
+    fields: []
+    outputs: []
+  - kind: component
+    use: core.for_each
+    name: For each
+    fields:
+      - { k: list, label: List, kind: ref, req: true }
+    outputs:
+      - { k: item, label: Item, t: item }
+  - kind: component
+    use: core.repeat
+    name: Repeat
+    fields: []
+    outputs: []
+  - kind: component
+    use: core.try
+    name: Try
+    fields:
+      - { k: attempts, label: Attempts, kind: number }
+      - { k: backoff_ms, label: Backoff, kind: number }
+    outputs:
+      - k: error
+        label: Error
+        t: object
+        of:
+          - { k: message, label: Message, t: text }
+          - { k: type, label: Type, t: text }
+          - { k: step, label: Step, t: text }
+  - kind: component
+    use: core.return
+    name: Return
+    fields: []
+    outputs: []
+  - kind: trigger
+    use: core.schedule
+    name: Schedule
+    fields: []
+    outputs: []
+
+scenarios:
+  # ---- core.try, and its two regions ----------------------------------------
+
+  - name: a try with a body and a handler reports nothing
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps:
+        - id: guard
+          use: core.try
+          steps:
+            - { id: s1, use: component.email.send, with: { to: "me@dane.dev" } }
+          handler:
+            - { id: s2, use: component.email.send, with: { to: "ops@dane.dev" } }
+    expect: []
+
+  - name: a try with no handler has nowhere for a failure to go
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps:
+        - id: guard
+          use: core.try
+          steps:
+            - { id: s1, use: component.email.send, with: { to: "me@dane.dev" } }
+    expect:
+      - { code: TRY_HAS_NO_HANDLER, blocks: publish, stepId: guard }
+
+  - name: a try with no body protects nothing
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps:
+        - id: guard
+          use: core.try
+          handler:
+            - { id: s2, use: component.email.send, with: { to: "ops@dane.dev" } }
+    expect:
+      - { code: TRY_HAS_NO_BODY, blocks: publish, stepId: guard }
+
+  - name: an empty try is both halves missing, and says so twice
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps:
+        - { id: guard, use: core.try }
+    expect:
+      - { code: TRY_HAS_NO_BODY, blocks: publish, stepId: guard }
+      - { code: TRY_HAS_NO_HANDLER, blocks: publish, stepId: guard }
+
+  - name: an empty body is not the loop code, because a try is not a loop
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps:
+        - { id: each, use: core.for_each }
+        - { id: guard, use: core.try, handler: [{ id: s2, use: component.email.send, with: { to: "a@b.c" } }] }
+    expect:
+      - { code: FIELD_REQUIRED, blocks: publish, stepId: each, fieldKey: list }
+      - { code: LOOP_HAS_NO_BODY, blocks: publish, stepId: each }
+      - { code: TRY_HAS_NO_BODY, blocks: publish, stepId: guard }
+
+  - name: a handler's steps are walked, so a required field left empty inside one is reported
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps:
+        - id: guard
+          use: core.try
+          steps:
+            - { id: s1, use: component.email.send, with: { to: "me@dane.dev" } }
+          handler:
+            - { id: s2, use: component.email.send, with: {} }
+    expect:
+      - { code: FIELD_REQUIRED, blocks: publish, stepId: s2, fieldKey: to }
+
+  - name: a step id repeated between a try's two regions is still two steps on one board
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps:
+        - id: guard
+          use: core.try
+          steps:
+            - { id: s1, use: component.email.send, with: { to: "me@dane.dev" } }
+          handler:
+            - { id: s1, use: component.email.send, with: { to: "ops@dane.dev" } }
+    expect:
+      - { code: STEP_ID_DUPLICATE, blocks: publish, stepId: s1 }
+
+  - name: a try's retry policy is an ordinary manifest field, so an unfilled optional one is silent
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps:
+        - id: guard
+          use: core.try
+          with: { attempts: 3 }
+          steps:
+            - { id: s1, use: component.email.send, with: { to: "me@dane.dev" } }
+          handler:
+            - { id: s2, use: component.email.send, with: { to: "ops@dane.dev" } }
+    expect: []
+
+  # ---- a try and the return obligation --------------------------------------
+
+  - name: a try discharges the obligation when both regions return
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps: []
+      blocks:
+        - id: ask
+          outputs: [{ k: answer, label: Answer, t: text }]
+          steps:
+            - id: guard
+              use: core.try
+              steps:
+                - { id: ret, use: core.return, with: { answer: "yes" } }
+              handler:
+                - { id: fallback, use: core.return, with: { answer: "no" } }
+    expect: []
+
+  - name: a body that returns and a handler that does not leaves the failure path open
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps: []
+      blocks:
+        - id: ask
+          outputs: [{ k: answer, label: Answer, t: text }]
+          steps:
+            - id: guard
+              use: core.try
+              steps:
+                - { id: ret, use: core.return, with: { answer: "yes" } }
+              handler:
+                - { id: warn, use: component.email.send, with: { to: "ops@dane.dev" } }
+    expect:
+      - { code: BLOCK_PATH_WITHOUT_RETURN, blocks: publish, blockId: ask }
+
+  - name: a handler that returns and a body that does not leaves the success path open
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps: []
+      blocks:
+        - id: ask
+          outputs: [{ k: answer, label: Answer, t: text }]
+          steps:
+            - id: guard
+              use: core.try
+              steps:
+                - { id: s1, use: component.email.send, with: { to: "me@dane.dev" } }
+              handler:
+                - { id: fallback, use: core.return, with: { answer: "no" } }
+    expect:
+      - { code: BLOCK_PATH_WITHOUT_RETURN, blocks: publish, blockId: ask }
+
+  - name: nothing after a try that returns on both regions can run
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps: []
+      blocks:
+        - id: ask
+          outputs: [{ k: answer, label: Answer, t: text }]
+          steps:
+            - id: guard
+              use: core.try
+              steps:
+                - { id: ret, use: core.return, with: { answer: "yes" } }
+              handler:
+                - { id: fallback, use: core.return, with: { answer: "no" } }
+            - { id: after, use: component.email.send, with: { to: "me@dane.dev" } }
+    expect:
+      - { code: STEP_AFTER_RETURN, blocks: publish, stepId: after, blockId: ask }
+
+  - name: a step after a return inside a handler can never run, because the handler is walked too
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps: []
+      blocks:
+        - id: ask
+          outputs: [{ k: answer, label: Answer, t: text }]
+          steps:
+            - id: guard
+              use: core.try
+              steps:
+                - { id: ret, use: core.return, with: { answer: "yes" } }
+              handler:
+                - { id: fallback, use: core.return, with: { answer: "no" } }
+                - { id: never, use: component.email.send, with: { to: "ops@dane.dev" } }
+    expect:
+      - { code: STEP_AFTER_RETURN, blocks: publish, stepId: never, blockId: ask }
+
+  - name: a core.return inside a handler on the root board is still outside a block
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps:
+        - id: guard
+          use: core.try
+          steps:
+            - { id: s1, use: component.email.send, with: { to: "me@dane.dev" } }
+          handler:
+            - { id: ret, use: core.return }
+    expect:
+      - { code: RETURN_OUTSIDE_BLOCK, blocks: publish, stepId: ret }
+
+  - name: recursion through a handler is still recursion, because the call graph walks that region too
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps: []
+      blocks:
+        - id: ask
+          steps:
+            - id: guard
+              use: core.try
+              steps:
+                - { id: s1, use: component.email.send, with: { to: "me@dane.dev" } }
+              handler:
+                # The call that a walk skipping `handler:` would never see — the
+                # call graph would come out short an edge and the cycle would go
+                # unreported in whichever language forgot the region.
+                - { id: again, use: block.ask }
+    expect:
+      - { code: BLOCK_RECURSION, blocks: publish, blockId: ask }
+
+  # ---- item, and the list it is resolved through ----------------------------
+
+  - name: a loop over a list reports nothing, and item is the element it declares
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps:
+        - { id: fetch, use: component.inbox.fetch }
+        - id: each
+          use: core.for_each
+          with: { list: "{{ steps.fetch.messages }}" }
+          steps:
+            - { id: s1, use: component.email.send, with: { to: "{{ steps.each.item.subject }}" } }
+    expect: []
+
+  - name: two nested loops each resolve item through their own list, and neither shadows the other
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps:
+        - { id: fetch, use: component.inbox.threads }
+        - id: outer
+          use: core.for_each
+          with: { list: "{{ steps.fetch.threads }}" }
+          steps:
+            - id: inner
+              use: core.for_each
+              with: { list: "{{ steps.outer.item.entries }}" }
+              steps:
+                - { id: s1, use: component.email.send, with: { to: "{{ steps.inner.item.body }}" } }
+    expect: []
+
+  - name: a loop pointed at a number has nothing to iterate
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps:
+        - { id: fetch, use: component.inbox.fetch }
+        - id: each
+          use: core.for_each
+          with: { list: "{{ steps.fetch.count }}" }
+          steps:
+            - { id: s1, use: component.email.send, with: { to: "me@dane.dev" } }
+    expect:
+      - { code: LOOP_LIST_NOT_A_LIST, blocks: publish, stepId: each, fieldKey: list }
+
+  - name: an inner loop pointed at the outer loop's element rather than a list of them
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps:
+        - { id: fetch, use: component.inbox.fetch }
+        - id: outer
+          use: core.for_each
+          with: { list: "{{ steps.fetch.messages }}" }
+          steps:
+            - id: inner
+              use: core.for_each
+              with: { list: "{{ steps.outer.item.subject }}" }
+              steps:
+                - { id: s1, use: component.email.send, with: { to: "me@dane.dev" } }
+    expect:
+      - { code: LOOP_LIST_NOT_A_LIST, blocks: publish, stepId: inner, fieldKey: list }
+
+  - name: a list nothing computes statically is accepted, the way every unknown is
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps:
+        - { id: fetch, use: component.inbox.fetch }
+        - id: each
+          use: core.for_each
+          with: { list: "{{ json.parse(steps.fetch.count) }}" }
+          steps:
+            - { id: s1, use: component.email.send, with: { to: "me@dane.dev" } }
+    expect: []
+
+  - name: a loop whose list names nothing is a broken reference rather than a wrong type
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps:
+        - id: each
+          use: core.for_each
+          with: { list: "{{ steps.gone.messages }}" }
+          steps:
+            - { id: s1, use: component.email.send, with: { to: "me@dane.dev" } }
+    expect: []
+
+  - name: a loop with no list at all reports the missing field and nothing about its type
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps:
+        - id: each
+          use: core.for_each
+          steps:
+            - { id: s1, use: component.email.send, with: { to: "me@dane.dev" } }
+    expect:
+      - { code: FIELD_REQUIRED, blocks: publish, stepId: each, fieldKey: list }
+
+  - name: a loop inside a try's handler resolves item through the handler's own scope
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps:
+        - { id: fetch, use: component.inbox.fetch }
+        - id: guard
+          use: core.try
+          steps:
+            - { id: s1, use: component.email.send, with: { to: "me@dane.dev" } }
+          handler:
+            - id: each
+              use: core.for_each
+              with: { list: "{{ steps.fetch.messages }}" }
+              steps:
+                - { id: s2, use: component.email.send, with: { to: "{{ steps.each.item.subject }}" } }
+    expect: []

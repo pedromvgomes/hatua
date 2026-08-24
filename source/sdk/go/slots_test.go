@@ -423,3 +423,211 @@ func TestRootBoardIsNotHijackedByAnEmptyBlockID(t *testing.T) {
 		t.Fatalf("the root Board lost its own scope: %v", paths(scope))
 	}
 }
+
+// core.try and the `item` binding, on the side the rules corpus cannot reach.
+//
+// The corpus compares diagnostics. What a container BINDS is a type, and a type
+// reaches a user through scope and the checker — so it is asserted here, and in
+// packages/model/src/loops.test.ts assertion for assertion.
+
+func bindingManifests() []Manifest {
+	return []Manifest{
+		{
+			Kind: "component",
+			Use:  "component.inbox.fetch",
+			Name: "Fetch inbox",
+			Outputs: []Output{
+				{K: "messages", Label: "Messages", T: "list", Of: []Output{
+					{K: "subject", Label: "Subject", T: "text"},
+				}},
+				{K: "count", Label: "Count", T: "number"},
+			},
+		},
+		{
+			Kind:   "component",
+			Use:    "core.for_each",
+			Name:   "For each",
+			Fields: []Field{{K: "list", Label: "List", Kind: "ref", Req: true}},
+			// The escape hatch, and the reason this file exists: `item` is not a
+			// shape the manifest holds.
+			Outputs: []Output{{K: "item", Label: "Item", T: "item"}},
+		},
+		{
+			Kind: "component",
+			Use:  "core.try",
+			Name: "Try",
+			Outputs: []Output{
+				{K: "error", Label: "Error", T: "object", Of: []Output{
+					{K: "message", Label: "Message", T: "text"},
+				}},
+			},
+		},
+		{Kind: "component", Use: "component.email.send", Name: "Send"},
+	}
+}
+
+func triedDoc() Definition {
+	return Definition{
+		ID: "wf", Name: "W", Version: 1, Status: StatusDraft,
+		Steps: []Step{
+			{ID: "before", Use: "component.email.send"},
+			{
+				ID:      "guard",
+				Use:     TryVerb,
+				Steps:   []Step{{ID: "body", Use: "component.email.send"}},
+				Handler: []Step{{ID: "rescue", Use: "component.email.send"}},
+			},
+			{ID: "after", Use: "component.email.send"},
+		},
+	}
+}
+
+// The handler's children see the try, and therefore the failure they are
+// handling.
+func TestATryBindsItsFailureToTheHandlerAlone(t *testing.T) {
+	doc := triedDoc()
+
+	handler := ScopeFor(doc, StepRef{Board: RootBoard, ID: "rescue"}, bindingManifests(), nil)
+	if !has(handler, "steps.guard") {
+		t.Fatalf("expected the try in a handler child's scope: %v", paths(handler))
+	}
+	found := expressions.Validate("{{ steps.guard.error.message }}", expressions.TypeText,
+		expressions.CheckContext{Scope: handler, Functions: expressions.CoreFunctions()})
+	if len(found) != 0 {
+		t.Fatalf("expected the failure to type-check, got %v", found)
+	}
+
+	// The body PRODUCES the failure, so reading it there would be reading a value
+	// that cannot exist where it stands.
+	body := ScopeFor(doc, StepRef{Board: RootBoard, ID: "body"}, bindingManifests(), nil)
+	if has(body, "steps.guard") {
+		t.Fatalf("the body saw the failure it produces: %v", paths(body))
+	}
+
+	// Past the try, whether there was a failure at all is a run-time fact.
+	after := ScopeFor(doc, StepRef{Board: RootBoard, ID: "after"}, bindingManifests(), nil)
+	if has(after, "steps.guard") {
+		t.Fatalf("a step after the try saw the failure: %v", paths(after))
+	}
+}
+
+// The two regions are siblings, which is what a fork's branches already are:
+// which of the body's steps completed before the failure is not a property of
+// the document.
+func TestATrysRegionsCannotSeeEachOther(t *testing.T) {
+	doc := triedDoc()
+
+	handler := ScopeFor(doc, StepRef{Board: RootBoard, ID: "rescue"}, bindingManifests(), nil)
+	if has(handler, "steps.body") {
+		t.Fatalf("a handler child read the body's steps: %v", paths(handler))
+	}
+	body := ScopeFor(doc, StepRef{Board: RootBoard, ID: "body"}, bindingManifests(), nil)
+	if has(body, "steps.rescue") {
+		t.Fatalf("a body child read the handler's steps: %v", paths(body))
+	}
+}
+
+func loopingDoc(list string) Definition {
+	return Definition{
+		ID: "wf", Name: "W", Version: 1, Status: StatusDraft,
+		Steps: []Step{
+			{ID: "fetch", Use: "component.inbox.fetch"},
+			{
+				ID:    "each",
+				Use:   ForEachVerb,
+				With:  map[string]any{ForEachListField: "{{ " + list + " }}"},
+				Steps: []Step{{ID: "s1", Use: "component.email.send"}},
+			},
+		},
+	}
+}
+
+func TestItemIsOneElementOfTheListItsFieldNames(t *testing.T) {
+	doc := loopingDoc("steps.fetch.messages")
+
+	element, ok := LoopElementType(doc, RootBoard, doc.Steps[1], bindingManifests(), nil)
+	if !ok {
+		t.Fatalf("expected the loop's element type to resolve")
+	}
+	if element.Type != expressions.TypeObject || element.Members["subject"].Type != expressions.TypeText {
+		t.Fatalf("expected the source output's members, got %#v", element)
+	}
+
+	scope := ScopeFor(doc, StepRef{Board: RootBoard, ID: "s1"}, bindingManifests(), nil)
+	if found := expressions.Validate("{{ steps.each.item.subject }}", expressions.TypeText,
+		expressions.CheckContext{Scope: scope, Functions: expressions.CoreFunctions()}); len(found) != 0 {
+		t.Fatalf("expected a member of the item to type-check, got %v", found)
+	}
+	if found := expressions.Validate("{{ steps.each.item.subject }}", expressions.TypeNumber,
+		expressions.CheckContext{Scope: scope, Functions: expressions.CoreFunctions()}); len(found) == 0 {
+		t.Fatalf("expected a text member to be refused where a number is declared")
+	}
+}
+
+// The whole reason the binding is an output of the container rather than a bare
+// token: two loops are two step ids, so nesting needs no shadowing rule.
+func TestNestedLoopsEachResolveTheirOwnItem(t *testing.T) {
+	manifests := append(bindingManifests(), Manifest{
+		Kind: "component",
+		Use:  "component.inbox.threads",
+		Name: "Threads",
+		Outputs: []Output{{K: "threads", Label: "Threads", T: "list", Of: []Output{
+			{K: "entries", Label: "Entries", T: "list", Of: []Output{
+				{K: "body", Label: "Body", T: "text"},
+			}},
+		}}},
+	})
+
+	doc := Definition{
+		ID: "wf", Name: "W", Version: 1, Status: StatusDraft,
+		Steps: []Step{
+			{ID: "fetch", Use: "component.inbox.threads"},
+			{
+				ID:   "outer",
+				Use:  ForEachVerb,
+				With: map[string]any{ForEachListField: "{{ steps.fetch.threads }}"},
+				Steps: []Step{{
+					ID:    "inner",
+					Use:   ForEachVerb,
+					With:  map[string]any{ForEachListField: "{{ steps.outer.item.entries }}"},
+					Steps: []Step{{ID: "s1", Use: "component.email.send"}},
+				}},
+			},
+		},
+	}
+
+	scope := ScopeFor(doc, StepRef{Board: RootBoard, ID: "s1"}, manifests, nil)
+	context := expressions.CheckContext{Scope: scope, Functions: expressions.CoreFunctions()}
+	if found := expressions.Validate("{{ steps.inner.item.body }}", expressions.TypeText, context); len(found) != 0 {
+		t.Fatalf("expected the inner item to resolve through the outer one, got %v", found)
+	}
+	// The outer loop's element is still its own shape — an inner `item` hides
+	// nothing, because the two live under different step ids.
+	if found := expressions.Validate("{{ steps.outer.item.entries }}", expressions.TypeList, context); len(found) != 0 {
+		t.Fatalf("the inner loop shadowed the outer one's item: %v", found)
+	}
+}
+
+// Not ok rather than a guess. `item` then stays `item`, which the checker treats
+// as matching anything — the honest answer where `object` would be a shape
+// nothing declared, and where the wrongness is reported by CodeLoopListNotAList
+// rather than smuggled into a type.
+func TestItemIsUnresolvedWhenTheListIsNotOne(t *testing.T) {
+	for _, list := range []string{
+		"steps.fetch.count",             // a number, not a list
+		"json.parse(steps.fetch.count)", // not a plain Reference
+		"steps.gone.messages",           // names nothing
+	} {
+		doc := loopingDoc(list)
+		if _, ok := LoopElementType(doc, RootBoard, doc.Steps[1], bindingManifests(), nil); ok {
+			t.Fatalf("expected %q to leave item unresolved", list)
+		}
+	}
+
+	// And a loop with no list field at all.
+	doc := loopingDoc("steps.fetch.messages")
+	doc.Steps[1].With = nil
+	if _, ok := LoopElementType(doc, RootBoard, doc.Steps[1], bindingManifests(), nil); ok {
+		t.Fatalf("expected a loop with no list to leave item unresolved")
+	}
+}
