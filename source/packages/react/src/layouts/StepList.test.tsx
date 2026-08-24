@@ -598,6 +598,67 @@ describe('when the Host rejects a write', () => {
   })
 })
 
+/*
+ * Its own document rather than a `core.try` added to SOURCE: the tests above
+ * assert exact row lists and exact drag destinations, so a Step appended to the
+ * shared fixture changes what they are about.
+ */
+const TRIED = `id: wf_morning
+name: "Morning inbox triage"
+version: 4
+status: draft
+
+steps:
+  - id: s1
+    use: core.try
+    name: "Publish the digest"
+    steps:
+      - id: s2
+        use: component.email.send
+        name: "Send it"
+    handler:
+      - id: s3
+        use: component.chat.post
+        name: "Say it failed"
+`
+
+describe('a core.try draws two regions', () => {
+  /*
+   * The one Step with two child regions, so the one place the tree has to say
+   * which is which. `steps:` holds a loop's children and a try's body alike, so
+   * the word comes from the verb — "loop" over the Steps a try is protecting
+   * would name the wrong control flow.
+   */
+  it('labels the body `try` and the handler `on failure`, rather than calling either a loop', async () => {
+    mount(host(TRIED))
+    await screen.findByText('Publish the digest')
+
+    const card = rowFor('Publish the digest')
+    const chips = [...card.querySelectorAll('span')]
+      .map((one) => one.textContent)
+      .filter((text) => text === 'try' || text === 'on failure' || text === 'loop')
+
+    expect(chips).toEqual(['try', 'on failure'])
+  })
+
+  it('draws a Step from each region, so neither is a region nothing renders', async () => {
+    mount(host(TRIED))
+    expect(await screen.findByText('Send it')).toBeDefined()
+    expect(screen.getByText('Say it failed')).toBeDefined()
+  })
+
+  /*
+   * The one Step whose expanded height is not what its count implies: a body
+   * count alone reads as the whole of it, on a card that opens into two
+   * regions.
+   */
+  it('says it has a handler in its summary, which a body count alone would hide', async () => {
+    mount(host(TRIED))
+    await screen.findByText('Publish the digest')
+    expect(rowFor('Publish the digest').textContent).toContain('core.try · 1 step · handler')
+  })
+})
+
 describe('landmarks', () => {
   it('nests the tree so a screen reader hears three top-level Steps, not eleven rows', async () => {
     // A flat list with a computed indent looks identical and says the wrong

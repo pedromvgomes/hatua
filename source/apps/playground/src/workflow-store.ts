@@ -93,16 +93,19 @@ steps:
         steps: []
   - id: s4
     use: core.for_each
-    name: "Each message"
+    name: "Each attachment"
     with:
-      items: "{{ triggers.overnight.message }}"
+      # A list, and the loop's binding is one element of it: \`{{steps.s4.item}}\`
+      # carries the members \`attachments\` declares, with no shape written here.
+      list: "{{ triggers.overnight.message.attachments }}"
     steps:
       - id: s5
         use: component.email.send
-        name: "Send the digest"
+        name: "Forward it on"
         with:
           connection: mailbox
           to: me@example.com
+          subject: "{{ steps.s4.item.filename }}"
 `
 
 interface Stored {

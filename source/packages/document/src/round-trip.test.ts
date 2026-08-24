@@ -148,6 +148,63 @@ describe('a document with a repeat and a set_var', () => {
   })
 })
 
+const WITH_A_TRY = `id: wf_publish
+name: "Publish the digest"
+version: 3
+status: draft
+
+steps:
+  - id: fetch
+    use: component.inbox.fetch
+    with:
+      folder: inbox
+  - id: each
+    use: core.for_each
+    # \`item\` is one element of whatever THIS field points at.
+    with: { list: "{{ steps.fetch.messages }}" }
+    steps:
+      - id: guard
+        use: core.try
+        with:
+          attempts: 3        # an ordinary number field, not a structural key
+          backoff_ms: 500
+        steps:
+          - id: send
+            use: component.email.send
+            with: { to: "{{ steps.each.item.sender }}" }
+        handler:
+          # Reads the failure the body produced; the body cannot read it back.
+          - id: warn
+            use: component.email.send
+            with: { to: "{{ steps.guard.error.message }}" }
+`
+
+describe('a document with a try and a loop', () => {
+  it('reproduces it byte for byte, both regions and their comments included', () => {
+    expect(parseWorkflow(WITH_A_TRY).toString()).toBe(WITH_A_TRY)
+  })
+
+  /*
+   * The two regions are two keys, not two Branches. A Branch's identity is its
+   * `label` — free text a user renames — so a region spelled as one would have
+   * its meaning decided by a display name.
+   */
+  it('projects the handler beside the body rather than as a branch', () => {
+    const doc = parseWorkflow(WITH_A_TRY).toJSON()
+    const guard = doc.steps[1]?.steps?.[0]
+
+    expect(guard?.use).toBe('core.try')
+    expect(guard?.steps?.map((step) => step.id)).toEqual(['send'])
+    expect(guard?.handler?.map((step) => step.id)).toEqual(['warn'])
+    expect(guard?.branches).toBeUndefined()
+  })
+
+  it('projects the retry policy as ordinary field values, which a manifest types', () => {
+    const guard = parseWorkflow(WITH_A_TRY).toJSON().steps[1]?.steps?.[0]
+    expect(guard?.with).toEqual({ attempts: 3, backoff_ms: 500 })
+  })
+})
+
 describe('yaml layer fidelity', () => {
   // Pins the reason @hatua/document keeps the CST rather than the Document API
   // alone. If a future yaml release makes the AST byte-exact, this test fails

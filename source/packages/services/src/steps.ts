@@ -45,6 +45,15 @@ export interface InsertPoint {
    * own nested `steps`, and absent at the root.
    */
   branchIndex?: number
+  /**
+   * Which of a `core.try`'s two regions. Absent means the body under `steps:`,
+   * which is the same key a loop's children sit under.
+   *
+   * A named region rather than a second index, because the two are not a list:
+   * a try has exactly one body and exactly one handler, and an index would let
+   * a caller ask for the third one.
+   */
+  region?: 'handler'
   /** Position among the siblings. The list's length appends. */
   index: number
 }
@@ -100,6 +109,7 @@ function* walk(
       }
     }
     if (step.steps) yield* walk(step.steps, [...base, index, 'steps'])
+    if (step.handler) yield* walk(step.handler, [...base, index, 'handler'])
   }
 }
 
@@ -147,9 +157,10 @@ function listPathOf(document: WorkflowDocument, point: InsertPoint): Path {
   if (!parent) throw new Error(`No Step with id "${point.parentId}"`)
 
   const parentPath = [...parent.listPath, parent.index]
-  return point.branchIndex === undefined
-    ? [...parentPath, 'steps']
-    : [...parentPath, 'branches', point.branchIndex, 'steps']
+  if (point.branchIndex !== undefined) {
+    return [...parentPath, 'branches', point.branchIndex, 'steps']
+  }
+  return [...parentPath, point.region === 'handler' ? 'handler' : 'steps']
 }
 
 /**
@@ -302,6 +313,10 @@ export const stepIn = (steps: readonly Step[], id: string): Step | undefined => 
     }
     if (step.steps) {
       const hit = stepIn(step.steps, id)
+      if (hit) return hit
+    }
+    if (step.handler) {
+      const hit = stepIn(step.handler, id)
       if (hit) return hit
     }
   }

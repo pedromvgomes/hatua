@@ -288,6 +288,11 @@ func validateBranches(steps []Step, prefix string) error {
 		if err := validateBranches(s.Steps, prefix); err != nil {
 			return err
 		}
+		// A core.try's handler is a step list like any other, and a region this
+		// forgets is one nothing below it is ever held to.
+		if err := validateBranches(s.Handler, prefix); err != nil {
+			return err
+		}
 	}
 	return nil
 }

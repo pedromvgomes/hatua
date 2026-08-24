@@ -14,6 +14,9 @@ export type DefinitionCode =
   | 'FORK_NEEDS_TWO_BRANCHES'
   | 'BRANCH_UNREACHABLE_AFTER'
   | 'LOOP_HAS_NO_BODY'
+  | 'TRY_HAS_NO_BODY'
+  | 'TRY_HAS_NO_HANDLER'
+  | 'LOOP_LIST_NOT_A_LIST'
   | 'REPEAT_HAS_NO_CONDITION'
   | 'VAR_UNKNOWN'
   | 'BLOCK_UNKNOWN'
@@ -64,6 +67,21 @@ export const DEFINITION_DIAGNOSTICS: Record<DefinitionCode, DefinitionDiagnostic
     code: 'LOOP_HAS_NO_BODY',
     blocks: 'publish',
     message: 'This loop repeats nothing. Add at least one Step inside it.',
+  },
+  TRY_HAS_NO_BODY: {
+    code: 'TRY_HAS_NO_BODY',
+    blocks: 'publish',
+    message: 'This try protects nothing. Add at least one Step to its body.',
+  },
+  TRY_HAS_NO_HANDLER: {
+    code: 'TRY_HAS_NO_HANDLER',
+    blocks: 'publish',
+    message: 'This try has no handler, so a failure has nowhere to go. Add a Step to `handler:`.',
+  },
+  LOOP_LIST_NOT_A_LIST: {
+    code: 'LOOP_LIST_NOT_A_LIST',
+    blocks: 'publish',
+    message: '"{name}" is {actual}, not a list, so there is nothing to iterate.',
   },
   REPEAT_HAS_NO_CONDITION: {
     code: 'REPEAT_HAS_NO_CONDITION',

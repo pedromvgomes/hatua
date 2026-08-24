@@ -252,6 +252,12 @@ field under `with:`, so neither is reached through the **Component Manifest** an
 than as a field of their own. Whatever surface holds one holds the other; a builder that could
 author a repeat's condition and not a fork's would be a worse gap than having neither.
 
+**A `core.try` adds no row, and that is the point of where its retry policy sits.** A container with
+a structural key needs a surface of its own; a container whose configuration is ordinary `with:`
+fields does not. An attempt count and a backoff are numbers, `number` is a mappable field kind, and
+the argument that pushed a condition out of `with:` was about booleans — so a try's fields are edited
+in the Step editor exactly as any Component's are, and the table stays four rows long.
+
 ### The Template input
 
 `min-height` 40px (76px for textarea), `--radius-md`, 1px `--border-strong`, `--surface-card`,

@@ -72,6 +72,45 @@ codes:
       two: the mistake is the same and so is the fix, and the message names
       neither verb.
 
+  - code: TRY_HAS_NO_BODY
+    blocks: publish
+    message: "This try protects nothing. Add at least one Step to its body."
+    summary: >-
+      A `core.try` whose `steps:` is empty. Its own code rather than
+      LOOP_HAS_NO_BODY, for the reason a fork has two: the sentence that helps
+      names the region, and "this loop repeats nothing" is the wrong sentence
+      about a verb that is not a loop.
+
+  - code: TRY_HAS_NO_HANDLER
+    blocks: publish
+    message: "This try has no handler, so a failure has nowhere to go. Add a Step to `handler:`."
+    summary: >-
+      A `core.try` whose `handler:` is absent or empty. Two codes rather than
+      one, exactly as a fork's two are: an empty body and an empty handler are
+      different halves missing, and the fix differs.
+
+      A try with no handler is not "the same steps without protection" — it is a
+      retry policy with nothing to fall back to, and the region that binds the
+      failure does not exist, so `{{steps.<id>.error}}` resolves nowhere.
+
+  - code: LOOP_LIST_NOT_A_LIST
+    blocks: publish
+    message: '"{name}" is {actual}, not a list, so there is nothing to iterate.'
+    summary: >-
+      A `core.for_each` whose `list` names a value whose declared type is neither
+      `list` nor unknown. This is the one rule that makes `t: item` observable:
+      `list` is a `ref` field, `FIELD_KIND_TYPES` maps `ref` to `unknown`, so the
+      ordinary Slot check accepts anything written there and `item` then resolves
+      to nothing while the checker treats it as matching everything.
+
+      Only a statically-KNOWN conflict is reported, matching the type lattice
+      everywhere else: `{{ json.parse(x) }}` is `unknown` and is accepted with the
+      run-time check that every unknown gets.
+
+      Publish-blocking rather than edit-blocking: retargeting a reference is
+      ordinary building, and a loop pointed at the wrong step for ten seconds is
+      what building one looks like.
+
   - code: REPEAT_HAS_NO_CONDITION
     blocks: publish
     message: "This repeat has no condition, so nothing ever ends it. Give it an `until`."
@@ -143,6 +182,14 @@ codes:
       question is only ever "is this region guaranteed to run at all" — the same
       reasoning that keeps sibling branches out of scope, applied to time instead
       of to paths.
+
+      A `core.try` discharges it only when BOTH its regions do. Its body always
+      runs, which alone would read like a repeat — but a failure part-way through
+      the body is what a try exists to admit, and that path leaves the body
+      unfinished and enters the handler instead. So the guarantee is a
+      conjunction: every path out of a try goes through the body or through the
+      handler, which is the fork's all-branches reasoning asked of two regions
+      where one is conditional.
 
   - code: STEP_AFTER_RETURN
     blocks: publish

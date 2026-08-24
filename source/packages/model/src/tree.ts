@@ -67,12 +67,21 @@ export function boardOf(doc: WorkflowDefinition, id: BoardId): Board | undefined
   return undefined
 }
 
-/** Depth-first walk of every step in one tree, parents before children. */
+/**
+ * Depth-first walk of every step in one tree, parents before children.
+ *
+ * Every region a container owns is walked here and nowhere else: a Fork's
+ * branches, a loop body, and a `core.try`'s handler. A region this forgets is a
+ * region no rule ever sees — the validator reports nothing about it, silently,
+ * which is the same failure as a validator that only ever looked at the root
+ * Board.
+ */
 export function* walkSteps(steps: readonly Step[]): Generator<Step> {
   for (const step of steps) {
     yield step
     for (const branch of step.branches ?? []) yield* walkSteps(branch.steps)
     if (step.steps) yield* walkSteps(step.steps)
+    if (step.handler) yield* walkSteps(step.handler)
   }
 }
 

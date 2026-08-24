@@ -1,4 +1,4 @@
-import type { TypeNode } from '@hatua/expressions'
+import { elementOf, sourceReference, type TypeNode } from '@hatua/expressions'
 import type {
   Block,
   ContextKey,
@@ -11,8 +11,16 @@ import type {
 } from '@hatua/schema'
 import { TRIGGER_BUILTIN } from '@hatua/schema'
 import { blockIdOf, blockOf } from './blocks'
-import { MAPPING_VERB, mapEntries, variableType } from './slots'
-import { type BoardId, boardOf, type StepRef } from './tree'
+import {
+  FOR_EACH_LIST_FIELD,
+  FOR_EACH_VERB,
+  ITEM_BINDING,
+  MAPPING_VERB,
+  mapEntries,
+  TRY_VERB,
+  variableType,
+} from './slots'
+import { type BoardId, boardOf, own, type StepRef, stepKey } from './tree'
 
 /**
  * What a step may reference. The reference tree is built from this, which is
@@ -71,17 +79,44 @@ export function upstreamOf(doc: WorkflowDefinition, ref: StepRef): Step[] {
   return board ? (collectUpstream(board.steps, ref.id, []) ?? []) : []
 }
 
+/**
+ * The walk, and the one verb it treats as more than a container.
+ *
+ * A `core.try` has two child regions, and they are siblings — so the body
+ * cannot see the handler and the handler cannot see the body's Steps, with no
+ * code saying so. That is the same rule that keeps a Fork's branches out of
+ * each other's scope, and it is the right one for the right reason: the body
+ * failed *somewhere*, and which of its Steps completed before it did is not a
+ * fact the document holds. Offering them would make scope an intersection over
+ * paths, which is the analysis ADR-0013 refuses edges in order to avoid.
+ *
+ * What IS special is the try Step itself. It appears in the upstream list only
+ * for Steps inside its `handler`, because that is where its binding means
+ * something: `{{steps.<try id>.error}}` is the failure the handler is handling.
+ * Its body cannot read it — the body is what produces it — and neither can a
+ * Step after the try, because whether there was a failure at all is decided
+ * during a run and not in the file.
+ */
 function collectUpstream(steps: readonly Step[], id: string, ancestors: Step[]): Step[] | null {
   const earlier: Step[] = []
   for (const step of steps) {
     if (step.id === id) return [...ancestors, ...earlier]
 
-    const nested = [...(step.branches ?? []).map((b) => b.steps), step.steps ?? []]
-    for (const children of nested) {
-      const hit = collectUpstream(children, id, [...ancestors, ...earlier, step])
+    const above = [...ancestors, ...earlier]
+    const outside = step.use === TRY_VERB ? above : [...above, step]
+
+    const regions: readonly (readonly [readonly Step[], Step[]])[] = [
+      ...(step.branches ?? []).map((branch) => [branch.steps, outside] as const),
+      [step.steps ?? [], outside] as const,
+      // The handler, and the only place the try itself is in scope.
+      [step.handler ?? [], [...above, step]] as const,
+    ]
+    for (const [children, visible] of regions) {
+      const hit = collectUpstream(children, id, visible)
       if (hit) return hit
     }
-    earlier.push(step)
+
+    if (step.use !== TRY_VERB) earlier.push(step)
   }
   return null
 }
@@ -220,6 +255,27 @@ export function scopeFor(
   manifests: readonly Manifest[] = [],
   context: readonly ContextKey[] = [],
 ): ScopeEntry[] {
+  return scopeAt(doc, ref, manifests, context, new Set())
+}
+
+/**
+ * `scopeFor`, plus the set of loops already being resolved.
+ *
+ * `item` is typed by reading the loop's own `list` field, which means typing an
+ * expression against the loop step's scope — so building one Step's scope can
+ * ask for another's. The walk terminates on its own, because a Step's upstream
+ * is always strictly earlier in the tree than the Step itself and a loop can
+ * therefore never be its own. `resolving` is not that argument: it is the guard
+ * for a document where two Steps share an id, which the schema permits into a
+ * file and `STEP_ID_DUPLICATE` reports rather than refuses.
+ */
+function scopeAt(
+  doc: WorkflowDefinition,
+  ref: StepRef,
+  manifests: readonly Manifest[],
+  context: readonly ContextKey[],
+  resolving: ReadonlySet<string>,
+): ScopeEntry[] {
   const byUse = new Map(manifests.map((manifest) => [manifest.use, manifest]))
 
   return [
@@ -229,10 +285,95 @@ export function scopeFor(
         path: `steps.${step.id}`,
         kind: 'step',
         label: step.name ?? step.id,
-        type: stepOutputType(doc, step, byUse.get(step.use)),
+        type: stepOutputType(doc, ref.board, step, byUse.get(step.use), {
+          manifests,
+          context,
+          resolving,
+        }),
       }),
     ),
   ]
+}
+
+/**
+ * The type one path names, read out of a scope, or null when nothing declares
+ * it.
+ *
+ * Longest prefix first, because a scope path is dotted and is one entry rather
+ * than two: `steps.s2` is an entry and `steps` is not, so `steps.s2.messages`
+ * has to try three segments before two. That is the same rule `validate.ts`
+ * walks a Member chain by, restated here for a caller that has a path and no
+ * expression — reading a *declared* type is not checking one, and reaching for
+ * the checker would mean manufacturing diagnostics nobody asked for in order to
+ * throw them away.
+ */
+export function typeAtPath(scope: readonly ScopeEntry[], path: string): TypeNode | null {
+  const segments = path.split('.')
+  for (let take = segments.length; take > 0; take--) {
+    const entry = scope.find((candidate) => candidate.path === segments.slice(0, take).join('.'))
+    if (!entry) continue
+
+    let node: TypeNode = entry.type
+    for (const name of segments.slice(take)) {
+      // `Object.hasOwn`, for the reason `own` exists: a member called
+      // `constructor` would otherwise resolve off `Object.prototype` and give a
+      // shape nothing declared, which Go — having no prototype — would not.
+      if (!node.members || !Object.hasOwn(node.members, name)) return null
+      node = node.members[name] as TypeNode
+    }
+    return node
+  }
+  return null
+}
+
+/**
+ * What one element of a `core.for_each`'s list is, or null when the document
+ * does not say.
+ *
+ * This is the whole of `t: item`. The loop's `list` is a `ref` field, so its
+ * declared type is `unknown` and the ordinary Slot check learns nothing from
+ * it; the shape is one level below whatever it points at, which is exactly the
+ * `of:` the source output declared. Null when `list` is missing, is not a plain
+ * Reference, names nothing, or names something that is not a list — and null
+ * means `item` stays `item`, which the checker treats as matching anything.
+ * Guessing `object` instead would be a shape nothing declared.
+ */
+export function loopElementType(
+  doc: WorkflowDefinition,
+  board: BoardId,
+  step: Step,
+  manifests: readonly Manifest[] = [],
+  context: readonly ContextKey[] = [],
+  resolving: ReadonlySet<string> = new Set(),
+): TypeNode | null {
+  const template = own(step.with as Record<string, unknown> | undefined, FOR_EACH_LIST_FIELD)
+  if (typeof template !== 'string') return null
+
+  const path = sourceReference(template)
+  if (path === null) return null
+
+  const key = stepKey({ board, id: step.id })
+  if (resolving.has(key)) return null
+
+  const scope = scopeAt(
+    doc,
+    { board, id: step.id },
+    manifests,
+    context,
+    new Set([...resolving, key]),
+  )
+  const node = typeAtPath(scope, path)
+  if (!node || node.type !== 'list') return null
+
+  // A list that declared no `of:` says nothing about its elements, so there is
+  // no shape to hand back. `elementOf` answers `object` for one — which is the
+  // right answer for a projection, where the question is "what does `.name`
+  // read off this?", and the wrong one here: it would mark `item` as an object
+  // nothing declared, and every scalar field it is written into would report a
+  // mismatch against a shape the document never said.
+  if (!node.members) return null
+
+  return elementOf(node)
 }
 
 /**
@@ -300,15 +441,48 @@ function variableToType(variable: Variable): TypeNode {
  */
 function stepOutputType(
   doc: WorkflowDefinition,
+  board: BoardId,
   step: Step,
   manifest: Manifest | undefined,
+  through: {
+    manifests: readonly Manifest[]
+    context: readonly ContextKey[]
+    resolving: ReadonlySet<string>
+  },
 ): TypeNode {
   if (step.use === MAPPING_VERB) return mappingOutputType(step)
 
   const called = blockIdOf(step.use)
   if (called !== null) return blockOutputType(blockOf(doc, called))
 
-  return outputsToType(manifest?.outputs ?? [])
+  const declared = outputsToType(manifest?.outputs ?? [])
+  if (step.use !== FOR_EACH_VERB) return declared
+
+  /*
+   * A loop's binding, and the one output whose type is not in the manifest.
+   *
+   * `item` is substituted here rather than in `outputsToType` because it is a
+   * property of the STEP and not of the declaration: two `core.for_each` steps
+   * share one manifest and iterate two different lists. Only a top-level output
+   * is substituted — `item` nested inside another output's `of:` would be a
+   * loop's element appearing as a member of something that is not the loop,
+   * which no manifest can mean.
+   */
+  const element = loopElementType(
+    doc,
+    board,
+    step,
+    through.manifests,
+    through.context,
+    through.resolving,
+  )
+  if (!element) return declared
+
+  const members: Record<string, TypeNode> = Object.create(null)
+  for (const [key, node] of Object.entries(declared.members ?? {})) {
+    members[key] = node.type === ITEM_BINDING ? element : node
+  }
+  return { type: 'object', members }
 }
 
 function mappingOutputType(step: Step): TypeNode {
