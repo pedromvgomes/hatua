@@ -185,7 +185,17 @@ _Avoid_: element, current, each, loop var
 The rule that a **Step**'s position on the flow map is computed from the tree on every render and
 never persisted. This is what guarantees a hand-edited **Workflow Definition** and the map can never
 disagree.
-_Avoid_: auto-layout as a mere feature name — it is a constraint, not a convenience
+
+A **Placement** is one Step's box on the map, named by the **Board** it is on and its id together —
+never by a bare id, which two **Blocks** may share. The map is laid out one **Board** at a time
+(ADR-0013), and what it takes besides the Board is which containers are drawn collapsed: chrome, the
+one input that is not a function of the document, and the reason the totals describe the map that is
+actually on screen rather than one with folded regions counted into it.
+
+Positions are the builder's and nobody else's. A **Host** runner never lays anything out, so this is
+the one cross-cutting rule in the repo implemented once rather than in both languages.
+_Avoid_: auto-layout as a mere feature name — it is a constraint, not a convenience; node position
+as something a document could carry
 
 **Published Version**:
 An immutable, numbered snapshot of a **Workflow Definition**, carrying `status: published`. Exactly

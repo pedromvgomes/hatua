@@ -58,6 +58,75 @@ decision. A Host mounting one region gets no tab strip at all.
 
 ---
 
+## Flow map geometry
+
+The numbers `@hatua/layout`'s `LAYOUT` carries, and what each one has to satisfy. The package cites
+this section; change one in either place and the other is wrong.
+
+| Constant | Pixels | What it measures |
+| --- | --- | --- |
+| `nodeWidth` | 236 | A card's width. Every card is the same width, on every Board and at every depth. |
+| `nodeHeight` | 64 | A card with a name and nothing else. |
+| `nodeHeightWithMeta` | 100 | A card that also carries the meta row. |
+| `verticalGap` | 96 | Between one card's bottom and the next card's top, down a column. |
+| `branchGap` | 44 | Between two Branch columns. |
+| `regionLabel` | 28 | Reserved above a child region for the label naming it. |
+| `joinMarker` | 26 | Reserved below a Fork's Branches for the mark where they converge. |
+
+**Cards are a fixed size, and only two heights exist.** A card sized to its content makes a column's
+rhythm a function of how long somebody's Step names are, and makes the map reflow when one is
+renamed. The meta row is the container summary — how many Branches, how many Steps, whether there is
+a handler — so a card is the taller one exactly when the Step owns child regions. That question is
+`isContainer`, answered where the regions are enumerated rather than by whatever is drawing.
+
+**What the gaps have to satisfy.** `verticalGap` exceeds `nodeHeight`, so the space between two cards
+reads as a run of the flow and not as a crack between two cards that nearly touch. `branchGap` is
+much smaller than `nodeWidth`, so two columns read as siblings under one Fork rather than as two
+separate maps; it is what stops adjacent columns touching and is the only thing keeping them apart,
+so it cannot be zero. `regionLabel` fits one chip's line box, and every child region gets one.
+
+### Regions
+
+**A Fork's Branches are columns, and they converge.** They are alternatives chosen between, and
+*which one* is the reader's question — so they sit side by side, separated by `branchGap`, over a
+`joinMarker`'s worth of room for the mark where they come back together.
+
+**Every other region is stacked under the card that owns it.** A `core.try`'s body and its handler sit
+one above the other, in document order, not side by side. They are not alternatives chosen between:
+the handler runs *because* the body failed, and part of the body has already run by then. Columns
+would make left-to-right mean "later" in the one place on the map where it means nothing else, and
+would put a third thing on screen that reads as a Fork.
+
+**The label band is what tells regions apart** — `try` and `on failure` over a `core.try`'s two,
+`loop` over a loop's one, `if` / `else if` / `and` over a Branch's. Every child region gets a band, so
+the second region of a `core.try` costs no shape the first did not already have, and a loop body and
+a protected body are told apart by the word over them rather than by their geometry. `<StepList>`
+gives the same answer with the chip over each region; the two surfaces draw differently but they do
+not disagree about which regions there are or what they are called.
+
+### The root node
+
+The canvas draws one node above the first Step: the Triggers on the root Board, the Block's contract
+inside one. It is **chrome, not a `steps[]` entry**, which is what makes `once:`/`fixed:` unnecessary
+and keeps `removeStep`, `walkSteps` and `unknownComponents` from needing a case for it.
+
+So it names no Step, and `FlowMap` carries it as a plain `Rect` beside the `Placement[]` rather than
+as a `Placement` with no id. A `Placement` whose Step reference were optional would push "sometimes
+there is no Step here" into every consumer's type to spare exactly one field here.
+
+### Collapse
+
+**Collapse is an input to the layout, and the only one that is not a function of the document.** It is
+chrome — the document has no key for it, because a view state in the file is a diff in the Host's
+repository every time somebody folds a loop shut.
+
+A collapsed container's children get **no geometry at all**, rather than geometry the canvas then
+hides. Laying them out anyway would leave the map's total width and height describing a map nobody is
+looking at, and everything reading a total — the scroll extent, fit-to-screen, a minimap — would be
+reading a number that is wrong whenever anything is folded.
+
+---
+
 ## TopBar
 
 Left cluster carries identity: `workflows /`, the workflow's name, its slug, then the version

@@ -12,7 +12,16 @@ import {
   SET_VAR_VERB,
   TRY_VERB,
 } from './slots'
-import { type BoardId, boards, own, stepKey, varsOn, walkDocument, walkSteps } from './tree'
+import {
+  type BoardId,
+  boards,
+  own,
+  regionsOf,
+  stepKey,
+  varsOn,
+  walkDocument,
+  walkSteps,
+} from './tree'
 
 /**
  * Whether a Workflow Definition is filled in enough to run — the rules that read
@@ -548,9 +557,7 @@ export function blockRules(doc: WorkflowDefinition): Diagnostic[] {
 function* stepLists(steps: readonly Step[]): Generator<readonly Step[]> {
   yield steps
   for (const step of steps) {
-    for (const branch of step.branches ?? []) yield* stepLists(branch.steps)
-    if (step.steps) yield* stepLists(step.steps)
-    if (step.handler) yield* stepLists(step.handler)
+    for (const region of regionsOf(step)) yield* stepLists(region.steps)
   }
 }
 
