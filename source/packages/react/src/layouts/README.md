@@ -83,7 +83,7 @@ because neither needs a catalogue.
 | --- | --- |
 | `TopBar` | The toolbar. |
 | `StepList` | The tree as a dense, ordered list, and the region behind the **Flow** tab. |
-| `FlowMap` | The canvas: the same tree as a map of nodes and connectors, filling the middle column. Not a tab. |
+| `FlowMap` | The canvas: one Board's tree as a map of cards and the regions around them, filling the middle column. Not a tab. |
 | `Inspector` | The step editor. |
 | `Components` | The Component Manifests a Host serves, as cards. Components only — a Trigger is not a Step, and adding one is the Workflow tab's job. |
 | `Workflow` | Everything scoped to the workflow rather than to a Step: the name and slug, the Triggers, the variables. |
@@ -129,14 +129,56 @@ invisible: `walkSteps` yields the Steps inside it, so the generic rules report
 against them by name, and a `COMPONENT_UNKNOWN` naming a Step that nothing draws
 is a problem the user cannot go and fix. Refusing to draw a region does not make
 it absent from the document — it makes it unreachable. What the verb decides is
-the *word* over a region, which is why `bodyKeywordFor` says `try` over a try's
-body and `loop` over a loop's.
+the *word* over a region.
 
-`@hatua/layout` asks `regionsOf` in `@hatua/model`; this region reads `branches`,
-`steps` and `handler` itself. `StepList.test.tsx` § "the list draws every region
-the document carries" holds the two together on a Step that carries all three
-keys at once, so a region added to one reading and not the other fails rather
-than quietly making the map and the list disagree.
+**Three readers, one enumeration.** `regionsOf` in `@hatua/model` is where a
+Step's regions are enumerated, and all three of them get theirs from it:
+`@hatua/layout` walks it to place cards and to emit a `Band` per region,
+`<StepList>` walks it to render the nested lists, and `<FlowMap>` draws the bands
+the layout emitted. The word over a region is `Region.keyword` — `if` / `else if`
+/ `else` / `and`, `try`, `loop`, `on failure` — computed there too, so the chip in
+the list and the band on the map are the same string from the same function
+rather than two spellings that agree by inspection.
+
+That is why the word lives in the model at all. It was computed twice, in
+`keywordFor` and `bodyKeywordFor` inside `<StepList>`, and the canvas would have
+been the third answer to a question with one right answer. `StepList.test.tsx`
+§ "the list draws every region the document carries" and `FlowMap.test.tsx`
+§ "draws one band per region, saying what `regionsOf` calls it" hold both
+surfaces to that enumeration on a Step carrying all three keys at once.
+
+### Nothing is drawn between cards
+
+There is no connector on the map and no unit for one. ADR-0013 refuses an
+*attachable* edge and CONTEXT.md resolves that there are no connections to draw;
+neither of those refuses a plain rule between two cards, so the canvas settles
+it: the gap between two cards is what reads as a run of the flow, which is what
+`LAYOUT.verticalGap` exceeding `nodeHeight` is for. `units/README.md` carries the
+argument in full.
+
+### One Board at a time, and a call is the doorway
+
+`<FlowMap>` draws one Board and `<StepList>` lists one. A call site's card
+carries an **Open** control and the canvas's breadcrumb is the way back, which is
+ADR-0013's "one Board at a time, with a call as a doorway into another" arriving
+with an implementation.
+
+Which Board is on screen is **chrome**, like selection and collapse and which tab
+is open: the document has no key for it, because a view state in the file is a
+diff in the Host's repository. `<FlowMap>` holds it and lifts it into a caller
+through `boardId` / `onBoardChange`, exactly as `TabbedPanel` lifts `tabId`;
+`<StepList>` takes a plain `board` prop, because nothing in a list is a doorway.
+`views/Build` holds one Board for both, so **the Flow tab follows the canvas.**
+Two surfaces showing two different Boards at once is the same defect as the map
+and the list disagreeing about a region — one screen, two answers to "what am I
+looking at".
+
+**Selection and collapse are named by a `StepRef`, not a bare id.** Step ids are
+Board-local, so two Blocks may each hold a Step called `ret`; a bare id selects
+both and folds both. That was latent while nothing could reach a Block's Board
+and stops being latent here. `layout`'s `collapsed` option still takes bare ids,
+because a Board is already its argument — `<FlowMap>` filters the set down to the
+Board on screen, and that is the only place the two spellings meet.
 
 ### The list and the map are both on screen
 
@@ -151,8 +193,21 @@ Mounting the canvas as one of the tabs is the arrangement to avoid: it would be
 visible only while that tab was open and never beside the panel it is edited
 from, and a canvas you have to leave the catalogue to look at is not a canvas.
 
-The **Flow** tab stays in `Build`'s default set only until the canvas can select
-a Step. Removing it earlier would leave no way to select one at all.
+**The Flow tab stays.** An earlier note here said it was in `Build`'s default set
+"only until the canvas can select a Step" — which was a lower bound on when it
+*could* leave, and read as a plan for when it would. The canvas selects a Step
+now, and the paragraph above is the reason the tab is still here: the list is
+scannable in a long workflow, is where a Step is dragged from, and is where the
+insert points are unambiguous. A map of cards has no gaps between siblings to
+click, and an empty Board has a root node and no Steps at all — so a canvas that
+replaced the list would have to grow an insert affordance of its own before
+anyone could add the first Step.
+
+What that leaves is a real asymmetry worth stating: **structural edits go through
+the list, and the canvas selects, folds and navigates.** Insert, remove, drag and
+Alt+Arrow are `<StepList>`'s; the canvas reads the document and writes none of
+it. Both surfaces show the same Board and the same selection, so the split is
+about which affordances a shape affords, not about which Steps each one can see.
 
 ### Names and labels
 

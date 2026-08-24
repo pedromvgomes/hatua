@@ -67,6 +67,29 @@ export function boardOf(doc: WorkflowDefinition, id: BoardId): Board | undefined
   return undefined
 }
 
+/**
+ * The verb that protects a region and falls back to a handler.
+ *
+ * The one container with two child regions: a body under `steps:` and a handler
+ * under `handler:`. Wrapping one Step is retry, wrapping a region is fallback,
+ * so one verb serves both (ADR-0013).
+ *
+ * Its retry policy — how many attempts, how long to wait — sits in `with:` as
+ * ordinary manifest fields, and deliberately NOT in a structural key. `until`
+ * had to leave `with:` because `FIELD_KIND_TYPES` has no mappable boolean, so a
+ * condition there would have type-checked as text. An attempt count is a number
+ * and `number` IS a mappable field kind, so the argument that moved `until` does
+ * not reach here at all — following it anyway would be copying a conclusion
+ * without its reason, and would cost a structural key, a diagnostic and a form
+ * control that the manifest already gives for nothing.
+ *
+ * It sits beside the region vocabulary rather than beside the other verbs
+ * because the only question anything asks it is which word goes over a region:
+ * `steps:` is one key holding a loop's children and a try's protected body
+ * alike, and this is what tells them apart.
+ */
+export const TRY_VERB = 'core.try'
+
 /** Which of a container's child regions a step list is. */
 export type RegionKind = 'branch' | 'body' | 'handler'
 
@@ -80,6 +103,22 @@ export type RegionKind = 'branch' | 'body' | 'handler'
 export interface Region {
   readonly kind: RegionKind
   readonly steps: readonly Step[]
+  /**
+   * The word that goes over this region — `if` / `else if` / `else` / `and`
+   * over a Branch, `try` or `loop` over a body, `on failure` over a handler.
+   *
+   * Here rather than at each surface, because two surfaces draw every region:
+   * `<StepList>` puts it in a chip over the region and the canvas puts it in
+   * the band above it, and a word each works out for itself is a word they can
+   * disagree about. `kind` says which region this is and this says what it is
+   * called, so a reader gains both by construction.
+   *
+   * The verb decides the word and never whether the region exists. A `handler:`
+   * on a `core.fork` is meaningless and no runner reads it, but `walkSteps`
+   * still yields the Steps inside it, so a surface refusing to draw it makes
+   * those Steps unreachable rather than absent.
+   */
+  readonly keyword: string
   /** The Branch this region is. Absent on a body and on a handler. */
   readonly branch?: Branch
 }
@@ -98,10 +137,36 @@ export interface Region {
  * stacked under their own labels — still has to get its regions from here.
  */
 export function* regionsOf(step: Step): Generator<Region> {
-  for (const branch of step.branches ?? []) yield { kind: 'branch', branch, steps: branch.steps }
-  if (step.steps) yield { kind: 'body', steps: step.steps }
-  if (step.handler) yield { kind: 'handler', steps: step.handler }
+  const branches = step.branches ?? []
+  for (const [index, branch] of branches.entries()) {
+    yield { kind: 'branch', keyword: branchKeyword(branches, index), branch, steps: branch.steps }
+  }
+  if (step.steps) yield { kind: 'body', keyword: bodyKeyword(step), steps: step.steps }
+  if (step.handler) yield { kind: 'handler', keyword: 'on failure', steps: step.handler }
 }
+
+/**
+ * `if` / `else if` / `else` for a condition fork, `and` for a parallel one.
+ *
+ * Read from the branches rather than from a mode field, because the schema has
+ * no mode field: `when` is "absent on the fallback branch of a condition fork —
+ * order matters there, first match wins, and the last branch may be
+ * unconditional". A fork where no branch carries `when` is the parallel one.
+ */
+function branchKeyword(branches: readonly Branch[], index: number): string {
+  if (!branches.some((branch) => branch.when)) return 'and'
+  if (branches[index]?.when) return index === 0 ? 'if' : 'else if'
+  return 'else'
+}
+
+/**
+ * `try` over a `core.try`'s protected region, `loop` over everything else's.
+ *
+ * `steps:` is one key holding two different ideas, so the word comes from the
+ * verb rather than from the key. Reading "loop" over the Steps a try is
+ * protecting would name the wrong control flow.
+ */
+const bodyKeyword = (step: Step): string => (step.use === TRY_VERB ? 'try' : 'loop')
 
 /**
  * Whether a Step owns child regions at all.
@@ -112,6 +177,46 @@ export function* regionsOf(step: Step): Generator<Region> {
  * decides how tall a card is or whether it collapses.
  */
 export const isContainer = (step: Step): boolean => !regionsOf(step).next().done
+
+/**
+ * What a Step is called on screen: its name, falling back to its id.
+ *
+ * An id is the one thing a Step always has, and it is what a user typed if they
+ * hand-wrote the file. Here rather than at each surface because the list, the
+ * canvas and every sentence a screen reader hears have to name one Step one
+ * way — two spellings is a card and a row that look like two Steps.
+ */
+export const nameOf = (step: Step): string => step.name || step.id
+
+/**
+ * What makes a Step structural, in words: `core.fork · 2 branches`,
+ * `core.try · 1 step · handler`.
+ *
+ * Enumerated off `regionsOf` rather than off the three step keys, so a region
+ * added to the walk shows up in the summary by construction. A summary read off
+ * `steps:` alone says `core.try` on a try carrying only a handler — a card with
+ * a chevron and an `on failure` region under it, describing itself as a leaf.
+ *
+ * A leaf's summary is its verb and nothing else, which is why the canvas shows
+ * this only on the cards `isContainer` makes taller: `LAYOUT.nodeHeight` is "a
+ * card with a name and nothing else", so a leaf card has nowhere to put a row.
+ * One predicate decides the height and the content, and they cannot come apart.
+ */
+export function summaryOf(step: Step): string {
+  const regions = [...regionsOf(step)]
+  const parts = [step.use]
+
+  const branches = regions.filter((region) => region.kind === 'branch').length
+  if (branches > 0) parts.push(`${branches} ${branches === 1 ? 'branch' : 'branches'}`)
+
+  for (const region of regions) {
+    if (region.kind === 'branch') continue
+    if (region.kind === 'handler') parts.push('handler')
+    else parts.push(`${region.steps.length} ${region.steps.length === 1 ? 'step' : 'steps'}`)
+  }
+
+  return parts.join(' · ')
+}
 
 /**
  * Depth-first walk of every step in one tree, parents before children.

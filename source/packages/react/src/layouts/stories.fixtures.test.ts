@@ -1,6 +1,6 @@
 /** biome-ignore-all lint/correctness/noNodejsModules: a Node test reading story sources from disk; nothing here ships to a browser. */
 import { readdirSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 import { parseWorkflow } from '@hatua/document'
 import { describe, expect, it } from 'vitest'
 
@@ -25,7 +25,16 @@ import { describe, expect, it } from 'vitest'
  * directory's README still stands.
  */
 
-const LAYOUTS = import.meta.dirname
+/**
+ * Every directory whose stories may hold a Workflow Definition.
+ *
+ * Named rather than globbed from the package root: a glob that stops matching
+ * is a guard that silently protects nothing, and the count assertion below is
+ * what makes a directory that has moved a failure instead of a pass. `units`
+ * is here because the canvas's units are handed Steps rather than documents
+ * today — the moment one of them holds YAML, it is already covered.
+ */
+const STORY_DIRS = [import.meta.dirname, resolve(import.meta.dirname, '..', 'units')]
 
 /**
  * Template literals holding a workflow document, by the one marker every one of
@@ -57,12 +66,18 @@ const unescaped = (body: string): string =>
   )
 
 describe('story fixtures', () => {
-  const files = readdirSync(LAYOUTS).filter((name) => name.endsWith('.stories.tsx'))
-  expect(files.length).toBeGreaterThan(0)
+  const files = STORY_DIRS.flatMap((dir) => {
+    const found = readdirSync(dir).filter((name) => name.endsWith('.stories.tsx'))
+    // Per directory, not over the total: a directory that has been renamed
+    // contributes nothing and the total stays healthy on the strength of the
+    // other one, which is the check passing while covering half of what it names.
+    expect(found.length, `no stories under ${dir}`).toBeGreaterThan(0)
+    return found.map((name) => join(dir, name))
+  })
 
   const documents = files.flatMap((file) =>
-    documentsIn(readFileSync(join(LAYOUTS, file), 'utf8')).map(
-      (source, index) => [`${file} · document ${index + 1}`, source] as const,
+    documentsIn(readFileSync(file, 'utf8')).map(
+      (source, index) => [`${basename(file)} · document ${index + 1}`, source] as const,
     ),
   )
 

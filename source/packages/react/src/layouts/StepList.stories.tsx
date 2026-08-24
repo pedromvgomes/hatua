@@ -197,13 +197,13 @@ export const Insertable: Story = {
   parameters: wired(serving(DEEP)),
   args: {
     onInsert: (at) => console.info('insert at', at),
-    onSelect: (id) => console.info('selected', id),
+    onSelect: (ref) => console.info('selected', ref),
   },
 }
 
 export const Selected: Story = {
   parameters: wired(serving(DEEP)),
-  args: { defaultSelectedId: 's3' },
+  args: { defaultSelected: { board: null, id: 's3' } },
 }
 
 /**
@@ -255,7 +255,7 @@ export const SavingHalted: Story = {
       },
     }),
   ),
-  args: { onSelect: (id) => console.info('selected', id) },
+  args: { onSelect: (ref) => console.info('selected', ref) },
 }
 
 /** No WorkflowStore at all — a wiring mistake, told apart from an empty workflow. */

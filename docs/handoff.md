@@ -41,16 +41,26 @@ canvas that is visible only while one tab is open, and never beside the panel it
 not a canvas — `views/README` and ADR-0011 both make this argument about version navigation for the
 same reason.
 
-**The Flow tab survives as an option, not a default.** `<StepList>` is a real region and a dense,
-scannable, keyboard-reorderable view of the tree; a Host that wants it mounts it. Hatua's own
-`<Build>` does not show it once the canvas can select a Step. **Until the canvas can select, the
-Flow tab stays in the default set** — dropping it earlier leaves no way to choose a Step at all.
+**The Flow tab is a default, and the reason has changed.** It was here on the strength of a gap —
+"until the canvas can select a Step, dropping it leaves no way to choose one at all" — which is a
+lower bound on when it could go, and the canvas selects a Step now. It stays on its own merits
+instead. `<StepList>` is dense, scannable and keyboard-reorderable; it is where a Step is dragged
+from; and it is where the insert points are, because a list has a gap between every two siblings and
+a map of cards has none. An empty Board is the case that settles it: a root node, no Steps, and
+therefore no `+` anywhere on the canvas unless one is invented for it.
+
+So the two surfaces divide by affordance rather than by content. **Structural edits go through the
+list; the canvas selects, folds and opens a call.** Both show the same Board and the same selection —
+`<Build>` holds one of each for both — so neither is a partial view of the other.
+
+`packages/react/src/layouts/README.md` made this argument already, three paragraphs above the
+sentence that promised the tab would leave. The argument is the half that survives.
 
 ### Which tabs, in which view
 
 | View | Tabs |
 | --- | --- |
-| Build | **Components**, **Workflow** |
+| Build | **Flow**, **Components**, **Workflow** |
 | Runs | **Workflow** (read-only), **Runs** |
 
 `<TabbedPanel>` arranges regions and owns none of them, so which tabs exist is the caller's
@@ -104,12 +114,47 @@ a protected body are told apart by the word over them rather than by their geome
 gives the same answer with the chip over each region; the two surfaces draw differently but they do
 not disagree about which regions there are or what they are called.
 
+They cannot, because the word is `Region.keyword` from `regionsOf` and both read it there. It was
+computed twice inside `<StepList>` — `keywordFor` for a Branch, `bodyKeywordFor` for a body — and the
+canvas would have been a third answer to a question with one right answer.
+
+**The bands are geometry, and `layout` hands them over.** `FlowMap.bands` carries one `Band` per
+region — its rect, its `kind`, its `keyword` and the `StepRef` that owns it — and `FlowMap.joins` one
+per Fork. A band's rect is the *whole* region: `regionLabel` reserved at the top, everything laid out
+below it. The canvas may not work these out for itself — `packages/react/src/layouts/README.md` has
+that tier draw what it is handed and compute no geometry of its own — and there is one place it could
+not work them out at all, which is a region with nothing in it, where the band is the only thing on
+screen.
+
+**Nothing is drawn between two cards.** ADR-0013 refuses an edge a user can attach anything to and
+CONTEXT.md resolves that there are no connections to draw; a plain rule between two cards is refused
+separately and on this section's own argument. `verticalGap` exceeds `nodeHeight` precisely so the
+space reads as a run of the flow, every card is the same width and centred on one spine, and a line
+down that spine restates an adjacency already visible. Where a column cannot carry the meaning — a
+Fork's alternatives, and where they stop — the band and the join marker carry it, and both are boxes
+this section's numbers already reserve.
+
 **Both draw every region the document carries, and neither reads the verb to decide.** A `handler:`
 on a `core.fork` is meaningless and has no runner, but it is not invisible: `walkSteps` yields the
 Steps inside it, so every generic rule reports against them by name — a `COMPONENT_UNKNOWN` naming a
 Step no surface draws is a problem a user cannot go and fix, because they cannot reach the Step it
 names. Refusing to draw a region does not make it not exist; it makes it undeletable. What the verb
 decides is the *word* over the region, not whether there is one.
+
+### Which Board is on screen
+
+One Board at a time, with a call as a doorway into another (ADR-0013). A call site's card carries an
+**Open** control and the canvas's breadcrumb goes back; a Block's body is never drawn inline at its
+call sites, which would hand back everything extracting it bought and draw a Block called from three
+places three times.
+
+Which Board that is, is **chrome** — the document has no key for it, on the same argument that keeps
+node positions out. `<FlowMap>` holds it and lifts it into a caller; `<Build>` holds one Board for the
+canvas and the Flow tab together, so the list follows the map. The two surfaces showing two different
+Boards at once is the same defect as the map and the list disagreeing about a region.
+
+Selection and collapse are named by a **`StepRef`** for the reason a Placement is: ids are
+Board-local, so a bare `ret` selects a Step on two Blocks and folds a container on both.
 
 ### The root node
 

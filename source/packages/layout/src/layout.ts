@@ -3,6 +3,7 @@ import {
   type BoardId,
   isContainer,
   type Region,
+  type RegionKind,
   regionsOf,
   type StepRef,
   stepKey,
@@ -86,6 +87,44 @@ export interface Placement extends Rect {
 }
 
 /**
+ * One child region's box, and the word that goes over it.
+ *
+ * `LAYOUT.regionLabel` is reserved at the top of this rect for the label, and
+ * the region's cards are laid out below it — so a band is the whole region, not
+ * the strip above it. That is what lets the canvas draw a region's frame and
+ * its label from one box.
+ *
+ * Handed over rather than recomputed. `layout` already reserves the strip and
+ * already knows which region it belongs to; a canvas that worked the same
+ * boxes out from the Placements inside them would be a second implementation of
+ * this file's geometry, in the tier whose rule is that it computes none of its
+ * own. It would also have nothing to work from where a region is empty, which
+ * is exactly where the band is the only thing on screen.
+ *
+ * `keyword` comes from `regionsOf`, so the word over a band and the word in
+ * `<StepList>`'s chip are the same string from the same function.
+ */
+export interface Band extends Rect {
+  readonly kind: RegionKind
+  readonly keyword: string
+  /** The container Step this region hangs under. */
+  readonly owner: StepRef
+}
+
+/**
+ * Where a Fork's Branches come back together.
+ *
+ * `LAYOUT.joinMarker`'s worth of room below the columns, spanning them. A Fork's
+ * Branches are the one region drawn side by side, so they are the one region
+ * whose reader has to be told where the alternatives end — every other region
+ * is stacked, and stacking says it already.
+ */
+export interface Join extends Rect {
+  /** The Fork whose Branches converge here. */
+  readonly owner: StepRef
+}
+
+/**
  * One Board's geometry.
  *
  * `root` is the node the canvas draws above the first Step: the Triggers on the
@@ -100,6 +139,10 @@ export interface FlowMap {
   readonly board: BoardId
   readonly root: Rect
   readonly placements: readonly Placement[]
+  /** Every child region on this Board, in the order the walk yields them. */
+  readonly bands: readonly Band[]
+  /** One per Fork whose Branches are drawn. */
+  readonly joins: readonly Join[]
   readonly width: number
   readonly height: number
 }
@@ -165,14 +208,25 @@ export function layout(board: Board, options: LayoutOptions = {}): FlowMap {
   // An empty Board is the root node and nothing else. Reserving the gap below
   // it would leave the map taller than everything drawn on it.
   if (board.steps.length === 0) {
-    return { board: board.id, root, placements: [], width, height: LAYOUT.nodeHeight }
+    return {
+      board: board.id,
+      root,
+      placements: [],
+      bands: [],
+      joins: [],
+      width,
+      height: LAYOUT.nodeHeight,
+    }
   }
 
   const top = LAYOUT.nodeHeight + LAYOUT.verticalGap
+  const placed = shift(body, centre(width, body.width), top)
   return {
     board: board.id,
     root,
-    placements: shift(body.placements, centre(width, body.width), top),
+    placements: placed.placements,
+    bands: placed.bands,
+    joins: placed.joins,
     width,
     height: top + body.height,
   }
@@ -194,10 +248,12 @@ interface Box {
   readonly width: number
   readonly height: number
   readonly placements: readonly Placement[]
+  readonly bands: readonly Band[]
+  readonly joins: readonly Join[]
 }
 
 /** The empty region: no cards, but a card's width so its label has somewhere to sit. */
-const EMPTY: Box = { width: LAYOUT.nodeWidth, height: 0, placements: [] }
+const EMPTY: Box = { width: LAYOUT.nodeWidth, height: 0, placements: [], bands: [], joins: [] }
 
 /**
  * A step list as a column: each Step under the last, centred on one spine.
@@ -210,16 +266,16 @@ function stack(steps: readonly Step[], board: BoardId, collapsed: ReadonlySet<st
 
   const boxes = steps.map((step) => place(step, board, collapsed))
   const width = Math.max(...boxes.map((box) => box.width))
-  const placements: Placement[] = []
+  const parts: Box[] = []
   let y = 0
 
   for (const box of boxes) {
     if (y > 0) y += LAYOUT.verticalGap
-    placements.push(...shift(box.placements, centre(width, box.width), y))
+    parts.push(shift(box, centre(width, box.width), y))
     y += box.height
   }
 
-  return { width, height: y, placements }
+  return { width, height: y, ...merge(parts) }
 }
 
 /**
@@ -256,68 +312,125 @@ function stack(steps: readonly Step[], board: BoardId, collapsed: ReadonlySet<st
  */
 function place(step: Step, board: BoardId, collapsed: ReadonlySet<string>): Box {
   const height = heightOf(step)
+  const ref: StepRef = { board, id: step.id }
   const regions = collapsed.has(step.id) ? [] : [...regionsOf(step)]
-  const bands: Box[] = []
+  const under: Box[] = []
 
   const branches = regions.filter((region) => region.kind === 'branch')
-  if (branches.length > 0) bands.push(join(spread(labelledAll(branches, board, collapsed))))
+  if (branches.length > 0) {
+    under.push(join(spread(branches.map((one) => labelled(one, ref, board, collapsed))), ref))
+  }
   for (const region of regions.filter((one) => one.kind !== 'branch')) {
-    bands.push(labelled(stack(region.steps, board, collapsed)))
+    under.push(labelled(region, ref, board, collapsed))
   }
 
-  const width = Math.max(LAYOUT.nodeWidth, ...bands.map((band) => band.width))
-  const placements: Placement[] = [
+  const width = Math.max(LAYOUT.nodeWidth, ...under.map((box) => box.width))
+  const parts: Box[] = [
     {
-      ref: { board, id: step.id },
-      x: centre(width, LAYOUT.nodeWidth),
-      y: 0,
       width: LAYOUT.nodeWidth,
       height,
+      placements: [
+        {
+          ref,
+          x: centre(width, LAYOUT.nodeWidth),
+          y: 0,
+          width: LAYOUT.nodeWidth,
+          height,
+        },
+      ],
+      bands: [],
+      joins: [],
     },
   ]
 
   let y = height
-  for (const band of bands) {
+  for (const box of under) {
     y += LAYOUT.verticalGap
-    placements.push(...shift(band.placements, centre(width, band.width), y))
-    y += band.height
+    parts.push(shift(box, centre(width, box.width), y))
+    y += box.height
   }
 
-  return { width, height: y, placements }
+  return { width, height: y, ...merge(parts) }
 }
 
-const labelledAll = (
-  regions: readonly Region[],
+/**
+ * One region laid out under the band that names it.
+ *
+ * The band's rect is the whole region — the reserved strip plus everything laid
+ * out below it — so an empty region is still a box on the map with a word over
+ * it, which is what makes it somewhere a Step can be dropped.
+ */
+function labelled(
+  region: Region,
+  owner: StepRef,
   board: BoardId,
   collapsed: ReadonlySet<string>,
-): Box[] => regions.map((region) => labelled(stack(region.steps, board, collapsed)))
+): Box {
+  const inner = shift(stack(region.steps, board, collapsed), 0, LAYOUT.regionLabel)
+  const height = LAYOUT.regionLabel + inner.height
+  const band: Band = {
+    kind: region.kind,
+    keyword: region.keyword,
+    owner,
+    x: 0,
+    y: 0,
+    width: inner.width,
+    height,
+  }
 
-/** A region under the band that names it. */
-const labelled = (box: Box): Box => ({
-  width: box.width,
-  height: LAYOUT.regionLabel + box.height,
-  placements: shift(box.placements, 0, LAYOUT.regionLabel),
-})
+  // The band is first, so `bands` comes out in the order the walk yields the
+  // regions — a container's own region before anything nested inside it.
+  return { width: inner.width, height, bands: [band, ...inner.bands], ...rest(inner) }
+}
 
 /** Boxes side by side, left to right, in document order. */
 function spread(boxes: readonly Box[]): Box {
-  const placements: Placement[] = []
+  const parts: Box[] = []
   let x = 0
 
   for (const box of boxes) {
     if (x > 0) x += LAYOUT.branchGap
-    placements.push(...shift(box.placements, x, 0))
+    parts.push(shift(box, x, 0))
     x += box.width
   }
 
-  return { width: x, height: Math.max(...boxes.map((box) => box.height)), placements }
+  return { width: x, height: Math.max(...boxes.map((box) => box.height)), ...merge(parts) }
 }
 
 /** Room below a spread for the mark where its columns converge. */
-const join = (box: Box): Box => ({ ...box, height: box.height + LAYOUT.joinMarker })
+const join = (box: Box, owner: StepRef): Box => ({
+  ...box,
+  height: box.height + LAYOUT.joinMarker,
+  joins: [
+    ...box.joins,
+    { owner, x: 0, y: box.height, width: box.width, height: LAYOUT.joinMarker },
+  ],
+})
 
-const shift = (placements: readonly Placement[], dx: number, dy: number): Placement[] =>
-  placements.map((placement) => ({ ...placement, x: placement.x + dx, y: placement.y + dy }))
+/** Everything a Box carries except its bands — the half `labelled` replaces. */
+const rest = (box: Box) => ({ placements: box.placements, joins: box.joins })
+
+const merge = (boxes: readonly Box[]) => ({
+  placements: boxes.flatMap((box) => box.placements),
+  bands: boxes.flatMap((box) => box.bands),
+  joins: boxes.flatMap((box) => box.joins),
+})
+
+/**
+ * A fragment moved bodily: every card, band and join in it by the same offset.
+ *
+ * All three at once, so a band cannot be left behind where its cards went. That
+ * is the whole reason a fragment is a `Box` rather than a `Placement[]` — a
+ * combinator that shifted one list would place a region's frame over another
+ * region's Steps, and the map would still be a valid `FlowMap`.
+ */
+const shift = (box: Box, dx: number, dy: number): Box => ({
+  width: box.width,
+  height: box.height,
+  placements: box.placements.map((one) => ({ ...one, x: one.x + dx, y: one.y + dy })),
+  bands: box.bands.map((one) => ({ ...one, x: one.x + dx, y: one.y + dy })),
+  joins: box.joins.map((one) => ({ ...one, x: one.x + dx, y: one.y + dy })),
+})
 
 /**
  * Where a `width`-wide box sits inside an `outer`-wide one.

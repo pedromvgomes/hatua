@@ -250,7 +250,7 @@ function HostPage() {
                   // Components and Flow tabs to each other; this page prints
                   // the selection instead and still edits, because removing and
                   // reordering need no catalogue.
-                  content: <StepList onSelect={(id) => console.info('selected', id)} />,
+                  content: <StepList onSelect={(ref) => console.info('selected', ref)} />,
                 },
               ]}
             />
