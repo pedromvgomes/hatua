@@ -365,6 +365,14 @@ export function loopElementType(
   const node = typeAtPath(scope, path)
   if (!node || node.type !== 'list') return null
 
+  // A list that declared no `of:` says nothing about its elements, so there is
+  // no shape to hand back. `elementOf` answers `object` for one — which is the
+  // right answer for a projection, where the question is "what does `.name`
+  // read off this?", and the wrong one here: it would mark `item` as an object
+  // nothing declared, and every scalar field it is written into would report a
+  // mismatch against a shape the document never said.
+  if (!node.members) return null
+
   return elementOf(node)
 }
 

@@ -441,6 +441,7 @@ func bindingManifests() []Manifest {
 					{K: "subject", Label: "Subject", T: "text"},
 				}},
 				{K: "count", Label: "Count", T: "number"},
+				{K: "tags", Label: "Tags", T: "list"},
 			},
 		},
 		{
@@ -629,5 +630,52 @@ func TestItemIsUnresolvedWhenTheListIsNotOne(t *testing.T) {
 	doc.Steps[1].With = nil
 	if _, ok := LoopElementType(doc, RootBoard, doc.Steps[1], bindingManifests(), nil); ok {
 		t.Fatalf("expected a loop with no list to leave item unresolved")
+	}
+}
+
+// A list with no `of:` is a list whose elements the document says nothing about,
+// which is not the same as a list of objects with no members. `item` stays
+// `item` and matches anything, so writing one into a text field is accepted and
+// checked at run time — EXPR_TYPE_UNKNOWN, a warning.
+//
+// Answering object here marks `item` as a shape nothing declared, and then every
+// scalar field it is written into reports EXPR_TYPE_MISMATCH: an error that
+// refuses Publish on a document that is correct. The TypeScript half asserts the
+// same thing in `packages/model/src/loops.test.ts`, because a builder and a
+// runner disagreeing about `item` is the whole reason this file exists.
+func TestLoopElementTypeIsUnresolvedWhenTheListDeclaredNoOf(t *testing.T) {
+	doc := loopingDoc("steps.fetch.tags")
+
+	if _, ok := LoopElementType(doc, RootBoard, doc.Steps[1], bindingManifests(), nil); ok {
+		t.Fatalf("expected a list with no `of:` to leave item unresolved")
+	}
+
+	scope := ScopeFor(doc, StepRef{Board: RootBoard, ID: "s1"}, bindingManifests(), nil)
+	found := expressions.Validate("{{ steps.each.item }}", expressions.TypeText,
+		expressions.CheckContext{Scope: scope, Functions: expressions.CoreFunctions()})
+	if len(found) != 1 || found[0].Code != "EXPR_TYPE_UNKNOWN" {
+		t.Fatalf("expected item to be accepted and checked at run time, got %v", found)
+	}
+}
+
+// A repeated output key, which the schema permits into a file and
+// DECLARATION_KEY_DUPLICATE only stops at Publish — so both languages have to
+// pick the same one of the two while the document is being edited.
+//
+// First-wins, matching BlockOf and CyclicBlocks and the TypeScript half. Which
+// one is picked matters less than that one answer exists: last here and first
+// there types the same call site number in one builder and text in the other.
+func TestBlockOutputTypeTakesTheFirstOfARepeatedKey(t *testing.T) {
+	block := Block{
+		ID: "twice",
+		Outputs: []Declaration{
+			{K: "out", Label: "Out", T: "text"},
+			{K: "out", Label: "Out", T: "number"},
+		},
+	}
+
+	node := blockOutputType(&block)
+	if node.Members["out"].Type != expressions.TypeText {
+		t.Fatalf("expected the first declaration to win, got %#v", node.Members["out"])
 	}
 }
