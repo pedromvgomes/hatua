@@ -1,7 +1,15 @@
 import { type Board, boards, stepKey, walkSteps } from '@hatua/model'
 import type { WorkflowDefinition } from '@hatua/schema'
 import { describe, expect, it } from 'vitest'
-import { ALL_REGIONS, DEEP, EMPTY_BOARD, MIXED_REGIONS, SHAPES, TWO_RETS } from './fixtures'
+import {
+  ALL_REGIONS,
+  DEEP,
+  EMPTY_BOARD,
+  EMPTY_REGIONS,
+  MIXED_REGIONS,
+  SHAPES,
+  TWO_RETS,
+} from './fixtures'
 import { LAYOUT, layout, type Placement, placementOf, type Rect } from './layout'
 
 const boardsOf = (doc: WorkflowDefinition): Board[] => [...boards(doc)]
@@ -177,6 +185,19 @@ describe('regions', () => {
       for (const below of stacked) expect(below.y).toBeGreaterThan(column.y)
     }
     expect(stacked[1]?.y).toBeGreaterThan(stacked[0]?.y ?? 0)
+  })
+
+  it('keeps a container with two empty regions a container, and reserves both bands', () => {
+    const map = rootOf(EMPTY_REGIONS)
+    const container = at(map, 'try_nothing')
+    const below = at(map, 'wide')
+
+    // `steps: []` and `handler: []` are regions with nothing in them, not absent
+    // regions: the card stays the taller one and each band still takes its room,
+    // so an empty `handler:` is somewhere a Step can be dropped.
+    expect(container.height).toBe(LAYOUT.nodeHeightWithMeta)
+    const bands = 2 * (LAYOUT.verticalGap + LAYOUT.regionLabel)
+    expect(below.y - (container.y + container.height)).toBe(bands + LAYOUT.verticalGap)
   })
 
   it('gives a container the taller card and a leaf the shorter one', () => {

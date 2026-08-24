@@ -123,11 +123,20 @@ label that names it.
 two surfaces draw differently and must not disagree about which regions a
 container has or what they are called.
 
-They agree by inspection and by nothing else. `@hatua/layout` asks `regionsOf`
-in `@hatua/model`; this region reads `branches`, `steps` and `handler` itself,
-both to decide what to render and to decide what gets a chevron. A region added
-to one reading and not the other is a container the map draws and the list does
-not, with nothing failing.
+**Neither surface reads the verb to decide whether a region exists.** A
+`handler:` on a `core.fork` is meaningless and no runner reads it, but it is not
+invisible: `walkSteps` yields the Steps inside it, so the generic rules report
+against them by name, and a `COMPONENT_UNKNOWN` naming a Step that nothing draws
+is a problem the user cannot go and fix. Refusing to draw a region does not make
+it absent from the document — it makes it unreachable. What the verb decides is
+the *word* over a region, which is why `bodyKeywordFor` says `try` over a try's
+body and `loop` over a loop's.
+
+`@hatua/layout` asks `regionsOf` in `@hatua/model`; this region reads `branches`,
+`steps` and `handler` itself. `StepList.test.tsx` § "the list draws every region
+the document carries" holds the two together on a Step that carries all three
+keys at once, so a region added to one reading and not the other fails rather
+than quietly making the map and the list disagree.
 
 ### The list and the map are both on screen
 

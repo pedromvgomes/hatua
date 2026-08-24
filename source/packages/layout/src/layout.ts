@@ -243,12 +243,16 @@ function stack(steps: readonly Step[], board: BoardId, collapsed: ReadonlySet<st
  * region gets one, including a Branch's, so a second region costs no shape the
  * first did not already have.
  *
- * Both kinds are laid out, not one or the other. No verb owns both `branches:`
- * and a `steps:` body, but nothing refuses a document that writes both — the
- * schema's step keys are all optional and no rule reads them together — so a
- * Step that carries both is laid out with all of its regions rather than half of
- * them. Branching on "is this a Fork" instead of on the regions in hand is how a
- * reader silently drops one.
+ * Both kinds are laid out, not one or the other, and the verb is never consulted
+ * about whether a region exists. No verb owns both `branches:` and a `steps:`
+ * body, and a `handler:` outside a `core.try` is meaningless — but nothing
+ * refuses a document that writes them, because the schema's step keys are all
+ * optional and no rule reads them together. Such a region is still walked:
+ * `walkSteps` yields the Steps inside it, so the generic rules report against
+ * them by name. A card no surface draws is a diagnostic the user cannot act on,
+ * so drawing every region in hand is what keeps a hand-edited region reachable
+ * enough to delete. `<StepList>` draws them on the same rule. The verb decides
+ * the *word* over a region, never whether there is one.
  */
 function place(step: Step, board: BoardId, collapsed: ReadonlySet<string>): Box {
   const height = heightOf(step)
@@ -318,9 +322,9 @@ const shift = (placements: readonly Placement[], dx: number, dy: number): Placem
 /**
  * Where a `width`-wide box sits inside an `outer`-wide one.
  *
- * Floored rather than rounded, so a centred fragment can never round its way
- * past its parent's right edge and into the gap beside a sibling column. Every
- * coordinate on the map is therefore a whole number of pixels, which is also
- * what makes two layouts of one Board compare byte for byte.
+ * Integral, so every coordinate on the map is a whole number of pixels and two
+ * layouts of one Board compare byte for byte. Every caller passes an `outer`
+ * that is a `Math.max` including this `width`, so the offset is never negative
+ * and a centred fragment always lies inside its parent.
  */
 const centre = (outer: number, width: number): number => Math.floor((outer - width) / 2)
