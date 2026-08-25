@@ -4,6 +4,7 @@ import type { Manifest, Step } from '@hatua/schema'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { boxOf } from './box'
+import { CanvasControls } from './CanvasControls'
 import { JoinMarker } from './JoinMarker'
 import { NodeCard } from './NodeCard'
 import { RegionBand } from './RegionBand'
@@ -287,5 +288,71 @@ describe('RootNode', () => {
     expect(screen.getByText('Triggers')).toBeDefined()
     expect(screen.getByText('2 triggers')).toBeDefined()
     expect(container.querySelector('button')).toBeNull()
+  })
+})
+
+describe('CanvasControls', () => {
+  const props = {
+    scale: 1,
+    min: 0.1,
+    max: 4,
+    levels: [0.5, 1, 2],
+    onZoomIn: () => {},
+    onZoomOut: () => {},
+    onZoomTo: () => {},
+    onFit: () => {},
+  }
+
+  it('says the scale as whole percent, however it was arrived at', () => {
+    render(<CanvasControls {...props} scale={0.8333} />)
+    expect(screen.getByRole('button', { name: 'Zoom level: 83%' })).toBeDefined()
+  })
+
+  it('greys out the end of the range it is against, and only that end', () => {
+    const { rerender } = render(<CanvasControls {...props} scale={0.1} />)
+    expect(screen.getByRole('button', { name: 'Zoom out' }).hasAttribute('disabled')).toBe(true)
+    expect(screen.getByRole('button', { name: 'Zoom in' }).hasAttribute('disabled')).toBe(false)
+
+    rerender(<CanvasControls {...props} scale={4} />)
+    expect(screen.getByRole('button', { name: 'Zoom out' }).hasAttribute('disabled')).toBe(false)
+    expect(screen.getByRole('button', { name: 'Zoom in' }).hasAttribute('disabled')).toBe(true)
+  })
+
+  it('offers the levels only once opened, and snaps to the one chosen', () => {
+    const onZoomTo = vi.fn()
+    render(<CanvasControls {...props} scale={0.83} onZoomTo={onZoomTo} />)
+
+    expect(screen.queryByRole('button', { name: '200%' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Zoom level: 83%' }))
+
+    expect(screen.getAllByRole('button', { name: /^\d+%$/ }).map((one) => one.textContent)).toEqual(
+      ['50%', '100%', '200%'],
+    )
+    fireEvent.click(screen.getByRole('button', { name: '200%' }))
+    // An absolute scale and never a step: the menu is the way back to a known
+    // state after free-form zooming.
+    expect(onZoomTo).toHaveBeenCalledWith(2)
+    expect(screen.queryByRole('button', { name: '200%' })).toBeNull()
+  })
+
+  it('holds one home for fit, and it is not the menu', () => {
+    const onFit = vi.fn()
+    render(<CanvasControls {...props} onFit={onFit} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Zoom level: 100%' }))
+
+    expect(screen.queryAllByRole('button', { name: /fit/i })).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Fit to screen' }))
+    expect(onFit).toHaveBeenCalledTimes(1)
+  })
+
+  it('shuts the menu on Escape and puts focus back where it came from', () => {
+    render(<CanvasControls {...props} />)
+    const trigger = screen.getByRole('button', { name: 'Zoom level: 100%' })
+    fireEvent.click(trigger)
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+
+    fireEvent.keyDown(trigger, { key: 'Escape' })
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    expect(document.activeElement).toBe(trigger)
   })
 })
