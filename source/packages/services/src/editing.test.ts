@@ -451,7 +451,7 @@ describe('commands', () => {
     expect(added?.steps).toEqual([])
     expect(added?.handler).toEqual([])
     expect([...regionsOf(added as Step)].map((region) => region.keyword)).toEqual([
-      'try',
+      'attempt',
       'on failure',
     ])
   })

@@ -72,7 +72,7 @@ export const TwoRegions: Story = {
         <RegionBand
           band={{
             kind: 'body',
-            keyword: 'try',
+            keyword: 'attempt',
             owner: { board: null, id: 'guarded' },
             x: LAYOUT.regionInset,
             y: LAYOUT.nodeHeight + LAYOUT.regionLabel,

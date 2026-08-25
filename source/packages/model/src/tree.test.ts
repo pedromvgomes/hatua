@@ -50,10 +50,10 @@ describe('the word over a region', () => {
     ).toEqual(['if', 'else if'])
   })
 
-  it('says `try` over a try’s body and `loop` over everything else’s', () => {
+  it('says `attempt` over a try’s body and `loop` over everything else’s', () => {
     // `steps:` is one key holding two ideas. Reading "loop" over the Steps a
     // try is protecting would name the wrong control flow.
-    expect(keywords({ id: 't', use: 'core.try', steps: [] })).toEqual(['try'])
+    expect(keywords({ id: 't', use: 'core.try', steps: [] })).toEqual(['attempt'])
     expect(keywords({ id: 'e', use: 'core.for_each', steps: [] })).toEqual(['loop'])
     expect(keywords({ id: 'r', use: 'core.repeat', steps: [] })).toEqual(['loop'])
   })

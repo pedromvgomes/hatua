@@ -815,12 +815,12 @@ function BranchHeader({ branch, keyword }: { branch?: Branch; keyword: string })
 /**
  * The word inside the sentence a screen reader hears on an insert point.
  *
- * The chip's word and this are two different jobs: `try` is what goes over the
- * region, and "the “Publish” body" is what an insert point inside it is called.
- * Derived from the region rather than from the verb a second time.
+ * The chip's word and this are two different jobs: `attempt` is what goes over
+ * the region, and "the “Publish” attempt" is what an insert point inside it is
+ * called. Derived from the region rather than from the verb a second time.
  */
 const regionNoun = (region: Region): string =>
-  region.kind === 'handler' ? 'handler' : region.keyword === 'try' ? 'body' : 'loop'
+  region.kind === 'handler' ? 'handler' : region.keyword
 
 /**
  * What the first insert point on a Board is adding to.

@@ -162,7 +162,7 @@ type Story = StoryObj<typeof meta>
 
 /**
  * The whole vocabulary on one Board: a Fork's three Branches as columns over
- * the mark where they converge, a `core.try`'s two regions stacked under `try`
+ * the mark where they converge, a `core.try`'s two regions stacked under `attempt`
  * and `on failure`, a loop's body under `loop`, an empty Branch that is still a
  * band, and a call with a doorway rather than a body drawn inline.
  */

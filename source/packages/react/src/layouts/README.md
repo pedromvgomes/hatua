@@ -145,7 +145,7 @@ Step's regions are enumerated, and all three of them get theirs from it:
 `@hatua/layout` walks it to place cards and to emit a `Band` per region,
 `<StepList>` walks it to render the nested lists, and `<FlowMap>` draws the bands
 the layout emitted. The word over a region is `Region.keyword` — `if` / `else if`
-/ `else` / `and`, `try`, `loop`, `on failure` — computed there too, so the chip in
+/ `else` / `and`, `attempt`, `loop`, `on failure` — computed there too, so the chip in
 the list and the legend on the map are the same string from the same function
 rather than two spellings that agree by inspection.
 

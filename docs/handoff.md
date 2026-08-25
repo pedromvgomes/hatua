@@ -125,7 +125,7 @@ the handler runs *because* the body failed, and part of the body has already run
 would make left-to-right mean "later" in the one place on the map where it means nothing else, and
 would put a third thing on screen that reads as a Fork.
 
-**The label band is what tells regions apart** — `try` and `on failure` over a `core.try`'s two,
+**The label band is what tells regions apart** — `attempt` and `on failure` over a `core.try`'s two,
 `loop` over a loop's one, `if` / `else if` / `and` over a Branch's. Every child region gets a band, so
 the second region of a `core.try` costs no shape the first did not already have, and a loop body and
 a protected body are told apart by the word over them rather than by their geometry. `<StepList>`
@@ -135,6 +135,15 @@ not disagree about which regions there are or what they are called.
 They cannot, because the word is `Region.keyword` from `regionsOf` and both read it there. It was
 computed twice inside `<StepList>` — `keywordFor` for a Branch, `bodyKeywordFor` for a body — and the
 canvas would have been a third answer to a question with one right answer.
+
+**`attempt`, not `try`.** Every one of these words renders inside somebody else's product, to people
+who have never written code (`.agents/rules/rendered-copy-is-written-for-the-hosts-users.md`). `if`,
+`else` and `loop` are ordinary English that happen also to be keywords; `try` is only a keyword, and
+`on failure` beside it is already plain — half a pair in English and half in a language reads as
+neither. The **verb** stays `core.try`, because that is an identifier somebody types in Text Mode
+rather than a sentence anybody reads, and it is mirrored in Go and pinned by the conformance corpus.
+The same argument runs through the built-in catalogue: the Component is **Attempt** and its blurb
+says "do something else if they fail" rather than naming a handler.
 
 **The bands are geometry, and `layout` hands them over.** `FlowMap.bands` carries one `Band` per
 region — its rect, its `kind`, its `keyword` and the `StepRef` that owns it — `FlowMap.nests` one per
