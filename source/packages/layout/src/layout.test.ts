@@ -335,13 +335,28 @@ describe('bands', () => {
     expect(band.width).toBe(LAYOUT.nodeWidth + 2 * LAYOUT.regionInset)
   })
 
-  it('gives a Fork’s Branches one size, so an empty one is a frame beside a full one', () => {
+  it('gives a Fork’s Branches one height, so an empty one is a frame beside a full one', () => {
+    // The bottom edges line up, so the lines into the mark are symmetric and it
+    // sits under a straight run of edges rather than a ragged one.
     const map = rootOf(EMPTY_REGIONS)
     const columns = map.bands.filter((band) => band.kind === 'branch' && band.owner.id === 'wide')
 
     expect(columns.length).toBeGreaterThan(1)
     expect(new Set(columns.map((band) => band.height)).size).toBe(1)
-    expect(new Set(columns.map((band) => band.width)).size).toBe(1)
+  })
+
+  it('gives each Branch its own width, because size is a consequence of content', () => {
+    // A Branch as wide as its widest sibling puts an empty column the width of
+    // a nested Fork beside it, which is dead space no reader can account for.
+    const map = rootOf(EMPTY_REGIONS)
+    const columns = map.bands.filter((band) => band.kind === 'branch' && band.owner.id === 'wide')
+
+    expect(new Set(columns.map((band) => band.width)).size).toBeGreaterThan(1)
+    // The Branch holding nothing is exactly a card wide, whatever its siblings
+    // hold — and one of them holds a container, which is wider than a card.
+    const empty = columns.find((band) => band.branchIndex === 1)
+    expect(empty?.width).toBe(LAYOUT.nodeWidth + 2 * LAYOUT.regionInset)
+    expect(Math.max(...columns.map((band) => band.width))).toBeGreaterThan(empty?.width ?? 0)
   })
 
   it('names which Branch each column is, by index and never by its word', () => {

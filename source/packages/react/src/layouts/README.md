@@ -119,6 +119,9 @@ region — a loop's body, a `core.try`'s body and handler — is **stacked** und
 the card that owns it in document order, and each region is a **Band** with the
 word that names it over its own top edge.
 
+A Fork's columns are one height, so their bottom edges line up under the mark where they converge;
+each is its own width, because size is a consequence of content here as everywhere else on this map.
+
 A container's Bands sit inside one **Nest**, which is that Step's whole extent.
 Two frames and not one, because a `core.try` owns two regions and only the body
 is protected. The card sits astride its Nest's top edge — nothing is drawn
