@@ -115,15 +115,25 @@ stays above its Nest's edge and only the quiet half of the card is enclosed.
 
 ### Regions
 
-**A Fork's Branches are columns, and they converge.** They are alternatives chosen between, and
-*which one* is the reader's question — so they sit side by side, separated by `branchGap`, over a
-`joinMarker`'s worth of room for the mark where they come back together.
+**Every region of a Step is a column, in one row, in document order** — separated by `branchGap`,
+over a `joinMarker`'s worth of room for the mark where they converge. A loop is one column, a
+`core.try` two, a Fork *n*, and a Step carrying `branches:`, `steps:` and `handler:` at once is
+*n* + 2. The geometry never reads a region's `kind`: that decides a word and an edge style, never a
+shape (ADR-0015).
 
-**Every other region is stacked under the card that owns it.** A `core.try`'s body and its handler sit
-one above the other, in document order, not side by side. They are not alternatives chosen between:
-the handler runs *because* the body failed, and part of the body has already run by then. Columns
-would make left-to-right mean "later" in the one place on the map where it means nothing else, and
-would put a third thing on screen that reads as a Fork.
+Side by side means **sibling regions of one Step, and the flow leaves through one of them** — which
+is what the model already said a `core.try`'s two regions are, sharing the Fork's scope rule and the
+Fork's all-branches reasoning. What separates a Fork from a try is *what decides which region runs*:
+a Branch's `when`, evaluated before anything ran, against a failure, which is only knowable part-way
+through. That is a caption, not a layout.
+
+**The edge style is what tells a Fork from a try**, on the rule a Branch's dashes already stated —
+*which one runs is a question the document answers at run time.* Asked of what each region
+guarantees rather than of the verb that owns it, a Branch is dashed, a try's body is solid because it
+always starts, and a try's handler is dashed. So a Fork is *n* dashed columns and a try is one solid
+column beside a dashed one. The rule is scoped to sibling columns and does not reach a loop: dashed
+already means *placeholder* here — the `+` is a dashed circle, an empty region a dashed box — and it
+survives that only beside a solid sibling, which a lone loop body has not got.
 
 **The label band is what tells regions apart** — `attempt` and `on failure` over a `core.try`'s two,
 `loop` over a loop's one, `if` / `else if` / `and` over a Branch's. Every child region gets a band, so
@@ -171,13 +181,8 @@ a drawn edge between it and the next one out.
 two regions and only one of them is protected — a single frame would claim either too much (the
 handler, which is not protected) or too little (the body alone, which leaves the handler outside the
 Step that owns it). Every container has both at every arity: a loop is one Band in a Nest, a try is
-two, a Fork is *n* — which is what stops a Fork being a special shape, and why its Join sits inside
-its Nest rather than beneath it.
-
-**Its two regions are stacked, and no line runs between them.** The body's spine stops at its Band's
-edge and the handler's starts at its own; the gap between two Bands is what says *or else*. A spine
-crossing from one into the other would say *then*, which is the one thing a handler never does — it
-runs *instead*, and only on failure.
+two, a Fork is *n* — which is what stops a Fork being a special shape, and why a Step's Join sits
+inside its Nest rather than beneath it.
 
 **The card sits astride its own Nest.** The Nest's top edge crosses the card `nodeLid` from the card's
 top, so the card is half in and half out of the container it owns. Nothing is drawn between a Step and
@@ -193,24 +198,47 @@ in the model. Neither refuses a *line*, and the map needs one: at `verticalGap` 
 that follow each other read as two unrelated things. The line is what says "then". It holds nothing,
 nothing on it takes a pointer, and it is derived from the tree like every other position here.
 
-A **Link** is one gap: the point the flow leaves, the point it arrives at, and — on all but a Fork's
-join — the **InsertPoint** a Step goes to if one is added there. There is one per gap in every step
+A **Link** is one gap: the point the flow leaves, the point it arrives at, and — on all but a join —
+the **InsertPoint** a Step goes to if one is added there. There is one per gap in every step
 list, which is one more than the list is long and is exactly the count `<StepList>` draws between its
 rows. That is the property that makes the canvas a surface a workflow can be built on: a `+` sits on
 every link that names a position, including the stub after the last Step and the one under the root
 node of an empty Board, which is the only way to add the first Step to a new workflow.
 
-**A Fork's Branches are one height, each its own width, and each converges from its own edge.** Every
-column is as tall as the deepest, so the frames' bottom edges line up, the lines into the mark are
-symmetric, and an empty Branch is a full-height frame beside a populated one rather than a strip that
-reads as a different kind of thing. Width is a consequence of content, here as everywhere else on this
-map — a Branch as wide as its widest sibling puts an empty column the width of a nested Fork beside
-it, which is dead space no reader can account for.
+**Columns are one height where they are lists, and each its own width.** Every column showing a list
+is as tall as the deepest of them, so their bottom edges line up and the lines into the mark are
+symmetric. Width is a consequence of content, here as everywhere else on this map — a column as wide
+as its widest sibling puts an empty frame the width of a nested Fork beside it, which is dead space
+no reader can account for.
 
-The line to the mark leaves each Band's bottom edge rather than the last card inside it, so an empty
-Branch converges from where a full one does. The Branch's last gap stays inside its frame, which is
-where a `+` belongs; a line from the last card *through* the frame to the mark would cross an edge it
-is not leaving.
+**A column not showing a list is a box.** Two things make one — a region with nothing in it, and a
+region collapsed — and they take `emptyRegion` rather than their siblings' height. An empty handler
+beside a 2000px body would otherwise be a 2000px empty frame, which is the same dead space in the
+other axis; and it is the common case, because `bornRegionsOf` gives a new `core.try` an empty body
+*and* an empty handler, so a try added from the catalogue is a card over two small boxes. The two
+boxes read differently: an empty one carries the `+` that is the only way to fill it, a collapsed one
+carries how many Steps it is holding back.
+
+Bottom edges are level among the lists and ragged where a box sits beside one, and that is accepted:
+the line to the mark leaves each Band's bottom edge rather than the last card inside it, so a box
+converges from where it actually ends. The alternative is a path that runs and draws no line, which
+is an absence carrying meaning. A column's last gap stays inside its frame, which is where a `+`
+belongs; a line from the last card *through* the frame to the mark would cross an edge it is not
+leaving.
+
+**Collapse is per region, not per Step.** A wide Fork has the problem a big `core.try` has, so any
+sibling column folds to a box and the card's chevron folds all of a Step's at once. A collapsed
+region's children get no geometry at all, on the same argument that governs a collapsed container —
+so it offers no insert point, because nothing on screen would say where a Step landed. It is chrome:
+the document has no key for it, `<FlowMap>` lifts it through `collapsed` / `onCollapseChange`, and a
+region is named by a `RegionRef` for the reason a Step is named by a `StepRef`.
+
+Folding and unfolding **animate**, for 140ms, because a box changing size with no motion reads as a
+different map rather than the same one. The transition is on the boxes — `left`, `top`, `width`,
+`height`, which is what `boxOf` writes — so the map tweens with no animation code; the connectors
+re-render without one, since an SVG path's `d` does not transition. Under `prefers-reduced-motion`
+there is no transition: unlike a toast's countdown bar this is decoration, and freezing it loses
+nothing.
 
 **Not every gap is a line.** A gap between two Steps is drawn and says "then". The gaps at a region's
 two ends are not: a line from a card to its own body would give the one idiom on this map a second

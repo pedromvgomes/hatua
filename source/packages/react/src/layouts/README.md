@@ -114,13 +114,18 @@ is read-only history; nothing in the designer edits one.
 `@hatua/layout` decides where every card goes; this tier draws what it is handed
 and computes no geometry of its own. What each child region looks like is
 settled in `docs/handoff.md` § Flow map geometry, and the answers this tier has
-to agree with are: a Fork's Branches are **columns** that converge, every other
-region — a loop's body, a `core.try`'s body and handler — is **stacked** under
-the card that owns it in document order, and each region is a **Band** with the
-word that names it over its own top edge.
+to agree with are: **every** region of a Step is a **column** in one row, in
+document order, and they converge on a **Join** (ADR-0015) — a loop is one
+column, a `core.try` two, a Fork *n*. Each is a **Band** with the word that names
+it over its own top edge, dashed when whether it runs is a run-time fact and
+solid when it always runs, which is what tells a Fork from a `core.try` now that
+their shapes are the same.
 
-A Fork's columns are one height, so their bottom edges line up under the mark where they converge;
-each is its own width, because size is a consequence of content here as everywhere else on this map.
+Columns showing a list are one height, so their bottom edges line up under the
+mark; each is its own width, because size is a consequence of content here as
+everywhere else on this map. A column **not** showing a list — empty, or
+collapsed — is an `emptyRegion` box instead, carrying a `+` when it is empty and
+a count when it is folded.
 
 A container's Bands sit inside one **Nest**, which is that Step's whole extent.
 Two frames and not one, because a `core.try` owns two regions and only the body

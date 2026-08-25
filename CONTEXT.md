@@ -197,8 +197,8 @@ actually on screen rather than one with folded regions counted into it.
 
 Cards are not all of it. A **Link** is one gap — where the flow leaves one thing and arrives at the
 next, and where a Step goes if one is added there; a **Band** is one child region's extent; a **Nest**
-is one container **Step**'s regions taken together; a **Join** is where a **Fork**'s **Branches** come
-back together. All four are computed here, because the canvas draws what it is handed and works
+is one container **Step**'s regions taken together; a **Join** is where a **Step**'s sibling regions
+come back together. All four are computed here, because the canvas draws what it is handed and works
 nothing out for itself. That is what makes the rule checkable rather than merely stated: a region with
 nothing in it has no card to infer a box from, so a canvas without a Band would have had to invent
 one.
@@ -207,10 +207,16 @@ A **Band** and a **Nest** are two extents and not one. A `core.try` owns two reg
 Bands — the protected body and the handler — and one Nest around both. Only the body is protected, so
 a single extent would have to claim either too much or too little. A container with one region still
 has both: the same shape at every arity is what makes a **Fork** stop being a special case, and a
-**Fork**'s **Join** falls inside its Nest because where its **Branches** converge is that Step's
-business.
+Step's **Join** falls inside its Nest because where its regions converge is that Step's business.
 _Avoid_: Nest as a verb for what ADR-0013 calls nesting — the extent is the noun; container frame;
 group; scope, which is what a **Step** can read
+
+**Sibling regions** are drawn as columns and converge on a **Join** — a **Fork**'s **Branches**, and a
+**Try**'s body and handler alike. They are siblings in the same sense the scope rule already uses:
+neither can read the other, and the flow leaves the **Step** through one of them. What differs between
+a **Fork** and a **Try** is *what decides which region runs* — a **Branch**'s `when`, evaluated before
+anything ran, against a failure, which is only knowable part-way through — and that is a difference in
+what the regions are called, not in what shape they are.
 
 There is **one Link per gap in every step list**, which is one more than the list is long — the same
 count `<StepList>` draws between its rows. That is what makes the canvas a surface a workflow can be
