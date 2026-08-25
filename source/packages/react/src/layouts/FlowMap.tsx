@@ -27,13 +27,18 @@ import {
 } from '@hatua/services'
 import {
   type ComponentPropsWithRef,
+  type FocusEvent as ReactFocusEvent,
+  type PointerEvent as ReactPointerEvent,
   useEffect,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
 } from 'react'
 import { cx } from '../primitives/classNames'
 import { useEditingStore, useManifestStore, useValidationStore } from '../theme/HatuaProvider'
+import { CanvasControls } from '../units/CanvasControls'
 import { Connectors } from '../units/Connectors'
 import { InsertDot } from '../units/InsertDot'
 import { JoinMarker } from '../units/JoinMarker'
@@ -44,6 +49,18 @@ import { RootNode } from '../units/RootNode'
 import { COMPONENT_MIME, type ComponentDrag, decodeComponent } from './dragging'
 import styles from './FlowMap.module.css'
 import css from './FlowMap.module.css?inline'
+import {
+  fitView,
+  openingView,
+  panInto,
+  stepZoom,
+  type Viewport,
+  wheelScale,
+  wheelTravel,
+  ZOOM,
+  zoomAbout,
+  zoomTo,
+} from './viewport'
 
 /**
  * The canvas: one Board's Step tree, drawn where `@hatua/layout` says.
@@ -88,6 +105,22 @@ import css from './FlowMap.module.css?inline'
  * document has no key for it, the same line ADR-0001 draws around node
  * positions — so it is held here and lifted into a caller that wants the Flow
  * tab to follow, exactly as `TabbedPanel` lifts which tab is open.
+ *
+ * ## The canvas pans and zooms, and the viewport is chrome
+ *
+ * There is no scroll container. The clipped box is fixed and `.surface` carries
+ * a pan and a zoom (ADR-0016): a trackpad pans, ⌘/Ctrl + wheel and a pinch zoom
+ * about the pointer, space and the middle button pan from anywhere, and a plain
+ * drag on empty canvas does nothing at all — that gesture is reserved for the
+ * marquee this canvas will want, and taking it for panning means retraining
+ * people later.
+ *
+ * The viewport is held here and offered as two props rather than three. Every
+ * other piece of chrome on this region is a controlled trio because a second
+ * reader appeared for it; nothing reads a viewport. `defaultViewport` and
+ * `onViewportChange` are enough for a Host to put somebody back where they
+ * were, and not enough for a caller to drive the canvas into a state it cannot
+ * get itself out of.
  */
 export interface FlowMapProps extends Omit<ComponentPropsWithRef<'section'>, 'onSelect'> {
   /** Which Board the canvas opens on. `null` is the root Board. */
@@ -159,6 +192,20 @@ export interface FlowMapProps extends Omit<ComponentPropsWithRef<'section'>, 'on
    * round trip through the tab strip.
    */
   onDropComponent?: (component: ComponentDrag, at: InsertPoint) => void
+  /**
+   * Where the canvas opens, read once when it first draws a Board.
+   *
+   * Uncontrolled and deliberately without a `viewport` twin: a controlled
+   * viewport lets a caller pin the canvas somewhere the gestures cannot undo,
+   * and observation on its own would be half a feature — a Host could record
+   * where somebody was looking and never put them back.
+   *
+   * Opening a Block's Board ignores it and re-centres, because coordinates are
+   * Board-local and carrying a pan across Boards lands in empty space.
+   */
+  defaultViewport?: Viewport
+  /** Fired whenever the canvas is panned, zoomed or fitted. */
+  onViewportChange?: (view: Viewport) => void
 }
 
 /** "The Host wired nothing" is not a phase of the load, so it is not the store's to report. */
@@ -203,6 +250,8 @@ export function FlowMap({
   onCollapsedRegionsChange,
   onInsert,
   onDropComponent,
+  defaultViewport,
+  onViewportChange,
   className,
   ...rest
 }: FlowMapProps) {
@@ -324,6 +373,21 @@ export function FlowMap({
     setDragging(null)
   }
 
+  /*
+   * `defaultViewport` is spent by the first Board that draws.
+   *
+   * The canvas is remounted per Board so a pan cannot survive into coordinates
+   * it means nothing in, and a remount would otherwise re-read the prop — so
+   * going back to the workflow would restore an opening viewport rather than
+   * re-centring on the Board being opened. Read once means once.
+   */
+  const spent = useRef(false)
+  const takeDefault = () => {
+    if (spent.current) return undefined
+    spent.current = true
+    return defaultViewport
+  }
+
   // Held while the drag is over the canvas and dropped the moment it leaves, so
   // a drag that wanders off and ends elsewhere does not leave every gap lit.
   const dragIn = () => setCarrying(true)
@@ -367,8 +431,11 @@ export function FlowMap({
 
         {definition && board ? (
           <Canvas
+            key={boardKeyOf(board.id)}
             definition={definition}
             board={board}
+            defaultViewport={takeDefault()}
+            onViewportChange={onViewportChange}
             manifests={manifests}
             selection={selection}
             folded={folded}
@@ -395,10 +462,19 @@ export function FlowMap({
   )
 }
 
+/**
+ * The canvas's identity, so it remounts when the Board changes and a pan cannot
+ * survive into coordinates it means nothing in. Prefixed, because the root
+ * Board is `null` and a Block whose id is the empty string would key the same.
+ */
+const boardKeyOf = (id: BoardId): string => (id === null ? 'root' : `block:${id}`)
+
 function Canvas({
   definition,
   board,
   manifests,
+  defaultViewport,
+  onViewportChange,
   selection,
   folded,
   foldedRegions,
@@ -421,6 +497,8 @@ function Canvas({
   definition: WorkflowDefinition
   board: Board
   manifests: ReadonlyMap<string, Manifest>
+  defaultViewport: Viewport | undefined
+  onViewportChange: ((view: Viewport) => void) | undefined
   selection: StepRef | undefined
   folded: readonly StepRef[]
   foldedRegions: readonly RegionRef[]
@@ -455,8 +533,32 @@ function Canvas({
     (definition.connections ?? []).map((one) => [one.id, one.ref ?? one.id]),
   )
 
+  const view = useViewport({ root: map.root, content: map, defaultViewport, onViewportChange })
+
   return (
-    <div className={styles.viewport}>
+    /*
+      The clipped box. It never scrolls and never moves; `.surface` inside it
+      carries the pan and the zoom, so the toolbar and the breadcrumb stay put
+      while the map goes past underneath them.
+
+      No role and no handler that would make it one: watching a wheel and a
+      middle-drag go over a region is not something a user does TO it, and every
+      target on the map is a `<button>` inside that is reachable on its own.
+    */
+    // biome-ignore lint/a11y/noStaticElementInteractions: see above.
+    <div
+      ref={view.box}
+      className={cx(
+        styles.viewport,
+        view.grabbable && styles.grabbable,
+        view.grabbing && styles.grabbing,
+      )}
+      onPointerDown={view.onPointerDown}
+      onPointerMove={view.onPointerMove}
+      onPointerUp={view.onPointerUp}
+      onPointerCancel={view.onPointerUp}
+      onFocus={view.onFocus}
+    >
       <Breadcrumb board={board} onOpenBoard={onOpenBoard} />
       {/*
         A Component dragged in from the catalogue is recognised here, at the
@@ -479,7 +581,11 @@ function Canvas({
           land on is a `<button>` inside, and each is reachable on its own. */}
       <div
         className={styles.surface}
-        style={{ width: map.width, height: map.height }}
+        style={{
+          width: map.width,
+          height: map.height,
+          transform: `translate(${view.at.x}px, ${view.at.y}px) scale(${view.at.scale})`,
+        }}
         onDragOver={(event) => {
           if (event.dataTransfer.types.includes(COMPONENT_MIME)) onDragIn()
         }}
@@ -598,8 +704,230 @@ function Canvas({
           })}
         </ul>
       </div>
+
+      <CanvasControls
+        scale={view.at.scale}
+        min={ZOOM.min}
+        max={ZOOM.max}
+        levels={ZOOM.levels}
+        onZoomIn={view.zoomIn}
+        onZoomOut={view.zoomOut}
+        onZoomTo={view.snapTo}
+        onFit={view.fit}
+      />
     </div>
   )
+}
+
+/** The middle button, which pans from anywhere the way space does. */
+const MIDDLE_BUTTON = 1
+
+/** Nowhere, for the paint before the canvas has been measured. */
+const UNPLACED: Viewport = { x: 0, y: 0, scale: 1 }
+const NO_BOX = { width: 0, height: 0 }
+
+/**
+ * Whether the key belongs to whatever has focus rather than to the canvas.
+ *
+ * Space presses a focused button and types a space in a focused field. Arming a
+ * pan on it as well would mean a `+` on the map could not be pressed from the
+ * keyboard.
+ */
+const takesSpace = (target: EventTarget | null): boolean =>
+  target instanceof HTMLElement &&
+  (target.isContentEditable || /^(?:input|textarea|select|button|a)$/i.test(target.tagName))
+
+/**
+ * The pan and the zoom, and every gesture that moves them (ADR-0016).
+ *
+ * The arithmetic is all in `./viewport`, over plain numbers, because jsdom has
+ * no layout engine: a scale worked out inside a render is a number no test can
+ * see. What is left here is which gesture calls which function.
+ *
+ * ## The gestures do not fight the drag-and-drop already on the canvas
+ *
+ * A card is moved with HTML5 drag-and-drop, which starts from a plain
+ * pointer-down on a `<NodeCard>`. So panning claims neither: it answers to
+ * space and to the middle button, and a plain drag on empty canvas does
+ * nothing. That is not an omission — it is the gesture marquee selection will
+ * want, and a canvas that pans on it would have to be retrained later.
+ *
+ * ## It is placed before it is painted
+ *
+ * The opening viewport needs the size of a box that does not exist until the
+ * canvas has rendered once, so it is `null` until a layout effect can measure
+ * one. A layout effect rather than an ordinary one because the difference is a
+ * painted frame of the map in the wrong place.
+ */
+function useViewport({
+  root,
+  content,
+  defaultViewport,
+  onViewportChange,
+}: {
+  root: { x: number; width: number }
+  content: { width: number; height: number }
+  defaultViewport: Viewport | undefined
+  onViewportChange: ((view: Viewport) => void) | undefined
+}) {
+  const box = useRef<HTMLDivElement>(null)
+  const [at, setAt] = useState<Viewport | null>(defaultViewport ?? null)
+  /** Space is down, so the next drag anywhere on the canvas pans it. */
+  const [armed, setArmed] = useState(false)
+  const [grabbing, setGrabbing] = useState(false)
+  const grab = useRef<{ id: number; x: number; y: number } | null>(null)
+
+  const shift = (fn: (from: Viewport) => Viewport) => setAt((from) => (from ? fn(from) : from))
+  const sizeOf = () => box.current?.getBoundingClientRect() ?? NO_BOX
+
+  useLayoutEffect(() => {
+    if (at) return
+    const el = box.current
+    if (!el) return
+    setAt(openingView(root, el.getBoundingClientRect()))
+  }, [at, root])
+
+  /*
+   * The observer is held in a ref and the report keyed on the viewport alone.
+   * A Host passing an inline arrow — which is every Host — would otherwise make
+   * this fire on every render of the canvas rather than on every move of it.
+   */
+  const tell = useRef(onViewportChange)
+  useEffect(() => {
+    tell.current = onViewportChange
+  })
+  useEffect(() => {
+    if (at) tell.current?.(at)
+  }, [at])
+
+  /*
+   * `wheel` is registered by hand because it has to be cancellable: React
+   * attaches its own passively, and a passive listener cannot call
+   * `preventDefault` — so ⌘+wheel would zoom the canvas AND the browser's page
+   * at the same time, and a two-finger pan would scroll whatever is behind.
+   */
+  useEffect(() => {
+    const el = box.current
+    if (!el) return
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault()
+      const frame = el.getBoundingClientRect()
+      const travel = wheelTravel(event, frame)
+      setAt((from) => {
+        if (!from) return from
+        // A trackpad pinch arrives as a wheel with `ctrlKey` set, which is why
+        // one branch serves both it and the modifier.
+        if (event.ctrlKey || event.metaKey) {
+          return zoomAbout(from, wheelScale(from.scale, travel.y), {
+            x: event.clientX - frame.left,
+            y: event.clientY - frame.top,
+          })
+        }
+        return { ...from, x: from.x - travel.x, y: from.y - travel.y }
+      })
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [])
+
+  /*
+   * Space arms a pan only while the canvas is the thing being used — the
+   * pointer over it, or focus inside it.
+   *
+   * Hatua is a guest in someone's page. A window-wide space key that swallowed
+   * the keystroke would take page-down away from every other part of the Host's
+   * product for as long as a canvas is mounted anywhere on the screen.
+   */
+  useEffect(() => {
+    const el = box.current
+    if (!el) return
+    const ours = () => el.matches(':hover') || el.contains(document.activeElement)
+    const down = (event: KeyboardEvent) => {
+      if (event.key !== ' ' || event.repeat || takesSpace(event.target) || !ours()) return
+      event.preventDefault()
+      setArmed(true)
+    }
+    const up = (event: KeyboardEvent) => {
+      if (event.key === ' ') setArmed(false)
+    }
+    // A window that loses focus mid-gesture never sends the keyup, and the
+    // canvas would come back grabbing at a key nobody is holding.
+    const drop = () => setArmed(false)
+    window.addEventListener('keydown', down)
+    window.addEventListener('keyup', up)
+    window.addEventListener('blur', drop)
+    return () => {
+      window.removeEventListener('keydown', down)
+      window.removeEventListener('keyup', up)
+      window.removeEventListener('blur', drop)
+    }
+  }, [])
+
+  return {
+    box,
+    at: at ?? UNPLACED,
+    grabbable: armed,
+    grabbing,
+
+    onPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+      if (!armed && event.button !== MIDDLE_BUTTON) return
+      // Consumed, so the middle button does not also start the browser's own
+      // autoscroll and so space+drag does not begin a text selection.
+      event.preventDefault()
+      grab.current = { id: event.pointerId, x: event.clientX, y: event.clientY }
+      setGrabbing(true)
+      // Last, and only an improvement on the gesture: capture keeps a pan
+      // tracking once the pointer has left the canvas, and a pan that stops
+      // dead at the edge is a worse pan than one that carries on. Taking it
+      // first would mean a pointer the browser will not hand over — a
+      // synthesised one, a device that has already gone — throwing away the
+      // whole gesture rather than the improvement to it.
+      event.currentTarget.setPointerCapture(event.pointerId)
+    },
+
+    onPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+      const from = grab.current
+      if (!from || from.id !== event.pointerId) return
+      const dx = event.clientX - from.x
+      const dy = event.clientY - from.y
+      grab.current = { id: from.id, x: event.clientX, y: event.clientY }
+      // The offset is in screen pixels at every zoom, so a pointer delta is
+      // added to it whole and nothing is divided by the scale.
+      setAt((was) => (was ? { ...was, x: was.x + dx, y: was.y + dy } : was))
+    },
+
+    onPointerUp(event: ReactPointerEvent<HTMLDivElement>) {
+      if (grab.current?.id !== event.pointerId) return
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId)
+      }
+      grab.current = null
+      setGrabbing(false)
+    },
+
+    /*
+     * Anything that takes focus is panned to.
+     *
+     * A scroll container brings a focused child into view on its own; a
+     * transform inside a clipped box has nothing to scroll, so this is where
+     * that happens instead. Without it, tabbing to a card off the edge of the
+     * map moves focus to something nobody can see.
+     */
+    onFocus(event: ReactFocusEvent<HTMLDivElement>) {
+      const el = box.current
+      if (!el || event.target === el) return
+      const frame = el.getBoundingClientRect()
+      // A canvas with no size cannot say what is on screen, and every edge test
+      // against an empty box reads as "off it".
+      if (frame.width === 0 || frame.height === 0) return
+      setAt((was) => (was ? panInto(was, event.target.getBoundingClientRect(), frame) : was))
+    },
+
+    zoomIn: () => shift((from) => stepZoom(from, 1, sizeOf())),
+    zoomOut: () => shift((from) => stepZoom(from, -1, sizeOf())),
+    snapTo: (scale: number) => shift((from) => zoomTo(from, scale, sizeOf())),
+    fit: () => setAt(fitView(content, sizeOf())),
+  }
 }
 
 /**

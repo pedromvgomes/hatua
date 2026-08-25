@@ -307,8 +307,58 @@ repository every time somebody folds a loop shut.
 
 A collapsed container's children get **no geometry at all**, rather than geometry the canvas then
 hides. Laying them out anyway would leave the map's total width and height describing a map nobody is
-looking at, and everything reading a total — the scroll extent, fit-to-screen, a minimap — would be
-reading a number that is wrong whenever anything is folded.
+looking at, and everything reading a total — fit-to-screen, a minimap — would be reading a number
+that is wrong whenever anything is folded.
+
+### Navigating the map
+
+**The canvas pans and zooms, and it never scrolls** (ADR-0016). The clipped box is fixed and the
+drawn surface carries a transform. Scrollbars on a map are a browser affordance rather than a canvas
+one, and a scroll container can only ever show a screenful of a large workflow at whatever size it
+happens to be drawn at.
+
+| Gesture | What it does |
+| --- | --- |
+| Two-finger trackpad scroll | pan |
+| ⌘/Ctrl + wheel, and a trackpad pinch | zoom, about the pointer |
+| Space + drag, middle-button drag | pan, from anywhere |
+| Drag on empty canvas | **nothing** |
+| Drag on a card | moves the Step |
+
+A plain drag on empty canvas is left doing nothing on purpose. It is the gesture **marquee selection**
+belongs to, and panning has two homes that cost nothing — space and the middle button — while a
+trackpad pans with no gesture at all. Zoom is about the **pointer**, because zooming to inspect
+something means zooming to where you are looking.
+
+**10% to 400%, continuous.** `+`, `−`, the wheel and a pinch multiply the current scale and land
+wherever they land — 83%, 144% — clamped at the ends. At 10% a card is 24px and the map is a minimap;
+at 400% it is 944px. A fixed ladder was rejected for the trackpad: a pinch that snaps instead of
+tracking your fingers reads as a fault.
+
+**The toolbar floats at the canvas's lower right**: `−`, the current percentage, `+`, and fit. The
+percentage opens a menu of **absolute** levels — 50%, 100%, 200% — and `100%` snaps to exactly 1
+rather than stepping towards it, which is what makes it the way back to a known state. **Fit lives on
+its own button and nowhere else**, because one command gets one home. Fit fills the viewport up as
+well as down: a three-Step workflow is enlarged rather than left small in the middle of the screen.
+
+**First paint is 100%, the root centred, the top of the map in view.** Opening fitted was rejected —
+a large workflow would open at a scale where nothing is readable, and the first thing anybody does is
+zoom back in.
+
+**Where somebody is looking is chrome**, one level out from the node positions ADR-0001 keeps out of
+the document: a viewport in the file is a diff in the Host's repository every time anyone scrolls. It
+is not a controlled prop either. `<FlowMap>` holds it and offers **two** props and not three —
+`defaultViewport`, read once on mount, and `onViewportChange`, an observer. That is enough for a Host
+to put somebody back where they were and not enough for a caller to drive the canvas into a state it
+cannot get itself out of. Opening a Block's Board resets it, because coordinates are Board-local.
+
+**Anything that takes focus pans the view to it.** That is not an enhancement: a scroll container
+brought a focused child into view for free, a transform inside a clipped box has nothing to scroll,
+and without a replacement most of a large map is unreachable without a mouse. The clipped box is
+`overflow: clip` rather than `hidden` for the same reason — `hidden` is still a scroll container, and
+a browser scrolls one of those on its own to reveal a focused child, which desyncs every measurement
+the pan and the zoom are worked out from. `⌘+` / `⌘−` were considered and deferred: they are the
+browser's own page zoom, and taking them means overriding a system shortcut nobody has asked for.
 
 ---
 

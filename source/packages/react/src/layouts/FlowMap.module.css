@@ -1,9 +1,16 @@
 @layer hatua {
+  /*
+    The map is a canvas rather than a document: it pans and zooms and it never
+    scrolls (ADR-0016). Scrollbars on a map are a browser affordance rather than
+    a canvas one, and a scroll container can only ever show a screenful of a
+    large workflow at whatever size it happens to be drawn.
+  */
   .flowMap {
+    position: relative;
     display: block;
     block-size: 100%;
     min-block-size: 0;
-    overflow: auto;
+    overflow: clip;
     background: var(--hatua-surface-sunken);
   }
 
@@ -25,16 +32,57 @@
     font-family: var(--hatua-font-mono);
   }
 
+  /*
+    The box the canvas is clipped to. It never moves; the surface inside it
+    does, so the breadcrumb and the toolbar stay where they were put while the
+    map goes past underneath them. The toolbar positions itself against this.
+
+    `clip` rather than `hidden`, and the difference is load-bearing: `hidden` is
+    still a scroll container, and a browser scrolls one of those on its own to
+    reveal a focused child. That scroll is invisible state nothing here reads —
+    the toolbar and the breadcrumb ride away with it, and every measurement the
+    pan and the zoom are worked out from is then taken from a box that has
+    silently moved. `clip` is not scrollable at all, so bringing a focused card
+    into view is this region's job and only this region's.
+
+    `touch-action: none` because every pointer gesture here is the canvas's own:
+    without it a touch pan is the browser's, and the pointer events that would
+    have panned the map are cancelled halfway through.
+  */
   .viewport {
-    display: block;
-    padding: 24px;
+    position: relative;
+    block-size: 100%;
+    overflow: clip;
+    touch-action: none;
   }
 
+  /*
+    Space is down, so the next drag anywhere pans. Two cursors and not one: the
+    open hand says the gesture is available and the closed one says it has
+    started, which is the only feedback a pan on empty canvas has.
+  */
+  .grabbable {
+    cursor: grab;
+  }
+
+  .grabbing,
+  .grabbing * {
+    cursor: grabbing;
+  }
+
+  /*
+    Chrome over the canvas rather than a row above it: the map is clipped to the
+    whole of the viewport and pans under everything, so a breadcrumb in the flow
+    would be a strip the map could never occupy.
+  */
   .crumbs {
+    position: absolute;
+    inset-block-start: 12px;
+    inset-inline-start: 16px;
+    z-index: 1;
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-block-end: 16px;
   }
 
   .back {
@@ -61,12 +109,23 @@
 
   /*
     The one positioned ancestor on the map. Every card, band and marker is
-    absolute against this box, whose size is `layout`'s totals — so the region
-    scrolls to exactly what is drawn, and a folded container shrinks the scroll
-    extent rather than leaving room for cards nobody is looking at.
+    absolute against this box, whose size is `layout`'s totals — so a folded
+    container shrinks what fit has to fit rather than leaving room for cards
+    nobody is looking at.
+
+    It carries the pan and the zoom. `transform-origin: 0 0` is what makes the
+    transform readable as `translate` in screen pixels then `scale` about the
+    top-left, which is the convention every number in `./viewport` is written
+    against; the default `50% 50%` would fold the box's own size into every
+    offset.
+
+    A different element from the ones the fold tween animates — that runs on
+    each box's `left`/`top`/`width`/`height` — so the two compose instead of
+    overwriting one another.
   */
   .surface {
     position: relative;
+    transform-origin: 0 0;
   }
 
   /*
