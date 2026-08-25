@@ -93,6 +93,7 @@ export const TwoRegions: Story = {
       <>
         <Story />
         <RegionBand
+          owner="Publish the digest"
           band={{
             kind: 'body',
             keyword: 'attempt',
@@ -106,6 +107,7 @@ export const TwoRegions: Story = {
           }}
         />
         <RegionBand
+          owner="Publish the digest"
           band={{
             kind: 'handler',
             keyword: 'on failure',

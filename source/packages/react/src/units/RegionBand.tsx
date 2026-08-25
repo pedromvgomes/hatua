@@ -6,6 +6,16 @@ import css from './RegionBand.module.css?inline'
 
 export interface RegionBandProps {
   band: Band
+  /**
+   * The name of the Step this region hangs under, for the sentence a screen
+   * reader hears.
+   *
+   * A keyword alone does not name a region. Two `core.try` Steps on one Board
+   * give a screen reader two buttons both called "on failure", with nothing
+   * saying which Step each one folds — and `<JoinMarker>` and the `+` on every
+   * gap both name their owner already.
+   */
+  owner: string
   /** A Branch's own label, which is free text a user renames. */
   label?: string
   /** A Branch's condition, when it carries one. */
@@ -65,8 +75,78 @@ export interface RegionBandProps {
  * says nothing is indistinguishable from an empty one — and the two mean
  * opposite things. An empty one needs no such text: it carries the `+` that is
  * the only way to fill it, which comes from its link.
+ *
+ * **An empty column offers no control at all**, because there is nothing behind
+ * it to fold. Left as a button it produces a third box that is neither of the
+ * two the count exists to separate: one reading "0 steps", with the `+` gone
+ * and nothing at all to be done with the region. `@hatua/layout` refuses the
+ * same fold from the other side, so a `collapsedRegions` that names an empty
+ * region — a Host's, or one whose last Step was deleted after it was folded —
+ * cannot produce it either.
  */
-export function RegionBand({ band, label, when, count = 0, dashed, onToggle }: RegionBandProps) {
+export function RegionBand({
+  band,
+  owner,
+  label,
+  when,
+  count = 0,
+  dashed,
+  onToggle,
+}: RegionBandProps) {
+  const foldable = count > 0
+  const word = (
+    <>
+      {/*
+        The chevron's box is reserved whether or not there is anything to fold,
+        so a word is the same distance from its frame's left edge either way.
+        Dropped outright, an empty column's word sits where a foldable sibling's
+        chevron is — and a Band's legend is flush left precisely so the
+        alignment says how deep the region is and nothing else.
+      */}
+      <span
+        className={cx(styles.chevron, band.collapsed && styles.shut, !foldable && styles.blank)}
+        aria-hidden="true"
+      >
+        {/*
+          Drawn rather than typed. A Host chooses the face this renders in, and
+          a triangle is not in every one of them — the theme's own draws `▾` at
+          four pixels wide, which is a mark nobody can see. It turns to point at
+          a folded column instead of swapping for a second character, so the two
+          states are one shape at two angles.
+        */}
+        <svg viewBox="0 0 8 8" width="8" height="8" focusable="false" aria-hidden="true">
+          <path
+            d="M1.5 3 4 5.5 6.5 3"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.3"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </span>
+      <span className={styles.keyword}>{band.keyword}</span>
+      {label ? <span className={styles.text}>{label}</span> : null}
+      {when ? <code className={styles.when}>{when}</code> : null}
+    </>
+  )
+
+  /*
+   * The visible words plus the Step they belong to.
+   *
+   * Spelled out rather than left to the browser to assemble from the spans:
+   * whether a space appears between two adjacent inline elements in an
+   * accessible name is the engine's decision, so a legend read as "on failurein
+   * Publish the digest" on one and correctly on another is not a difference to
+   * leave to chance. Every visible word is in it and in the order it is drawn,
+   * which is what a control's name owes anyone driving it by voice.
+   *
+   * The owner is not drawn: the card the region hangs under says it on screen
+   * already, and repeating it over every column would be the duplication the
+   * legend exists to remove.
+   */
+  const named = [band.keyword, label, when, `in ${owner}`].filter(Boolean).join(' ')
+
   return (
     <>
       <style href="hatua-region-band" precedence="hatua">
@@ -76,19 +156,19 @@ export function RegionBand({ band, label, when, count = 0, dashed, onToggle }: R
         className={cx(styles.band, styles[band.kind], dashed ? styles.dashed : undefined)}
         style={boxOf(band)}
       >
-        <button
-          type="button"
-          className={styles.legend}
-          aria-expanded={!band.collapsed}
-          onClick={onToggle}
-        >
-          <span className={styles.chevron} aria-hidden="true">
-            {band.collapsed ? '▸' : '▾'}
-          </span>
-          <span className={styles.keyword}>{band.keyword}</span>
-          {label ? <span className={styles.text}>{label}</span> : null}
-          {when ? <code className={styles.when}>{when}</code> : null}
-        </button>
+        {foldable ? (
+          <button
+            type="button"
+            className={styles.legend}
+            aria-label={named}
+            aria-expanded={!band.collapsed}
+            onClick={onToggle}
+          >
+            {word}
+          </button>
+        ) : (
+          <p className={cx(styles.legend, styles.still)}>{word}</p>
+        )}
         {band.collapsed ? (
           <p className={styles.folded}>{count === 1 ? '1 step' : `${count} steps`}</p>
         ) : null}

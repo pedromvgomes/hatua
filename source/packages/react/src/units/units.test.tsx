@@ -181,7 +181,7 @@ describe('RegionBand', () => {
     // Two things saying one word over one region is the duplication this repo
     // refuses everywhere else, so the legend is the Band's and there is no pill
     // floating on the line as well.
-    render(<RegionBand band={band} />)
+    render(<RegionBand band={band} owner="Publish the digest" count={2} />)
     expect(screen.getByRole('button').textContent).toContain('on failure')
   })
 
@@ -189,8 +189,10 @@ describe('RegionBand', () => {
     render(
       <RegionBand
         band={{ ...band, kind: 'branch', keyword: 'if', branchIndex: 0 }}
+        owner="How urgent?"
         label="Has new mail"
         when="{{ steps.fetch.count }} > 0"
+        count={1}
       />,
     )
     expect(screen.getByRole('button').textContent).toContain(
@@ -199,7 +201,9 @@ describe('RegionBand', () => {
   })
 
   it('is a frame with room in it where the region is empty', () => {
-    const { container } = render(<RegionBand band={{ ...band, height: LAYOUT.emptyRegion }} />)
+    const { container } = render(
+      <RegionBand band={{ ...band, height: LAYOUT.emptyRegion }} owner="Publish the digest" />,
+    )
     const box = container.querySelector('div') as HTMLElement
     expect(box.style.height).toBe(`${LAYOUT.emptyRegion}px`)
     expect(box.style.top).toBe('90px')
@@ -209,7 +213,14 @@ describe('RegionBand', () => {
     // The one mark on screen naming this region and nothing else. A separate
     // control would be a second mark over one region.
     const folds: number[] = []
-    render(<RegionBand band={band} onToggle={() => folds.push(1)} />)
+    render(
+      <RegionBand
+        band={band}
+        owner="Publish the digest"
+        count={2}
+        onToggle={() => folds.push(1)}
+      />,
+    )
     const legend = screen.getByRole('button')
 
     expect(legend.getAttribute('aria-expanded')).toBe('true')
@@ -221,11 +232,34 @@ describe('RegionBand', () => {
     // A folded box and an empty one are the same rect and mean opposite things:
     // one is somewhere to add a Step, the other is Steps out of sight.
     const { container } = render(
-      <RegionBand band={{ ...band, collapsed: true, height: LAYOUT.emptyRegion }} count={3} />,
+      <RegionBand
+        band={{ ...band, collapsed: true, height: LAYOUT.emptyRegion }}
+        owner="Publish the digest"
+        count={3}
+      />,
     )
 
     expect(screen.getByRole('button').getAttribute('aria-expanded')).toBe('false')
     expect(container.textContent).toContain('3 steps')
+  })
+
+  it('names the Step it hangs under, so two of one keyword are told apart', () => {
+    // A Board with two `core.try` Steps gives a screen reader two buttons both
+    // called "on failure", with nothing saying which Step each one folds.
+    render(<RegionBand band={band} owner="Publish the digest" count={2} />)
+    render(<RegionBand band={band} owner="Archive the thread" count={2} />)
+
+    expect(screen.getByRole('button', { name: 'on failure in Publish the digest' })).toBeDefined()
+    expect(screen.getByRole('button', { name: 'on failure in Archive the thread' })).toBeDefined()
+  })
+
+  it('offers no control on an empty column, because there is nothing to fold', () => {
+    // Folded, it would be a box reading "0 steps" with the `+` gone — neither of
+    // the two states the count exists to separate.
+    render(<RegionBand band={band} owner="Publish the digest" count={0} />)
+
+    expect(screen.queryByRole('button')).toBeNull()
+    expect(screen.getByText('on failure')).toBeDefined()
   })
 
   it('draws a dashed edge only when the canvas says so, never off its own kind', () => {
@@ -234,8 +268,12 @@ describe('RegionBand', () => {
     const branch = { ...band, kind: 'branch' as const, keyword: 'if', branchIndex: 0 }
     const box = (node: HTMLElement) => node.querySelector('div') as HTMLElement
 
-    expect(box(render(<RegionBand band={branch} />).container).className).not.toContain('dashed')
-    expect(box(render(<RegionBand band={branch} dashed />).container).className).toContain('dashed')
+    expect(
+      box(render(<RegionBand band={branch} owner="How urgent?" />).container).className,
+    ).not.toContain('dashed')
+    expect(
+      box(render(<RegionBand band={branch} owner="How urgent?" dashed />).container).className,
+    ).toContain('dashed')
   })
 })
 

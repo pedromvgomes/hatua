@@ -354,10 +354,18 @@ export const stepKey = ({ board, id }: StepRef): string => (board === null ? id 
  * The shape composes with what a `Band` already carries, so the canvas can name
  * the region it is drawing without a second enumeration.
  *
- * Named by `kind` and `branchIndex` rather than by an ordinal into `regionsOf`,
- * because anything held against a region — which one is folded shut — outlives
- * the edit that inserts a Branch before it. An ordinal would silently move to a
- * different region the moment the list it indexes into grows.
+ * Named by `kind` rather than by an ordinal into `regionsOf`, because anything
+ * held against a region — which one is folded shut — outlives the edits made
+ * while it is held. A body and a handler have a `kind` that names them
+ * outright, so neither takes a number and neither can move: adding a Branch to
+ * a Fork that also carries a `handler:` would have shifted an ordinal.
+ *
+ * **A Branch is not stable, and cannot be.** `branchIndex` is an ordinal into
+ * `branches:`, so inserting a Branch before it moves the fold onto its
+ * neighbour. There is nothing better to use: a Branch carries no id, and the
+ * schema refuses its `label` for identity because that is free text a user
+ * renames. Naming a Branch by *where it is* is the whole of what is available,
+ * and the narrower spelling buys the other two regions and not this one.
  */
 export interface RegionRef {
   readonly board: BoardId

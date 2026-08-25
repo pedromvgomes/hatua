@@ -58,10 +58,22 @@
     border-radius: var(--hatua-radius-sm);
     background: none;
     padding: 0 4px 4px 0;
+    /* A <button> does not inherit the page's face, so without this the legend
+       draws in the UA's own — which is a Branch's label in a font no Host
+       chose, and a word that shifts by a pixel or two depending on whether its
+       column happens to be foldable. */
+    font: inherit;
     max-inline-size: 100%;
     white-space: nowrap;
     cursor: pointer;
     pointer-events: auto;
+  }
+
+  /* An empty column has nothing to fold, so its word is a word and takes no
+     pointer. A control that does nothing is worse than no control. */
+  .still {
+    cursor: default;
+    pointer-events: none;
   }
 
   .legend:focus-visible {
@@ -69,11 +81,29 @@
     outline-offset: 2px;
   }
 
+  .blank {
+    visibility: hidden;
+  }
+
   .chevron {
+    display: grid;
     flex: none;
+    place-items: center;
     color: var(--hatua-text-muted);
-    font-size: 9px;
-    line-height: 1.5;
+    rotate: 0deg;
+    transition: rotate 140ms ease;
+  }
+
+  /* Pointing at the column it is holding shut, over the same window the box
+     takes to fold. */
+  .shut {
+    rotate: -90deg;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .chevron {
+      transition: none;
+    }
   }
 
   /*

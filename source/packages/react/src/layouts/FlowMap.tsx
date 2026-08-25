@@ -657,10 +657,12 @@ function Canvas({
         */}
         {map.bands.map((band) => {
           const { region, siblings } = regionOn(band, steps)
+          const holder = steps.get(stepKey(band.owner))
           return (
             <RegionBand
               key={regionKey(regionRefOf(band))}
               band={band}
+              owner={holder ? nameOf(holder) : band.owner.id}
               label={region?.branch?.label}
               when={region?.branch?.when}
               count={region?.steps.length ?? 0}

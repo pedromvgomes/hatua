@@ -236,6 +236,17 @@ by a `RegionRef` for the reason a Step is named by a `StepRef`. Two sets and not
 chevron's relief is different from the legend's: folding a Step draws no Nest at all, while folding a
 column leaves its siblings drawn.
 
+**An empty column offers no fold at all**, and `@hatua/layout` ignores one named in the set. There is
+nothing behind it: the box is the same size either way, and a folded box carries a count where an
+empty one carries the `+` that is the only way to fill it. Honouring the fold draws a third state
+that is neither — a box reading "0 steps" with nothing to be done with the region. The legend's
+chevron keeps its space so the word stays the same distance from its frame's left edge whether or not
+the column folds; that inset is what says how deep a region is, and it must not also encode this.
+
+**A legend names the Step it hangs under**, to a screen reader and not on screen. `on failure` alone
+is the same button on every `core.try` on the Board, and the card the region hangs under already says
+whose it is in ink. The `+` on every gap and the join mark both name their owner for the same reason.
+
 Folding and unfolding **animate**, for 140ms, because a box changing size with no motion reads as a
 different map rather than the same one. The transition is on the boxes — `left`, `top`, `width`,
 `height`, which is what `boxOf` writes — so the map tweens with no animation code.
