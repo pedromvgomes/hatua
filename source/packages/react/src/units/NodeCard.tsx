@@ -104,6 +104,13 @@ export function NodeCard({
         buttons, and the drag handlers below sit on a semantic element rather
         than on a positioned <div>.
       */}
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents: the rule exists because a
+          click handler on a non-interactive element is unreachable from a
+          keyboard. Here it is reachable: the <button> inside carries the same
+          command, the name, and the `aria-current`, and this handler only
+          widens the POINTER target to the whole card — its icon, its grip, its
+          marker, its padding. A keyboard handler here would put every card in
+          the tab order twice for one command. */}
       <li
         className={cx(
           styles.card,
@@ -114,6 +121,7 @@ export function NodeCard({
         style={boxOf(rect)}
         title={summary}
         draggable={onDragStart !== undefined}
+        onClick={onSelect}
         onDragStart={(event) => {
           event.stopPropagation()
           event.dataTransfer.effectAllowed = 'move'
@@ -155,7 +163,14 @@ export function NodeCard({
             type="button"
             className={styles.identity}
             aria-current={selected || undefined}
-            onClick={onSelect}
+            // Stopped here rather than left to bubble into the card's own
+            // handler: two paths to one command would call it twice, and
+            // Enter on this button dispatches a click that bubbles like any
+            // other.
+            onClick={(event) => {
+              event.stopPropagation()
+              onSelect?.()
+            }}
           >
             <span className={styles.name}>{name}</span>
             <span className={styles.verb}>{step.use}</span>
@@ -180,7 +195,12 @@ export function NodeCard({
               type="button"
               className={styles.control}
               aria-label={`Open ${name}`}
-              onClick={onOpen}
+              // A doorway into another Board is not a selection, so this does
+              // not also reach the card's handler.
+              onClick={(event) => {
+                event.stopPropagation()
+                onOpen?.()
+              }}
             >
               Open
             </button>
@@ -192,7 +212,11 @@ export function NodeCard({
               className={styles.control}
               aria-expanded={expanded}
               aria-label={`${expanded ? 'Collapse' : 'Expand'} ${name}`}
-              onClick={onToggle}
+              // Folding a Step is not selecting it.
+              onClick={(event) => {
+                event.stopPropagation()
+                onToggle?.()
+              }}
             >
               {expanded ? '⌄' : '›'}
             </button>

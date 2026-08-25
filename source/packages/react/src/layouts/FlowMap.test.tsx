@@ -493,6 +493,42 @@ describe('building on the canvas', () => {
     expect(moved.dropEffect).toBe('move')
   })
 
+  it('selects from anywhere on the card, not only from its name', async () => {
+    // A card is a 236px target carrying an icon, a grip, a problem marker, a
+    // meta row and its own padding. Only the name and verb answered a click, so
+    // most of the card was dead to the one thing a card is mostly for.
+    const chosen: string[] = []
+    mount(SOURCE, { onSelect: (ref) => chosen.push(ref?.id ?? ''), onInsert: () => {} })
+    await canvas().findByText('Fetch mail')
+
+    const card = canvas().getByText('Fetch mail').closest('[draggable]') as HTMLElement
+    const icon = card.querySelector('img, svg') as Element
+
+    fireEvent.click(icon)
+    expect(chosen).toEqual(['fetch'])
+
+    // And once, not twice, when the name itself is clicked — two paths to one
+    // command is a command that fires twice.
+    fireEvent.click(canvas().getByText('Fetch mail'))
+    expect(chosen).toEqual(['fetch', 'fetch'])
+  })
+
+  it('keeps Open and the chevron off the selection, because they are other commands', async () => {
+    const chosen: string[] = []
+    const folded: string[][] = []
+    mount(SOURCE, {
+      onSelect: (ref) => chosen.push(ref?.id ?? ''),
+      onCollapseChange: (all) => folded.push(all.map((one) => one.id)),
+      onInsert: () => {},
+    })
+    await canvas().findByText('Fetch mail')
+
+    fireEvent.click(canvas().getByRole('button', { name: 'Collapse How urgent?' }))
+    expect(folded).toEqual([['sort']])
+    // Folding a Step is not selecting it.
+    expect(chosen).toEqual([])
+  })
+
   it('marks the card being dragged, so it is not read as still sitting there', async () => {
     // The card stays put until the drop lands, and a chip carrying its name
     // follows the pointer — two of the same Step on screen at once unless one
