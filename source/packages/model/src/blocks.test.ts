@@ -484,11 +484,14 @@ describe('every path returns', () => {
   })
 
   /*
-   * `when: ""` is schema-legal, and `malformedContainers` reads a falsy `when`
-   * as the unconditional fallback. Reading it as a condition here would refuse
-   * publish to a Block that does return on every path.
+   * `when: ""` is schema-legal, and the distinction the schema draws is absent
+   * versus present: a branch carrying an empty condition carries one nobody has
+   * written yet, so it is not the fallback. `malformedContainers` and
+   * `branchKeyword` read it the same way — one rule calling it the fallback
+   * while another calls it a condition is how a Fork ends up exhaustive on one
+   * screen and not on the next.
    */
-  it('reads an empty `when` on the last branch as the fallback, as the fork rule does', () => {
+  it('reads an empty `when` on the last branch as a condition, as the fork rule does', () => {
     expect(
       returned([
         {
@@ -503,6 +506,28 @@ describe('every path returns', () => {
             {
               label: 'B',
               when: '',
+              steps: [{ id: 'r2', use: 'core.return', with: { url: 'y' } }],
+            },
+          ],
+        },
+      ]),
+    ).toBe(false)
+  })
+
+  it('reads a missing `when` on the last branch as the fallback', () => {
+    expect(
+      returned([
+        {
+          id: 'fork',
+          use: 'core.fork',
+          branches: [
+            {
+              label: 'A',
+              when: '{{ params.a }}',
+              steps: [{ id: 'r1', use: 'core.return', with: { url: 'x' } }],
+            },
+            {
+              label: 'B',
               steps: [{ id: 'r2', use: 'core.return', with: { url: 'y' } }],
             },
           ],

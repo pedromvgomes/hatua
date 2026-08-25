@@ -1,4 +1,4 @@
-import type { Link } from '@hatua/layout'
+import type { Band, Link } from '@hatua/layout'
 import { layout } from '@hatua/layout'
 import {
   type Board,
@@ -12,6 +12,7 @@ import {
   regionsOf,
   type StepRef,
   stepKey,
+  TRY_VERB,
 } from '@hatua/model'
 import type { Manifest, ManifestEntry, Step, WorkflowDefinition } from '@hatua/schema'
 import { manifestsIn } from '@hatua/schema'
@@ -30,12 +31,12 @@ import {
 } from 'react'
 import { cx } from '../primitives/classNames'
 import { useEditingStore, useManifestStore, useValidationStore } from '../theme/HatuaProvider'
-import { Connectors, pointOn } from '../units/Connectors'
+import { Connectors } from '../units/Connectors'
 import { InsertDot } from '../units/InsertDot'
 import { JoinMarker } from '../units/JoinMarker'
-import { LinkLabel } from '../units/LinkLabel'
 import { NodeCard } from '../units/NodeCard'
 import { RegionBand } from '../units/RegionBand'
+import { RegionNest } from '../units/RegionNest'
 import { RootNode } from '../units/RootNode'
 import { COMPONENT_MIME, type ComponentDrag, decodeComponent } from './dragging'
 import styles from './FlowMap.module.css'
@@ -54,24 +55,20 @@ import css from './FlowMap.module.css?inline'
  *
  * Every number on screen comes from one `layout(board, { collapsed })` call:
  * the cards from `placements`, each region's frame and its word from `bands`,
- * the mark where a Fork's Branches converge from `joins`, and the node above the
- * first Step from `root`. Positions are never stored (ADR-0001), so a
- * hand-edited Workflow Definition cannot disagree with the map — and the map
- * cannot disagree with the list, because both enumerate regions with `regionsOf`
- * and name them with the same `keyword`.
+ * each container's extent from `nests`, the mark where a Fork's Branches
+ * converge from `joins`, where every line runs and where every `+` on one sits
+ * from `links`, and the node above the first Step from `root`. Positions are
+ * never stored (ADR-0001), so a hand-edited Workflow Definition cannot disagree
+ * with the map — and the map cannot disagree with the list, because both
+ * enumerate regions with `regionsOf` and name them with the same `keyword`.
  *
- * ## Nothing is drawn between cards
+ * ## Nothing is drawn between a Step and its regions
  *
- * There are no connectors on this map, and no unit for one. A Step runs because
- * of where it nests (ADR-0013), so there is no edge to draw and nothing to
- * attach one to — but that only refuses an *attachable* edge, and a plain rule
- * between two cards would still have been a decision. It is refused too: the
- * gap between two cards is what reads as a run of the flow, which is what
- * `LAYOUT.verticalGap` exceeding `nodeHeight` is for (`docs/handoff.md` § Flow
- * map geometry). A line down a column of cards that already share one spine
- * restates their adjacency and adds nothing. Where the flow does something a
- * column cannot say — alternatives, and where they converge — the band and the
- * join marker say it, and both are geometry this is handed.
+ * A line on this map means "then", and a Step does not run after its own body.
+ * So containment is drawn as *overlap* instead: a card sits astride its own
+ * `<RegionNest>`, whose top edge crosses it `LAYOUT.nodeLid` below the card's
+ * top, and the `<RegionBand>`s inside that are the regions themselves. Nothing
+ * joins the two, which is what keeps the one idiom to one meaning.
  *
  * ## One Board at a time
  *
@@ -189,6 +186,15 @@ export function FlowMap({
   const [ownSelected, setOwnSelected] = useState<StepRef | undefined>(defaultSelected)
   const [ownCollapsed, setOwnCollapsed] = useState<readonly StepRef[]>(defaultCollapsed ?? [])
   const [dragging, setDragging] = useState<string | null>(null)
+  /*
+   * A Component from the catalogue is over the canvas.
+   *
+   * Separate from `dragging`, which names a Step this canvas is moving. The two
+   * are different drags with different payloads and only one of them is a thing
+   * this region can identify — but they are the same to a gap, which is either a
+   * target or it is not, so they meet as one flag there.
+   */
+  const [carrying, setCarrying] = useState(false)
 
   // The one side effect: tell each store somebody is reading. Both are
   // idempotent, so every region that mounts may call them and only the first
@@ -267,6 +273,11 @@ export function FlowMap({
     setDragging(null)
   }
 
+  // Held while the drag is over the canvas and dropped the moment it leaves, so
+  // a drag that wanders off and ends elsewhere does not leave every gap lit.
+  const dragIn = () => setCarrying(true)
+  const dragOut = () => setCarrying(false)
+
   return (
     <>
       <style href="hatua-flow-map" precedence="hatua">
@@ -312,6 +323,7 @@ export function FlowMap({
             folded={folded}
             problems={problems}
             dragging={dragging}
+            carrying={carrying}
             onSelect={select}
             onToggle={toggle}
             onOpenBoard={openBoard}
@@ -320,6 +332,8 @@ export function FlowMap({
             onDragStart={setDragging}
             onDragEnd={() => setDragging(null)}
             onDropStep={move}
+            onDragIn={dragIn}
+            onDragOut={dragOut}
           />
         ) : null}
       </section>
@@ -335,6 +349,7 @@ function Canvas({
   folded,
   problems,
   dragging,
+  carrying,
   onSelect,
   onToggle,
   onOpenBoard,
@@ -343,6 +358,8 @@ function Canvas({
   onDragStart,
   onDragEnd,
   onDropStep,
+  onDragIn,
+  onDragOut,
 }: {
   definition: WorkflowDefinition
   board: Board
@@ -351,6 +368,7 @@ function Canvas({
   folded: readonly StepRef[]
   problems: ReadonlyMap<string, Diagnostic[]>
   dragging: string | null
+  carrying: boolean
   onSelect: (ref: StepRef) => void
   onToggle: (ref: StepRef) => void
   onOpenBoard: (board: BoardId) => void
@@ -359,6 +377,8 @@ function Canvas({
   onDragStart: (id: string) => void
   onDragEnd: () => void
   onDropStep: (id: string, to: InsertPoint) => void
+  onDragIn: () => void
+  onDragOut: () => void
 }) {
   // Bare ids, because a Board is already `layout`'s argument. This is where a
   // set that spans Boards becomes the set for one of them, and it is the only
@@ -374,11 +394,57 @@ function Canvas({
   return (
     <div className={styles.viewport}>
       <Breadcrumb board={board} onOpenBoard={onOpenBoard} />
-      <div className={styles.surface} style={{ width: map.width, height: map.height }}>
-        {/* Frames first, then the lines, then everything that takes a pointer. */}
-        {map.bands.map((band) => (
-          <RegionBand key={`${stepKey(band.owner)}:${band.kind}:${band.x}:${band.y}`} band={band} />
+      {/*
+        A Component dragged in from the catalogue is recognised here, at the
+        surface, rather than at each gap.
+
+        `dataTransfer` refuses `getData` until the drop, but it lists the types
+        on every `dragover` — which is all this needs, because the private MIME
+        type means "a Component, and the rest is inside" by itself. Without it a
+        gap cannot tell a drag is happening until the pointer is already on top
+        of it, so every gap stays a 20px target that has to be aimed at, while a
+        Step dragged across this same canvas lights all of them. One drag, one
+        affordance.
+
+        `dragleave` fires on every child the pointer crosses, so leaving is the
+        pointer landing outside this element and nowhere else.
+      */}
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: the surface is not a
+          control and must not claim to be one — it watches a drag pass over it,
+          which is not something a user does TO it. Every target the drag can
+          land on is a `<button>` inside, and each is reachable on its own. */}
+      <div
+        className={styles.surface}
+        style={{ width: map.width, height: map.height }}
+        onDragOver={(event) => {
+          if (event.dataTransfer.types.includes(COMPONENT_MIME)) onDragIn()
+        }}
+        onDragLeave={(event) => {
+          const to = event.relatedTarget
+          if (!(to instanceof Node) || !event.currentTarget.contains(to)) onDragOut()
+        }}
+        onDrop={onDragOut}
+      >
+        {/*
+          Frames first, then the lines, then everything that takes a pointer.
+          A Nest before the Bands inside it, so a container's own extent is
+          behind its regions rather than over them.
+        */}
+        {map.nests.map((nest) => (
+          <RegionNest key={`${stepKey(nest.owner)}:${nest.y}`} nest={nest} />
         ))}
+
+        {map.bands.map((band) => {
+          const branch = branchOn(band, steps)
+          return (
+            <RegionBand
+              key={`${stepKey(band.owner)}:${band.kind}:${band.x}:${band.y}`}
+              band={band}
+              label={branch?.label}
+              when={branch?.when}
+            />
+          )
+        })}
 
         <Connectors links={map.links} width={map.width} height={map.height} />
 
@@ -399,21 +465,6 @@ function Canvas({
           )
         })}
 
-        {/* The word on each line that enters a region. Decoration, and outside
-            the list below because a <p> is not a list item. */}
-        {map.links.map((link, index) =>
-          link.label && link.labelAt ? (
-            <LinkLabel
-              // biome-ignore lint/suspicious/noArrayIndexKey: a link has no identity of its own — it is a gap between two things, and `layout` emits them in a fixed order. The index IS the identity here, not a stand-in for one.
-              key={`label:${index}`}
-              at={link.labelAt}
-              keyword={link.label}
-              label={branchOn(link, steps)?.label}
-              when={branchOn(link, steps)?.when}
-            />
-          ) : null,
-        )}
-
         {/*
           The cards and the gaps between them are one list, the way <StepList>'s
           rows and its insert points are: a screen reader hears a list of Steps
@@ -422,13 +473,13 @@ function Canvas({
         */}
         <ul className={styles.cards} aria-label="Steps">
           {map.links.map((link, index) =>
-            link.at ? (
+            link.at && link.dotAt ? (
               <InsertDot
-                // biome-ignore lint/suspicious/noArrayIndexKey: as above — a gap is identified by where it is in the emitted order.
+                // biome-ignore lint/suspicious/noArrayIndexKey: a gap is identified by where it is in the emitted order — a link has no identity of its own.
                 key={`gap:${index}`}
-                at={pointOn(link, DOT_AT)}
+                at={link.dotAt}
                 label={insertLabel(link, steps, board)}
-                active={dragging !== null}
+                active={dragging !== null || carrying}
                 onInsert={onInsert ? () => onInsert(link.at as InsertPoint) : undefined}
                 onDrop={
                   dragging || onDropComponent
@@ -479,26 +530,16 @@ function Canvas({
 }
 
 /**
- * The Branch a link enters, when it enters one — for the label and the condition
- * beside the keyword.
+ * The Branch a Band is, when it is one — for the label and the condition beside
+ * the keyword in its legend.
  *
- * By the index `layout` put on the link, never by matching the keyword: a fork
- * of four conditions carries three links all reading `else if`.
+ * By the index `layout` put on the band, never by matching the keyword: a fork
+ * of four conditions carries three bands all reading `else if`.
  */
-const branchOn = (link: Link, steps: ReadonlyMap<string, Step>) =>
-  link.branchIndex === undefined || !link.owner
+const branchOn = (band: Band, steps: ReadonlyMap<string, Step>) =>
+  band.branchIndex === undefined
     ? undefined
-    : steps.get(stepKey(link.owner))?.branches?.[link.branchIndex]
-
-/**
- * Where the `+` sits along a link: the middle of it.
- *
- * The label does not ride the line — `Link.labelAt` puts it in the strip
- * `LAYOUT.regionLabel` reserves at the top of the region, because a Fork's two
- * branch links leave the same point and any fraction along them near the start
- * is the same place twice.
- */
-const DOT_AT = 0.5
+    : steps.get(stepKey(band.owner))?.branches?.[band.branchIndex]
 
 /**
  * What an insert point is called, spelled out rather than numbered.
@@ -518,7 +559,7 @@ function insertLabel(link: Link, steps: ReadonlyMap<string, Step>, board: Board)
       ? `the “${owner.branches?.[at.branchIndex]?.label ?? at.branchIndex}” branch`
       : at.region === 'handler'
         ? `the “${nameOf(owner)}” handler`
-        : `the “${nameOf(owner)}” ${link.label === 'try' ? 'body' : 'loop'}`
+        : `the “${nameOf(owner)}” ${owner.use === TRY_VERB ? 'body' : 'loop'}`
     : board.id === null
       ? 'the workflow'
       : `the “${board.block?.name || board.id}” block`

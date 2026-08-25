@@ -196,11 +196,21 @@ one input that is not a function of the document, and the reason the totals desc
 actually on screen rather than one with folded regions counted into it.
 
 Cards are not all of it. A **Link** is one gap — where the flow leaves one thing and arrives at the
-next, and where a Step goes if one is added there; a **Band** is one child region's extent; a **Join**
-is where a **Fork**'s **Branches** come back together. All three are computed here, because the canvas
-draws what it is handed and works nothing out for itself. That is what makes the rule checkable
-rather than merely stated: a region with nothing in it has no card to infer a box from, so a canvas
-without a Band would have had to invent one.
+next, and where a Step goes if one is added there; a **Band** is one child region's extent; a **Nest**
+is one container **Step**'s regions taken together; a **Join** is where a **Fork**'s **Branches** come
+back together. All four are computed here, because the canvas draws what it is handed and works
+nothing out for itself. That is what makes the rule checkable rather than merely stated: a region with
+nothing in it has no card to infer a box from, so a canvas without a Band would have had to invent
+one.
+
+A **Band** and a **Nest** are two extents and not one. A `core.try` owns two regions, so it has two
+Bands — the protected body and the handler — and one Nest around both. Only the body is protected, so
+a single extent would have to claim either too much or too little. A container with one region still
+has both: the same shape at every arity is what makes a **Fork** stop being a special case, and a
+**Fork**'s **Join** falls inside its Nest because where its **Branches** converge is that Step's
+business.
+_Avoid_: Nest as a verb for what ADR-0013 calls nesting — the extent is the noun; container frame;
+group; scope, which is what a **Step** can read
 
 There is **one Link per gap in every step list**, which is one more than the list is long — the same
 count `<StepList>` draws between its rows. That is what makes the canvas a surface a workflow can be

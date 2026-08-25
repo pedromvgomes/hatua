@@ -277,9 +277,12 @@ export function malformedContainers(
       // before the end swallows every branch after it: they can never be
       // reached. The LAST branch may be unconditional — that is the fallback,
       // and it is the documented shape.
-      if (branches.some((branch) => branch.when)) {
+      // Presence and not truthiness, which is the distinction the schema draws:
+      // a branch whose condition is still empty carries one nobody has written
+      // yet, and is not the fallback.
+      if (branches.some((branch) => branch.when !== undefined)) {
         branches.forEach((branch, index) => {
-          if (branch.when || index === branches.length - 1) return
+          if (branch.when !== undefined || index === branches.length - 1) return
           out.push(raise('BRANCH_UNREACHABLE_AFTER', subject, { label: branch.label }))
         })
       }
@@ -444,11 +447,11 @@ function alwaysReturns(steps: readonly Step[]): boolean {
     // this the obligation is discharged by a fork that can skip every path, and
     // a Step legitimately placed after such a fork is refused publish as
     // unreachable.
-    // Falsy rather than `!== undefined`, so this agrees with
-    // `malformedContainers` about `when: ""` — the schema permits it, and one
-    // rule reading it as the fallback while the other reads it as a condition
-    // refuses publish to a Block that does return on every path.
-    if (branches.at(-1)?.when) return false
+    // Presence rather than truthiness, which is how `malformedContainers` and
+    // `branchKeyword` read it too. One rule treating `when: ""` as the fallback
+    // while another treats it as a condition refuses publish to a Block that
+    // does return on every path.
+    if (branches.at(-1)?.when !== undefined) return false
 
     return branches.every((branch) => alwaysReturns(branch.steps))
   })

@@ -1,25 +1,74 @@
 @layer hatua {
   /*
-    Quiet on purpose. The chip on the entering line names the region; this only
-    says how far it reaches, so it must not compete with the cards inside it.
+    A drawn edge. Quiet enough not to compete with the cards inside it, and
+    visible enough that where the region stops is on screen — an extent nobody
+    can see is an extent that says nothing, and the `+` inside it then belongs
+    to no list.
   */
   .band {
+    position: absolute;
     box-sizing: border-box;
-    border: 1px solid var(--hatua-border-subtle);
+    border: 1px solid var(--hatua-border-strong);
     border-radius: var(--hatua-radius-lg);
-    background: color-mix(in oklab, var(--hatua-surface-card) 22%, transparent);
+    background: color-mix(in oklab, var(--hatua-surface-card) 55%, transparent);
     pointer-events: none;
+  }
+
+  /*
+    Above the frame's top edge and flush with its left. `bottom: 100%` rather
+    than a negative offset, so the word rides the edge wherever the frame is and
+    whatever the type metrics turn out to be.
+  */
+  .legend {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    padding-block-end: 4px;
+    max-inline-size: 100%;
+    white-space: nowrap;
+  }
+
+  .keyword {
+    flex: none;
+    color: var(--hatua-text-secondary);
+    font-size: 11px;
+    font-family: var(--hatua-font-mono);
+    line-height: 1.5;
+    letter-spacing: 0.02em;
+  }
+
+  .text {
+    overflow: hidden;
+    color: var(--hatua-text-secondary);
+    font-size: 12px;
+    text-overflow: ellipsis;
+  }
+
+  .when {
+    overflow: hidden;
+    color: var(--hatua-text-muted);
+    font-size: 11px;
+    font-family: var(--hatua-font-mono);
+    text-overflow: ellipsis;
   }
 
   /* A handler runs because something failed, so its frame says so before its
      word is read. */
   .handler {
-    border-color: color-mix(in oklab, var(--hatua-status-error) 30%, transparent);
-    background: color-mix(in oklab, var(--hatua-status-error-wash) 30%, transparent);
+    border-color: color-mix(in oklab, var(--hatua-status-error) 45%, transparent);
+    background: color-mix(in oklab, var(--hatua-status-error-wash) 70%, transparent);
   }
 
-  /* A Branch is one column among alternatives, and the dashes match the dashed
-     line that enters it. */
+  .handler .keyword {
+    color: var(--hatua-status-error);
+  }
+
+  /* A Branch is one alternative among several, and which one runs is a question
+     the document answers at run time — a solid edge would say all of them do. */
   .branch {
     border-style: dashed;
   }

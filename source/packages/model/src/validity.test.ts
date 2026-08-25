@@ -251,6 +251,28 @@ describe('the two structural verbs', () => {
     expect(found[0]?.message).toMatch(/"catch all"/)
   })
 
+  it('leaves a Branch whose condition is unwritten reachable, and its siblings too', () => {
+    // `when: ""` is a condition nobody has written yet, not its absence — the
+    // distinction the schema draws. Read as the fallback it swallows every
+    // Branch after it, and a Fork born from the catalogue reports against
+    // itself the moment it is added.
+    expect(
+      malformedContainers(
+        workflow([
+          {
+            id: 's1',
+            use: 'core.fork',
+            branches: [
+              { label: 'A', when: '{{ x }}', steps: [] },
+              { label: 'Condition', when: '', steps: [] },
+              { label: 'Otherwise', steps: [] },
+            ],
+          },
+        ]),
+      ).map((d) => d.code),
+    ).toEqual([])
+  })
+
   it('allows the LAST Branch to be unconditional, which is the fallback', () => {
     expect(
       malformedContainers(

@@ -1,4 +1,4 @@
-import type { Band, Join, Rect } from '@hatua/layout'
+import type { Band, Join, Nest, Rect } from '@hatua/layout'
 import { LAYOUT } from '@hatua/layout'
 import type { Manifest, Step } from '@hatua/schema'
 import { fireEvent, render, screen } from '@testing-library/react'
@@ -7,6 +7,7 @@ import { boxOf } from './box'
 import { JoinMarker } from './JoinMarker'
 import { NodeCard } from './NodeCard'
 import { RegionBand } from './RegionBand'
+import { RegionNest } from './RegionNest'
 import { RootNode } from './RootNode'
 
 /**
@@ -170,23 +171,60 @@ describe('RegionBand', () => {
     x: 8,
     y: 90,
     width: 300,
-    height: LAYOUT.regionLabel + 60,
+    height: 60,
   }
 
-  it('names nothing, because the chip on the entering line does', () => {
-    // Two things saying one word over one region is the duplication this repo
-    // refuses everywhere else. The frame says the thing the word cannot: how
-    // far the region reaches.
+  it('is the one thing saying the word over its own region', () => {
+    // The word was a pill floating on the line entering the region and the
+    // frame said nothing. Two things saying one word over one region is the
+    // duplication this repo refuses everywhere else, so the legend is the
+    // Band's and there is no second one.
     const { container } = render(<RegionBand band={band} />)
+    expect(container.textContent).toBe('on failure')
+  })
+
+  it('carries a Branch’s own label and its condition beside the keyword', () => {
+    const { container } = render(
+      <RegionBand
+        band={{ ...band, kind: 'branch', keyword: 'if', branchIndex: 0 }}
+        label="Has new mail"
+        when="{{ steps.fetch.count }} > 0"
+      />,
+    )
+    expect(container.textContent).toBe('ifHas new mail{{ steps.fetch.count }} > 0')
+  })
+
+  it('is a frame with room in it where the region is empty', () => {
+    const { container } = render(<RegionBand band={{ ...band, height: LAYOUT.emptyRegion }} />)
+    const box = container.querySelector('div') as HTMLElement
+    expect(box.style.height).toBe(`${LAYOUT.emptyRegion}px`)
+    expect(box.style.top).toBe('90px')
+  })
+})
+
+describe('RegionNest', () => {
+  const nest: Nest = {
+    owner: { board: null, id: 's2' },
+    x: 4,
+    y: 40,
+    width: 320,
+    height: 200,
+  }
+
+  it('names nothing, because the Bands inside it do', () => {
+    // A word here would be a second thing saying what the container is, beside
+    // the card that already says it.
+    const { container } = render(<RegionNest nest={nest} />)
     expect(container.textContent).toBe('')
     expect(container.querySelector('[aria-hidden="true"]')).not.toBeNull()
   })
 
-  it('is the whole region, so an empty one is still a box with a word over it', () => {
-    const { container } = render(<RegionBand band={{ ...band, height: LAYOUT.regionLabel }} />)
+  it('goes exactly where the geometry says, and works nothing out for itself', () => {
+    const { container } = render(<RegionNest nest={nest} />)
     const box = container.querySelector('div') as HTMLElement
-    expect(box.style.height).toBe(`${LAYOUT.regionLabel}px`)
-    expect(box.style.top).toBe('90px')
+    expect(box.style.top).toBe('40px')
+    expect(box.style.left).toBe('4px')
+    expect(box.style.height).toBe('200px')
   })
 })
 

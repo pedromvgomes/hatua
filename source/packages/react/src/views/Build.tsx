@@ -20,9 +20,9 @@ export type BuildProps = ComponentPropsWithRef<'div'>
  *
  * **The canvas is how a workflow is built.** It has a column of its own and is
  * always on screen: every card, every `+` between two cards, and the doorway
- * into a Block's Board are there. The side panel is **Components** and
- * **Workflow** — the catalogue a Step is chosen from, and everything scoped to
- * the workflow rather than to a Step.
+ * into a Block's Board are there. The side panel is **Workflow** and
+ * **Components** — everything scoped to the workflow rather than to a Step, and
+ * the catalogue a Step is chosen from.
  *
  * `<StepList>` is not in that set. It is a real region and a Host that wants a
  * dense, keyboard-reorderable list of the tree mounts it — `apps/playground/src/host.tsx`
@@ -135,11 +135,13 @@ export function Build({ className, ...rest }: BuildProps) {
               // it is <FlowMap>, which is not a tab and never was. See
               // layouts/README.
               tabs={[
+                { id: 'workflow', label: 'Workflow', content: <Workflow /> },
                 {
                   id: 'components',
                   label: 'Components',
                   content: (
                     <Components
+                      pending={pending !== null}
                       onSelect={(manifest) => {
                         store?.apply(
                           addStep(
@@ -152,7 +154,6 @@ export function Build({ className, ...rest }: BuildProps) {
                     />
                   ),
                 },
-                { id: 'workflow', label: 'Workflow', content: <Workflow /> },
               ]}
               tabId={tab}
               onTabChange={(next) => {

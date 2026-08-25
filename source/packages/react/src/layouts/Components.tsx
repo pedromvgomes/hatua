@@ -27,6 +27,16 @@ export interface ComponentsProps extends Omit<ComponentPropsWithRef<'section'>, 
    * and reaching for it here would tie the catalogue to the tree.
    */
   onSelect?: (manifest: Manifest) => void
+  /**
+   * A place on the canvas is waiting for a Component, so the panel says so.
+   *
+   * A boolean and not the point itself: this region has no tree to resolve one
+   * against, and where the next Step lands is already the caller's answer —
+   * `onSelect` says which Component and nothing about where. All this needs to
+   * know is that the next card picked is going somewhere chosen, because
+   * otherwise choosing it is a click with no visible consequence.
+   */
+  pending?: boolean
   /** What the filter box starts with. Uncontrolled, like TabbedPanel's defaultTabId. */
   defaultQuery?: string
 }
@@ -62,7 +72,13 @@ export interface ComponentsProps extends Omit<ComponentPropsWithRef<'section'>, 
  * because the half that is missing is the half a user notices. Dragging onto
  * the canvas waits for the canvas.
  */
-export function Components({ onSelect, defaultQuery = '', className, ...rest }: ComponentsProps) {
+export function Components({
+  onSelect,
+  pending = false,
+  defaultQuery = '',
+  className,
+  ...rest
+}: ComponentsProps) {
   const store = useManifestStore()
   const [query, setQuery] = useState(defaultQuery)
   const filterId = useId()
@@ -133,6 +149,16 @@ export function Components({ onSelect, defaultQuery = '', className, ...rest }: 
         ) : null}
 
         <div className={styles.body}>
+          {/*
+            The other half of the `+` on the canvas. Clicking one names a place
+            and brings the panel forward; without this, a panel already in front
+            answers a click by changing nothing at all, and the next card picked
+            lands somewhere the user has no reason to expect.
+          */}
+          {pending ? (
+            <p className={styles.pending}>Pick a component to drop into the flow.</p>
+          ) : null}
+
           {state.status === 'unconfigured' ? (
             <p className={styles.note}>
               No Component Manifests are wired up. A Host supplies them through{' '}

@@ -1,4 +1,4 @@
-import type { Link, Point } from '@hatua/layout'
+import type { Link } from '@hatua/layout'
 import styles from './Connectors.module.css'
 import css from './Connectors.module.css?inline'
 
@@ -9,8 +9,14 @@ export interface ConnectorsProps {
 }
 
 /**
- * The lines between the cards: every `Link` on one Board, in one SVG behind
+ * The lines between the cards: every `Link` that is one, in one SVG behind
  * everything else.
+ *
+ * Not every gap is a line. A `run` is between two Steps and means "then"; the
+ * gaps at a region's two ends are `enter` and `leave`, and drawing those would
+ * put a line between a Step and its own body — one idiom with two meanings on a
+ * map where containment is already said by overlap. A `join` is drawn, because
+ * where a Fork's Branches converge is not adjacency and nothing else says it.
  *
  * ## Why there are lines at all
  *
@@ -50,14 +56,16 @@ export function Connectors({ links, width, height }: ConnectorsProps) {
         aria-hidden="true"
       >
         <title>Flow</title>
-        {links.map((link, index) => (
-          <path
-            // biome-ignore lint/suspicious/noArrayIndexKey: a link has no identity of its own — it is a gap between two things, and the layout emits them in a fixed order. The index IS the identity here.
-            key={index}
-            className={link.kind === 'branch' ? styles.branch : styles.run}
-            d={pathOf(link)}
-          />
-        ))}
+        {links.map((link, index) =>
+          link.kind === 'run' || link.kind === 'join' ? (
+            <path
+              // biome-ignore lint/suspicious/noArrayIndexKey: a link has no identity of its own — it is a gap between two things, and the layout emits them in a fixed order. The index IS the identity here.
+              key={index}
+              className={link.kind === 'join' ? styles.join : styles.run}
+              d={pathOf(link)}
+            />
+          ) : null,
+        )}
       </svg>
     </>
   )
@@ -78,22 +86,4 @@ export function Connectors({ links, width, height }: ConnectorsProps) {
 function pathOf({ from, to }: Link): string {
   const bow = Math.max(Math.abs(to.y - from.y) / 2, 12)
   return `M ${from.x} ${from.y} C ${from.x} ${from.y + bow}, ${to.x} ${to.y - bow}, ${to.x} ${to.y}`
-}
-
-/**
- * A point along that same cubic.
- *
- * Exported because the `+` and the label sit *on* the line and this is the only
- * place its shape is known. Computed rather than interpolated along the chord: a
- * Fork's branch link bows well away from its chord, and a `+` placed on the
- * chord would float beside the line it is meant to be on.
- */
-export function pointOn({ from, to }: Link, t: number): Point {
-  const bow = Math.max(Math.abs(to.y - from.y) / 2, 12)
-  const p1 = { x: from.x, y: from.y + bow }
-  const p2 = { x: to.x, y: to.y - bow }
-  const u = 1 - t
-  const at = (a: number, b: number, c: number, d: number) =>
-    u * u * u * a + 3 * u * u * t * b + 3 * u * t * t * c + t * t * t * d
-  return { x: at(from.x, p1.x, p2.x, to.x), y: at(from.y, p1.y, p2.y, to.y) }
 }

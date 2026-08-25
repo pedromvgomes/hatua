@@ -4,12 +4,25 @@
     pulled back by half its own size, so `left`/`top` mean the middle of the
     control rather than its corner.
   */
+  /*
+    The box is placed at the point and pulled back by half its own size, so
+    `left`/`top` mean the middle of the control rather than its corner.
+
+    It is far larger than the `+` it centres, and that is the whole of its job:
+    the dot is 20px of ink and a hit area the size of its ink is one a pointer
+    has to be aimed at. Sized against the gap the layout leaves rather than
+    against the glyph — `verticalGap` is 96px and the nearest dot sideways is
+    `branchGap` away — so a slot this size reaches nothing it should not.
+
+    Overlapping a card costs nothing: the cards come after the gaps in the same
+    list, so where the two meet the card is on top and takes the pointer.
+  */
   .slot {
     position: absolute;
     display: grid;
     place-items: center;
-    inline-size: 22px;
-    block-size: 22px;
+    inline-size: 56px;
+    block-size: 40px;
     translate: -50% -50%;
   }
 
@@ -56,8 +69,14 @@
     opacity: 1;
   }
 
+  /*
+    A drag is in progress, so the target grows again. Aim stops mattering once
+    the pointer is already carrying something: the gesture ends wherever the
+    pointer is released, and a target that has to be found is a drop that gets
+    dropped on the canvas instead.
+  */
   .live {
-    inline-size: 48px;
-    block-size: 32px;
+    inline-size: 96px;
+    block-size: 56px;
   }
 }

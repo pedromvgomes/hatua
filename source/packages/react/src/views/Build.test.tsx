@@ -47,9 +47,11 @@ describe('Build', () => {
     // on the canvas, where the insert points and the doorway are.
     render(<Build />)
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
-      'Components',
       'Workflow',
+      'Components',
     ])
+    // Components is the tab that opens, whichever end of the strip it sits at:
+    // this view is the designer, and the catalogue is what a Step comes from.
     expect(screen.getByRole('tab', { selected: true }).textContent).toBe('Components')
     // <StepList> is a real region a Host may mount — this view does not.
     expect(screen.queryByRole('region', { name: 'Steps' })).toBeNull()
@@ -179,6 +181,29 @@ describe('Build wires the Components tab to the canvas', () => {
     fireEvent.click(map().getByRole('button', { name: 'Insert a Step after First' }))
     expect(screen.getByRole('tab', { selected: true }).textContent).toBe('Components')
     expect(await catalogue().findByRole('button', { name: /Send email/ })).toBeDefined()
+  })
+
+  /*
+   * The other half of that click.
+   *
+   * The catalogue is usually already the tab in front, so bringing it forward
+   * changes nothing on screen and the `+` reads as a control that does nothing.
+   * The panel has to say that the next card picked is going somewhere chosen.
+   */
+  it('says an insertion point is waiting, because opening a tab already open shows nothing', async () => {
+    wired()
+    await map().findByText('First')
+
+    const sentence = 'Pick a component to drop into the flow.'
+    expect(screen.queryByText(sentence)).toBeNull()
+
+    fireEvent.click(map().getByRole('button', { name: 'Insert a Step after First' }))
+    expect(catalogue().getByText(sentence)).toBeDefined()
+
+    // And it stops saying so once the point is filled, rather than describing a
+    // place the next click will not go.
+    fireEvent.click(catalogue().getByRole('button', { name: /Send email/ }))
+    expect(screen.queryByText(sentence)).toBeNull()
   })
 
   it('adds the chosen Component at that point and comes back to the tree', async () => {

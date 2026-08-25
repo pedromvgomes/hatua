@@ -167,12 +167,17 @@ describe('regions', () => {
     expect(handler.x).toBe(body.x)
   })
 
-  it('leaves each region room for the label that names it', () => {
+  it('leaves each region room for the word that names it, above its own edge', () => {
     const map = rootOf(ALL_REGIONS)
     const container = at(map, 'guarded')
     const body = at(map, 'triage')
 
-    expect(body.y - (container.y + container.height)).toBe(LAYOUT.verticalGap + LAYOUT.regionLabel)
+    // `regionLabel` between the card and the Band's top edge is the strip the
+    // legend sits in; half a `verticalGap` inside it is the first gap of the
+    // list, which is between a card and a frame rather than between two cards.
+    expect(body.y - (container.y + container.height)).toBe(
+      LAYOUT.regionLabel + LAYOUT.verticalGap / 2,
+    )
   })
 
   it('lays out every region a Step carries, not the ones its verb implies', () => {
@@ -196,8 +201,10 @@ describe('regions', () => {
     // `steps: []` and `handler: []` are regions with nothing in them, not absent
     // regions: each band still takes its room, so an empty `handler:` is
     // somewhere a Step can be dropped.
-    const bands = 2 * (LAYOUT.verticalGap + LAYOUT.regionLabel)
-    expect(below.y - (container.y + container.height)).toBe(bands + LAYOUT.verticalGap)
+    const bands = 2 * (LAYOUT.regionLabel + LAYOUT.emptyRegion)
+    expect(below.y - (container.y + container.height)).toBe(
+      bands + LAYOUT.regionInset + LAYOUT.verticalGap,
+    )
   })
 })
 
@@ -302,34 +309,58 @@ describe('bands', () => {
     ).toEqual(['if', 'else'])
   })
 
-  it('covers the region it names — the label strip and every card under it', () => {
+  it('encloses every card in the region, inset from all four edges', () => {
     const map = rootOf(ALL_REGIONS)
     const band = bandFor(map, 'guarded', 'try')
     const card = at(map, 'triage')
 
-    // The strip is at the band's top and the cards start below it, so the band
-    // is the whole region rather than the label over one.
-    expect(card.y).toBe(band.y + LAYOUT.regionLabel)
-    expect(card.y + card.height).toBeLessThanOrEqual(band.y + band.height)
-    expect(card.x).toBeGreaterThanOrEqual(band.x)
-    expect(card.x + card.width).toBeLessThanOrEqual(band.x + band.width)
+    // The frame is the region's own edge, so a card inside it clears that edge
+    // on every side. Without the inset a card's border and its region's border
+    // stack into one line and the frame stops saying where the region reaches.
+    expect(card.y).toBe(band.y + LAYOUT.verticalGap / 2)
+    expect(card.y + card.height).toBeLessThan(band.y + band.height)
+    expect(card.x - band.x).toBe(LAYOUT.regionInset)
+    expect(band.x + band.width - (card.x + card.width)).toBe(LAYOUT.regionInset)
   })
 
-  it('is a card wide and a label tall where the region is empty', () => {
+  it('is a frame with room for a `+` in it where the region is empty', () => {
     // The one place the band is the only thing on screen. A canvas recomputing
-    // this from the Placements inside it would have nothing to work from.
+    // this from the Placements inside it would have nothing to work from — and
+    // at a label strip's height the `+` inside it is something to aim at rather
+    // than a drop target.
     const map = rootOf(EMPTY_REGIONS)
     const band = bandFor(map, 'try_nothing', 'on failure')
 
-    expect(band.height).toBe(LAYOUT.regionLabel)
-    expect(band.width).toBe(LAYOUT.nodeWidth)
+    expect(band.height).toBe(LAYOUT.emptyRegion)
+    expect(band.width).toBe(LAYOUT.nodeWidth + 2 * LAYOUT.regionInset)
+  })
+
+  it('gives a Fork’s Branches one size, so an empty one is a frame beside a full one', () => {
+    const map = rootOf(EMPTY_REGIONS)
+    const columns = map.bands.filter((band) => band.kind === 'branch' && band.owner.id === 'wide')
+
+    expect(columns.length).toBeGreaterThan(1)
+    expect(new Set(columns.map((band) => band.height)).size).toBe(1)
+    expect(new Set(columns.map((band) => band.width)).size).toBe(1)
+  })
+
+  it('names which Branch each column is, by index and never by its word', () => {
+    // A fork of four conditions carries three bands all reading `else if`, so
+    // the legend cannot find its own Branch by matching the keyword.
+    const map = rootOf(ALL_REGIONS)
+    const columns = map.bands.filter((band) => band.owner.id === 'sort')
+
+    expect(columns.map((band) => band.branchIndex)).toEqual([0, 1])
+    for (const band of map.bands.filter((one) => one.kind !== 'branch')) {
+      expect(band.branchIndex).toBeUndefined()
+    }
   })
 
   it('sits inside the map it belongs to', () => {
     for (const { doc } of SHAPES) {
       for (const board of boardsOf(doc)) {
         const map = layout(board)
-        for (const band of [...map.bands, ...map.joins]) {
+        for (const band of [...map.bands, ...map.nests, ...map.joins]) {
           expect(band.x).toBeGreaterThanOrEqual(0)
           expect(band.y).toBeGreaterThanOrEqual(0)
           expect(band.x + band.width).toBeLessThanOrEqual(map.width)
@@ -348,6 +379,79 @@ describe('bands', () => {
     expect(map.joins.filter((join) => join.owner.id === 'sort')).toEqual([])
     // And the regions nested inside those Branches go with them.
     expect(map.bands.filter((band) => band.owner.id === 'guarded')).toEqual([])
+  })
+
+  /**
+   * A Nest is the container's extent and a Band is one region's. Two, because a
+   * `core.try` owns two regions and only one of them is protected: one frame
+   * would claim either the handler, which is not protected, or only the body,
+   * which leaves the handler outside the Step that owns it.
+   */
+  describe('nests', () => {
+    it('gives every container one, and every leaf none', () => {
+      for (const { doc } of SHAPES) {
+        for (const board of boardsOf(doc)) {
+          const map = layout(board)
+          const expected = [...walkSteps(board.steps)]
+            .filter((step) => !regionsOf(step).next().done)
+            .map((step) => step.id)
+
+          expect([...map.nests.map((nest) => nest.owner.id)].sort()).toEqual([...expected].sort())
+        }
+      }
+    })
+
+    it('crosses its own card a fixed distance below the card’s top', () => {
+      // Never half the card's height: a card is `nodeHeight` or
+      // `nodeHeightWithMeta`, so "the middle" puts the lid in a different place
+      // on two cards side by side.
+      const map = rootOf(ALL_REGIONS)
+      for (const nest of map.nests) {
+        const card = at(map, nest.owner.id)
+        expect(nest.y).toBe(card.y + LAYOUT.nodeLid)
+        expect(nest.y).toBeLessThan(card.y + card.height)
+      }
+    })
+
+    it('holds every Band it owns, inset from its own edge', () => {
+      for (const { doc } of SHAPES) {
+        for (const board of boardsOf(doc)) {
+          const map = layout(board)
+          for (const nest of map.nests) {
+            const held = map.bands.filter((band) => band.owner.id === nest.owner.id)
+            expect(held.length).toBeGreaterThan(0)
+            for (const band of held) {
+              expect(band.x - nest.x).toBeGreaterThanOrEqual(LAYOUT.regionInset)
+              expect(nest.x + nest.width - (band.x + band.width)).toBeGreaterThanOrEqual(
+                LAYOUT.regionInset,
+              )
+              expect(band.y).toBeGreaterThan(nest.y)
+              expect(band.y + band.height).toBeLessThanOrEqual(nest.y + nest.height)
+            }
+          }
+        }
+      }
+    })
+
+    it('closes below a Fork’s Join, because where its Branches converge is its own business', () => {
+      const map = rootOf(ALL_REGIONS)
+      const nest = map.nests.find((one) => one.owner.id === 'sort')
+      const [mark] = map.joins
+
+      expect(nest).toBeDefined()
+      expect(mark?.y).toBeGreaterThan(nest?.y ?? 0)
+      expect((mark?.y ?? 0) + (mark?.height ?? 0)).toBeLessThanOrEqual(
+        (nest?.y ?? 0) + (nest?.height ?? 0),
+      )
+    })
+
+    it('drops with the container that is collapsed', () => {
+      const [board] = boardsOf(ALL_REGIONS)
+      if (!board) throw new Error('fixture lost its root Board')
+      const map = layout(board, { collapsed: new Set(['sort']) })
+
+      expect(map.nests.map((nest) => nest.owner.id)).toEqual([])
+    })
   })
 
   describe('joins', () => {
@@ -448,53 +552,109 @@ describe('links', () => {
     expect(leaving?.from.y).toBeGreaterThan(inside.y + inside.height)
   })
 
-  it('enters each Branch with the word that names it, and comes back to the join', () => {
+  it('brings each Branch back to the join from its own frame’s edge', () => {
     const map = rootOf(ALL_REGIONS)
-    const branches = map.links.filter((link) => link.kind === 'branch')
-    expect(branches.map((link) => link.label)).toEqual(['if', 'else'])
-    for (const link of branches) expect(link.owner?.id).toBe('sort')
-
     const joins = map.links.filter((link) => link.kind === 'join')
     expect(joins).toHaveLength(2)
-    // The join IS the last gap of its Branch. A stub beside it would leave two
-    // lines out of one card — one to the mark and one to nothing.
-    for (const link of joins) expect(link.at?.parentId).toBe('sort')
+
+    // A join is not a gap: it arrives at a mark rather than at a position in a
+    // list, so there is nothing there to insert into.
+    for (const link of joins) expect(link.at).toBeUndefined()
+    for (const link of joins) expect(link.owner?.id).toBe('sort')
+    expect(joins.map((link) => link.branchIndex)).toEqual([0, 1])
+
     const [mark] = map.joins
     for (const link of joins) expect(link.to.y).toBe((mark?.y ?? 0) + (mark?.height ?? 0) / 2)
-  })
 
-  it('puts a Branch’s label in its own column, where two cannot collide', () => {
-    // Both of a Fork's branch links leave the same point, so a fraction along
-    // the line is the same place twice. The strip `regionLabel` reserves at the
-    // top of each column cannot collide: the columns are `branchGap` apart.
-    const map = rootOf(ALL_REGIONS)
-    const labelled = map.links.filter(
-      (link) => link.label !== undefined && link.branchIndex !== undefined,
-    )
-    expect(labelled).toHaveLength(2)
-
-    const [first, second] = labelled
-    expect(first?.labelAt?.x).not.toBe(second?.labelAt?.x)
-    for (const link of labelled) {
+    // It leaves the Band's bottom edge rather than the last card in it, so an
+    // empty Branch converges from where a full one does and no line crosses a
+    // frame it is not leaving.
+    for (const link of joins) {
       const band = map.bands.find(
-        (one) => one.owner.id === 'sort' && one.x + one.width / 2 === link.labelAt?.x,
+        (one) => one.branchIndex === link.branchIndex && one.owner.id === 'sort',
       )
-      expect(band).toBeDefined()
-      expect(link.labelAt?.y).toBe((band?.y ?? 0) + LAYOUT.regionLabel / 2)
+      expect(link.from.y).toBe((band?.y ?? 0) + (band?.height ?? 0))
+      expect(link.from.x).toBe((band?.x ?? 0) + (band?.width ?? 0) / 2)
     }
   })
 
-  it('carries the region keyword onto the link that enters it', () => {
+  it('crosses a region’s edge without drawing a line over it', () => {
+    // Containment is overlap, so nothing is drawn between a Step and its
+    // regions: the gaps at a region's two ends are `enter` and `leave`, and a
+    // `run` — the one kind that means "then" — is only ever between two Steps.
     const map = rootOf(ALL_REGIONS)
-    const entering = (parentId: string, region?: 'handler') =>
+    const kindAt = (parentId: string, index: number, region?: 'handler') =>
       map.links.find(
         (link) =>
-          link.at?.parentId === parentId && link.at.index === 0 && link.at.region === region,
-      )
+          link.at?.parentId === parentId && link.at.index === index && link.at.region === region,
+      )?.kind
 
-    expect(entering('guarded')?.label).toBe('try')
-    expect(entering('guarded', 'handler')?.label).toBe('on failure')
-    expect(entering('each')?.label).toBe('loop')
+    expect(kindAt('guarded', 0)).toBe('enter')
+    expect(kindAt('guarded', 1)).toBe('leave')
+    expect(kindAt('guarded', 0, 'handler')).toBe('enter')
+    expect(kindAt('each', 0)).toBe('enter')
+
+    for (const link of map.links.filter((one) => one.kind === 'run')) {
+      const ends = [link.from, link.to]
+      for (const band of map.bands) {
+        const edges = [band.y, band.y + band.height]
+        for (const point of ends) {
+          if (point.x !== band.x + band.width / 2) continue
+          expect(edges).not.toContain(point.y)
+        }
+      }
+    }
+  })
+
+  it('puts every `+` in the middle of its own gap, and hands the point over', () => {
+    // The tier that draws the `+` computes no geometry of its own, and a gap at
+    // a region's edge has no line for a fraction along it to mean anything on.
+    for (const { doc } of SHAPES) {
+      for (const board of boardsOf(doc)) {
+        for (const link of layout(board).links) {
+          if (!link.at) {
+            expect(link.dotAt).toBeUndefined()
+            continue
+          }
+          expect(link.dotAt).toEqual({
+            x: Math.floor((link.from.x + link.to.x) / 2),
+            y: Math.floor((link.from.y + link.to.y) / 2),
+          })
+        }
+      }
+    }
+  })
+
+  /**
+   * The defect this shape exists to remove: two `+` on one spine, one inserting
+   * into a loop's body and one into the try holding it, with nothing on screen
+   * between them. Every `+` falls inside the frame of the list it inserts into,
+   * so a drawn edge separates any two of them.
+   */
+  it('drops every `+` inside the frame of the list it inserts into', () => {
+    for (const { doc } of SHAPES) {
+      for (const board of boardsOf(doc)) {
+        const map = layout(board)
+        for (const link of map.links) {
+          const at = link.at
+          const dot = link.dotAt
+          if (!at?.parentId || !dot) continue
+          const band = map.bands.find(
+            (one) =>
+              one.owner.id === at.parentId &&
+              (at.branchIndex !== undefined
+                ? one.branchIndex === at.branchIndex
+                : one.kind === (at.region === 'handler' ? 'handler' : 'body')),
+          )
+          expect(band, `no band for ${JSON.stringify(at)}`).toBeDefined()
+          if (!band) continue
+          expect(dot.y).toBeGreaterThanOrEqual(band.y)
+          expect(dot.y).toBeLessThanOrEqual(band.y + band.height)
+          expect(dot.x).toBeGreaterThanOrEqual(band.x)
+          expect(dot.x).toBeLessThanOrEqual(band.x + band.width)
+        }
+      }
+    }
   })
 
   /**
@@ -505,35 +665,28 @@ describe('links', () => {
    * wherever the list ends — down the spine, past the column its own label is
    * sitting over, which is a line that says the Branch is somewhere it is not.
    */
-  it('lands a link inside an empty region rather than past it', () => {
+  it('puts the only `+` an empty region has at the middle of its frame', () => {
     const map = rootOf(EMPTY_REGIONS)
 
     // Every region with nothing in it: the Fork's middle Branch, and a
-    // `core.try` whose body and handler are both empty.
-    const empties = map.links.filter((link) => {
-      const band = map.bands.find(
-        (one) =>
-          one.owner.id === link.at?.parentId &&
-          one.x + one.width / 2 === link.to.x &&
-          one.y + LAYOUT.regionLabel === link.to.y,
-      )
-      return link.at?.index === 0 && band !== undefined
-    })
+    // `core.try` whose body and handler are both empty. With no card to aim at,
+    // the frame is the only anchor there is.
+    const empties = map.bands.filter((band) => band.height === LAYOUT.emptyRegion)
     expect(empties.length).toBeGreaterThanOrEqual(3)
 
-    for (const region of ['try_nothing', 'wide']) {
-      const bands = map.bands.filter((one) => one.owner.id === region)
-      for (const band of bands) {
-        if (band.height !== LAYOUT.regionLabel) continue
-        // An empty region is exactly its label strip tall. The link into it
-        // ends under that strip, on that column.
-        const into = map.links.find(
-          (link) =>
-            link.to.x === band.x + band.width / 2 && link.to.y === band.y + LAYOUT.regionLabel,
-        )
-        expect(into, `nothing lands in the empty ${band.keyword} under ${region}`).toBeDefined()
-        expect(into?.at?.index).toBe(0)
-      }
+    for (const band of empties) {
+      const into = map.links.find(
+        (link) =>
+          link.at?.parentId === band.owner.id &&
+          link.dotAt?.x === band.x + band.width / 2 &&
+          link.dotAt.y === band.y + band.height / 2,
+      )
+      expect(
+        into,
+        `nothing lands in the empty ${band.keyword} under ${band.owner.id}`,
+      ).toBeDefined()
+      expect(into?.at?.index).toBe(0)
+      expect(into?.kind).toBe('enter')
     }
   })
 

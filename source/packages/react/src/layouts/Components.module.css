@@ -179,4 +179,20 @@
     color: var(--hatua-text-muted);
     text-wrap: pretty;
   }
+
+  /*
+    An insertion point on the canvas is waiting. Above everything the panel
+    scrolls, because it describes what picking a card is about to do rather than
+    anything in the list.
+  */
+  .pending {
+    margin: 0 0 12px;
+    padding: 8px 10px;
+    border: 1px solid var(--hatua-border-accent);
+    border-radius: var(--hatua-radius-md);
+    background: var(--hatua-accent-wash);
+    color: var(--hatua-text-accent);
+    font-size: 12px;
+    line-height: 1.4;
+  }
 }

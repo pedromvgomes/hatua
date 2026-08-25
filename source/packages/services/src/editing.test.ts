@@ -1,3 +1,5 @@
+import { regionsOf } from '@hatua/model'
+import type { Step } from '@hatua/schema'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createEditingStore, type EditingSnapshot } from './editing'
 import type {
@@ -429,6 +431,61 @@ describe('commands', () => {
     const steps = ready(store).definition?.steps ?? []
     expect(steps.map((step) => step.id)).toEqual(['s1', 's6', 's2', 's4'])
     expect(steps[1]?.use).toBe('component.email.send')
+  })
+
+  /*
+   * A container added from the catalogue can be filled in.
+   *
+   * `regionsOf` yields a region only where the document carries the key, and the
+   * map draws only the regions it is yielded — so a `core.try` written as `id`
+   * and `use` alone has no band, no `+` inside it and no way in. It is a card
+   * that can never become a try. The keys are what make it reachable, and they
+   * are written when the Step is.
+   */
+  it('gives a core.try its two regions, so there is somewhere to put a Step', async () => {
+    const { store } = await open()
+    store.apply(addStep({ use: 'core.try', name: 'Guarded' }, { index: 0 }))
+
+    const added = ready(store).definition?.steps[0]
+    expect(added?.use).toBe('core.try')
+    expect(added?.steps).toEqual([])
+    expect(added?.handler).toEqual([])
+    expect([...regionsOf(added as Step)].map((region) => region.keyword)).toEqual([
+      'try',
+      'on failure',
+    ])
+  })
+
+  it('gives a loop its body, and gives an ordinary Component no regions at all', async () => {
+    const { store } = await open()
+    store.apply(addStep({ use: 'core.for_each' }, { index: 0 }))
+    store.apply(addStep({ use: 'component.email.send' }, { index: 0 }))
+
+    const [plain, loop] = ready(store).definition?.steps ?? []
+    expect(loop?.steps).toEqual([])
+    expect(loop?.handler).toBeUndefined()
+    // A `steps:` on a Step that nests nothing is a region the map would draw
+    // and no runner would enter.
+    expect(plain?.steps).toBeUndefined()
+    expect([...regionsOf(plain as Step)]).toEqual([])
+  })
+
+  /*
+   * A Branch is not an empty list: it carries a label and a condition, so a
+   * Fork born with `branches: []` is the same unfillable card a `core.try` with
+   * no keys is. Two of them, because CONTEXT.md defines a Fork as holding two
+   * or more — and a condition fork, because `when: ''` is a condition still to
+   * write while its absence on the last Branch is the fallback.
+   */
+  it('gives a core.fork two Branches, so a Fork is something a Step can go into', async () => {
+    const { store } = await open()
+    store.apply(addStep({ use: 'core.fork', name: 'Which way' }, { index: 0 }))
+
+    const added = ready(store).definition?.steps[0]
+    expect(added?.branches?.map((branch) => branch.label)).toEqual(['Condition', 'Otherwise'])
+    expect(added?.branches?.map((branch) => branch.when)).toEqual(['', undefined])
+    for (const branch of added?.branches ?? []) expect(branch.steps).toEqual([])
+    expect([...regionsOf(added as Step)].map((region) => region.keyword)).toEqual(['if', 'else'])
   })
 
   it('appends when the index is past the end', async () => {
