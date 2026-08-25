@@ -309,7 +309,7 @@ export interface LayoutOptions {
    * A collapsed container's children get no Placement at all, rather than a
    * Placement the canvas then hides. Laying them out anyway would make `height`
    * and `width` describe a map nobody is looking at, and every consumer of a
-   * total — the scroll extent, fit-to-screen, a minimap — would be reading a
+   * total — fit-to-screen, a minimap — would be reading a
    * number that is wrong whenever anything is folded.
    *
    * Bare ids rather than `StepRef`s: a Board is already the argument, and ids

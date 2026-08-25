@@ -7,6 +7,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { describe, expect, it, vi } from 'vitest'
 import { HatuaProvider } from '../theme/HatuaProvider'
 import { FlowMap } from './FlowMap'
+import { ZOOM } from './viewport'
 
 /**
  * The canvas against a Host's WorkflowStore.
@@ -299,7 +300,13 @@ describe('FlowMap', () => {
 
     const board = rootBoard()
     const { links } = layout(board)
-    const paths = screen.getByRole('region', { name: 'Flow map' }).querySelectorAll('path')
+    // Every line on one Board is in one SVG, found by the title that names it:
+    // it is not the only SVG on the canvas, and counting every `path` in the
+    // region would count the toolbar's glyphs as connectors.
+    const lines = [
+      ...screen.getByRole('region', { name: 'Flow map' }).querySelectorAll('svg'),
+    ].find((one) => one.querySelector('title')?.textContent === 'Flow')
+    const paths = lines?.querySelectorAll('path') ?? []
 
     // A line for every `run` and every `join`, and none for the gaps at a
     // region's two ends: containment is drawn as overlap, so a line from a card
@@ -864,5 +871,89 @@ describe('a Board is what the canvas draws one of', () => {
     )
     const block = within(view.container.querySelector('[aria-label="Flow map"]') as HTMLElement)
     expect(await block.findByText('In the block')).toBeDefined()
+  })
+})
+
+/**
+ * The canvas pans and zooms, and the viewport is chrome (ADR-0016).
+ *
+ * jsdom has no layout engine, so every box here is 0x0 unless a test says
+ * otherwise. The arithmetic is checked in `viewport.test.ts` over plain
+ * numbers; what is checked here is which gesture reaches which function, and
+ * where the answer lands on screen.
+ */
+describe('FlowMap, panning and zooming', () => {
+  /** The box that carries the pan and the zoom: the one the cards are laid on. */
+  const surfaceOf = () => {
+    const cards = canvas().getByRole('list', { name: 'Steps' })
+    const surface = cards.parentElement
+    if (!surface) throw new Error('the canvas drew no surface')
+    return surface
+  }
+
+  /** A box with a size, for the measurements a canvas cannot take in jsdom. */
+  const measuring = (element: Element, rect: Partial<DOMRect>) => {
+    const full = { x: 0, y: 0, width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0, ...rect }
+    element.getBoundingClientRect = () => ({ ...full, toJSON: () => full }) as DOMRect
+  }
+
+  it('opens where the caller said, and says where it went', async () => {
+    const onViewportChange = vi.fn()
+    mount(SOURCE, { defaultViewport: { x: 40, y: -60, scale: 1.5 }, onViewportChange })
+    await canvas().findByText('Fetch mail')
+
+    expect(surfaceOf().style.transform).toBe('translate(40px, -60px) scale(1.5)')
+    expect(onViewportChange).toHaveBeenCalledWith({ x: 40, y: -60, scale: 1.5 })
+  })
+
+  it('zooms from the toolbar and reports every move', async () => {
+    const onViewportChange = vi.fn()
+    mount(SOURCE, { defaultViewport: { x: 0, y: 0, scale: 1 }, onViewportChange })
+    await canvas().findByText('Fetch mail')
+
+    fireEvent.click(canvas().getByRole('button', { name: 'Zoom in' }))
+    expect(
+      canvas().getByRole('button', { name: `Zoom level: ${Math.round(ZOOM.step * 100)}%` }),
+    ).toBeDefined()
+
+    // Absolute, not a step from wherever the presses left it: the menu is the
+    // way back to a known state after free-form zooming.
+    fireEvent.click(canvas().getByRole('button', { name: /^Zoom level/ }))
+    fireEvent.click(canvas().getByRole('button', { name: '200%' }))
+    expect(surfaceOf().style.transform).toContain('scale(2)')
+    expect(onViewportChange).toHaveBeenLastCalledWith(expect.objectContaining({ scale: 2 }))
+  })
+
+  it('pans until a focused card is on screen, which no scroll container is left to do', async () => {
+    mount(SOURCE, { defaultViewport: { x: 0, y: 0, scale: 1 } })
+    const card = await canvas().findByText('Fetch mail')
+
+    const region = screen.getByRole('region', { name: 'Flow map' })
+    const frame = region.firstElementChild as HTMLElement
+    measuring(frame, { width: 800, height: 600, right: 800, bottom: 600 })
+    const target = card.closest('li') as HTMLElement
+    // Off the bottom edge of the canvas, which is where tabbing down a large
+    // map lands long before the last Step.
+    measuring(target, { top: 900, bottom: 960, left: 100, right: 400 })
+
+    fireEvent.focus(target, { bubbles: true })
+
+    // Far enough that its lower edge clears the margin, and no further.
+    expect(surfaceOf().style.transform).toBe('translate(0px, -384px) scale(1)')
+  })
+
+  it('re-centres when a Block’s Board is opened, because the coordinates are Board-local', async () => {
+    mount(SOURCE, { defaultViewport: { x: 40, y: -60, scale: 1.5 } })
+    await canvas().findByText('Archive one')
+    expect(surfaceOf().style.transform).toBe('translate(40px, -60px) scale(1.5)')
+
+    const [open] = canvas().getAllByRole('button', { name: /^Open / })
+    if (!open) throw new Error('the fixture lost its call sites')
+    fireEvent.click(open)
+    await canvas().findByText('Alpha returns')
+
+    // Read once means once: a Board opened later is placed by the canvas, not
+    // by a prop the caller handed it for the Board it opened on.
+    expect(surfaceOf().style.transform).not.toContain('scale(1.5)')
   })
 })

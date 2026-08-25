@@ -41,6 +41,7 @@ export type {
   StepListProps,
   TabbedPanelProps,
   TopBarProps,
+  Viewport,
   WorkflowProps,
 } from './layouts'
 export {
