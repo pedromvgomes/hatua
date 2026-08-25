@@ -14,8 +14,9 @@
     /*
       Folding and unfolding tween, because a box changing size with no motion
       reads as a different map rather than the same one. It is on what `boxOf`
-      writes, so the map animates with no animation code; the connectors
-      re-render without one, since an SVG path's `d` does not transition.
+      writes, so the map animates with no animation code. An SVG path's `d` does
+      not transition, so the connectors cannot follow and fade in over the same
+      window instead of pointing at boxes still on their way.
     */
     transition:
       left 140ms ease,

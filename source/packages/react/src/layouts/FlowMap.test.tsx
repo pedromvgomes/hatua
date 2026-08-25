@@ -475,8 +475,9 @@ describe('building on the canvas', () => {
     const gap = slotFor('Insert a Step after Fetch mail')
 
     // Read off what the source declared rather than left to the browser to
-    // guess. It is the pointer's only account of the gesture, and the two
-    // gestures do different things.
+    // guess: the two gestures do different things. It is not what tells the
+    // user a drop will land — `move` draws no badge on macOS — which is what
+    // the `over` state below is for.
     const carried = transfer({ 'application/x-hatua-component': '{"use":"a"}' }, 'copy')
     fireEvent.dragOver(gap, { dataTransfer: carried })
     expect(carried.dropEffect).toBe('copy')
@@ -484,6 +485,50 @@ describe('building on the canvas', () => {
     const moved = transfer({}, 'move')
     fireEvent.dragOver(gap, { dataTransfer: moved })
     expect(moved.dropEffect).toBe('move')
+  })
+
+  it('marks the gap under the pointer apart from every other armed one', async () => {
+    // Every gap goes `live` at once so a target does not have to be hunted for,
+    // and that is exactly why one of them has to say the pointer is on IT.
+    // `dropEffect: 'move'` draws no badge on macOS, so a Step dragged across the
+    // canvas carries the same arrow over a gap as over dead space — without a
+    // second state the drop is aimed at nine identical circles.
+    mount(SOURCE, { onDropComponent: () => {}, onInsert: () => {} })
+    await canvas().findByText('Fetch mail')
+
+    const gap = slotFor('Insert a Step after Fetch mail')
+    const other = slotFor('Insert a Step at the start of the workflow')
+    const card = canvas().getByText('Fetch mail').closest('[draggable]') as HTMLElement
+    fireEvent.dragStart(card, { dataTransfer: transfer({}, 'move') })
+
+    expect(gap.className).toContain('live')
+    expect(gap.className).not.toContain('over')
+
+    fireEvent.dragOver(gap, { dataTransfer: transfer({}, 'move') })
+    expect(gap.className).toContain('over')
+    // The one under the pointer, and no other: a state every gap wears is the
+    // state that was already there.
+    expect(other.className).not.toContain('over')
+  })
+
+  it('keeps the gap marked while the pointer crosses the `+` inside it', async () => {
+    // `dragleave` fires when the pointer moves onto a descendant, and clearing
+    // on that flickers the one thing saying where the drop lands.
+    mount(SOURCE, { onDropComponent: () => {}, onInsert: () => {} })
+    await canvas().findByText('Fetch mail')
+
+    const gap = slotFor('Insert a Step after Fetch mail')
+    const plus = canvas().getByRole('button', { name: 'Insert a Step after Fetch mail' })
+    const card = canvas().getByText('Fetch mail').closest('[draggable]') as HTMLElement
+    fireEvent.dragStart(card, { dataTransfer: transfer({}, 'move') })
+    fireEvent.dragOver(gap, { dataTransfer: transfer({}, 'move') })
+    expect(gap.className).toContain('over')
+
+    fireEvent(gap, new MouseEvent('dragleave', { bubbles: true, relatedTarget: plus }))
+    expect(gap.className).toContain('over')
+
+    fireEvent(gap, new MouseEvent('dragleave', { bubbles: true, relatedTarget: document.body }))
+    expect(gap.className).not.toContain('over')
   })
 
   it('moves a Step dragged from one gap to another', async () => {

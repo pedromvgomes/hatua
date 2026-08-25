@@ -44,6 +44,8 @@
     transition:
       opacity 120ms ease,
       border-color 120ms ease,
+      background 120ms ease,
+      scale 120ms ease,
       color 120ms ease;
   }
 
@@ -70,6 +72,27 @@
   }
 
   /*
+    The pointer is on THIS one, and releasing here is what will happen.
+
+    A second state and not the same one every armed gap wears, because the
+    cursor does not say it. `dropEffect: 'move'` draws no badge on macOS — a
+    Step dragged across the canvas gets the ordinary arrow, the same arrow it
+    has over dead space — so without this the only account of where a drop
+    lands is which of nine identical circles the pointer happens to be inside,
+    and the drop is aimed at rather than made.
+
+    Filled rather than merely brighter: a wash against a wash is a difference a
+    reader has to look for while carrying something, and the whole point of the
+    state is that it can be read without looking away from the drag.
+  */
+  .over .dot {
+    border-color: var(--hatua-accent);
+    background: var(--hatua-accent);
+    color: var(--hatua-text-on-accent);
+    scale: 1.25;
+  }
+
+  /*
     A drag is in progress, so the target grows again. Aim stops mattering once
     the pointer is already carrying something: the gesture ends wherever the
     pointer is released, and a target that has to be found is a drop that gets
@@ -78,5 +101,12 @@
   .live {
     inline-size: 96px;
     block-size: 56px;
+  }
+
+  /* The fill and the growth are decoration; the colour change carries it alone. */
+  @media (prefers-reduced-motion: reduce) {
+    .over .dot {
+      scale: 1;
+    }
   }
 }
