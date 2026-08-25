@@ -886,18 +886,50 @@ describe('collapse', () => {
     ).toHaveLength(2)
   })
 
-  it('names a Branch by index, so inserting one before it does not fold a different column', () => {
-    // An ordinal into `regionsOf` is the tempting alternative and it is wrong:
-    // collapse persists across edits, so a Branch inserted at the front would
-    // silently move the fold onto its neighbour.
-    const board = boardOf(EMPTY_REGIONS)
-    const second = regionKey({ board: null, id: 'wide', kind: 'branch', branchIndex: 2 })
+  it('numbers a Branch over the Branches alone, so the body and the handler take no number', () => {
+    // A fold outlives the edits made while it is held, and a body and a handler
+    // are named by their kind alone — no ordinal, so nothing moves them. A
+    // Branch has only where it is: it carries no id, and the schema refuses its
+    // label for identity. Adding one still moves a fold held on a later one.
+    const board = boardOf(MIXED_REGIONS)
+    const second = regionKey({ board: null, id: 'confused', kind: 'branch', branchIndex: 1 })
     const map = layout(board, { collapsedRegions: new Set([second]) })
 
-    const folded = map.bands.filter((one) => one.owner.id === 'wide' && one.collapsed)
-    expect(folded.map((one) => one.branchIndex)).toEqual([2])
-    expect(map.placements.some((one) => one.ref.id === 'b')).toBe(false)
-    expect(map.placements.some((one) => one.ref.id === 'a')).toBe(true)
+    const folded = map.bands.filter((one) => one.owner.id === 'confused' && one.collapsed)
+    expect(folded.map((one) => one.kind)).toEqual(['branch'])
+    expect(folded[0]?.branchIndex).toBe(1)
+    // The body and the handler sit among the same regions and take no Branch's
+    // number, so neither of them is what folded.
+    expect(map.placements.some((one) => one.ref.id === 'in_other')).toBe(false)
+    // And the number is the Branch's own position, not a running count that
+    // stalls: a second Branch folded by `branchIndex: 1` is the second one.
+    expect(
+      map.bands
+        .filter((one) => one.owner.id === 'confused' && one.kind === 'branch')
+        .map((one) => one.branchIndex),
+    ).toEqual([0, 1])
+    for (const id of ['in_branch', 'in_body', 'in_handler']) {
+      expect(map.placements.some((one) => one.ref.id === id)).toBe(true)
+    }
+  })
+
+  it('never folds an empty column, because there is nothing behind it to fold', () => {
+    // A folded box carries a count instead of the `+` that is the only way to
+    // fill an empty one. Honouring the fold would draw a third state that is
+    // neither: a box reading "0 steps" with nothing to be done with the region.
+    const board = boardOf(EMPTY_REGIONS)
+    const handler = regionKey({ board: null, id: 'try_nothing', kind: 'handler' })
+    const map = layout(board, { collapsedRegions: new Set([handler]) })
+
+    const band = map.bands.find((one) => one.owner.id === 'try_nothing' && one.kind === 'handler')
+    expect(band?.collapsed).toBe(false)
+    expect(band?.height).toBe(LAYOUT.emptyRegion)
+    // And the `+` survives, which is the whole of what the region offers.
+    expect(
+      map.links.some(
+        (link) => link.at?.parentId === 'try_nothing' && link.at.region === 'handler' && link.dotAt,
+      ),
+    ).toBe(true)
   })
 
   it('is a set of region keys and not of Step ids, which name different things', () => {

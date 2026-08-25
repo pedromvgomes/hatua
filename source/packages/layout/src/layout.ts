@@ -821,7 +821,18 @@ interface Fit {
   readonly collapsed: boolean
 }
 
-function fit(region: Region, ctx: Ctx, collapsed: boolean): Fit {
+function fit(region: Region, ctx: Ctx, folded: boolean): Fit {
+  /*
+   * An empty column is never folded, whatever the set says.
+   *
+   * There is nothing behind it to fold: the box is `emptyRegion` either way, and
+   * a folded one carries a count instead of the `+` that is the only way to fill
+   * it. Honouring the fold would draw a third state that is neither of the two
+   * the count exists to separate — a box reading "0 steps" with nothing at all
+   * to be done with the region. The set can name one either because a Host says
+   * so or because a column's last Step was deleted after it was folded.
+   */
+  const collapsed = folded && region.steps.length > 0
   // A folded column's children get no geometry at all, rather than geometry the
   // canvas then hides: `width` and `height` would otherwise describe a map
   // nobody is looking at, and every consumer of a total would be reading a

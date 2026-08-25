@@ -516,8 +516,15 @@ function Sequence({ steps, scope, at, ...handlers }: SequenceProps) {
  * over each, so they cannot disagree about what they are called either.
  *
  * The Branches are grouped into one list and everything else is stacked below
- * it, which is the same arrangement the canvas draws: `regionsOf` yields a
- * Step's Branches first, so grouping them costs no second ordering rule.
+ * it. `regionsOf` yields a Step's Branches first, so grouping them costs no
+ * second ordering rule.
+ *
+ * The canvas arranges the same regions differently — every one of them is a
+ * column in one row (ADR-0015) — and that is not a disagreement to fix. A list
+ * has one dimension and no width problem, and the two surfaces have to agree
+ * about *which* regions exist and what each is called, which `regionsOf` and
+ * `Region.keyword` guarantee. How far apart they are drawn is each surface's
+ * own question.
  *
  * The verb is never consulted about whether a region exists. A `handler:` on a
  * `core.fork` is meaningless and no runner reads it, but `walkSteps` yields the
