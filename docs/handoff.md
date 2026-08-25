@@ -191,12 +191,17 @@ rows. That is the property that makes the canvas a surface a workflow can be bui
 every link that names a position, including the stub after the last Step and the one under the root
 node of an empty Board, which is the only way to add the first Step to a new workflow.
 
-**A Fork's Branches are all one size, and each converges from its own edge.** Every column is as tall
-and as wide as the largest, so an empty Branch is a full-height frame beside a populated one rather
-than a strip that reads as a different kind of thing — and the line to the mark leaves each Band's
-bottom edge rather than the last card inside it, so an empty Branch converges from where a full one
-does. The Branch's last gap stays inside its frame, which is where a `+` belongs; a line from the
-last card *through* the frame to the mark would cross an edge it is not leaving.
+**A Fork's Branches are one height, each its own width, and each converges from its own edge.** Every
+column is as tall as the deepest, so the frames' bottom edges line up, the lines into the mark are
+symmetric, and an empty Branch is a full-height frame beside a populated one rather than a strip that
+reads as a different kind of thing. Width is a consequence of content, here as everywhere else on this
+map — a Branch as wide as its widest sibling puts an empty column the width of a nested Fork beside
+it, which is dead space no reader can account for.
+
+The line to the mark leaves each Band's bottom edge rather than the last card inside it, so an empty
+Branch converges from where a full one does. The Branch's last gap stays inside its frame, which is
+where a `+` belongs; a line from the last card *through* the frame to the mark would cross an edge it
+is not leaving.
 
 **Not every gap is a line.** A gap between two Steps is drawn and says "then". The gaps at a region's
 two ends are not: a line from a card to its own body would give the one idiom on this map a second

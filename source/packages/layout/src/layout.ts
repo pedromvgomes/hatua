@@ -820,20 +820,26 @@ function banded(
  * A Fork's Branches: one Band each, side by side, over the mark where they
  * converge.
  *
- * Every column is the size of the largest, so the frames' bottom edges line up
- * and the lines into the mark are symmetric — and an empty Branch is a frame
- * beside its sibling rather than a strip that reads as a different kind of
- * thing. The mark sits inside the Nest, because where a Fork's Branches
- * converge is that Fork's business.
+ * **One height, and each its own width.** The frames' bottom edges line up, so
+ * the lines into the mark are symmetric and the mark sits under a straight run
+ * of edges rather than under a ragged one — and an empty Branch is a
+ * full-height frame beside a populated one rather than a strip that reads as a
+ * different kind of thing. Width is a consequence of content, here as
+ * everywhere else on this map: a Branch as wide as its widest sibling puts an
+ * empty column the width of a nested Fork beside it, which is dead space no
+ * reader can account for.
+ *
+ * The mark sits inside the Nest, because where a Fork's Branches converge is
+ * that Fork's business.
  */
 function columns(branches: readonly Region[], owner: StepRef, ctx: Ctx): Box {
   const fits = branches.map((region) => fit(region, ctx))
-  const size = {
-    width: Math.max(...fits.map((one) => one.width)),
-    height: Math.max(...fits.map((one) => one.height)),
-  }
+  const height = Math.max(...fits.map((one) => one.height))
   const spread = across(
-    branches.map((region, index) => banded(region, owner, fits[index] as Fit, index, size)),
+    branches.map((region, index) => {
+      const at = fits[index] as Fit
+      return banded(region, owner, at, index, { width: at.width, height })
+    }),
   )
   return {
     ...spread,
