@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from 'react'
+import { type MouseEvent as ReactMouseEvent, useId, useRef, useState } from 'react'
 import { cx } from '../primitives/classNames'
 import styles from './CanvasControls.module.css'
 import css from './CanvasControls.module.css?inline'
@@ -59,6 +59,18 @@ export interface CanvasControlsProps {
  * role whose keyboard contract is not implemented is worse for a screen reader
  * than claiming none. So the trigger carries `aria-expanded` and the items are
  * ordinary buttons.
+ *
+ * ## A pointer press leaves nothing focused
+ *
+ * The canvas behind this pans on space, and a browser leaves a clicked button
+ * focused — so after one press of `+` the space bar belongs to the button and
+ * pressing it zooms again instead of arming a pan. The toolbar is chrome over
+ * somebody else's canvas rather than a place to be, so a pointer press hands
+ * focus back.
+ *
+ * Only a pointer press. `detail` is 0 when a keyboard activated the button, and
+ * there focus is the only thing saying where the user is: taking it away would
+ * drop them at the top of the document on the next Tab.
  */
 export function CanvasControls({
   scale,
@@ -74,12 +86,23 @@ export function CanvasControls({
   const trigger = useRef<HTMLButtonElement>(null)
   const listId = useId()
 
-  // Escape and a choice both land back on the trigger: dismissing an overlay
-  // leaves focus on the thing that opened it, or the next Tab starts from the
-  // top of the document.
-  const close = () => {
+  /**
+   * Shut the menu, and put focus wherever the gesture that shut it implies.
+   *
+   * Escape and a chosen item both land back on the trigger when a keyboard did
+   * it, because dismissing an overlay leaves focus on the thing that opened it.
+   * A pointer wants the opposite: the trigger holding focus is the trigger
+   * holding the space bar, and space is how the canvas pans.
+   */
+  const close = (restore: boolean) => {
     setOpen(false)
-    trigger.current?.focus()
+    if (restore) trigger.current?.focus()
+    else trigger.current?.blur()
+  }
+
+  /** A pointer press hands focus back to the canvas; a keyboard press keeps it. */
+  const release = (event: ReactMouseEvent<HTMLButtonElement>) => {
+    if (event.detail > 0) event.currentTarget.blur()
   }
 
   return (
@@ -106,7 +129,7 @@ export function CanvasControls({
           // a Host with its own Escape must not also act on the keystroke that
           // shut this.
           event.stopPropagation()
-          close()
+          close(true)
         }}
       >
         <button
@@ -114,7 +137,10 @@ export function CanvasControls({
           className={styles.step}
           aria-label="Zoom out"
           disabled={scale <= min}
-          onClick={onZoomOut}
+          onClick={(event) => {
+            onZoomOut()
+            release(event)
+          }}
         >
           −
         </button>
@@ -138,14 +164,25 @@ export function CanvasControls({
           className={styles.step}
           aria-label="Zoom in"
           disabled={scale >= max}
-          onClick={onZoomIn}
+          onClick={(event) => {
+            onZoomIn()
+            release(event)
+          }}
         >
           +
         </button>
 
         <span className={styles.divide} aria-hidden="true" />
 
-        <button type="button" className={styles.step} aria-label="Fit to screen" onClick={onFit}>
+        <button
+          type="button"
+          className={styles.step}
+          aria-label="Fit to screen"
+          onClick={(event) => {
+            onFit()
+            release(event)
+          }}
+        >
           {/*
             Corner brackets rather than a box glyph: the marks that say "as much
             of this as will go in the frame" are conventional, and a square is
@@ -171,16 +208,16 @@ export function CanvasControls({
             {/* A click-away backdrop, and deliberately not an interactive
                 element: Escape is the keyboard route out, and giving this a
                 role would put a stop in the tab order for nothing. */}
-            <div className={styles.away} onMouseDown={() => setOpen(false)} aria-hidden="true" />
+            <div className={styles.away} onMouseDown={() => close(false)} aria-hidden="true" />
             <ul className={styles.list} id={listId}>
               {levels.map((level) => (
                 <li key={level}>
                   <button
                     type="button"
                     className={cx(styles.item, scale === level && styles.here)}
-                    onClick={() => {
+                    onClick={(event) => {
                       onZoomTo(level)
-                      close()
+                      close(event.detail === 0)
                     }}
                   >
                     {percentOf(level)}%
