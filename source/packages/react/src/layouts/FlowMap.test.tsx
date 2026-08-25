@@ -1,5 +1,5 @@
 import { parseWorkflow } from '@hatua/document'
-import { layout } from '@hatua/layout'
+import { LAYOUT, layout } from '@hatua/layout'
 import { boardOf, nameOf, stepKey, walkSteps } from '@hatua/model'
 import type { Manifest, WorkflowDefinition } from '@hatua/schema'
 import type { Cursor, DraftSession, EditToken, Lease, WorkflowStore } from '@hatua/services'
@@ -147,13 +147,14 @@ const canvas = () => within(screen.getByRole('region', { name: 'Flow map' }))
 /**
  * A `DataTransfer` jsdom does not implement.
  *
- * Only the two methods a drop target uses, because that is the whole of the
- * platform surface this code touches — and a fuller fake would be a second
- * implementation of a browser API to check code that only ever asks it two
- * questions.
+ * Only the methods a drag source and a drop target use, because that is the
+ * whole of the platform surface this code touches — and a fuller fake would be
+ * a second implementation of a browser API to check code that only ever asks it
+ * a few questions.
  */
 const transfer = (data: Record<string, string>, effectAllowed = 'none') => {
   const held = { ...data }
+  const images: { element: HTMLElement; x: number; y: number }[] = []
   return {
     effectAllowed,
     dropEffect: 'none',
@@ -164,6 +165,11 @@ const transfer = (data: Record<string, string>, effectAllowed = 'none') => {
     getData: (type: string) => held[type] ?? '',
     setData: (type: string, value: string) => {
       held[type] = value
+    },
+    /** What the pointer will carry, which is the whole of the drop's feedback. */
+    images,
+    setDragImage: (element: HTMLElement, x: number, y: number) => {
+      images.push({ element, x, y })
     },
   }
 }
@@ -487,6 +493,62 @@ describe('building on the canvas', () => {
     expect(moved.dropEffect).toBe('move')
   })
 
+  it('marks the card being dragged, so it is not read as still sitting there', async () => {
+    // The card stays put until the drop lands, and a chip carrying its name
+    // follows the pointer — two of the same Step on screen at once unless one
+    // of them says it is on its way.
+    mount(SOURCE, { onDropComponent: () => {}, onInsert: () => {} })
+    await canvas().findByText('Fetch mail')
+
+    const card = canvas().getByText('Fetch mail').closest('[draggable]') as HTMLElement
+    const other = canvas().getByText('How urgent?').closest('[draggable]') as HTMLElement
+    expect(card.className).not.toContain('dragging')
+
+    fireEvent.dragStart(card, { dataTransfer: transfer({}, 'move') })
+    expect(card.className).toContain('dragging')
+    // The one in flight, and no other.
+    expect(other.className).not.toContain('dragging')
+
+    fireEvent.dragEnd(card, { dataTransfer: transfer({}, 'move') })
+    expect(card.className).not.toContain('dragging')
+  })
+
+  it('carries a small chip rather than the card, which would cover the gap', async () => {
+    // A drag ghost is the source element by default — a whole 236px card,
+    // centred under the pointer — and the target is a 20px `+` on a line. The
+    // ghost covers what the drag is aimed at, and the only pixels above it are
+    // the cursor's own, which is why `copy` looked like the gesture that worked.
+    mount(SOURCE, { onDropComponent: () => {}, onInsert: () => {} })
+    await canvas().findByText('Fetch mail')
+
+    const card = canvas().getByText('Fetch mail').closest('[draggable]') as HTMLElement
+    const carried = transfer({}, 'move')
+    fireEvent.dragStart(card, { dataTransfer: carried })
+
+    const [image] = carried.images
+    expect(image).toBeDefined()
+    expect(image?.element.textContent).toBe('Fetch mail')
+    expect(image?.element).not.toBe(card)
+    // Negative, so the pointer sits outside the chip and never inside it.
+    expect(image?.x).toBeLessThan(0)
+    expect(image?.y).toBeLessThan(0)
+  })
+
+  it('takes the chip back out of the document, so a drag leaks no node', async () => {
+    mount(SOURCE, { onDropComponent: () => {}, onInsert: () => {} })
+    await canvas().findByText('Fetch mail')
+
+    const card = canvas().getByText('Fetch mail').closest('[draggable]') as HTMLElement
+    const carried = transfer({}, 'move')
+    fireEvent.dragStart(card, { dataTransfer: carried })
+    const chip = carried.images[0]?.element as HTMLElement
+
+    // The browser rasterises the image during the event and never reads the
+    // element again, so it comes out on the next frame.
+    expect(chip.isConnected).toBe(true)
+    await waitFor(() => expect(chip.isConnected).toBe(false))
+  })
+
   it('marks the gap under the pointer apart from every other armed one', async () => {
     // Every gap goes `live` at once so a target does not have to be hunted for,
     // and that is exactly why one of them has to say the pointer is on IT.
@@ -509,6 +571,24 @@ describe('building on the canvas', () => {
     // The one under the pointer, and no other: a state every gap wears is the
     // state that was already there.
     expect(other.className).not.toContain('over')
+  })
+
+  it('draws a bar a card wide at the gap, so the chip cannot cover the signal', async () => {
+    // The filled dot is 20px of ink under a chip wider than it is, and a signal
+    // you have to move the pointer off to read is not a signal. A card's width,
+    // from `LAYOUT`, because that is the footprint of the thing being dropped —
+    // wide enough to reach past the chip, never wider than the narrowest column.
+    mount(SOURCE, { onDropComponent: () => {}, onInsert: () => {} })
+    await canvas().findByText('Fetch mail')
+
+    const gap = slotFor('Insert a Step after Fetch mail')
+    const bar = [...gap.children].find((child) => child.className.includes('bar')) as HTMLElement
+
+    expect(bar).toBeDefined()
+    expect(bar.style.inlineSize).toBe(`${LAYOUT.nodeWidth}px`)
+    // Decoration: it widens what the eye sees and never what the pointer hits,
+    // so two adjacent gaps cannot both be under the pointer.
+    expect(bar.getAttribute('aria-hidden')).toBe('true')
   })
 
   it('keeps the gap marked while the pointer crosses the `+` inside it', async () => {

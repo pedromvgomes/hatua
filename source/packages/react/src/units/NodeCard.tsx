@@ -3,6 +3,7 @@ import { type Diagnostic, isContainer, nameOf, slotsFor } from '@hatua/model'
 import type { Manifest, Step } from '@hatua/schema'
 import { cx } from '../primitives/classNames'
 import { boxOf } from './box'
+import { setDragChip } from './dragChip'
 import { IconCoin } from './IconCoin'
 import styles from './NodeCard.module.css'
 import css from './NodeCard.module.css?inline'
@@ -22,6 +23,15 @@ export interface NodeCardProps {
   /** The Host's connection labels, by the id a `conn` field holds. */
   connections?: ReadonlyMap<string, string>
   selected?: boolean
+  /**
+   * Whether this card's own Step is the one being dragged.
+   *
+   * The card stays where it is while the drag is in flight, so without this it
+   * reads as still being there — and the chip under the pointer reads as a
+   * second copy of it. Dashed says what a dashed edge says everywhere else on
+   * this map: a placeholder for something not settled yet.
+   */
+  dragging?: boolean
   /** Whether this container's regions are drawn. Absent on a leaf. */
   expanded?: boolean
   /**
@@ -66,6 +76,7 @@ export function NodeCard({
   manifest,
   connections,
   selected = false,
+  dragging = false,
   expanded = true,
   opens,
   problems,
@@ -94,7 +105,12 @@ export function NodeCard({
         than on a positioned <div>.
       */}
       <li
-        className={cx(styles.card, selected && styles.selected, summary && styles.invalid)}
+        className={cx(
+          styles.card,
+          selected && styles.selected,
+          summary && styles.invalid,
+          dragging && styles.dragging,
+        )}
         style={boxOf(rect)}
         title={summary}
         draggable={onDragStart !== undefined}
@@ -102,6 +118,10 @@ export function NodeCard({
           event.stopPropagation()
           event.dataTransfer.effectAllowed = 'move'
           event.dataTransfer.setData('text/plain', step.id)
+          // The card is 236px wide and the gap it is being carried to is a 20px
+          // `+` on a line, so the default ghost covers the target. One chip for
+          // every drag source that lands on this canvas.
+          setDragChip(event.dataTransfer, event.currentTarget, nameOf(step))
           onDragStart?.()
         }}
         onDragEnd={(event) => {

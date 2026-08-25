@@ -12,6 +12,7 @@ import { Button } from '../primitives/Button'
 import { cx } from '../primitives/classNames'
 import { Input } from '../primitives/Input'
 import { useManifestStore } from '../theme/HatuaProvider'
+import { setDragChip } from '../units/dragChip'
 import { IconCoin } from '../units/IconCoin'
 import styles from './Components.module.css'
 import css from './Components.module.css?inline'
@@ -284,6 +285,9 @@ function Card({ manifest, onSelect }: { manifest: Manifest; onSelect?: (m: Manif
         event.dataTransfer.effectAllowed = 'copy'
         event.dataTransfer.setData(COMPONENT_MIME, encodeComponent({ use, name }))
         event.dataTransfer.setData('text/plain', use)
+        // The same chip a Step dragged across the canvas carries, so the two
+        // gestures look alike and neither covers the gap it is aimed at.
+        setDragChip(event.dataTransfer, event.currentTarget, name || use)
       }}
     >
       {body}
