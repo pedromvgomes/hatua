@@ -44,6 +44,15 @@ export interface InsertDotProps {
  * With no `onInsert` it is a drop target and nothing else — the state
  * `apps/playground/src/host.tsx` mounts, where moving an existing Step needs no
  * catalogue while adding a new one does.
+ *
+ * ## Two drag states, because the cursor only carries one of them
+ *
+ * `live` is "a drag is on, and this is somewhere it can land" — every gap wears
+ * it at once, which is what stops a target having to be hunted for. `over` is
+ * "the pointer is on THIS one", and it exists because nothing else says so:
+ * `dropEffect: 'move'` draws no badge, so a Step dragged across the canvas has
+ * the ordinary arrow whether it is over a gap or over dead space. Without the
+ * second state a drop is aimed at nine identical circles and missed.
  */
 export function InsertDot({ at, label, active = false, onInsert, onDrop }: InsertDotProps) {
   const [over, setOver] = useState(false)
@@ -60,21 +69,33 @@ export function InsertDot({ at, label, active = false, onInsert, onDrop }: Inser
         on a semantic element rather than on a positioned <div>.
       */}
       <li
-        className={cx(styles.slot, droppable && (active || over) && styles.live)}
+        className={cx(
+          styles.slot,
+          droppable && (active || over) && styles.live,
+          droppable && over && styles.over,
+        )}
         style={{ left: at.x, top: at.y }}
         onDragOver={(event) => {
           if (!droppable) return
           event.preventDefault()
-          // Said rather than left to the browser to guess, and read off what the
-          // source declared: a Component dragged out of the catalogue is copied
-          // into the flow, a Step dragged across the canvas is moved. That is
-          // the pointer's only account of what releasing here does, and the two
-          // gestures do different things.
+          // Said rather than left to the browser to guess, and read off what
+          // the source declared: a Component dragged out of the catalogue is
+          // copied into the flow, a Step dragged across the canvas is moved.
+          // It is not what tells the user a drop will land — `move` draws no
+          // badge on macOS, so a Step being dragged carries the same arrow it
+          // has over dead space. The `over` state below is what says that.
           event.dataTransfer.dropEffect =
             event.dataTransfer.effectAllowed === 'move' ? 'move' : 'copy'
           setOver(true)
         }}
-        onDragLeave={() => setOver(false)}
+        onDragLeave={(event) => {
+          // Leaving is the pointer landing outside this slot and nowhere else.
+          // `dragleave` also fires when it crosses onto the `+` inside, and
+          // clearing on that flickers the one state saying where the drop
+          // lands — the same guard the canvas surface puts on its own drag.
+          const to = event.relatedTarget
+          if (!(to instanceof Node) || !event.currentTarget.contains(to)) setOver(false)
+        }}
         onDrop={(event) => {
           setOver(false)
           if (!droppable) return
