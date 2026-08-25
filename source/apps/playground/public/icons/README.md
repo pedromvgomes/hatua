@@ -3,6 +3,13 @@
 Artwork for the Component Manifests in `conformance/manifest/catalogue.yaml`,
 whose `icon` fields are root-relative URLs pointing here.
 
+**One file per component.** An icon shared between components says they are the
+same kind of thing, and a card carries its icon, its name and its verb — so a
+row of cards all wearing one glyph makes the icon the only part of the card that
+is not telling the reader anything. The catalogue's verbs each get their own:
+a split for `core.fork`, a loop for `core.for_each`, a shield for `core.try`,
+an exit for `core.return`.
+
 These belong to the Host, not to Hatua. `@hatua/react` ships no icon set and
 never will: a name is only meaningful against a set, and a Host adding a
 component of its own would have nothing to name. It renders whatever URL the
