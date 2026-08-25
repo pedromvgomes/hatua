@@ -1,4 +1,5 @@
 import type { Link } from '@hatua/layout'
+import { cx } from '../primitives/classNames'
 import styles from './Connectors.module.css'
 import css from './Connectors.module.css?inline'
 
@@ -6,6 +7,14 @@ export interface ConnectorsProps {
   links: readonly Link[]
   width: number
   height: number
+  /**
+   * Changes when a fold does, and only then.
+   *
+   * The lines fade in whenever this differs from the last render, because they
+   * cannot tween with the boxes and the alternative is 140ms of lines ending in
+   * open canvas.
+   */
+  redraws?: number
 }
 
 /**
@@ -40,15 +49,32 @@ export interface ConnectorsProps {
  * boxes would each need to be the size of their own bounding box and would stack
  * in a paint order nothing controls. `pointer-events: none` throughout, because
  * the `+` buttons and the labels are real DOM on top of this.
+ *
+ * ## The lines cannot glide, so they fade
+ *
+ * A box tweens when a column folds, because `left`/`top`/`width`/`height` are
+ * animatable properties and that is all `boxOf` writes. An SVG path's `d` is
+ * not: these are redrawn at the new geometry in one frame, while every box is
+ * still on its way there. Drawn at full strength they point at boxes that have
+ * not arrived — by the whole fold distance at the start of it, which is a line
+ * ending in open canvas for the length of the transition. So they fade in over
+ * exactly that window instead, and are at full strength the frame the boxes
+ * stop. `redraws` is what restarts the fade: a value that changes when a fold
+ * does, and never on an ordinary re-render, so the lines do not blink every
+ * time something else on the canvas moves.
  */
-export function Connectors({ links, width, height }: ConnectorsProps) {
+export function Connectors({ links, width, height, redraws = 0 }: ConnectorsProps) {
   return (
     <>
       <style href="hatua-connectors" precedence="hatua">
         {css}
       </style>
       <svg
-        className={styles.connectors}
+        // The key is what restarts the fade: a CSS animation runs once per
+        // element, so re-rendering the same one with new paths would not
+        // replay it.
+        key={redraws}
+        className={cx(styles.connectors, redraws > 0 ? styles.redrawn : undefined)}
         width={width}
         height={height}
         viewBox={`0 0 ${width} ${height}`}

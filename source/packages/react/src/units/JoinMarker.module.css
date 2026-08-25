@@ -3,6 +3,27 @@
     display: grid;
     place-items: center;
     pointer-events: none;
+    /*
+      Folding and unfolding tween, because a box changing size with no motion
+      reads as a different map rather than the same one. It is on what `boxOf`
+      writes, so the map animates with no animation code; the connectors
+      re-render without one, since an SVG path's `d` does not transition.
+    */
+    transition:
+      left 140ms ease,
+      top 140ms ease,
+      width 140ms ease,
+      height 140ms ease;
+  }
+
+  /*
+    Decoration, unlike a toast's countdown bar, which is the only thing saying
+    how long is left. Freezing this loses nothing.
+  */
+  @media (prefers-reduced-motion: reduce) {
+    .join {
+      transition: none;
+    }
   }
 
   .pill {

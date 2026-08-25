@@ -168,6 +168,8 @@ describe('RegionBand', () => {
     kind: 'handler',
     keyword: 'on failure',
     owner: { board: null, id: 's2' },
+    always: false,
+    collapsed: false,
     x: 8,
     y: 90,
     width: 300,
@@ -175,23 +177,24 @@ describe('RegionBand', () => {
   }
 
   it('is the one thing saying the word over its own region', () => {
-    // The word was a pill floating on the line entering the region and the
-    // frame said nothing. Two things saying one word over one region is the
-    // duplication this repo refuses everywhere else, so the legend is the
-    // Band's and there is no second one.
-    const { container } = render(<RegionBand band={band} />)
-    expect(container.textContent).toBe('on failure')
+    // Two things saying one word over one region is the duplication this repo
+    // refuses everywhere else, so the legend is the Band's and there is no pill
+    // floating on the line as well.
+    render(<RegionBand band={band} />)
+    expect(screen.getByRole('button').textContent).toContain('on failure')
   })
 
   it('carries a Branch’s own label and its condition beside the keyword', () => {
-    const { container } = render(
+    render(
       <RegionBand
         band={{ ...band, kind: 'branch', keyword: 'if', branchIndex: 0 }}
         label="Has new mail"
         when="{{ steps.fetch.count }} > 0"
       />,
     )
-    expect(container.textContent).toBe('ifHas new mail{{ steps.fetch.count }} > 0')
+    expect(screen.getByRole('button').textContent).toContain(
+      'ifHas new mail{{ steps.fetch.count }} > 0',
+    )
   })
 
   it('is a frame with room in it where the region is empty', () => {
@@ -199,6 +202,39 @@ describe('RegionBand', () => {
     const box = container.querySelector('div') as HTMLElement
     expect(box.style.height).toBe(`${LAYOUT.emptyRegion}px`)
     expect(box.style.top).toBe('90px')
+  })
+
+  it('makes the word the control that folds its own column', () => {
+    // The one mark on screen naming this region and nothing else. A separate
+    // control would be a second mark over one region.
+    const folds: number[] = []
+    render(<RegionBand band={band} onToggle={() => folds.push(1)} />)
+    const legend = screen.getByRole('button')
+
+    expect(legend.getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(legend)
+    expect(folds).toHaveLength(1)
+  })
+
+  it('says how many Steps a folded column is holding back', () => {
+    // A folded box and an empty one are the same rect and mean opposite things:
+    // one is somewhere to add a Step, the other is Steps out of sight.
+    const { container } = render(
+      <RegionBand band={{ ...band, collapsed: true, height: LAYOUT.emptyRegion }} count={3} />,
+    )
+
+    expect(screen.getByRole('button').getAttribute('aria-expanded')).toBe('false')
+    expect(container.textContent).toContain('3 steps')
+  })
+
+  it('draws a dashed edge only when the canvas says so, never off its own kind', () => {
+    // Whether a column has a solid sibling to be read against is a question
+    // about the Step's OTHER regions, which a Band cannot see (ADR-0015).
+    const branch = { ...band, kind: 'branch' as const, keyword: 'if', branchIndex: 0 }
+    const box = (node: HTMLElement) => node.querySelector('div') as HTMLElement
+
+    expect(box(render(<RegionBand band={branch} />).container).className).not.toContain('dashed')
+    expect(box(render(<RegionBand band={branch} dashed />).container).className).toContain('dashed')
   })
 })
 
@@ -239,7 +275,7 @@ describe('JoinMarker', () => {
 
   it('says what converges, for everyone a rule on screen says nothing to', () => {
     render(<JoinMarker join={join} name="How urgent?" />)
-    expect(screen.getByText('The branches of How urgent? come back together')).toBeDefined()
+    expect(screen.getByText('The regions of How urgent? come back together')).toBeDefined()
   })
 })
 

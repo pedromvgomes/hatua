@@ -11,13 +11,39 @@
     border: 1px solid var(--hatua-border-strong);
     border-radius: var(--hatua-radius-lg);
     background: color-mix(in oklab, var(--hatua-surface-card) 55%, transparent);
+    /*
+      Folding and unfolding tween, because a box changing size with no motion
+      reads as a different map rather than the same one. It is on what `boxOf`
+      writes, so the map animates with no animation code; the connectors
+      re-render without one, since an SVG path's `d` does not transition.
+    */
+    transition:
+      left 140ms ease,
+      top 140ms ease,
+      width 140ms ease,
+      height 140ms ease;
     pointer-events: none;
+  }
+
+  /*
+    Decoration, unlike a toast's countdown bar, which is the only thing saying
+    how long is left. Freezing this loses nothing.
+  */
+  @media (prefers-reduced-motion: reduce) {
+    .band {
+      transition: none;
+    }
   }
 
   /*
     Above the frame's top edge and flush with its left. `bottom: 100%` rather
     than a negative offset, so the word rides the edge wherever the frame is and
     whatever the type metrics turn out to be.
+
+    The word is also the control that folds the column, so the one mark naming
+    this region is the one thing that acts on it. The frame takes no pointer —
+    a click anywhere inside it belongs to whatever card is there — so this is
+    the only part of a Band that does.
   */
   .legend {
     position: absolute;
@@ -27,9 +53,40 @@
     align-items: center;
     gap: 6px;
     margin: 0;
-    padding-block-end: 4px;
+    border: 0;
+    border-radius: var(--hatua-radius-sm);
+    background: none;
+    padding: 0 4px 4px 0;
     max-inline-size: 100%;
     white-space: nowrap;
+    cursor: pointer;
+    pointer-events: auto;
+  }
+
+  .legend:focus-visible {
+    outline: 2px solid var(--hatua-focus-ring);
+    outline-offset: 2px;
+  }
+
+  .chevron {
+    flex: none;
+    color: var(--hatua-text-muted);
+    font-size: 9px;
+    line-height: 1.5;
+  }
+
+  /*
+    A folded box says how many Steps it is holding back. A box that says nothing
+    is indistinguishable from an empty one, and the two mean opposite things —
+    an empty one is somewhere to add a Step, a folded one is Steps out of sight.
+  */
+  .folded {
+    display: grid;
+    margin: 0;
+    place-items: center;
+    block-size: 100%;
+    color: var(--hatua-text-muted);
+    font-size: 12px;
   }
 
   .keyword {
@@ -67,9 +124,14 @@
     color: var(--hatua-status-error);
   }
 
-  /* A Branch is one alternative among several, and which one runs is a question
-     the document answers at run time — a solid edge would say all of them do. */
-  .branch {
+  /*
+    Whether this column runs is a question the document answers at run time — a
+    solid edge would say it always does. Dashed already means *placeholder* here
+    (the `+` is a dashed circle, an empty region a dashed box), and it survives
+    that collision only beside a solid sibling, which is why the canvas withholds
+    it from a lone loop body (ADR-0015).
+  */
+  .dashed {
     border-style: dashed;
   }
 }

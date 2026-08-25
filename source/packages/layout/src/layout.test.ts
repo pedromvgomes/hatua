@@ -1,4 +1,4 @@
-import { type Board, boards, regionsOf, stepKey, walkSteps } from '@hatua/model'
+import { type Board, boards, regionKey, regionsOf, stepKey, walkSteps } from '@hatua/model'
 import type { Step, WorkflowDefinition } from '@hatua/schema'
 import { describe, expect, it } from 'vitest'
 import {
@@ -158,13 +158,17 @@ describe('regions', () => {
     expect(Math.abs(left.x - right.x)).toBeGreaterThanOrEqual(LAYOUT.branchGap)
   })
 
-  it('stacks a `core.try`’s body above its handler on one spine', () => {
+  it('draws a `core.try`’s body and handler as two columns, not one spine', () => {
     const map = rootOf(ALL_REGIONS)
     const body = at(map, 'triage')
     const handler = at(map, 'shelve')
 
-    expect(handler.y).toBeGreaterThan(body.y + body.height)
-    expect(handler.x).toBe(body.x)
+    // Both regions begin at the same y under the card, however large the body
+    // grows. Stacked, the only thing saying "or else" was the gap between two
+    // frames — an absence, and one that decays with distance (ADR-0015).
+    expect(handler.y).toBe(body.y)
+    expect(handler.x).not.toBe(body.x)
+    expect(Math.abs(handler.x - body.x)).toBeGreaterThanOrEqual(LAYOUT.branchGap)
   })
 
   it('leaves each region room for the word that names it, above its own edge', () => {
@@ -182,15 +186,20 @@ describe('regions', () => {
 
   it('lays out every region a Step carries, not the ones its verb implies', () => {
     const map = rootOf(MIXED_REGIONS)
-    const columns = [at(map, 'in_branch'), at(map, 'in_other')]
-    const stacked = [at(map, 'in_body'), at(map, 'in_handler')]
+    // Two Branches, a `steps:` body and a `handler:` on one Step: *n* + 2
+    // columns, in document order, with no region reading the verb to get a
+    // shape. The geometry never asks what kind a region is.
+    const across = [
+      at(map, 'in_branch'),
+      at(map, 'in_other'),
+      at(map, 'in_body'),
+      at(map, 'in_handler'),
+    ]
 
-    expect(columns[0]?.x).not.toBe(columns[1]?.x)
-    // The stacked regions sit below the columns rather than in place of them.
-    for (const column of columns) {
-      for (const below of stacked) expect(below.y).toBeGreaterThan(column.y)
-    }
-    expect(stacked[1]?.y).toBeGreaterThan(stacked[0]?.y ?? 0)
+    for (const one of across) expect(one.y).toBe(across[0]?.y)
+    const xs = across.map((one) => one.x)
+    expect(new Set(xs).size).toBe(across.length)
+    expect([...xs].sort((a, b) => a - b)).toEqual(xs)
   })
 
   it('keeps a container with two empty regions a container, and reserves both bands', () => {
@@ -201,9 +210,16 @@ describe('regions', () => {
     // `steps: []` and `handler: []` are regions with nothing in them, not absent
     // regions: each band still takes its room, so an empty `handler:` is
     // somewhere a Step can be dropped.
-    const bands = 2 * (LAYOUT.regionLabel + LAYOUT.emptyRegion)
+    const boxes = map.bands.filter((band) => band.owner.id === 'try_nothing')
+    expect(boxes).toHaveLength(2)
+    for (const band of boxes) expect(band.height).toBe(LAYOUT.emptyRegion)
+
+    // One row of boxes and the mark under it, not two rows: a try added from
+    // the catalogue is born with an empty body AND an empty handler, so it is a
+    // card over two small boxes rather than a column of them.
+    const row = LAYOUT.regionLabel + LAYOUT.emptyRegion + LAYOUT.regionInset + LAYOUT.joinMarker
     expect(below.y - (container.y + container.height)).toBe(
-      bands + LAYOUT.regionInset + LAYOUT.verticalGap,
+      row + LAYOUT.regionInset + LAYOUT.verticalGap,
     )
   })
 })
@@ -335,14 +351,39 @@ describe('bands', () => {
     expect(band.width).toBe(LAYOUT.nodeWidth + 2 * LAYOUT.regionInset)
   })
 
-  it('gives a Fork’s Branches one height, so an empty one is a frame beside a full one', () => {
-    // The bottom edges line up, so the lines into the mark are symmetric and it
+  it('gives the columns showing lists one height, so their bottom edges line up', () => {
+    // Level among the lists, so the lines into the mark are symmetric and it
     // sits under a straight run of edges rather than a ragged one.
     const map = rootOf(EMPTY_REGIONS)
     const columns = map.bands.filter((band) => band.kind === 'branch' && band.owner.id === 'wide')
+    const lists = columns.filter((band) => band.branchIndex !== 1)
 
-    expect(columns.length).toBeGreaterThan(1)
-    expect(new Set(columns.map((band) => band.height)).size).toBe(1)
+    expect(lists.length).toBeGreaterThan(1)
+    expect(new Set(lists.map((band) => band.height)).size).toBe(1)
+  })
+
+  it('makes a column with nothing in it a box rather than its siblings’ height', () => {
+    // An empty handler beside a 2000px body would otherwise be a 2000px empty
+    // frame, which is dead space in the other axis. Equal height applies only
+    // among the columns that are lists.
+    const map = rootOf(EMPTY_REGIONS)
+    const columns = map.bands.filter((band) => band.kind === 'branch' && band.owner.id === 'wide')
+    const empty = columns.find((band) => band.branchIndex === 1)
+
+    expect(empty?.height).toBe(LAYOUT.emptyRegion)
+    expect(Math.max(...columns.map((band) => band.height))).toBeGreaterThan(LAYOUT.emptyRegion)
+  })
+
+  it('says whether each region always runs, which is what decides its edge', () => {
+    // `regionsOf` answers it and the band carries the answer, because the tier
+    // that draws the edge reads no verbs. A try's body always starts; its
+    // handler needs a failure; a Branch's `when` is answered at run time.
+    const map = rootOf(ALL_REGIONS)
+    const always = (id: string, keyword: string) => bandFor(map, id, keyword).always
+
+    expect(always('guarded', 'attempt')).toBe(true)
+    expect(always('guarded', 'on failure')).toBe(false)
+    expect(always('sort', 'if')).toBe(false)
   })
 
   it('gives each Branch its own width, because size is a consequence of content', () => {
@@ -470,14 +511,25 @@ describe('bands', () => {
   })
 
   describe('joins', () => {
-    it('marks a Fork’s Branches and nothing else', () => {
+    it('marks every Step with two or more columns, whatever its verb', () => {
+      // A Join is a Step's and not a Fork's: it exists because columns need to
+      // be told where they end, and flow resumes below a `core.try` whether its
+      // body finished or its handler ran. Refusing one to a try would make "no
+      // mark here" the signal separating it from a Fork.
       const map = rootOf(ALL_REGIONS)
-      expect(map.joins.map((join) => join.owner.id)).toEqual(['sort'])
+      expect(new Set(map.joins.map((join) => join.owner.id))).toEqual(new Set(['sort', 'guarded']))
+    })
+
+    it('refuses a lone column a mark, which would mean nothing under it', () => {
+      // One column has nothing to converge on, and the Band's bottom edge
+      // already says where it ends — so a loop reserves no room for the mark.
+      const map = rootOf(ALL_REGIONS)
+      expect(map.joins.map((join) => join.owner.id)).not.toContain('each')
     })
 
     it('spans the columns, below the last of them', () => {
       const map = rootOf(ALL_REGIONS)
-      const [mark] = map.joins
+      const mark = map.joins.find((join) => join.owner.id === 'sort')
       if (!mark) throw new Error('the Fork lost its join')
 
       expect(mark.height).toBe(LAYOUT.joinMarker)
@@ -567,24 +619,38 @@ describe('links', () => {
     expect(leaving?.from.y).toBeGreaterThan(inside.y + inside.height)
   })
 
-  it('brings each Branch back to the join from its own frame’s edge', () => {
+  it('brings each column back to the join from its own frame’s edge', () => {
     const map = rootOf(ALL_REGIONS)
     const joins = map.links.filter((link) => link.kind === 'join')
-    expect(joins).toHaveLength(2)
+    // Two Branches under `sort` and a try's two regions under `guarded`: a
+    // column converges because it is one of several, not because it is a Branch.
+    expect(joins.map((link) => link.owner?.id).sort()).toEqual([
+      'guarded',
+      'guarded',
+      'sort',
+      'sort',
+    ])
 
     // A join is not a gap: it arrives at a mark rather than at a position in a
     // list, so there is nothing there to insert into.
     for (const link of joins) expect(link.at).toBeUndefined()
-    for (const link of joins) expect(link.owner?.id).toBe('sort')
-    expect(joins.map((link) => link.branchIndex)).toEqual([0, 1])
+    expect(joins.filter((link) => link.owner?.id === 'sort').map((one) => one.branchIndex)).toEqual(
+      [0, 1],
+    )
+    // A try's regions are not Branches, so neither is numbered as one.
+    for (const link of joins.filter((one) => one.owner?.id === 'guarded')) {
+      expect(link.branchIndex).toBeUndefined()
+    }
 
-    const [mark] = map.joins
-    for (const link of joins) expect(link.to.y).toBe((mark?.y ?? 0) + (mark?.height ?? 0) / 2)
+    for (const link of joins) {
+      const mark = map.joins.find((one) => one.owner.id === link.owner?.id)
+      expect(link.to.y).toBe((mark?.y ?? 0) + (mark?.height ?? 0) / 2)
+    }
 
     // It leaves the Band's bottom edge rather than the last card in it, so an
-    // empty Branch converges from where a full one does and no line crosses a
+    // empty column converges from where a full one does and no line crosses a
     // frame it is not leaving.
-    for (const link of joins) {
+    for (const link of joins.filter((one) => one.owner?.id === 'sort')) {
       const band = map.bands.find(
         (one) => one.branchIndex === link.branchIndex && one.owner.id === 'sort',
       )
@@ -772,6 +838,75 @@ describe('collapse', () => {
 
     expect(shut.height).toBeLessThan(open.height)
     expect(shut.width).toBeLessThanOrEqual(open.width)
+  })
+
+  it('folds one column and leaves its siblings drawn, which folding the Step does not', () => {
+    // Two different reliefs. Collapsing a Step draws no Nest at all; folding one
+    // column leaves its siblings placed and its own frame on screen as a box.
+    const board = boardOf(ALL_REGIONS)
+    const handler = regionKey({ board: null, id: 'guarded', kind: 'handler' })
+    const map = layout(board, { collapsedRegions: new Set([handler]) })
+
+    expect(map.placements.some((one) => one.ref.id === 'shelve')).toBe(false)
+    expect(map.placements.some((one) => one.ref.id === 'triage')).toBe(true)
+    expect(map.nests.some((nest) => nest.owner.id === 'guarded')).toBe(true)
+
+    const band = map.bands.find((one) => one.owner.id === 'guarded' && one.kind === 'handler')
+    expect(band?.collapsed).toBe(true)
+    expect(band?.height).toBe(LAYOUT.emptyRegion)
+    // An empty column is a box of the same size, so the rect alone does not
+    // tell the two apart and the flag is what the ink reads.
+    expect(
+      map.bands.find((one) => one.owner.id === 'guarded' && one.kind === 'body')?.collapsed,
+    ).toBe(false)
+  })
+
+  it('gives a folded column no `+`, because nothing would say where a Step landed', () => {
+    // A folded column's children get no geometry, so it offers no insert point
+    // — the same argument that governs a collapsed container. An EMPTY column
+    // keeps its single gap, because that `+` is the only way to fill it.
+    const board = boardOf(ALL_REGIONS)
+    const handler = regionKey({ board: null, id: 'guarded', kind: 'handler' })
+    const gapsIn = (map: ReturnType<typeof layout>, region?: 'handler') =>
+      map.links.filter((link) => link.at?.parentId === 'guarded' && link.at.region === region)
+
+    expect(gapsIn(layout(board), 'handler').length).toBeGreaterThan(0)
+    const shut = layout(board, { collapsedRegions: new Set([handler]) })
+    expect(gapsIn(shut, 'handler')).toHaveLength(0)
+    expect(gapsIn(shut, undefined).length).toBeGreaterThan(0)
+  })
+
+  it('keeps a folded column’s join link, because the path still runs', () => {
+    const board = boardOf(ALL_REGIONS)
+    const handler = regionKey({ board: null, id: 'guarded', kind: 'handler' })
+    const map = layout(board, { collapsedRegions: new Set([handler]) })
+
+    expect(
+      map.links.filter((link) => link.kind === 'join' && link.owner?.id === 'guarded'),
+    ).toHaveLength(2)
+  })
+
+  it('names a Branch by index, so inserting one before it does not fold a different column', () => {
+    // An ordinal into `regionsOf` is the tempting alternative and it is wrong:
+    // collapse persists across edits, so a Branch inserted at the front would
+    // silently move the fold onto its neighbour.
+    const board = boardOf(EMPTY_REGIONS)
+    const second = regionKey({ board: null, id: 'wide', kind: 'branch', branchIndex: 2 })
+    const map = layout(board, { collapsedRegions: new Set([second]) })
+
+    const folded = map.bands.filter((one) => one.owner.id === 'wide' && one.collapsed)
+    expect(folded.map((one) => one.branchIndex)).toEqual([2])
+    expect(map.placements.some((one) => one.ref.id === 'b')).toBe(false)
+    expect(map.placements.some((one) => one.ref.id === 'a')).toBe(true)
+  })
+
+  it('is a set of region keys and not of Step ids, which name different things', () => {
+    // A bare `guarded` in the region set folds nothing: the two sets are read
+    // against different keys, so one cannot silently do the other's job.
+    const board = boardOf(ALL_REGIONS)
+    const map = layout(board, { collapsedRegions: new Set(['guarded']) })
+
+    expect(JSON.stringify(map)).toBe(JSON.stringify(layout(board)))
   })
 
   it('is a function of the collapsed set, and of nothing else', () => {

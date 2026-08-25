@@ -27,19 +27,21 @@ const meta = {
     },
   },
   decorators: [
-    (Story) => (
+    // Sized off the Nest itself, and the card centred over it, so a story with
+    // two columns in it is the same arrangement at a different width.
+    (Story, { args }) => (
       <div
         style={{
           position: 'relative',
-          inlineSize: LAYOUT.nodeWidth + 4 * LAYOUT.regionInset,
-          blockSize: 320,
+          inlineSize: args.nest.width,
+          blockSize: args.nest.y + args.nest.height + 40,
         }}
       >
         <Story />
         <div
           style={{
             position: 'absolute',
-            left: 2 * LAYOUT.regionInset,
+            left: (args.nest.width - LAYOUT.nodeWidth) / 2,
             top: 0,
             width: LAYOUT.nodeWidth,
             height: LAYOUT.nodeHeight,
@@ -63,8 +65,29 @@ type Story = StoryObj<typeof meta>
 /** The frame on its own: the card's lower half is inside it, and nothing joins them. */
 export const Astride: Story = {}
 
-/** A `core.try`: two Bands stacked in one Nest, and no spine between them. */
+/**
+ * A `core.try`: two Bands side by side in one Nest, and no spine between them.
+ *
+ * Solid beside dashed, because the body always starts and the handler needs a
+ * failure. That edge is the whole of what separates this from a two-Branch Fork
+ * (ADR-0015) — the arrangement is the same one at every arity.
+ */
 export const TwoRegions: Story = {
+  args: {
+    nest: {
+      owner: { board: null, id: 'guarded' },
+      x: 0,
+      y: LAYOUT.nodeLid,
+      width:
+        2 * (LAYOUT.nodeWidth + 2 * LAYOUT.regionInset) + LAYOUT.branchGap + 2 * LAYOUT.regionInset,
+      height:
+        LAYOUT.nodeHeight +
+        LAYOUT.regionLabel +
+        LAYOUT.emptyRegion +
+        LAYOUT.regionInset -
+        LAYOUT.nodeLid,
+    },
+  },
   decorators: [
     (Story) => (
       <>
@@ -74,6 +97,8 @@ export const TwoRegions: Story = {
             kind: 'body',
             keyword: 'attempt',
             owner: { board: null, id: 'guarded' },
+            always: true,
+            collapsed: false,
             x: LAYOUT.regionInset,
             y: LAYOUT.nodeHeight + LAYOUT.regionLabel,
             width: LAYOUT.nodeWidth + 2 * LAYOUT.regionInset,
@@ -85,11 +110,14 @@ export const TwoRegions: Story = {
             kind: 'handler',
             keyword: 'on failure',
             owner: { board: null, id: 'guarded' },
-            x: LAYOUT.regionInset,
-            y: LAYOUT.nodeHeight + 2 * LAYOUT.regionLabel + LAYOUT.emptyRegion,
+            always: false,
+            collapsed: false,
+            x: LAYOUT.regionInset + LAYOUT.nodeWidth + 2 * LAYOUT.regionInset + LAYOUT.branchGap,
+            y: LAYOUT.nodeHeight + LAYOUT.regionLabel,
             width: LAYOUT.nodeWidth + 2 * LAYOUT.regionInset,
             height: LAYOUT.emptyRegion,
           }}
+          dashed
         />
       </>
     ),

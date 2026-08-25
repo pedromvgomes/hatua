@@ -230,15 +230,23 @@ leaving.
 sibling column folds to a box and the card's chevron folds all of a Step's at once. A collapsed
 region's children get no geometry at all, on the same argument that governs a collapsed container —
 so it offers no insert point, because nothing on screen would say where a Step landed. It is chrome:
-the document has no key for it, `<FlowMap>` lifts it through `collapsed` / `onCollapseChange`, and a
-region is named by a `RegionRef` for the reason a Step is named by a `StepRef`.
+the document has no key for it, `<FlowMap>` lifts it through `collapsedRegions` /
+`onCollapsedRegionsChange` beside the `collapsed` trio that folds whole Steps, and a region is named
+by a `RegionRef` for the reason a Step is named by a `StepRef`. Two sets and not one, because the
+chevron's relief is different from the legend's: folding a Step draws no Nest at all, while folding a
+column leaves its siblings drawn.
 
 Folding and unfolding **animate**, for 140ms, because a box changing size with no motion reads as a
 different map rather than the same one. The transition is on the boxes — `left`, `top`, `width`,
-`height`, which is what `boxOf` writes — so the map tweens with no animation code; the connectors
-re-render without one, since an SVG path's `d` does not transition. Under `prefers-reduced-motion`
-there is no transition: unlike a toast's countdown bar this is decoration, and freezing it loses
-nothing.
+`height`, which is what `boxOf` writes — so the map tweens with no animation code.
+
+The connectors cannot follow, because an SVG path's `d` does not transition: they are redrawn at the
+new geometry in one frame while every box is still on its way there, and at full strength that is a
+line ending in open canvas — off by the whole fold distance at the start of it, for the length of the
+transition. So they **fade in over the same 140ms** and are solid the frame the boxes stop. The fade
+is triggered by a fold and by nothing else, so the lines do not blink whenever something else on the
+canvas moves. Under `prefers-reduced-motion` there is neither transition nor fade: unlike a toast's
+countdown bar this is decoration, and freezing it loses nothing.
 
 **Not every gap is a line.** A gap between two Steps is drawn and says "then". The gaps at a region's
 two ends are not: a line from a card to its own body would give the one idiom on this map a second

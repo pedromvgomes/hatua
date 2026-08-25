@@ -1,6 +1,6 @@
 import type { Step } from '@hatua/schema'
 import { describe, expect, it } from 'vitest'
-import { isContainer, nameOf, regionsOf, summaryOf } from './tree'
+import { isContainer, nameOf, regionKey, regionsOf, summaryOf } from './tree'
 
 /**
  * The region vocabulary: which regions a Step nests, what each one is called,
@@ -79,6 +79,53 @@ describe('the word over a region', () => {
       'handler',
     ])
     expect(keywords(confused)).toEqual(['if', 'loop', 'on failure'])
+  })
+})
+
+describe('whether a region always runs', () => {
+  const always = (step: Step) => [...regionsOf(step)].map((region) => region.always)
+
+  it('is false for every Branch, because a `when` is answered at run time', () => {
+    expect(always(fork([{ label: 'A', when: 'x' }, { label: 'B' }]))).toEqual([false, false])
+  })
+
+  it("is true for a `core.try`'s body and false for its handler", () => {
+    expect(always({ id: 't', use: 'core.try', steps: [], handler: [] })).toEqual([true, false])
+  })
+
+  it('separates the two loop verbs, because a repeat tests `until` after its body', () => {
+    expect(always({ id: 'r', use: 'core.repeat', steps: [] })).toEqual([true])
+    expect(always({ id: 'e', use: 'core.for_each', steps: [] })).toEqual([false])
+  })
+
+  it('is false for a body under a verb nothing declares, which guarantees nothing', () => {
+    expect(always({ id: 'x', use: 'component.thing.do', steps: [] })).toEqual([false])
+  })
+})
+
+describe('regionKey', () => {
+  it('separates two regions of one Step, which `stepKey` alone cannot', () => {
+    expect(regionKey({ board: null, id: 't', kind: 'body' })).not.toBe(
+      regionKey({ board: null, id: 't', kind: 'handler' }),
+    )
+  })
+
+  it("separates a Fork's Branches by index, because they share a kind", () => {
+    expect(regionKey({ board: null, id: 'f', kind: 'branch', branchIndex: 0 })).not.toBe(
+      regionKey({ board: null, id: 'f', kind: 'branch', branchIndex: 1 }),
+    )
+  })
+
+  it('separates the same region on two Boards, because ids are Board-local', () => {
+    expect(regionKey({ board: null, id: 't', kind: 'body' })).not.toBe(
+      regionKey({ board: 'blk', id: 't', kind: 'body' }),
+    )
+  })
+
+  it('gives one region one spelling, so two readers cannot pick two separators', () => {
+    expect(regionKey({ board: 'blk', id: 'f', kind: 'branch', branchIndex: 2 })).toBe(
+      'blk/f#branch:2',
+    )
   })
 })
 

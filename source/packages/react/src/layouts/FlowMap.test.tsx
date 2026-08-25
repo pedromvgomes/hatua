@@ -169,8 +169,10 @@ const transfer = (data: Record<string, string>, effectAllowed = 'none') => {
 }
 
 /** The name on every card drawn, in DOM order. */
+// Scoped to the list of Steps, because a region's legend is a button too — it is
+// the control that folds its column — and it is not a card.
 const cardNames = () =>
-  canvas()
+  within(canvas().getByRole('list', { name: 'Steps' }))
     .getAllByRole('button')
     .filter((button) => !button.hasAttribute('aria-label'))
     .map((button) => button.firstElementChild?.textContent)
@@ -260,13 +262,17 @@ describe('FlowMap', () => {
     for (const band of map.bands) expect(boxes).toContain(`${band.y}px`)
   })
 
-  it('marks where a Fork’s Branches converge, and marks nothing else', async () => {
+  it('marks every Step with two or more columns, and marks nothing else', async () => {
+    // A Join is a Step's and not a Fork's, so a `core.try` gets one too — flow
+    // resumes below it whether the body finished or the handler ran. A loop's
+    // lone column gets none: there is nothing under it to converge.
     mount()
     await canvas().findByText('Fetch mail')
 
     const marks = canvas().getAllByText(/come back together$/)
-    expect(marks.map((mark) => mark.textContent)).toEqual([
-      'The branches of How urgent? come back together',
+    expect(marks.map((mark) => mark.textContent).sort()).toEqual([
+      'The regions of How urgent? come back together',
+      'The regions of Publish the digest come back together',
     ])
   })
 
@@ -608,6 +614,75 @@ describe('a Board is what the canvas draws one of', () => {
         .getAllByRole('button')
         .filter((button) => button.getAttribute('aria-current') === 'true'),
     ).toHaveLength(0)
+  })
+
+  it('folds one column from its legend, leaving the Step and its siblings drawn', async () => {
+    // Two different reliefs. The card's chevron folds a Step and its Nest is not
+    // drawn at all; a legend folds one column and its siblings stay on screen.
+    const onCollapsedRegionsChange = vi.fn()
+    mount(SOURCE, { onCollapsedRegionsChange })
+    await canvas().findByText('Fetch mail')
+
+    fireEvent.click(canvas().getByRole('button', { name: /on failure/ }))
+    expect(onCollapsedRegionsChange).toHaveBeenLastCalledWith([
+      { board: null, id: 'guarded', kind: 'handler' },
+    ])
+
+    expect(canvas().queryByText('Shelve it')).toBeNull()
+    expect(canvas().getByText('Triage')).toBeDefined()
+    // The frame stays: a folded column is a box, not an absence.
+    expect(canvas().getByRole('button', { name: /on failure/ })).toBeDefined()
+  })
+
+  it('fades the lines in on a fold, because a path’s `d` cannot tween with the boxes', async () => {
+    // At full strength the lines point at boxes still gliding toward them — by
+    // the whole fold distance at the start of it. Folds alone: an ordinary
+    // re-render must not make the lines blink.
+    mount()
+    await canvas().findByText('Fetch mail')
+    const svg = () => canvas().getByTitle('Flow').parentElement as Element
+
+    expect(svg().getAttribute('class')).not.toContain('redrawn')
+    fireEvent.click(canvas().getByRole('button', { name: /on failure/ }))
+    expect(svg().getAttribute('class')).toContain('redrawn')
+  })
+
+  it('tells a folded column from an empty one, which are the same box', async () => {
+    // They mean opposite things — one is somewhere to add a Step, the other is
+    // Steps out of sight — and the rect alone does not separate them.
+    mount(SOURCE, { collapsedRegions: [{ board: null, id: 'guarded', kind: 'handler' }] })
+    await canvas().findByText('Fetch mail')
+
+    const legend = canvas().getByRole('button', { name: /on failure/ })
+    expect(legend.getAttribute('aria-expanded')).toBe('false')
+    expect(canvas().getByText('1 step')).toBeDefined()
+  })
+
+  it('dashes a column only where it has a solid sibling to be read against', async () => {
+    // A try's body always starts, so it is solid; its handler needs a failure,
+    // so it is dashed — and that pair is the whole of what separates a try from
+    // a two-Branch Fork. A lone loop body has no sibling, and dashed already
+    // means *placeholder* here, so it stays solid (ADR-0015).
+    mount()
+    await canvas().findByText('Fetch mail')
+
+    const frameOf = (word: string) =>
+      canvas().getByRole('button', { name: new RegExp(word) }).parentElement as HTMLElement
+
+    expect(frameOf('attempt').className).not.toContain('dashed')
+    expect(frameOf('on failure').className).toContain('dashed')
+    expect(frameOf('if').className).toContain('dashed')
+  })
+
+  it('leaves a lone loop body solid, though it may never run', async () => {
+    // `alwaysReturns` draws the same line at a `core.for_each` — its list may be
+    // empty — but the rule is scoped to sibling columns. With nothing beside it,
+    // a dash would read as *unfinished* rather than as *conditional*.
+    mount(NESTED)
+    await canvas().findByText('Each message')
+
+    const frame = canvas().getByRole('button', { name: /loop/ }).parentElement as HTMLElement
+    expect(frame.className).not.toContain('dashed')
   })
 
   it('collapses a container on one Board without collapsing the same id on another', async () => {

@@ -26,4 +26,30 @@
   .join {
     stroke-dasharray: 4 4;
   }
+
+  /*
+    The lines are redrawn rather than tweened, because an SVG path's `d` does not
+    transition. At full strength they would point at boxes still gliding toward
+    them — by the whole fold distance at the start — so they come up over the
+    same 140ms the boxes take and are solid the frame those stop.
+  */
+  .redrawn {
+    animation: hatua-connectors-settle 140ms ease;
+  }
+
+  @keyframes hatua-connectors-settle {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  /* Decoration, like the boxes' own tween: freezing it loses nothing. */
+  @media (prefers-reduced-motion: reduce) {
+    .redrawn {
+      animation: none;
+    }
+  }
 }
