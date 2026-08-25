@@ -27,8 +27,11 @@ import {
 } from '@hatua/services'
 import {
   type ComponentPropsWithRef,
+  type Dispatch,
   type FocusEvent as ReactFocusEvent,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
+  type SetStateAction,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -374,19 +377,51 @@ export function FlowMap({
   }
 
   /*
-   * `defaultViewport` is spent by the first Board that draws.
+   * The pan and the zoom.
    *
-   * The canvas is remounted per Board so a pan cannot survive into coordinates
-   * it means nothing in, and a remount would otherwise re-read the prop — so
-   * going back to the workflow would restore an opening viewport rather than
-   * re-centring on the Board being opened. Read once means once.
+   * Held here rather than inside `<Canvas>`, which is rendered only while the
+   * document projects: a Text Mode edit that is briefly not a Workflow
+   * Definition would otherwise unmount the canvas and take the viewport with
+   * it, snapping the user back to the middle of the map on the next keystroke.
+   *
+   * `null` is "not placed yet" — the opening viewport needs the size of a box
+   * that does not exist until the canvas has rendered once, so the canvas
+   * measures one and fills this in.
+   *
+   * `defaultViewport` is read here and nowhere else. Read once means the
+   * `useState` initialiser: consuming it during a render is consuming it in a
+   * pass React may throw away, and under a Host's `StrictMode` — which is every
+   * Host in development — it is the discarded pass that reads it.
    */
-  const spent = useRef(false)
-  const takeDefault = () => {
-    if (spent.current) return undefined
-    spent.current = true
-    return defaultViewport
+  const [view, setView] = useState<Viewport | null>(defaultViewport ?? null)
+
+  /*
+   * Opening another Board re-places the canvas, because coordinates are
+   * Board-local and carrying a pan across Boards lands in empty space.
+   *
+   * Keyed on the Board that was asked for rather than the one that resolved, so
+   * this settles before the document has loaded and does not fire again when it
+   * does.
+   */
+  const boardKey = boardKeyOf(wanted)
+  const drawing = useRef(boardKey)
+  if (drawing.current !== boardKey) {
+    drawing.current = boardKey
+    setView(null)
   }
+
+  /*
+   * The observer is held in a ref and the report keyed on the viewport alone. A
+   * Host passing an inline arrow — which is every Host — would otherwise make
+   * this fire on every render of the region rather than on every move of it.
+   */
+  const tell = useRef(onViewportChange)
+  useEffect(() => {
+    tell.current = onViewportChange
+  })
+  useEffect(() => {
+    if (view) tell.current?.(view)
+  }, [view])
 
   // Held while the drag is over the canvas and dropped the moment it leaves, so
   // a drag that wanders off and ends elsewhere does not leave every gap lit.
@@ -431,11 +466,10 @@ export function FlowMap({
 
         {definition && board ? (
           <Canvas
-            key={boardKeyOf(board.id)}
             definition={definition}
             board={board}
-            defaultViewport={takeDefault()}
-            onViewportChange={onViewportChange}
+            view={view}
+            onView={setView}
             manifests={manifests}
             selection={selection}
             folded={folded}
@@ -472,9 +506,9 @@ const boardKeyOf = (id: BoardId): string => (id === null ? 'root' : `block:${id}
 function Canvas({
   definition,
   board,
+  view,
+  onView,
   manifests,
-  defaultViewport,
-  onViewportChange,
   selection,
   folded,
   foldedRegions,
@@ -496,9 +530,9 @@ function Canvas({
 }: {
   definition: WorkflowDefinition
   board: Board
+  view: Viewport | null
+  onView: Dispatch<SetStateAction<Viewport | null>>
   manifests: ReadonlyMap<string, Manifest>
-  defaultViewport: Viewport | undefined
-  onViewportChange: ((view: Viewport) => void) | undefined
   selection: StepRef | undefined
   folded: readonly StepRef[]
   foldedRegions: readonly RegionRef[]
@@ -533,7 +567,7 @@ function Canvas({
     (definition.connections ?? []).map((one) => [one.id, one.ref ?? one.id]),
   )
 
-  const view = useViewport({ root: map.root, content: map, defaultViewport, onViewportChange })
+  const canvas = useViewport({ root: map.root, content: map, at: view, onView })
 
   return (
     /*
@@ -545,19 +579,30 @@ function Canvas({
       middle-drag go over a region is not something a user does TO it, and every
       target on the map is a `<button>` inside that is reachable on its own.
     */
-    // biome-ignore lint/a11y/noStaticElementInteractions: see above.
+    /* biome-ignore lint/a11y/noStaticElementInteractions: see above.
+       biome-ignore lint/a11y/useKeyWithClickEvents: the click handler adds no
+       command of its own — it moves focus off a control a pointer just pressed,
+       and a keyboard press is the one case it deliberately leaves alone. There
+       is nothing for a key to trigger. */
     <div
-      ref={view.box}
+      ref={canvas.box}
+      /*
+        Focusable, and only programmatically: it is where focus goes after a
+        pointer press on a control here, and a box that could be Tabbed onto
+        would be a stop in the tab order that does nothing.
+      */
+      tabIndex={-1}
       className={cx(
         styles.viewport,
-        view.grabbable && styles.grabbable,
-        view.grabbing && styles.grabbing,
+        canvas.grabbable && styles.grabbable,
+        canvas.grabbing && styles.grabbing,
       )}
-      onPointerDown={view.onPointerDown}
-      onPointerMove={view.onPointerMove}
-      onPointerUp={view.onPointerUp}
-      onPointerCancel={view.onPointerUp}
-      onFocus={view.onFocus}
+      onPointerDown={canvas.onPointerDown}
+      onPointerMove={canvas.onPointerMove}
+      onPointerUp={canvas.onPointerUp}
+      onPointerCancel={canvas.onPointerUp}
+      onFocus={canvas.onFocus}
+      onClick={canvas.onClick}
     >
       <Breadcrumb board={board} onOpenBoard={onOpenBoard} />
       {/*
@@ -580,11 +625,12 @@ function Canvas({
           which is not something a user does TO it. Every target the drag can
           land on is a `<button>` inside, and each is reachable on its own. */}
       <div
+        ref={canvas.surface}
         className={styles.surface}
         style={{
           width: map.width,
           height: map.height,
-          transform: `translate(${view.at.x}px, ${view.at.y}px) scale(${view.at.scale})`,
+          transform: `translate(${canvas.at.x}px, ${canvas.at.y}px) scale(${canvas.at.scale})`,
         }}
         onDragOver={(event) => {
           if (event.dataTransfer.types.includes(COMPONENT_MIME)) onDragIn()
@@ -706,14 +752,14 @@ function Canvas({
       </div>
 
       <CanvasControls
-        scale={view.at.scale}
+        scale={canvas.at.scale}
         min={ZOOM.min}
         max={ZOOM.max}
         levels={ZOOM.levels}
-        onZoomIn={view.zoomIn}
-        onZoomOut={view.zoomOut}
-        onZoomTo={view.snapTo}
-        onFit={view.fit}
+        onZoomIn={canvas.zoomIn}
+        onZoomOut={canvas.zoomOut}
+        onZoomTo={canvas.snapTo}
+        onFit={canvas.fit}
       />
     </div>
   )
@@ -762,21 +808,22 @@ const takesSpace = (target: EventTarget | null): boolean =>
 function useViewport({
   root,
   content,
-  defaultViewport,
-  onViewportChange,
+  at,
+  onView,
 }: {
   root: { x: number; width: number }
   content: { width: number; height: number }
-  defaultViewport: Viewport | undefined
-  onViewportChange: ((view: Viewport) => void) | undefined
+  at: Viewport | null
+  onView: Dispatch<SetStateAction<Viewport | null>>
 }) {
   const box = useRef<HTMLDivElement>(null)
-  const [at, setAt] = useState<Viewport | null>(defaultViewport ?? null)
+  const surface = useRef<HTMLDivElement>(null)
   /** Space is down, so the next drag anywhere on the canvas pans it. */
   const [armed, setArmed] = useState(false)
   const [grabbing, setGrabbing] = useState(false)
   const grab = useRef<{ id: number; x: number; y: number } | null>(null)
 
+  const setAt = onView
   const shift = (fn: (from: Viewport) => Viewport) => setAt((from) => (from ? fn(from) : from))
   const sizeOf = () => box.current?.getBoundingClientRect() ?? NO_BOX
 
@@ -785,20 +832,7 @@ function useViewport({
     const el = box.current
     if (!el) return
     setAt(openingView(root, el.getBoundingClientRect()))
-  }, [at, root])
-
-  /*
-   * The observer is held in a ref and the report keyed on the viewport alone.
-   * A Host passing an inline arrow — which is every Host — would otherwise make
-   * this fire on every render of the canvas rather than on every move of it.
-   */
-  const tell = useRef(onViewportChange)
-  useEffect(() => {
-    tell.current = onViewportChange
-  })
-  useEffect(() => {
-    if (at) tell.current?.(at)
-  }, [at])
+  }, [at, root, setAt])
 
   /*
    * `wheel` is registered by hand because it has to be cancellable: React
@@ -828,7 +862,7 @@ function useViewport({
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
-  }, [])
+  }, [setAt])
 
   /*
    * Space arms a pan only while the canvas is the thing being used — the
@@ -843,9 +877,13 @@ function useViewport({
     if (!el) return
     const ours = () => el.matches(':hover') || el.contains(document.activeElement)
     const down = (event: KeyboardEvent) => {
-      if (event.key !== ' ' || event.repeat || takesSpace(event.target) || !ours()) return
+      if (event.key !== ' ' || takesSpace(event.target) || !ours()) return
+      // Every repeat is consumed, not only the first. Holding space is how a
+      // pan is held, and a repeat that reaches the document scrolls the Host's
+      // page out from under the gesture — the browser starts sending them about
+      // half a second in, which is well inside one drag.
       event.preventDefault()
-      setArmed(true)
+      if (!event.repeat) setArmed(true)
     }
     const up = (event: KeyboardEvent) => {
       if (event.key === ' ') setArmed(false)
@@ -865,6 +903,7 @@ function useViewport({
 
   return {
     box,
+    surface,
     at: at ?? UNPLACED,
     grabbable: armed,
     grabbing,
@@ -906,21 +945,47 @@ function useViewport({
     },
 
     /*
-     * Anything that takes focus is panned to.
+     * Anything **on the map** that takes focus is panned to.
      *
      * A scroll container brings a focused child into view on its own; a
      * transform inside a clipped box has nothing to scroll, so this is where
      * that happens instead. Without it, tabbing to a card off the edge of the
      * map moves focus to something nobody can see.
+     *
+     * The chrome is excluded, and it has to be: the toolbar and the breadcrumb
+     * sit closer to the frame's edge than the margin a pan aims for, so panning
+     * to them would shift the map a few pixels every time one is pressed — and
+     * they never move, so every press shifts it again.
      */
     onFocus(event: ReactFocusEvent<HTMLDivElement>) {
       const el = box.current
-      if (!el || event.target === el) return
+      if (!el || !surface.current?.contains(event.target)) return
       const frame = el.getBoundingClientRect()
       // A canvas with no size cannot say what is on screen, and every edge test
       // against an empty box reads as "off it".
       if (frame.width === 0 || frame.height === 0) return
       setAt((was) => (was ? panInto(was, event.target.getBoundingClientRect(), frame) : was))
+    },
+
+    /*
+     * A pointer press anywhere here hands focus to the canvas itself.
+     *
+     * The canvas pans on space, and a browser leaves a clicked control focused
+     * — so after one press of `+`, or one click on a card, the space bar
+     * belongs to that control and pressing it repeats the press instead of
+     * arming a pan. Refusing space to a focused button is not the alternative:
+     * a `+` on the map has to answer the space bar, which is what a button is.
+     *
+     * Focus lands on the canvas box rather than nowhere, so the next Tab
+     * carries on from the map instead of restarting at the top of the Host's
+     * document.
+     *
+     * Only a pointer press. `detail` is 0 when a keyboard activated the
+     * control, and there focus is the only thing saying where the user is.
+     */
+    onClick(event: ReactMouseEvent<HTMLDivElement>) {
+      if (event.detail === 0) return
+      box.current?.focus({ preventScroll: true })
     },
 
     zoomIn: () => shift((from) => stepZoom(from, 1, sizeOf())),

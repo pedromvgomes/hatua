@@ -187,7 +187,10 @@ export function wheelTravel(
   event: { deltaX: number; deltaY: number; deltaMode: number },
   box: Size,
 ): { x: number; y: number } {
-  const unit = event.deltaMode === 1 ? LINE : event.deltaMode === 2 ? box.height : 1
+  // A page is the viewport, and the viewport is not square: each axis is scaled
+  // by its own side, or a sideways page-mode wheel pans by the wrong distance.
+  if (event.deltaMode === 2) return { x: event.deltaX * box.width, y: event.deltaY * box.height }
+  const unit = event.deltaMode === 1 ? LINE : 1
   return { x: event.deltaX * unit, y: event.deltaY * unit }
 }
 
