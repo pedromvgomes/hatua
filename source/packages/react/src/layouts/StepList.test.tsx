@@ -697,16 +697,16 @@ describe('a core.try draws two regions', () => {
    * the word comes from the verb — "loop" over the Steps a try is protecting
    * would name the wrong control flow.
    */
-  it('labels the body `try` and the handler `on failure`, rather than calling either a loop', async () => {
+  it('labels the body `attempt` and the handler `on failure`, rather than calling either a loop', async () => {
     mount(host(TRIED))
     await screen.findByText('Publish the digest')
 
     const card = rowFor('Publish the digest')
     const chips = [...card.querySelectorAll('span')]
       .map((one) => one.textContent)
-      .filter((text) => text === 'try' || text === 'on failure' || text === 'loop')
+      .filter((text) => text === 'attempt' || text === 'on failure' || text === 'loop')
 
-    expect(chips).toEqual(['try', 'on failure'])
+    expect(chips).toEqual(['attempt', 'on failure'])
   })
 
   it('draws a Step from each region, so neither is a region nothing renders', async () => {

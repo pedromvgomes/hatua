@@ -59,7 +59,7 @@ export const LAYOUT = {
   branchGap: 44,
   /**
    * Height reserved above a child region for the label that names it — `if` over
-   * a Branch, `try` and `on failure` over a `core.try`'s two.
+   * a Branch, `attempt` and `on failure` over a `core.try`'s two.
    */
   regionLabel: 28,
   /** Height reserved below a Fork's branches for the mark where they converge. */
@@ -669,7 +669,7 @@ function stack(steps: readonly Step[], ctx: Ctx): Box {
  * as a Fork.
  *
  * What tells the two regions apart, and tells either of them from a loop body,
- * is the label band above each one — `try` and `on failure`, `loop` — which is
+ * is the label band above each one — `attempt` and `on failure`, `loop` — which is
  * the same answer `StepList` gives with the chip over each region. Every child
  * region gets one, including a Branch's, so a second region costs no shape the
  * first did not already have.

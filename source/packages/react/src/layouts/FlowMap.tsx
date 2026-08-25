@@ -559,7 +559,7 @@ function insertLabel(link: Link, steps: ReadonlyMap<string, Step>, board: Board)
       ? `the “${owner.branches?.[at.branchIndex]?.label ?? at.branchIndex}” branch`
       : at.region === 'handler'
         ? `the “${nameOf(owner)}” handler`
-        : `the “${nameOf(owner)}” ${owner.use === TRY_VERB ? 'body' : 'loop'}`
+        : `the “${nameOf(owner)}” ${owner.use === TRY_VERB ? 'attempt' : 'loop'}`
     : board.id === null
       ? 'the workflow'
       : `the “${board.block?.name || board.id}” block`

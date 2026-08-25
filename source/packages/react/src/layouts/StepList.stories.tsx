@@ -181,7 +181,7 @@ export const Flat: Story = { parameters: wired(serving(SIMPLE)) }
  * any Branch carries `when`, because the schema has no mode field.
  *
  * The try is the one Step here with TWO child regions, and the chips say which
- * is which: `try` over the protected body and `on failure` over the handler.
+ * is which: `attempt` over the protected body and `on failure` over the handler.
  * `steps:` holds a loop's children and a try's body alike, so the word comes
  * from the verb — reading "loop" over the Steps a try is protecting would name
  * the wrong control flow.

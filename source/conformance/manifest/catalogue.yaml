@@ -129,10 +129,13 @@ components:
         t: item
   - kind: component
     use: core.try
-    name: Try
+    name: Attempt
     group: Built-in
     icon: /icons/zap.svg
-    blurb: Run steps, and fall back to a handler if they fail.
+    # Everything a manifest names reaches an end user's screen, so neither the
+    # name nor the blurb spends a word only somebody who has written code knows:
+    # not "try", and not "handler".
+    blurb: Run these steps, and do something else if they fail.
     # Wrapping one step is retry; wrapping a region is fallback, so one verb
     # serves both. Its two regions are `steps:` and `handler:`, which are
     # positions in the document rather than fields — so they are not here.

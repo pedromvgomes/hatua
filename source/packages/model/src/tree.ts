@@ -140,7 +140,8 @@ export interface Region {
   readonly steps: readonly Step[]
   /**
    * The word that goes over this region — `if` / `else if` / `else` / `and`
-   * over a Branch, `try` or `loop` over a body, `on failure` over a handler.
+   * over a Branch, `attempt` or `loop` over a body, `on failure` over a
+   * handler.
    *
    * Here rather than at each surface, because two surfaces draw every region:
    * `<StepList>` puts it in a chip over the region and the canvas puts it in
@@ -201,13 +202,20 @@ function branchKeyword(branches: readonly Branch[], index: number): string {
 }
 
 /**
- * `try` over a `core.try`'s protected region, `loop` over everything else's.
+ * `attempt` over a `core.try`'s protected region, `loop` over everything else's.
  *
  * `steps:` is one key holding two different ideas, so the word comes from the
  * verb rather than from the key. Reading "loop" over the Steps a try is
  * protecting would name the wrong control flow.
+ *
+ * `attempt` and not `try`, which is the word only somebody who has written code
+ * knows. Everything here reaches an end user's screen inside somebody else's
+ * product (`.agents/rules/rendered-copy-is-written-for-the-hosts-users.md`), and
+ * `on failure` beside it is already plain — half a pair in plain English and
+ * half in a keyword reads as neither. The verb stays `core.try`: that is an
+ * identifier somebody types in Text Mode, not a sentence anybody reads.
  */
-const bodyKeyword = (step: Step): string => (step.use === TRY_VERB ? 'try' : 'loop')
+const bodyKeyword = (step: Step): string => (step.use === TRY_VERB ? 'attempt' : 'loop')
 
 /**
  * Whether a Step owns child regions at all.

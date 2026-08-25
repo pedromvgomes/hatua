@@ -51,8 +51,8 @@ type Story = StoryObj<typeof meta>
 
 export const Loop: Story = {}
 
-/** `try`, not `loop`: `steps:` holds a loop's children and a try's body alike. */
-export const TryBody: Story = { args: { band: { ...meta.args.band, keyword: 'try' } } }
+/** `attempt`, not `loop`: `steps:` holds a loop's children and a try's body alike. */
+export const TryBody: Story = { args: { band: { ...meta.args.band, keyword: 'attempt' } } }
 
 export const Handler: Story = {
   args: { band: { ...meta.args.band, kind: 'handler', keyword: 'on failure' } },

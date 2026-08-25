@@ -301,7 +301,7 @@ describe('bands', () => {
 
   it('says the word `regionsOf` says, and never works one out for itself', () => {
     const map = rootOf(ALL_REGIONS)
-    expect(bandFor(map, 'guarded', 'try').kind).toBe('body')
+    expect(bandFor(map, 'guarded', 'attempt').kind).toBe('body')
     expect(bandFor(map, 'guarded', 'on failure').kind).toBe('handler')
     expect(bandFor(map, 'each', 'loop').kind).toBe('body')
     expect(
@@ -311,7 +311,7 @@ describe('bands', () => {
 
   it('encloses every card in the region, inset from all four edges', () => {
     const map = rootOf(ALL_REGIONS)
-    const band = bandFor(map, 'guarded', 'try')
+    const band = bandFor(map, 'guarded', 'attempt')
     const card = at(map, 'triage')
 
     // The frame is the region's own edge, so a card inside it clears that edge

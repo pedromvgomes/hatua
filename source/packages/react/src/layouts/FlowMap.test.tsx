@@ -234,7 +234,7 @@ describe('FlowMap', () => {
     // document carries, and never the ones the verb implies.
     expect(canvas().getByText('if')).toBeDefined()
     expect(canvas().getByText('else')).toBeDefined()
-    expect(canvas().getByText('try')).toBeDefined()
+    expect(canvas().getByText('attempt')).toBeDefined()
     expect(canvas().getByText('on failure')).toBeDefined()
     // The Branch's own label sits beside the keyword the fork's shape decides.
     expect(canvas().getByText('Urgent')).toBeDefined()
