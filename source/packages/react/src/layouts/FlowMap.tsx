@@ -1,5 +1,5 @@
 import type { Band, Link } from '@hatua/layout'
-import { layout } from '@hatua/layout'
+import { layout, regionRefOf } from '@hatua/layout'
 import {
   type Board,
   type BoardId,
@@ -9,6 +9,9 @@ import {
   type Diagnostic,
   type InsertPoint,
   nameOf,
+  type Region,
+  type RegionRef,
+  regionKey,
   regionsOf,
   type StepRef,
   stepKey,
@@ -53,11 +56,16 @@ import css from './FlowMap.module.css?inline'
  *
  * ## It computes no geometry
  *
- * Every number on screen comes from one `layout(board, { collapsed })` call:
- * the cards from `placements`, each region's frame and its word from `bands`,
- * each container's extent from `nests`, the mark where a Fork's Branches
- * converge from `joins`, where every line runs and where every `+` on one sits
- * from `links`, and the node above the first Step from `root`. Positions are
+ * Every number on screen comes from one `layout(board, …)` call: the cards from
+ * `placements`, each region's frame and its word from `bands`, each container's
+ * extent from `nests`, the mark where a Step's columns converge from `joins`,
+ * where every line runs and where every `+` on one sits from `links`, and the
+ * node above the first Step from `root`.
+ *
+ * The one thing it decides for itself is the edge style, because that is a
+ * question about a region's *siblings* rather than about its own extent: a
+ * column is dashed when it does not always run AND its Step owns more than one
+ * region (ADR-0015). Positions are
  * never stored (ADR-0001), so a hand-edited Workflow Definition cannot disagree
  * with the map — and the map cannot disagree with the list, because both
  * enumerate regions with `regionsOf` and name them with the same `keyword`.
@@ -115,6 +123,22 @@ export interface FlowMapProps extends Omit<ComponentPropsWithRef<'section'>, 'on
   collapsed?: readonly StepRef[]
   defaultCollapsed?: readonly StepRef[]
   onCollapseChange?: (collapsed: StepRef[]) => void
+  /**
+   * Which individual columns are folded shut, and a way to hear about it.
+   *
+   * Beside `collapsed` and not merged with it, because the two are different
+   * reliefs: the card's chevron folds a Step and its Nest is not drawn at all,
+   * while a legend folds one column and leaves its siblings drawn. A wide Fork
+   * has the problem a big `core.try` has, so any sibling column folds
+   * (ADR-0015).
+   *
+   * `RegionRef`s for the reason `collapsed` holds `StepRef`s: a region is named
+   * by its Board, its owner and which region it is, and `regionKey` is the flat
+   * spelling `layout` reads them against.
+   */
+  collapsedRegions?: readonly RegionRef[]
+  defaultCollapsedRegions?: readonly RegionRef[]
+  onCollapsedRegionsChange?: (collapsed: RegionRef[]) => void
   /**
    * Fired when a `+` on the map is chosen. Optional — this region knows where a
    * Step would go and nothing at all about which Component to put there, so it
@@ -174,6 +198,9 @@ export function FlowMap({
   collapsed,
   defaultCollapsed,
   onCollapseChange,
+  collapsedRegions,
+  defaultCollapsedRegions,
+  onCollapsedRegionsChange,
   onInsert,
   onDropComponent,
   className,
@@ -185,6 +212,18 @@ export function FlowMap({
   const [ownBoard, setOwnBoard] = useState<BoardId>(defaultBoardId)
   const [ownSelected, setOwnSelected] = useState<StepRef | undefined>(defaultSelected)
   const [ownCollapsed, setOwnCollapsed] = useState<readonly StepRef[]>(defaultCollapsed ?? [])
+  const [ownFoldedRegions, setOwnFoldedRegions] = useState<readonly RegionRef[]>(
+    defaultCollapsedRegions ?? [],
+  )
+  /*
+   * How many times something has been folded or unfolded.
+   *
+   * The boxes tween because `boxOf` writes animatable properties; the
+   * connectors cannot, so they fade in over the same window rather than
+   * pointing at boxes on their way somewhere else. This counts the folds
+   * alone: an ordinary re-render must not make the lines blink.
+   */
+  const [redraws, setRedraws] = useState(0)
   const [dragging, setDragging] = useState<string | null>(null)
   /*
    * A Component from the catalogue is over the canvas.
@@ -246,6 +285,7 @@ export function FlowMap({
 
   const selection = selected ?? ownSelected
   const folded = collapsed ?? ownCollapsed
+  const foldedRegions = collapsedRegions ?? ownFoldedRegions
 
   const openBoard = (next: BoardId) => {
     // The internal state is kept in step even while controlled, so a caller that
@@ -260,12 +300,23 @@ export function FlowMap({
   }
 
   const toggle = (ref: StepRef) => {
+    setRedraws((count) => count + 1)
     const key = stepKey(ref)
     const next = folded.some((one) => stepKey(one) === key)
       ? folded.filter((one) => stepKey(one) !== key)
       : [...folded, ref]
     setOwnCollapsed(next)
     onCollapseChange?.([...next])
+  }
+
+  const toggleRegion = (ref: RegionRef) => {
+    setRedraws((count) => count + 1)
+    const key = regionKey(ref)
+    const next = foldedRegions.some((one) => regionKey(one) === key)
+      ? foldedRegions.filter((one) => regionKey(one) !== key)
+      : [...foldedRegions, ref]
+    setOwnFoldedRegions(next)
+    onCollapsedRegionsChange?.([...next])
   }
 
   const move = (id: string, to: InsertPoint) => {
@@ -321,11 +372,14 @@ export function FlowMap({
             manifests={manifests}
             selection={selection}
             folded={folded}
+            foldedRegions={foldedRegions}
             problems={problems}
+            redraws={redraws}
             dragging={dragging}
             carrying={carrying}
             onSelect={select}
             onToggle={toggle}
+            onToggleRegion={toggleRegion}
             onOpenBoard={openBoard}
             onInsert={onInsert}
             onDropComponent={onDropComponent}
@@ -347,11 +401,14 @@ function Canvas({
   manifests,
   selection,
   folded,
+  foldedRegions,
   problems,
+  redraws,
   dragging,
   carrying,
   onSelect,
   onToggle,
+  onToggleRegion,
   onOpenBoard,
   onInsert,
   onDropComponent,
@@ -366,11 +423,14 @@ function Canvas({
   manifests: ReadonlyMap<string, Manifest>
   selection: StepRef | undefined
   folded: readonly StepRef[]
+  foldedRegions: readonly RegionRef[]
   problems: ReadonlyMap<string, Diagnostic[]>
+  redraws: number
   dragging: string | null
   carrying: boolean
   onSelect: (ref: StepRef) => void
   onToggle: (ref: StepRef) => void
+  onToggleRegion: (ref: RegionRef) => void
   onOpenBoard: (board: BoardId) => void
   onInsert?: (at: InsertPoint) => void
   onDropComponent?: (component: ComponentDrag, at: InsertPoint) => void
@@ -384,7 +444,11 @@ function Canvas({
   // set that spans Boards becomes the set for one of them, and it is the only
   // place the two spellings meet.
   const collapsed = new Set(folded.filter((ref) => ref.board === board.id).map((ref) => ref.id))
-  const map = layout(board, { collapsed, manifests })
+  // Not filtered by Board, because `regionKey` carries the Board itself — the
+  // spelling is the same one `layout` mints, so a Block's `handler` and the root
+  // Board's cannot collide the way two bare ids would.
+  const collapsedRegions = new Set(foldedRegions.map(regionKey))
+  const map = layout(board, { collapsed, collapsedRegions, manifests })
   const steps = new Map<string, Step>()
   for (const { step, ref } of walk(board)) steps.set(stepKey(ref), step)
   const connections = new Map(
@@ -431,22 +495,30 @@ function Canvas({
           behind its regions rather than over them.
         */}
         {map.nests.map((nest) => (
-          <RegionNest key={`${stepKey(nest.owner)}:${nest.y}`} nest={nest} />
+          <RegionNest key={stepKey(nest.owner)} nest={nest} />
         ))}
 
+        {/*
+          Keyed by what the box IS and never by where it is, so folding a column
+          moves the same element rather than unmounting one and mounting
+          another — which is the whole of what makes the boxes tween.
+        */}
         {map.bands.map((band) => {
-          const branch = branchOn(band, steps)
+          const { region, siblings } = regionOn(band, steps)
           return (
             <RegionBand
-              key={`${stepKey(band.owner)}:${band.kind}:${band.x}:${band.y}`}
+              key={regionKey(regionRefOf(band))}
               band={band}
-              label={branch?.label}
-              when={branch?.when}
+              label={region?.branch?.label}
+              when={region?.branch?.when}
+              count={region?.steps.length ?? 0}
+              dashed={!band.always && siblings > 1}
+              onToggle={() => onToggleRegion(regionRefOf(band))}
             />
           )
         })}
 
-        <Connectors links={map.links} width={map.width} height={map.height} />
+        <Connectors links={map.links} width={map.width} height={map.height} redraws={redraws} />
 
         <RootNode
           rect={map.root}
@@ -458,7 +530,7 @@ function Canvas({
           const owner = steps.get(stepKey(join.owner))
           return (
             <JoinMarker
-              key={`${stepKey(join.owner)}:${join.y}`}
+              key={stepKey(join.owner)}
               join={join}
               name={owner ? nameOf(owner) : join.owner.id}
             />
@@ -530,16 +602,38 @@ function Canvas({
 }
 
 /**
- * The Branch a Band is, when it is one — for the label and the condition beside
- * the keyword in its legend.
+ * The region a Band draws, and how many regions its Step owns.
  *
- * By the index `layout` put on the band, never by matching the keyword: a fork
- * of four conditions carries three bands all reading `else if`.
+ * Both from one walk of `regionsOf`, because the two questions are asked of the
+ * same Step at the same moment and a second enumeration is a second answer. The
+ * region gives the Branch's label and condition for the legend and how many
+ * Steps a folded box is holding back; the count decides the edge.
+ *
+ * A Branch is found by the index `layout` put on the band and never by matching
+ * the keyword: a fork of four conditions carries three bands all reading
+ * `else if`, and the legend has to name the right one of them.
+ *
+ * **The dash needs a solid sibling.** A region is dashed when it does not always
+ * run AND its Step owns more than one region. Dashed already means *placeholder*
+ * in this codebase — the `+` is a dashed circle, an empty Band a dashed box —
+ * and it survives that collision only beside a solid sibling to be read against
+ * (ADR-0015). A lone `core.for_each` body has none, so it stays solid even
+ * though its list may be empty.
  */
-const branchOn = (band: Band, steps: ReadonlyMap<string, Step>) =>
-  band.branchIndex === undefined
-    ? undefined
-    : steps.get(stepKey(band.owner))?.branches?.[band.branchIndex]
+function regionOn(
+  band: Band,
+  steps: ReadonlyMap<string, Step>,
+): { region: Region | undefined; siblings: number } {
+  const step = steps.get(stepKey(band.owner))
+  if (!step) return { region: undefined, siblings: 0 }
+
+  const regions = [...regionsOf(step)]
+  let branches = 0
+  const region = regions.find((one) =>
+    one.kind === 'branch' ? band.branchIndex === branches++ : one.kind === band.kind,
+  )
+  return { region, siblings: regions.length }
+}
 
 /**
  * What an insert point is called, spelled out rather than numbered.

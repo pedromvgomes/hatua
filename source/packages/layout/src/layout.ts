@@ -4,6 +4,8 @@ import {
   type InsertPoint,
   type Region,
   type RegionKind,
+  type RegionRef,
+  regionKey,
   regionsOf,
   type StepRef,
   slotsFor,
@@ -62,7 +64,7 @@ export const LAYOUT = {
    * a Branch, `attempt` and `on failure` over a `core.try`'s two.
    */
   regionLabel: 28,
-  /** Height reserved below a Fork's branches for the mark where they converge. */
+  /** Height reserved below a Step's columns for the mark where they converge. */
   joinMarker: 26,
   /**
    * Between a Band's edge and what it holds, and between a Nest's edge and its
@@ -133,7 +135,40 @@ export interface Band extends Rect {
    * right one of them.
    */
   readonly branchIndex?: number
+  /**
+   * Whether this region runs every time its Step does, from `regionsOf`.
+   *
+   * Handed over rather than re-derived, because it is what decides the edge
+   * style and the tier that draws the edge reads no verbs (ADR-0015). A canvas
+   * asking the Step for itself would be a second reading of the line
+   * `alwaysReturns` already draws, and the two can disagree.
+   */
+  readonly always: boolean
+  /**
+   * Whether the column is folded shut.
+   *
+   * A folded column and an empty one are both `LAYOUT.emptyRegion` boxes with
+   * nothing placed inside them, so their rects do not tell them apart — and they
+   * say opposite things: an empty one carries the `+` that is the only way to
+   * fill it, a folded one carries how many Steps it is holding back.
+   */
+  readonly collapsed: boolean
 }
+
+/**
+ * The region a Band draws, as the ref that names it.
+ *
+ * Here rather than at each surface, because a Band already carries every part of
+ * a `RegionRef` and a canvas rebuilding one is a second place the two spellings
+ * could come apart — the set of folded columns is read against `regionKey`, and
+ * a key nothing looks up folds nothing.
+ */
+export const regionRefOf = (band: Band): RegionRef => ({
+  board: band.owner.board,
+  id: band.owner.id,
+  kind: band.kind,
+  ...(band.branchIndex !== undefined ? { branchIndex: band.branchIndex } : {}),
+})
 
 /**
  * One container Step's regions taken together.
@@ -158,15 +193,19 @@ export interface Nest extends Rect {
 }
 
 /**
- * Where a Fork's Branches come back together.
+ * Where a Step's sibling columns come back together.
  *
- * `LAYOUT.joinMarker`'s worth of room below the columns, spanning them. A Fork's
- * Branches are the one region drawn side by side, so they are the one region
- * whose reader has to be told where the alternatives end — every other region
- * is stacked, and stacking says it already.
+ * `LAYOUT.joinMarker`'s worth of room below them, spanning them. A Step's, not a
+ * Fork's: it exists because columns need to be told where they end, which is a
+ * fact about columns and not about forking, and flow resumes below a `core.try`
+ * whether its body finished or its handler ran (ADR-0015).
+ *
+ * **Two or more columns, or none.** One column has nothing to converge on, and
+ * the Band's bottom edge already says where it ends — reserving room under every
+ * loop for a mark that means nothing is height no reader can account for.
  */
 export interface Join extends Rect {
-  /** The Fork whose Branches converge here. */
+  /** The Step whose columns converge here. */
   readonly owner: StepRef
 }
 
@@ -185,7 +224,7 @@ export interface Point {
  * a Band's edge to the first Step in it, and from the last Step's extent back
  * to that edge — and neither is drawn: containment is overlap, so a line
  * crossing a Band's edge would give the one idiom on this map a second meaning.
- * A `join` brings a Branch's column back to the mark where they converge, and
+ * A `join` brings one sibling column back to the mark where they converge, and
  * leaves the Band's bottom edge rather than the last card in it.
  */
 export type LinkKind = 'run' | 'enter' | 'leave' | 'join'
@@ -200,9 +239,8 @@ export type LinkKind = 'run' | 'enter' | 'leave' | 'join'
  * hope, and it is why the canvas can be the surface a workflow is built on.
  *
  * The endpoints are geometry and belong here; the curve between them is ink and
- * belongs to whatever draws it. A `run` is a straight drop down one spine, a
- * `branch` leaves a Fork for one of its columns, and a `join` brings a column
- * back to the mark where they converge.
+ * belongs to whatever draws it. A `run` is a straight drop down one spine, and a
+ * `join` brings a column back to the mark where they converge.
  *
  * `at` is absent on a `join` alone: a join arrives at a mark rather than at a
  * position in a list, so there is nothing there to insert into. Every other link
@@ -250,9 +288,9 @@ export interface FlowMap {
   readonly bands: readonly Band[]
   /** One per container Step drawn expanded, in the same order. */
   readonly nests: readonly Nest[]
-  /** One per Fork whose Branches are drawn. */
+  /** One per Step drawn with two or more columns. */
   readonly joins: readonly Join[]
-  /** One per gap in every step list on this Board, plus the fork and join links. */
+  /** One per gap in every step list on this Board, plus the join links. */
   readonly links: readonly Link[]
   readonly width: number
   readonly height: number
@@ -278,6 +316,27 @@ export interface LayoutOptions {
    * are unique on one.
    */
   readonly collapsed?: ReadonlySet<string>
+  /**
+   * The `regionKey`s of individual columns drawn folded, on this Board.
+   *
+   * Beside `collapsed` and not merged with it, because the two are different
+   * reliefs. Collapsing a Step draws no Nest at all — the card is a leaf and the
+   * regions are gone; folding one column leaves its siblings drawn and its own
+   * frame on screen as a box. A wide Fork has the problem a big `core.try` has,
+   * so any sibling column folds (ADR-0015), and the card's chevron still folds
+   * the whole Step.
+   *
+   * A collapsed column's children get no geometry, on the same argument that
+   * governs a collapsed container: no placements, no nested bands, and no links,
+   * so no `+` — nothing on screen would say where a Step landed.
+   *
+   * `regionKey` spellings rather than `RegionRef`s, because this is asked once
+   * per region during the walk and a set lookup is the only shape that answers
+   * it without a scan. A Board is already the argument, but the key carries the
+   * Board anyway: it is minted in one place so two readers cannot pick two
+   * separators.
+   */
+  readonly collapsedRegions?: ReadonlySet<string>
   /**
    * The Component Manifests, by `use`.
    *
@@ -340,6 +399,7 @@ export function layout(board: Board, options: LayoutOptions = {}): FlowMap {
   const ctx: Ctx = {
     board: board.id,
     collapsed: options.collapsed ?? NOTHING_COLLAPSED,
+    collapsedRegions: options.collapsedRegions ?? NOTHING_COLLAPSED,
     manifests: options.manifests ?? NO_MANIFESTS,
   }
   const body = stack(board.steps, ctx)
@@ -398,8 +458,10 @@ export function layout(board: Board, options: LayoutOptions = {}): FlowMap {
  *
  * The count is the invariant worth knowing: **one link per gap in every step
  * list**, which is one more than the list is long, and the same number of insert
- * points `<StepList>` draws between its rows. A Fork contributes its branch and
- * join links on top of that.
+ * points `<StepList>` draws between its rows — every gap except those in a
+ * folded column, which has none because its children have no geometry. A Step
+ * with two or more columns contributes one join link per column on top of
+ * that.
  */
 function linksOf(map: FlowMap, board: Board, ctx: Ctx): Link[] {
   const rects = new Map<string, Rect>()
@@ -482,7 +544,7 @@ function linksOf(map: FlowMap, board: Board, ctx: Ctx): Link[] {
     const mark = map.joins.find((one) => one.owner.id === step.id)
     const meeting = mark ? { x: mark.x + mark.width / 2, y: mark.y + mark.height / 2 } : undefined
 
-    let branchIndex = 0
+    let branches = 0
     let bandIndex = 0
 
     for (const region of regionsOf(step)) {
@@ -493,38 +555,41 @@ function linksOf(map: FlowMap, board: Board, ctx: Ctx): Link[] {
       const spine = band.x + band.width / 2
       const top: Point = { x: spine, y: band.y }
       const bottom: Point = { x: spine, y: band.y + band.height }
+      const branchIndex = region.kind === 'branch' ? branches++ : undefined
 
-      if (region.kind === 'branch') {
-        const index = branchIndex++
+      // A folded column offers no insert point: its children have no geometry,
+      // so nothing on screen would say where a Step landed. An EMPTY one keeps
+      // its single gap, because that `+` is the only way to fill it.
+      if (!band.collapsed) {
         walkList(
           region.steps,
-          { board: ctx.board, parentId: step.id, branchIndex: index },
+          branchIndex !== undefined
+            ? { board: ctx.board, parentId: step.id, branchIndex }
+            : {
+                board: ctx.board,
+                parentId: step.id,
+                ...(region.kind === 'handler' ? { region: 'handler' as const } : {}),
+              },
           { point: top, kind: 'enter' },
           { point: bottom, kind: 'leave' },
           owner,
-          index,
+          branchIndex,
         )
-        // The line to the mark leaves the Band's edge rather than the last card
-        // in it, so an empty Branch converges from the same place a full one
-        // does and no line crosses a frame it is not leaving.
-        if (meeting) {
-          links.push({ kind: 'join', from: bottom, to: meeting, branchIndex: index, owner })
-        }
-        continue
       }
 
-      walkList(
-        region.steps,
-        {
-          board: ctx.board,
-          parentId: step.id,
-          ...(region.kind === 'handler' ? { region: 'handler' as const } : {}),
-        },
-        { point: top, kind: 'enter' },
-        { point: bottom, kind: 'leave' },
-        owner,
-        undefined,
-      )
+      // The line to the mark leaves the Band's edge rather than the last card in
+      // it, so an empty or folded column converges from the same place a full
+      // one does and no line crosses a frame it is not leaving. A folded column
+      // still emits it: the path runs.
+      if (meeting) {
+        links.push({
+          kind: 'join',
+          from: bottom,
+          to: meeting,
+          ...(branchIndex !== undefined ? { branchIndex } : {}),
+          owner,
+        })
+      }
     }
   }
 
@@ -602,6 +667,7 @@ const NO_MANIFESTS: ReadonlyMap<string, Manifest> = new Map()
 interface Ctx {
   readonly board: BoardId
   readonly collapsed: ReadonlySet<string>
+  readonly collapsedRegions: ReadonlySet<string>
   readonly manifests: ReadonlyMap<string, Manifest>
 }
 
@@ -656,34 +722,33 @@ function stack(steps: readonly Step[], ctx: Ctx): Box {
 /**
  * One Step's card and everything it nests.
  *
- * A Fork's Branches become columns side by side and converge on a join marker,
- * because they are alternatives chosen between, and *which one* is the reader's
- * question.
+ * **Every region is a column, in one row, in document order** — a loop one, a
+ * `core.try` two, a Fork *n*, and a Step carrying `branches:`, `steps:` and
+ * `handler:` at once *n* + 2. Nothing here reads a region's `kind`: that decides
+ * a word and an edge style, never a shape (ADR-0015).
  *
- * Every other region is stacked below the card, in document order — so a
- * `core.try`'s body and handler sit one above the other rather than beside each
- * other. They are not alternatives chosen between: the handler runs *because*
- * the body failed, and part of the body has already run by then. Drawing them
- * as columns would make left-to-right mean "later" in the one place on the map
- * where it means nothing else, and would put a third thing on screen that reads
- * as a Fork.
+ * Side by side means **sibling regions of one Step, and the flow leaves through
+ * one of them**, which is what the model already says a `core.try`'s two regions
+ * are — they share the Fork's scope rule and the Fork's all-branches reasoning.
+ * Stacked, a handler sat below the body on the one axis that means "then"
+ * everywhere else on this map, and the only thing saying "or else" was the gap
+ * between two frames: an absence, and one that decays with distance, because on
+ * a real document that gap is a thousand pixels tall. Columns cannot decay —
+ * both regions begin at the same y under the card however large the body grows.
  *
- * What tells the two regions apart, and tells either of them from a loop body,
- * is the label band above each one — `attempt` and `on failure`, `loop` — which is
- * the same answer `StepList` gives with the chip over each region. Every child
- * region gets one, including a Branch's, so a second region costs no shape the
+ * What tells a Fork from a try is the edge style of each column, which is
+ * `Region.always` carried out on the Band, and what tells any two regions apart
+ * is the word over each — `attempt` and `on failure`, `loop`, `if` — the same
+ * answer `<StepList>` gives with its chip. So a second region costs no shape the
  * first did not already have.
  *
- * Both kinds are laid out, not one or the other, and the verb is never consulted
- * about whether a region exists. No verb owns both `branches:` and a `steps:`
- * body, and a `handler:` outside a `core.try` is meaningless — but nothing
- * refuses a document that writes them, because the schema's step keys are all
- * optional and no rule reads them together. Such a region is still walked:
- * `walkSteps` yields the Steps inside it, so the generic rules report against
- * them by name. A card no surface draws is a diagnostic the user cannot act on,
- * so drawing every region in hand is what keeps a hand-edited region reachable
- * enough to delete. `<StepList>` draws them on the same rule. The verb decides
- * the *word* over a region, never whether there is one.
+ * Every region in hand is laid out and the verb is never consulted about whether
+ * one exists. No verb owns both `branches:` and a `steps:` body, and a
+ * `handler:` outside a `core.try` is meaningless — but nothing refuses a
+ * document that writes them, and `walkSteps` yields the Steps inside such a
+ * region, so the generic rules report against them by name. A card no surface
+ * draws is a diagnostic the user cannot act on, so drawing every region is what
+ * keeps a hand-edited one reachable enough to delete.
  */
 function place(step: Step, ctx: Ctx): Box {
   const height = heightOf(step, ctx.manifests.get(step.use))
@@ -703,31 +768,17 @@ function place(step: Step, ctx: Ctx): Box {
 
   if (regions.length === 0) return card(LAYOUT.nodeWidth)
 
-  const groups: Box[] = []
-  const branches = regions.filter((region) => region.kind === 'branch')
-  if (branches.length > 0) groups.push(columns(branches, ref, ctx))
-  for (const region of regions.filter((one) => one.kind !== 'branch')) {
-    groups.push(banded(region, ref, fit(region, ctx)))
-  }
-
-  const held = Math.max(...groups.map((group) => group.width))
-  const nestWidth = held + 2 * LAYOUT.regionInset
+  const row = columns(regions, ref, ctx)
+  const nestWidth = row.width + 2 * LAYOUT.regionInset
   const width = Math.max(LAYOUT.nodeWidth, nestWidth)
   const nestX = centre(width, nestWidth)
 
-  const parts: Box[] = [card(width)]
-  // The first Band's top edge is `regionLabel` below the card's bottom, and its
-  // legend sits in that strip. Every Band after it clears the one above by the
-  // same distance, and that gap is the whole of what says "or else": no spine
-  // runs between two stacked regions, because a handler runs INSTEAD of the
-  // body rather than after it.
-  let y = height
-  for (const group of groups) {
-    y += LAYOUT.regionLabel
-    parts.push(shift(group, nestX + LAYOUT.regionInset + centre(held, group.width), y))
-    y += group.height
-  }
-  const bottom = y + LAYOUT.regionInset
+  // Every Band's top edge is `regionLabel` below the card's bottom, and its
+  // legend sits in that strip. One row, so the strip is reserved once and the
+  // words over two sibling columns line up with each other.
+  const top = height + LAYOUT.regionLabel
+  const parts: Box[] = [card(width), shift(row, nestX + LAYOUT.regionInset, top)]
+  const bottom = top + row.height + LAYOUT.regionInset
 
   const nest: Nest = {
     owner: ref,
@@ -744,29 +795,45 @@ function place(step: Step, ctx: Ctx): Box {
 /**
  * How much room one region's contents need, before its siblings have their say.
  *
- * Split from `banded` because a Fork's Branches are drawn the same size as each
- * other — an empty Branch is a full-height frame beside a populated one rather
- * than a strip beside it — so every column has to be measured before any of
- * them is placed.
+ * Split from `banded` because sibling columns showing lists are drawn the same
+ * height as each other, so every column has to be measured before any of them is
+ * placed.
  *
- * A region with Steps in it is padded by half a `verticalGap` at each end: the
+ * A region showing a list is padded by half a `verticalGap` at each end: the
  * first and last gaps of the list are between a card and the frame rather than
- * between two cards, and the `+` sitting in one has to clear the edge. An empty
- * region is `emptyRegion` instead, which is what makes the `+` in it a drop
- * target rather than something to aim at.
+ * between two cards, and the `+` sitting in one has to clear the edge.
+ *
+ * **A column not showing a list is a box.** Empty or folded, it takes
+ * `emptyRegion` rather than its siblings' height. An empty handler beside a
+ * 2000px body would otherwise be a 2000px empty frame, which is dead space no
+ * reader can account for — and it is the common case, because `bornRegionsOf`
+ * gives a new `core.try` an empty body *and* an empty handler, so a try added
+ * from the catalogue is a card over two small boxes. `emptyRegion` is also what
+ * makes the `+` in an empty one a drop target rather than something to aim at.
  */
 interface Fit {
   readonly inner: Box
   readonly width: number
   readonly height: number
+  /** Whether the column is showing a list, and so takes its siblings' height. */
+  readonly list: boolean
+  /** Whether the column is folded shut, which is how a folded box is told from an empty one. */
+  readonly collapsed: boolean
 }
 
-function fit(region: Region, ctx: Ctx): Fit {
-  const inner = stack(region.steps, ctx)
+function fit(region: Region, ctx: Ctx, collapsed: boolean): Fit {
+  // A folded column's children get no geometry at all, rather than geometry the
+  // canvas then hides: `width` and `height` would otherwise describe a map
+  // nobody is looking at, and every consumer of a total would be reading a
+  // number that is wrong whenever anything is folded.
+  const inner = collapsed ? EMPTY : stack(region.steps, ctx)
+  const list = !collapsed && region.steps.length > 0
   return {
     inner,
     width: inner.width + 2 * LAYOUT.regionInset,
-    height: region.steps.length === 0 ? LAYOUT.emptyRegion : inner.height + LAYOUT.verticalGap,
+    height: list ? inner.height + LAYOUT.verticalGap : LAYOUT.emptyRegion,
+    list,
+    collapsed,
   }
 }
 
@@ -779,27 +846,28 @@ function fit(region: Region, ctx: Ctx): Fit {
  * over it and a `+` in it, which is the whole of what makes it somewhere a Step
  * can be dropped.
  *
- * `at` may be wider or taller than this region needs, which is how a Fork's
- * columns come out the same size.
+ * `size` may be taller than this region needs, which is how sibling columns
+ * showing lists come out level.
  */
 function banded(
   region: Region,
   owner: StepRef,
   at: Fit,
-  branchIndex?: number,
-  size: { width: number; height: number } = at,
+  branchIndex: number | undefined,
+  size: { width: number; height: number },
 ): Box {
-  const empty = region.steps.length === 0
   const inner = shift(
     at.inner,
     centre(size.width, at.inner.width),
-    empty ? 0 : Math.floor(LAYOUT.verticalGap / 2),
+    at.list ? Math.floor(LAYOUT.verticalGap / 2) : 0,
   )
   const band: Band = {
     kind: region.kind,
     keyword: region.keyword,
     owner,
     ...(branchIndex !== undefined ? { branchIndex } : {}),
+    always: region.always,
+    collapsed: at.collapsed,
     x: 0,
     y: 0,
     width: size.width,
@@ -817,30 +885,59 @@ function banded(
 }
 
 /**
- * A Fork's Branches: one Band each, side by side, over the mark where they
+ * One Step's regions: one Band each, side by side, over the mark where they
  * converge.
  *
- * **One height, and each its own width.** The frames' bottom edges line up, so
- * the lines into the mark are symmetric and the mark sits under a straight run
- * of edges rather than under a ragged one — and an empty Branch is a
- * full-height frame beside a populated one rather than a strip that reads as a
- * different kind of thing. Width is a consequence of content, here as
- * everywhere else on this map: a Branch as wide as its widest sibling puts an
- * empty column the width of a nested Fork beside it, which is dead space no
- * reader can account for.
+ * **One height among the columns showing lists, and each its own width.** Their
+ * bottom edges line up, so the lines into the mark are symmetric and the mark
+ * sits under a straight run of edges. Width is a consequence of content, here as
+ * everywhere else on this map: a column as wide as its widest sibling puts an
+ * empty frame the width of a nested Fork beside it, which is dead space no
+ * reader can account for. Bottom edges are ragged where a box sits beside a
+ * list, and that is accepted — the line to the mark leaves each Band's bottom
+ * edge rather than the last card inside it, so a box converges from where it
+ * actually ends.
  *
- * The mark sits inside the Nest, because where a Fork's Branches converge is
- * that Fork's business.
+ * **The mark needs two or more columns.** A lone column has nothing to converge
+ * on and its Band's bottom edge already says where it ends, so a loop reserves
+ * no room for a mark that would mean nothing. The mark sits inside the Nest,
+ * because where a Step's columns converge is that Step's business.
  */
-function columns(branches: readonly Region[], owner: StepRef, ctx: Ctx): Box {
-  const fits = branches.map((region) => fit(region, ctx))
-  const height = Math.max(...fits.map((one) => one.height))
+function columns(regions: readonly Region[], owner: StepRef, ctx: Ctx): Box {
+  let branches = 0
+  // The Branch index is counted over the Branches alone, because that is what
+  // indexes `step.branches` — a `handler:` written on a `core.fork` sits among
+  // the regions without taking a Branch's number.
+  const indices = regions.map((region) => (region.kind === 'branch' ? branches++ : undefined))
+  const fits = regions.map((region, index) =>
+    fit(
+      region,
+      ctx,
+      ctx.collapsedRegions.has(
+        regionKey({
+          board: owner.board,
+          id: owner.id,
+          kind: region.kind,
+          ...(indices[index] !== undefined ? { branchIndex: indices[index] } : {}),
+        } as RegionRef),
+      ),
+    ),
+  )
+
+  const lists = fits.filter((one) => one.list).map((one) => one.height)
+  const tall = lists.length > 0 ? Math.max(...lists) : LAYOUT.emptyRegion
   const spread = across(
-    branches.map((region, index) => {
+    regions.map((region, index) => {
       const at = fits[index] as Fit
-      return banded(region, owner, at, index, { width: at.width, height })
+      return banded(region, owner, at, indices[index], {
+        width: at.width,
+        height: at.list ? tall : LAYOUT.emptyRegion,
+      })
     }),
   )
+
+  if (regions.length < 2) return spread
+
   return {
     ...spread,
     height: spread.height + LAYOUT.regionInset + LAYOUT.joinMarker,

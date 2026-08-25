@@ -6,14 +6,14 @@ import { RegionBand } from './RegionBand'
  * The band is one region's extent, and the word over its top edge is what tells
  * regions apart.
  *
- * A `core.try`'s body, its handler and a loop's body are the same shape stacked
- * under the card that owns them, so the word over each is the difference — and
- * every one of these words comes from `regionsOf`, which is also where
- * `<StepList>`'s chips come from.
+ * A `core.try`'s body, its handler and a loop's body are the same shape, so the
+ * word over each is what separates them — and every one of these words comes
+ * from `regionsOf`, which is also where `<StepList>`'s chips come from.
  *
  * The legend sits above the frame's top edge rather than on it: a word
  * straddling a border has to mask the line behind it, and a translucent fill
- * has no one colour to mask with.
+ * has no one colour to mask with. It is also the control that folds the column,
+ * because it is the one mark on screen naming this region and nothing else.
  */
 const meta = {
   title: 'Units/RegionBand',
@@ -23,6 +23,8 @@ const meta = {
       kind: 'body',
       keyword: 'loop',
       owner: { board: null, id: 'each' },
+      always: false,
+      collapsed: false,
       x: 0,
       y: 0,
       width: LAYOUT.nodeWidth + 2 * LAYOUT.regionInset,
@@ -51,11 +53,19 @@ type Story = StoryObj<typeof meta>
 
 export const Loop: Story = {}
 
-/** `attempt`, not `loop`: `steps:` holds a loop's children and a try's body alike. */
-export const TryBody: Story = { args: { band: { ...meta.args.band, keyword: 'attempt' } } }
+/**
+ * `attempt`, not `loop`: `steps:` holds a loop's children and a try's body alike.
+ *
+ * Solid, because it always starts — and it is a solid edge beside a dashed one
+ * that tells a `core.try` from a two-Branch Fork (ADR-0015).
+ */
+export const TryBody: Story = {
+  args: { band: { ...meta.args.band, keyword: 'attempt', always: true } },
+}
 
+/** Dashed: a handler runs only on failure, and it has a solid sibling to be read against. */
 export const Handler: Story = {
-  args: { band: { ...meta.args.band, kind: 'handler', keyword: 'on failure' } },
+  args: { band: { ...meta.args.band, kind: 'handler', keyword: 'on failure' }, dashed: true },
 }
 
 /**
@@ -70,6 +80,7 @@ export const Branch: Story = {
     band: { ...meta.args.band, kind: 'branch', keyword: 'else if', branchIndex: 1 },
     label: 'Has new mail',
     when: '{{ steps.fetch.count }} > 0',
+    dashed: true,
   },
 }
 
@@ -85,5 +96,20 @@ export const Branch: Story = {
 export const Empty: Story = {
   args: {
     band: { ...meta.args.band, kind: 'handler', keyword: 'on failure', height: LAYOUT.emptyRegion },
+  },
+}
+
+/**
+ * A column folded shut: a box the height of an empty one, carrying how many
+ * Steps it is holding back.
+ *
+ * Without the count a folded box and an empty one are the same rect, and they
+ * mean opposite things — one is somewhere to add a Step, the other is Steps out
+ * of sight.
+ */
+export const Folded: Story = {
+  args: {
+    band: { ...meta.args.band, collapsed: true, height: LAYOUT.emptyRegion },
+    count: 3,
   },
 }

@@ -102,9 +102,6 @@ export const whenSlot = (when: string): Slot => ({
 /** The verb whose outputs come from its own configuration. */
 export const MAPPING_VERB = 'core.map'
 
-/** The verb that repeats its children until a condition holds. */
-export const REPEAT_VERB = 'core.repeat'
-
 /** The verb that iterates a collection. */
 export const FOR_EACH_VERB = 'core.for_each'
 

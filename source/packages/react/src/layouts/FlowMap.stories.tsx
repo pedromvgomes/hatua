@@ -161,12 +161,27 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 /**
- * The whole vocabulary on one Board: a Fork's three Branches as columns over
- * the mark where they converge, a `core.try`'s two regions stacked under `attempt`
- * and `on failure`, a loop's body under `loop`, an empty Branch that is still a
- * band, and a call with a doorway rather than a body drawn inline.
+ * The whole vocabulary on one Board: a Fork's three Branches as dashed columns
+ * over the mark where they converge, a `core.try`'s two as one solid column
+ * beside a dashed one over a mark of their own, a loop's single solid body under
+ * `loop` with no mark under it, an empty Branch that is still a band, and a call
+ * with a doorway rather than a body drawn inline.
+ *
+ * Nothing distinguishes a Fork from a try structurally: what does is the edge
+ * (ADR-0015).
  */
 export const DeepTree: Story = { parameters: wired(serving(DEEP)) }
+
+/**
+ * One column folded shut, its siblings still drawn.
+ *
+ * A different relief from folding the Step: the Nest is still there, and the
+ * box says how many Steps it is holding back rather than offering a `+`.
+ */
+export const FoldedRegion: Story = {
+  parameters: wired(serving(DEEP)),
+  args: { defaultCollapsedRegions: [{ board: null, id: 's3', kind: 'handler' }] },
+}
 
 /** A Step selected, which is the thing the step editor is about. */
 export const Selected: Story = {

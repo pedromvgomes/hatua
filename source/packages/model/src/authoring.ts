@@ -1,6 +1,6 @@
 import type { Step } from '@hatua/schema'
-import { FOR_EACH_VERB, FORK_VERB, REPEAT_VERB } from './slots'
-import { TRY_VERB } from './tree'
+import { FOR_EACH_VERB, FORK_VERB } from './slots'
+import { REPEAT_VERB, TRY_VERB } from './tree'
 
 /**
  * What the verb decides about a Step that does not exist yet.

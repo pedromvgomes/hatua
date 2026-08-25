@@ -125,6 +125,17 @@ export function boardOf(doc: WorkflowDefinition, id: BoardId): Board | undefined
  */
 export const TRY_VERB = 'core.try'
 
+/**
+ * The verb that repeats its children until a condition holds.
+ *
+ * It sits beside `TRY_VERB` and the region vocabulary because the only question
+ * anything asks it here is whether a region always runs: a `core.repeat` tests
+ * its `until` AFTER the body, so the body runs at least once, while a
+ * `core.for_each`'s list may be empty and its body may never run. `steps:` is
+ * one key holding both, so the verb is what tells them apart.
+ */
+export const REPEAT_VERB = 'core.repeat'
+
 /** Which of a container's child regions a step list is. */
 export type RegionKind = 'branch' | 'body' | 'handler'
 
@@ -155,6 +166,20 @@ export interface Region {
    * those Steps unreachable rather than absent.
    */
   readonly keyword: string
+  /**
+   * Whether this region runs every time its Step does.
+   *
+   * A Branch does not — its `when` is answered at run time. A `core.try`'s body
+   * does, because it always starts; its handler does not, because it needs a
+   * failure. A `core.repeat`'s body does, because `until` is tested after it; a
+   * `core.for_each`'s does not, because the list may be empty.
+   *
+   * That is the same line `alwaysReturns` in validity.ts draws to decide whether
+   * a region discharges a Block's obligation to return — one question, "is this
+   * region guaranteed to run at all", asked here of geometry and there of
+   * validity. Two readings of it are two answers waiting to disagree.
+   */
+  readonly always: boolean
   /** The Branch this region is. Absent on a body and on a handler. */
   readonly branch?: Branch
 }
@@ -169,16 +194,31 @@ export interface Region {
  * construction rather than by remembering to ask for it.
  *
  * The region is named rather than yielded as a bare list because a reader that
- * draws differently per region — branches side by side, a try's two regions
- * stacked under their own labels — still has to get its regions from here.
+ * says something different about each — the word over it, whether it always
+ * runs — still has to get its regions from here.
  */
 export function* regionsOf(step: Step): Generator<Region> {
   const branches = step.branches ?? []
   for (const [index, branch] of branches.entries()) {
-    yield { kind: 'branch', keyword: branchKeyword(branches, index), branch, steps: branch.steps }
+    yield {
+      kind: 'branch',
+      keyword: branchKeyword(branches, index),
+      always: false,
+      branch,
+      steps: branch.steps,
+    }
   }
-  if (step.steps) yield { kind: 'body', keyword: bodyKeyword(step), steps: step.steps }
-  if (step.handler) yield { kind: 'handler', keyword: 'on failure', steps: step.handler }
+  if (step.steps) {
+    yield {
+      kind: 'body',
+      keyword: bodyKeyword(step),
+      always: step.use === TRY_VERB || step.use === REPEAT_VERB,
+      steps: step.steps,
+    }
+  }
+  if (step.handler) {
+    yield { kind: 'handler', keyword: 'on failure', always: false, steps: step.handler }
+  }
 }
 
 /**
@@ -305,6 +345,40 @@ export function* walkDocument(doc: WorkflowDefinition): Generator<StepRef & { st
  * because the schema holds every id to an identifier, which cannot contain one.
  */
 export const stepKey = ({ board, id }: StepRef): string => (board === null ? id : `${board}/${id}`)
+
+/**
+ * One child region, and the Step it hangs under.
+ *
+ * A `StepRef` widened by which of that Step's regions this is, because a
+ * `core.try` owns two and a Fork owns *n* — so a Step alone does not name one.
+ * The shape composes with what a `Band` already carries, so the canvas can name
+ * the region it is drawing without a second enumeration.
+ *
+ * Named by `kind` and `branchIndex` rather than by an ordinal into `regionsOf`,
+ * because anything held against a region — which one is folded shut — outlives
+ * the edit that inserts a Branch before it. An ordinal would silently move to a
+ * different region the moment the list it indexes into grows.
+ */
+export interface RegionRef {
+  readonly board: BoardId
+  /** The container Step that owns the region. */
+  readonly id: string
+  readonly kind: RegionKind
+  /** Which of the owner's Branches this is. Absent on a body and on a handler. */
+  readonly branchIndex?: number
+}
+
+/**
+ * One string naming one region, for the places that need a flat key — a `Set`, a
+ * React key, a `data-` attribute.
+ *
+ * Minted beside `stepKey` and for the same reason: hand-rolled spellings are
+ * chances to pick a different separator, and two readers disagreeing about the
+ * spelling is a region folded under a key nothing looks up. `#` and `:` are safe
+ * because the schema holds every id to an identifier, which contains neither.
+ */
+export const regionKey = ({ board, id, kind, branchIndex }: RegionRef): string =>
+  `${stepKey({ board, id })}#${kind}${branchIndex === undefined ? '' : `:${branchIndex}`}`
 
 /** A Step by Board and id. Both halves are needed: ids are Board-local. */
 export function findStep(doc: WorkflowDefinition, ref: StepRef): Step | undefined {
