@@ -345,6 +345,35 @@ describe('CanvasControls', () => {
     expect(onFit).toHaveBeenCalledTimes(1)
   })
 
+  it('hands focus back after a pointer press, because the canvas behind it pans on space', () => {
+    // A browser leaves a clicked button focused, and a focused button owns the
+    // space bar — so the press after a zoom would zoom again instead of arming
+    // a pan.
+    render(<CanvasControls {...props} />)
+    const zoomIn = screen.getByRole('button', { name: 'Zoom in' })
+    zoomIn.focus()
+    fireEvent.click(zoomIn, { detail: 1 })
+    expect(document.activeElement).not.toBe(zoomIn)
+  })
+
+  it('keeps focus on a button a keyboard pressed, which is where the user is', () => {
+    render(<CanvasControls {...props} />)
+    const zoomIn = screen.getByRole('button', { name: 'Zoom in' })
+    zoomIn.focus()
+    // `detail` is 0 when a keyboard activated the button. Taking focus away
+    // there drops the next Tab at the top of the document.
+    fireEvent.click(zoomIn, { detail: 0 })
+    expect(document.activeElement).toBe(zoomIn)
+  })
+
+  it('leaves the trigger unfocused when a pointer chose a level', () => {
+    render(<CanvasControls {...props} />)
+    const trigger = screen.getByRole('button', { name: /^Zoom level/ })
+    fireEvent.click(trigger, { detail: 1 })
+    fireEvent.click(screen.getByRole('button', { name: '200%' }), { detail: 1 })
+    expect(document.activeElement).not.toBe(trigger)
+  })
+
   it('shuts the menu on Escape and puts focus back where it came from', () => {
     render(<CanvasControls {...props} />)
     const trigger = screen.getByRole('button', { name: 'Zoom level: 100%' })
