@@ -1,4 +1,6 @@
 export { boxOf } from './box'
+export type { CanvasControlsProps } from './CanvasControls'
+export { CanvasControls } from './CanvasControls'
 export type { ConnectorsProps } from './Connectors'
 export { Connectors } from './Connectors'
 export type { IconCoinProps } from './IconCoin'
