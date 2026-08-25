@@ -138,6 +138,34 @@ describe('Components', () => {
     expect(screen.queryByRole('heading', { name: 'Triggers' })).toBeNull()
   })
 
+  it('drags the same chip the canvas does, so neither gesture covers its target', async () => {
+    // A drag ghost is the source element by default, and on the canvas the
+    // thing being aimed at is a 20px `+` on a line. One chip for both sources:
+    // the two gestures look alike, and neither hides where it is going.
+    // Draggable only when it is actionable, which is what `onSelect` makes it.
+    mount(<Components onSelect={() => {}} />, { loadManifests: async () => CATALOGUE })
+
+    await screen.findByText('Send email')
+    const row = screen.getByRole('button', { name: /Send email/ })
+    const images: { element: HTMLElement; x: number; y: number }[] = []
+    fireEvent.dragStart(row, {
+      dataTransfer: {
+        effectAllowed: 'none',
+        setData: () => {},
+        setDragImage: (element: HTMLElement, x: number, y: number) => {
+          images.push({ element, x, y })
+        },
+      },
+    })
+
+    const [image] = images
+    expect(image?.element.textContent).toBe('Send email')
+    expect(image?.element).not.toBe(row)
+    // Negative, so the pointer sits outside the chip rather than under it.
+    expect(image?.x).toBeLessThan(0)
+    expect(image?.y).toBeLessThan(0)
+  })
+
   it('reads a catalogue of Triggers alone as no components, not as a fault', async () => {
     // The Host declared plenty; none of it belongs on this tab. Same answer as
     // an empty catalogue, because it is the same question.

@@ -1,4 +1,4 @@
-import type { Point } from '@hatua/layout'
+import { LAYOUT, type Point } from '@hatua/layout'
 import { useState } from 'react'
 import { cx } from '../primitives/classNames'
 import styles from './InsertDot.module.css'
@@ -103,6 +103,15 @@ export function InsertDot({ at, label, active = false, onInsert, onDrop }: Inser
           onDrop?.(event.dataTransfer)
         }}
       >
+        {/*
+          The bar the Step lands on, drawn out past the chip the pointer is
+          carrying. A card's width, from the one table that holds it, because
+          that is the footprint of the thing being dropped — so it reaches past
+          the chip on both sides and still never crosses out of the narrowest
+          column, which is a card plus two insets. Always rendered and shown by
+          the `over` state, so arriving at a gap does not mount a node.
+        */}
+        <span className={styles.bar} style={{ inlineSize: LAYOUT.nodeWidth }} aria-hidden="true" />
         {onInsert ? (
           <button type="button" className={styles.dot} aria-label={label} onClick={onInsert}>
             +

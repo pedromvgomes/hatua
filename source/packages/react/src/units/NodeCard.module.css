@@ -38,6 +38,25 @@
     background: var(--hatua-accent-wash);
   }
 
+  /*
+    This card's own Step is the one in flight.
+
+    It stays where it is until the drop lands, so without a state of its own it
+    reads as still being there while a chip carrying its name follows the
+    pointer — two of the same Step on screen at once. Dashed and faded says what
+    a dashed edge says everywhere else here: a placeholder for something not
+    settled yet. The `+` is a dashed circle, an empty region a dashed box, and a
+    Step on its way somewhere is the same idea.
+
+    After `.selected`, so dragging the selected card still reads as dragging.
+  */
+  .dragging {
+    border-style: dashed;
+    border-color: var(--hatua-border-accent);
+    box-shadow: none;
+    opacity: 0.45;
+  }
+
   .head {
     display: flex;
     flex: 1;

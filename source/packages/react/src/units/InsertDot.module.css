@@ -93,6 +93,31 @@
   }
 
   /*
+    The bar the Step lands on, drawn out past the chip the pointer is carrying.
+
+    A filled dot alone is 20px of ink under a chip wider than it is, and a signal
+    you have to move the pointer off to read is not a signal. Its width is a
+    card's, set from `LAYOUT.nodeWidth` where it is rendered, because that is the
+    footprint of the thing being dropped.
+
+    Ink and not geometry: it takes no pointer, so the target this widens is still
+    the slot's own 96x56 and two adjacent gaps cannot both be under the pointer.
+  */
+  .bar {
+    position: absolute;
+    block-size: 2px;
+    border-radius: 2px;
+    background: var(--hatua-accent);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms ease;
+  }
+
+  .over .bar {
+    opacity: 1;
+  }
+
+  /*
     A drag is in progress, so the target grows again. Aim stops mattering once
     the pointer is already carrying something: the gesture ends wherever the
     pointer is released, and a target that has to be found is a drop that gets

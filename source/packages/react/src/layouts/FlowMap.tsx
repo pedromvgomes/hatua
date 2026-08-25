@@ -584,6 +584,7 @@ function Canvas({
                 manifest={manifests.get(step.use)}
                 connections={connections}
                 selected={selection !== undefined && stepKey(selection) === key}
+                dragging={dragging === placement.ref.id}
                 expanded={!collapsed.has(placement.ref.id)}
                 opens={opens && blockOf(definition, opens) ? opens : undefined}
                 problems={problems.get(key)}
