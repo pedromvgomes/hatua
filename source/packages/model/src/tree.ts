@@ -187,10 +187,16 @@ export function* regionsOf(step: Step): Generator<Region> {
  * no mode field: `when` is "absent on the fallback branch of a condition fork —
  * order matters there, first match wins, and the last branch may be
  * unconditional". A fork where no branch carries `when` is the parallel one.
+ *
+ * Presence and not truthiness. The distinction the schema draws is absent
+ * versus present, so a branch whose condition is still empty is a branch with a
+ * condition on it — one nobody has written yet. Read as falsy, a Fork born
+ * carrying `when: ''` on its first branch renders `and` / `and` and calls
+ * itself parallel, which is the one thing it is not.
  */
 function branchKeyword(branches: readonly Branch[], index: number): string {
-  if (!branches.some((branch) => branch.when)) return 'and'
-  if (branches[index]?.when) return index === 0 ? 'if' : 'else if'
+  if (!branches.some((branch) => branch.when !== undefined)) return 'and'
+  if (branches[index]?.when !== undefined) return index === 0 ? 'if' : 'else if'
   return 'else'
 }
 

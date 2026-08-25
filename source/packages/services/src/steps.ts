@@ -1,5 +1,5 @@
 import type { WorkflowDocument } from '@hatua/document'
-import type { BoardId, InsertPoint, StepRef } from '@hatua/model'
+import { type BoardId, bornRegionsOf, type InsertPoint, type StepRef } from '@hatua/model'
 
 /**
  * Re-exported because a Host writes against @hatua/services and never installs
@@ -180,6 +180,13 @@ export function addStep(step: NewStep, at: InsertPoint): EditCommand {
       // and a person reads the diff.
       const value: Record<string, unknown> = { id, use: step.use }
       if (step.name) value.name = step.name
+
+      // A container is born with its regions. They come last so the structural
+      // keys sit under the descriptive ones, and empty so the Step is
+      // unfinished in the document exactly as it is on screen — an empty region
+      // is a frame with an insert point in it, which is the only way a Step ever
+      // gets inside a container that was just added.
+      for (const [key, list] of Object.entries(bornRegionsOf(step.use))) value[key] = list
 
       insertNode(document, listPath, at.index, document.ast.createNode(value))
     },

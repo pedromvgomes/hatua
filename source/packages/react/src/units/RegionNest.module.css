@@ -1,0 +1,15 @@
+@layer hatua {
+  /*
+    Quieter than the Bands it holds: it says where a container reaches, and the
+    regions inside it are what a reader is actually looking at. Behind the card
+    that owns it, which is what makes the card read as the lid rather than as
+    something sitting on top of a box.
+  */
+  .nest {
+    box-sizing: border-box;
+    border: 1px solid var(--hatua-border-strong);
+    border-radius: var(--hatua-radius-lg);
+    background: color-mix(in oklab, var(--hatua-surface-card) 28%, transparent);
+    pointer-events: none;
+  }
+}

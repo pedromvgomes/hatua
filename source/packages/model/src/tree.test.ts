@@ -31,6 +31,25 @@ describe('the word over a region', () => {
     expect(keywords(fork([{ label: 'A' }, { label: 'B' }]))).toEqual(['and', 'and'])
   })
 
+  /*
+   * The schema says `when` is "absent on the fallback branch", so the
+   * distinction it draws is presence and not truthiness. A Fork born carrying
+   * an unwritten condition is a condition fork with the condition still to
+   * write, and reading the empty string as absence calls it parallel — which is
+   * the one thing a fork with a fallback cannot be.
+   */
+  it('reads an unwritten condition as a condition, not as its absence', () => {
+    expect(keywords(fork([{ label: 'A', when: '' }, { label: 'B' }]))).toEqual(['if', 'else'])
+    expect(
+      keywords(
+        fork([
+          { label: 'A', when: 'x' },
+          { label: 'B', when: '' },
+        ]),
+      ),
+    ).toEqual(['if', 'else if'])
+  })
+
   it('says `try` over a try’s body and `loop` over everything else’s', () => {
     // `steps:` is one key holding two ideas. Reading "loop" over the Steps a
     // try is protecting would name the wrong control flow.

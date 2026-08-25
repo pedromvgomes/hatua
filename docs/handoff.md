@@ -56,7 +56,7 @@ by the playground.
 
 | View | Tabs |
 | --- | --- |
-| Build | **Components**, **Workflow** |
+| Build | **Workflow**, **Components** |
 | Runs | **Workflow** (read-only), **Runs** |
 
 `<TabbedPanel>` arranges regions and owns none of them, so which tabs exist is the caller's
@@ -78,6 +78,9 @@ this section; change one in either place and the other is wrong.
 | `branchGap` | 44 | Between two Branch columns. |
 | `regionLabel` | 28 | Reserved above a child region for the label naming it. |
 | `joinMarker` | 26 | Reserved below a Fork's Branches for the mark where they converge. |
+| `regionInset` | 14 | Between a Band's edge and what it holds, and between a Nest's edge and its Bands. |
+| `emptyRegion` | 72 | The height of a Band with no Steps in it. |
+| `nodeLid` | 32 | How far below a card's top its Nest's edge crosses it. |
 
 **Cards are a fixed size, and only two heights exist.** A card sized to its content makes a column's
 rhythm a function of how long somebody's Step names are, and makes the map reflow when one is
@@ -100,7 +103,15 @@ map with shorter cards.
 reads as a run of the flow and not as a crack between two cards that nearly touch. `branchGap` is
 much smaller than `nodeWidth`, so two columns read as siblings under one Fork rather than as two
 separate maps; it is what stops adjacent columns touching and is the only thing keeping them apart,
-so it cannot be zero. `regionLabel` fits one chip's line box, and every child region gets one.
+so it cannot be zero. `regionLabel` fits one legend's line box, and every child region gets one.
+
+`regionInset` is what makes a nested region visibly inside the one holding it, so it must be large
+enough to read as a margin rather than as a doubled border — and small enough that depth is affordable,
+because a card at depth *n* costs `2n × regionInset` of width. `emptyRegion` exceeds `regionLabel`
+because a Band with nothing in it is where a Step gets *added*, and at a label strip's height the `+`
+inside it is a target to aim at rather than something to drop onto. It has to hold that `+` with room
+around it, which is the same argument that sizes the drop target itself. `nodeLid` is under half of `nodeHeight`, so the card's name
+stays above its Nest's edge and only the quiet half of the card is enclosed.
 
 ### Regions
 
@@ -126,12 +137,46 @@ computed twice inside `<StepList>` — `keywordFor` for a Branch, `bodyKeywordFo
 canvas would have been a third answer to a question with one right answer.
 
 **The bands are geometry, and `layout` hands them over.** `FlowMap.bands` carries one `Band` per
-region — its rect, its `kind`, its `keyword` and the `StepRef` that owns it — and `FlowMap.joins` one
-per Fork. A band's rect is the *whole* region: `regionLabel` reserved at the top, everything laid out
-below it. The canvas may not work these out for itself — `packages/react/src/layouts/README.md` has
-that tier draw what it is handed and compute no geometry of its own — and there is one place it could
-not work them out at all, which is a region with nothing in it, where the band is the only thing on
-screen.
+region — its rect, its `kind`, its `keyword` and the `StepRef` that owns it — `FlowMap.nests` one per
+container Step, and `FlowMap.joins` one per Fork. A band's rect is the region's own drawn edge, with
+`regionLabel` reserved *above* it for the word that names it; inside, the list is padded by half a
+`verticalGap` at each end, because the first and last gaps of a region's list are between a card and
+a frame rather than between two cards and the `+` sitting in one has to clear the edge. The canvas
+may not work these out for itself —
+`packages/react/src/layouts/README.md` has that tier draw what it is handed and compute no geometry of
+its own — and there is one place it could not work them out at all, which is a region with nothing in
+it, where the band is the only thing on screen.
+
+**A region is a drawn edge, not a wash.** A Band with a `--border-subtle` hairline and a 22%-opacity
+fill is invisible against `--surface-sunken`, and an invisible extent is an extent that says nothing:
+nesting reads as one smudge, and a `+` belongs to no list you can see. Two dots 64px apart on one
+spine — the last gap of a loop's body and the next gap of the try holding it — are then two circles
+with nothing between them, which reads as a rendering fault rather than as two different places to
+insert. `<StepList>` reached the same defect and fixed it the same way: an indent guide and trailing
+padding, because *nothing on screen said where a nested list ended*. This is that fix in two
+dimensions. Every Band is inset by `regionInset` from whatever holds it, so a card sits inside its
+Band, its Band inside its Nest, and every `+` falls inside the frame of the list it inserts into with
+a drawn edge between it and the next one out.
+
+**A Nest is the container's extent; a Band is one region's.** Two extents, because a `core.try` owns
+two regions and only one of them is protected — a single frame would claim either too much (the
+handler, which is not protected) or too little (the body alone, which leaves the handler outside the
+Step that owns it). Every container has both at every arity: a loop is one Band in a Nest, a try is
+two, a Fork is *n* — which is what stops a Fork being a special shape, and why its Join sits inside
+its Nest rather than beneath it.
+
+**Its two regions are stacked, and no line runs between them.** The body's spine stops at its Band's
+edge and the handler's starts at its own; the gap between two Bands is what says *or else*. A spine
+crossing from one into the other would say *then*, which is the one thing a handler never does — it
+runs *instead*, and only on failure.
+
+**The card sits astride its own Nest.** The Nest's top edge crosses the card `nodeLid` from the card's
+top, so the card is half in and half out of the container it owns. Nothing is drawn between a Step and
+its regions at all, which is the point: on this map a line means "then", and a line from a card to its
+own body would give one idiom two meanings. Containment becomes *overlap*, which no other relationship
+here uses. `nodeLid` is a fixed distance from the card's top and never half its height — a card is
+`nodeHeight` or `nodeHeightWithMeta` depending on whether it shows a meta row, so "the middle" would
+put the lid in a different place on two cards side by side.
 
 **A line is drawn between one card and the next.** ADR-0013 refuses an edge a user can attach
 anything to — no connect affordance, no exit handles — and CONTEXT.md refuses a Connection as a thing
@@ -146,17 +191,30 @@ rows. That is the property that makes the canvas a surface a workflow can be bui
 every link that names a position, including the stub after the last Step and the one under the root
 node of an empty Board, which is the only way to add the first Step to a new workflow.
 
-**A Fork's last gap is its join.** The line out of the last card in a Branch goes to the mark where the
-columns converge and carries the `+` on the way. A separate stub beside it would leave two lines out
-of one card, one of them going nowhere, and a line going nowhere is the first thing a reader tries to
-follow.
+**A Fork's Branches are all one size, and each converges from its own edge.** Every column is as tall
+and as wide as the largest, so an empty Branch is a full-height frame beside a populated one rather
+than a strip that reads as a different kind of thing — and the line to the mark leaves each Band's
+bottom edge rather than the last card inside it, so an empty Branch converges from where a full one
+does. The Branch's last gap stays inside its frame, which is where a `+` belongs; a line from the
+last card *through* the frame to the mark would cross an edge it is not leaving.
 
-**The word over a region sits on the line entering it**, in the strip `regionLabel` reserves at the
-top of that region's own column — not at a fraction along the line, because both of a Fork's branch
-links leave the same point and any fraction near the start is the same place twice. The **Band** is
-the region's extent rather than its name: a frame saying how far the region reaches, which is the
-thing the word cannot say. Two things saying one word over one region would be the duplication this
-repo refuses everywhere else.
+**Not every gap is a line.** A gap between two Steps is drawn and says "then". The gaps at a region's
+two ends are not: a line from a card to its own body would give the one idiom on this map a second
+meaning, and containment is already said by overlap. So a region's frame is what a reader follows in
+and out of it, and the only lines are between Steps, and from a Branch to the mark.
+
+**The word over a region sits above that region's own top edge**, flush with its left, in the strip
+`regionLabel` reserves above the Band. Not at a fraction along the entering line, because both
+of a Fork's branch links leave the same point and any fraction near the start is the same place twice.
+Not straddling the edge either: a legend that sits on a border has to mask the line behind it, and a
+Band with a translucent fill has no one colour to mask with — the border reads straight through the
+word. Flush left rather than centred because a Band is inset from whatever holds it, so the words
+staircase with depth and the alignment itself says how deep a region is; centred, every word on a
+column of nested regions lands at nearly the same x and encodes nothing.
+
+The word carries the Branch's `label` and its `when` with it. There is still exactly one thing saying
+one word over one region — the legend is the Band's, and no pill floats on the line as well. Two things
+saying one word over one region would be the duplication this repo refuses everywhere else.
 
 **Both draw every region the document carries, and neither reads the verb to decide.** A `handler:`
 on a `core.fork` is meaningless and has no runner, but it is not invisible: `walkSteps` yields the
@@ -710,7 +768,7 @@ Recorded here so the two documents cannot disagree quietly. ADR-0011 already lis
 | "Are manifests served by the Host?" — open | Answered: yes, through `ManifestSource` |
 | Trigger is a Step: `core.start`, `once`, `fixed` | `doc.triggers[]` is top-level. The canvas draws a derived root node; `once`/`fixed` become unnecessary |
 | The **Data tab** — reference tree over a variables editor | Split. The tree moves beside the step editor; variables move to the Workflow tab. One panel held two scopes, and listed every variable twice |
-| The tab strip is **Flow / Library / Data** | **Components / Workflow**. Flow is optional; Data is not a tab |
+| The tab strip is **Flow / Library / Data** | **Workflow / Components**. Flow is optional; Data is not a tab |
 | "Library" | "Components" — the glossary term, and the region's name |
 | The picker inserts References | It inserts References **and Functions**, with parameter descriptions and signature help |
 | Leaf rows carry a dot, accent for lists | A left rail, green when the row fits the field's type |

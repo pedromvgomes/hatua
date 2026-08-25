@@ -113,11 +113,17 @@ is read-only history; nothing in the designer edits one.
 
 `@hatua/layout` decides where every card goes; this tier draws what it is handed
 and computes no geometry of its own. What each child region looks like is
-settled in `docs/handoff.md` § Flow map geometry, and the two answers this tier
-has to agree with are: a Fork's Branches are **columns** that converge, and every
-other region — a loop's body, a `core.try`'s body and handler — is **stacked**
-under the card that owns it, in document order, each under a band carrying the
-label that names it.
+settled in `docs/handoff.md` § Flow map geometry, and the answers this tier has
+to agree with are: a Fork's Branches are **columns** that converge, every other
+region — a loop's body, a `core.try`'s body and handler — is **stacked** under
+the card that owns it in document order, and each region is a **Band** with the
+word that names it over its own top edge.
+
+A container's Bands sit inside one **Nest**, which is that Step's whole extent.
+Two frames and not one, because a `core.try` owns two regions and only the body
+is protected. The card sits astride its Nest's top edge — nothing is drawn
+between a Step and its regions, because a line here means "then" and a Step does
+not run after its own body, so containment is drawn as *overlap* instead.
 
 `<StepList>` says the same thing in a list, with the chip over each region — the
 two surfaces draw differently and must not disagree about which regions a
@@ -137,8 +143,13 @@ Step's regions are enumerated, and all three of them get theirs from it:
 `<StepList>` walks it to render the nested lists, and `<FlowMap>` draws the bands
 the layout emitted. The word over a region is `Region.keyword` — `if` / `else if`
 / `else` / `and`, `try`, `loop`, `on failure` — computed there too, so the chip in
-the list and the band on the map are the same string from the same function
+the list and the legend on the map are the same string from the same function
 rather than two spellings that agree by inspection.
+
+`regionsOf` answers what a Step nests; `bornRegionsOf` answers what a *new* one
+should nest, which no reading of the keys can. A container written with neither
+key nests nothing at all, so it draws no Band, offers no `+`, and can never be
+filled in.
 
 That is why the word lives in the model at all. It was computed twice, in
 `keywordFor` and `bodyKeywordFor` inside `<StepList>`, and the canvas would have
@@ -157,12 +168,20 @@ read as two unrelated things without it. Nothing on the line takes a pointer and
 nothing is stored.
 
 `@hatua/layout` emits a `Link` per gap: where the flow leaves, where it arrives,
-and the `InsertPoint` a Step goes to if one is added there. **One per gap in
-every step list** — one more than the list is long, and the same count
-`<StepList>` draws between its rows. `units/Connectors` draws the curve between
-the two ends; `units/InsertDot` draws the `+` on it. That count is the property
-that makes this region a surface a workflow is built on rather than a picture of
-one, and `layout.test.ts` holds it over every fixture.
+the `InsertPoint` a Step goes to if one is added there, and where the `+` for it
+sits. **One per gap in every step list** — one more than the list is long, and
+the same count `<StepList>` draws between its rows. `units/Connectors` draws the
+curve between the two ends; `units/InsertDot` draws the `+` where `dotAt` says.
+That count is the property that makes this region a surface a workflow is built
+on rather than a picture of one, and `layout.test.ts` holds it over every
+fixture.
+
+**Not every gap is a line.** A `run` is between two Steps and is the only kind
+that means "then". The gaps at a region's two ends are `enter` and `leave`, and
+they draw nothing — each sits inside the Band it belongs to, which is what puts
+every `+` inside the frame of the list it inserts into with a drawn edge between
+it and the next one out. A `join` is drawn, and leaves a Branch's Band rather
+than the last card in it.
 
 ### One Board at a time, and a call is the doorway
 

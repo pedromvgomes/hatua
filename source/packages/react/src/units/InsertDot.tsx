@@ -18,10 +18,11 @@ export interface InsertDotProps {
    * A drag this canvas started is in progress, so every gap says it is a target
    * before the pointer reaches it.
    *
-   * A drag from another region — a Component card — cannot be known about until
-   * it is over this dot, because `dataTransfer` is unreadable until then. That
-   * one lights on hover instead, which is the most any drop target can do about
-   * a payload it is not allowed to look at yet.
+   * True for a Component dragged in from the catalogue as well. `dataTransfer`
+   * will not hand over the payload before the drop, but it does list the types
+   * it carries on every `dragover` — enough for the canvas to recognise one of
+   * its own drags the moment it crosses the surface, and to say so at every gap
+   * rather than only under the pointer.
    */
   active?: boolean
   onInsert?: () => void
@@ -64,6 +65,13 @@ export function InsertDot({ at, label, active = false, onInsert, onDrop }: Inser
         onDragOver={(event) => {
           if (!droppable) return
           event.preventDefault()
+          // Said rather than left to the browser to guess, and read off what the
+          // source declared: a Component dragged out of the catalogue is copied
+          // into the flow, a Step dragged across the canvas is moved. That is
+          // the pointer's only account of what releasing here does, and the two
+          // gestures do different things.
+          event.dataTransfer.dropEffect =
+            event.dataTransfer.effectAllowed === 'move' ? 'move' : 'copy'
           setOver(true)
         }}
         onDragLeave={() => setOver(false)}

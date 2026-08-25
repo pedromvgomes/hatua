@@ -1,8 +1,8 @@
 # units
 
-Presentational domain units — `NodeCard`, `Connectors`, `InsertDot`, `LinkLabel`,
-`RegionBand`, `JoinMarker`, `RootNode`, `IconCoin`, and the `boxOf` helper that
-turns a `Rect` into the style that puts a box where it says.
+Presentational domain units — `NodeCard`, `Connectors`, `InsertDot`,
+`RegionBand`, `RegionNest`, `JoinMarker`, `RootNode`, `IconCoin`, and the `boxOf`
+helper that turns a `Rect` into the style that puts a box where it says.
 
 **Rule:** props in, events out. No reaching into `@hatua/services`. Enforced by
 `noRestrictedImports` in the workspace `biome.json`.
@@ -19,7 +19,9 @@ writes against is a region; a card is how one region happens to be drawn.
 ## They compute no geometry
 
 Every box comes from `@hatua/layout`: a `Rect` for a card and the root node, a
-`Band` for a region, a `Join` for where a Fork's Branches converge. That is the
+`Band` for a region, a `Nest` for a container's regions taken together, a `Join`
+for where a Fork's Branches converge, and a `Link`'s `dotAt` for where the `+`
+on a gap sits. That is the
 layouts tier's rule — "this tier draws what it is handed and computes no geometry
 of its own" — and it holds one level down for the same reason. A unit that worked
 out where it went would be a second implementation of `layout.ts`, in the half of
@@ -37,9 +39,9 @@ numbers stayed the same — drawing a Fork's first Branch last.
 | --- | --- |
 | `NodeCard` | One Step's card: the icon, the name, the verb, the chips row, the chevron, and the doorway on a call site. |
 | `Connectors` | Every line on one Board, in one SVG behind everything else. |
-| `InsertDot` | The `+` on a link: where a Step is added, and where one is dropped. |
-| `LinkLabel` | The word on the line entering a region. |
-| `RegionBand` | One child region's extent: a frame, and no text. |
+| `InsertDot` | The `+` on a gap: where a Step is added, and where one is dropped. |
+| `RegionBand` | One child region: a drawn frame, with the word that names it over its top edge. |
+| `RegionNest` | One container Step's regions taken together, with the card astride its top edge. |
 | `JoinMarker` | Where a Fork's Branches come back together. |
 | `RootNode` | The node above the first Step — the Triggers, or a Block's contract. |
 | `IconCoin` | A Component's icon, as the Host serves it, in a fixed square. |
@@ -53,20 +55,26 @@ into every reader, to spare a file.
 own copy of the broken-URL fallback. One answer to "what does a Component look
 like as an icon", used by the catalogue and by the canvas.
 
-## The word and the frame are two different jobs
+## The word and the frame are one job
 
-`LinkLabel` says **what** a region is — `if`, `else`, `loop`, `try`,
-`on failure` — on the line that carries a reader into it, which is where they are
-already looking. `RegionBand` says **how far it reaches**, as a quiet frame with
-no text in it at all.
+`RegionBand` says **what** a region is and **how far it reaches**, because those
+are the same box: a drawn edge with the word above its top edge, flush with its
+left. There is exactly one thing saying one word over one region — two would be
+the duplication this repo refuses everywhere else — and the word carries a
+Branch's own label and its condition with it.
 
-Two things saying one word over one region would be the duplication this repo
-refuses everywhere else. The frame earns its place by saying the thing the word
-cannot: where the region stops, which matters most for a `core.try`'s two regions
-stacked on one spine.
+Above the edge rather than straddling it: a legend on a border has to mask the
+line behind it, and a Band's fill is translucent, so it has no one colour to mask
+with and the border reads straight through the word. Flush left rather than
+centred because a Band is inset from whatever holds it, so the words staircase
+with depth and the alignment itself says how deep a region is.
 
-Every word comes from `regionsOf` through `Region.keyword`, so the chip here and
-the chip `<StepList>` puts over the same region are one string from one function.
+`RegionNest` names nothing. It is the container's extent rather than a region's,
+and the card astride its top edge already says which Step it belongs to.
+
+Every word comes from `regionsOf` through `Region.keyword`, so the legend here
+and the chip `<StepList>` puts over the same region are one string from one
+function.
 
 ## There is a `Connector`, and it draws no edge
 

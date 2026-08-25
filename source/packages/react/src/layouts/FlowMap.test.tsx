@@ -152,11 +152,15 @@ const canvas = () => within(screen.getByRole('region', { name: 'Flow map' }))
  * implementation of a browser API to check code that only ever asks it two
  * questions.
  */
-const transfer = (data: Record<string, string>) => {
+const transfer = (data: Record<string, string>, effectAllowed = 'none') => {
   const held = { ...data }
   return {
-    effectAllowed: 'none',
+    effectAllowed,
     dropEffect: 'none',
+    // The one thing the platform WILL answer before the drop, and the reason
+    // the canvas can recognise a Component crossing it. Keys rather than a
+    // fixed list, so a transfer written here says exactly what it carries.
+    types: Object.keys(held),
     getData: (type: string) => held[type] ?? '',
     setData: (type: string, value: string) => {
       held[type] = value
@@ -236,6 +240,26 @@ describe('FlowMap', () => {
     expect(canvas().getByText('Urgent')).toBeDefined()
   })
 
+  /**
+   * A Nest is the container's extent and a Band is one region's. Nothing joins a
+   * card to its own regions, so the overlap is the whole of what says the
+   * regions are its — and without a drawn edge a `+` belongs to no list anybody
+   * can see.
+   */
+  it('draws one frame per container and one per region inside it', async () => {
+    mount()
+    await canvas().findByText('Fetch mail')
+
+    const board = rootBoard()
+    const map = layout(board)
+    const surface = screen.getByRole('region', { name: 'Flow map' })
+    const boxes = [...surface.querySelectorAll('div')].map((box) => box.style.top)
+
+    expect(map.nests.length).toBeGreaterThan(0)
+    for (const nest of map.nests) expect(boxes).toContain(`${nest.y}px`)
+    for (const band of map.bands) expect(boxes).toContain(`${band.y}px`)
+  })
+
   it('marks where a Fork’s Branches converge, and marks nothing else', async () => {
     mount()
     await canvas().findByText('Fetch mail')
@@ -253,7 +277,7 @@ describe('FlowMap', () => {
     expect(canvas().getByText('core.fork')).toBeDefined()
   })
 
-  it('draws a line for every gap, and a `+` on each one', async () => {
+  it('draws a line for the gaps that are one, and a `+` on every gap', async () => {
     // The lines are what make 96px of vertical gap read as "then" rather than
     // as two unrelated cards. ADR-0013 refuses an edge a user can attach
     // anything to, and there is nothing here to attach to: no exit handle, no
@@ -265,10 +289,14 @@ describe('FlowMap', () => {
     const { links } = layout(board)
     const paths = screen.getByRole('region', { name: 'Flow map' }).querySelectorAll('path')
 
-    // One drawn line per link, and one `+` per link that names a position. A
-    // join arrives at a mark rather than at a gap, so it carries no `+`.
+    // A line for every `run` and every `join`, and none for the gaps at a
+    // region's two ends: containment is drawn as overlap, so a line from a card
+    // to its own body would give the one idiom on this map a second meaning.
     expect(links.length).toBeGreaterThan(0)
-    expect(paths).toHaveLength(links.length)
+    const drawn = links.filter((link) => link.kind === 'run' || link.kind === 'join')
+    expect(drawn.length).toBeGreaterThan(0)
+    expect(links.some((link) => link.kind === 'enter')).toBe(true)
+    expect(paths).toHaveLength(drawn.length)
     // `Add the first Step to …` as well as `Insert a Step …`: an empty region's
     // only gap is its empty state, and it says so.
     const dots = canvas().getAllByRole('button', { name: /Step/ })
@@ -385,6 +413,71 @@ describe('building on the canvas', () => {
       .parentElement as HTMLElement
     fireEvent.drop(dot, { dataTransfer: transfer({ 'application/x-hatua-component': 'not json' }) })
     expect(onDropComponent).not.toHaveBeenCalled()
+  })
+
+  /** The `<li>` a `+` sits in, which is the drop target and the thing that lights. */
+  const slotFor = (name: string) =>
+    canvas().getByRole('button', { name }).parentElement as HTMLElement
+
+  it('lights every gap for a Component crossing the surface, not only the one under the pointer', async () => {
+    mount(SOURCE, { onDropComponent: () => {}, onInsert: () => {} })
+    await canvas().findByText('Fetch mail')
+
+    const gap = slotFor('Insert a Step after Fetch mail')
+    const before = gap.className
+    expect(before).not.toContain('live')
+
+    // `getData` is refused until the drop, but the TYPES are readable now — and
+    // the private type means "a Component" all by itself. Without reading them
+    // a gap cannot know a drag is happening until the pointer is already on top
+    // of it, so every gap stays a target that has to be aimed at while a Step
+    // dragged across this same canvas lights all of them.
+    const surface = gap.closest('div') as HTMLElement
+    fireEvent.dragOver(surface, {
+      dataTransfer: transfer({ 'application/x-hatua-component': '{"use":"a"}' }),
+    })
+
+    expect(gap.className).toContain('live')
+    expect(slotFor('Insert a Step at the start of the workflow').className).toContain('live')
+  })
+
+  it('drops the light when the drag leaves the canvas, and not when it crosses a card', async () => {
+    mount(SOURCE, { onDropComponent: () => {}, onInsert: () => {} })
+    await canvas().findByText('Fetch mail')
+
+    const gap = slotFor('Insert a Step after Fetch mail')
+    const surface = gap.closest('div') as HTMLElement
+    fireEvent.dragOver(surface, {
+      dataTransfer: transfer({ 'application/x-hatua-component': '{"use":"a"}' }),
+    })
+    expect(gap.className).toContain('live')
+
+    // `dragleave` fires on every child the pointer crosses and bubbles, so a
+    // pointer moving from the surface onto a card would put every gap out.
+    // Constructed rather than `fireEvent.dragLeave(el, { relatedTarget })`,
+    // which drops the property — and `relatedTarget` is the whole subject here.
+    fireEvent(surface, new MouseEvent('dragleave', { bubbles: true, relatedTarget: gap }))
+    expect(gap.className).toContain('live')
+
+    fireEvent(surface, new MouseEvent('dragleave', { bubbles: true, relatedTarget: document.body }))
+    expect(gap.className).not.toContain('live')
+  })
+
+  it('says what releasing here does: a Component is copied in, a Step is moved', async () => {
+    mount(SOURCE, { onDropComponent: () => {}, onInsert: () => {} })
+    await canvas().findByText('Fetch mail')
+    const gap = slotFor('Insert a Step after Fetch mail')
+
+    // Read off what the source declared rather than left to the browser to
+    // guess. It is the pointer's only account of the gesture, and the two
+    // gestures do different things.
+    const carried = transfer({ 'application/x-hatua-component': '{"use":"a"}' }, 'copy')
+    fireEvent.dragOver(gap, { dataTransfer: carried })
+    expect(carried.dropEffect).toBe('copy')
+
+    const moved = transfer({}, 'move')
+    fireEvent.dragOver(gap, { dataTransfer: moved })
+    expect(moved.dropEffect).toBe('move')
   })
 
   it('moves a Step dragged from one gap to another', async () => {

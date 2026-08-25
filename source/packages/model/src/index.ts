@@ -1,3 +1,4 @@
+export * from './authoring'
 export * from './blocks'
 export * from './connections'
 export * from './metadata'
