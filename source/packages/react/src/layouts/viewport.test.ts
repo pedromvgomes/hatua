@@ -158,6 +158,13 @@ describe('wheelTravel', () => {
     expect(wheelTravel({ deltaX: 0, deltaY: 3, deltaMode: 1 }, box).y).toBeGreaterThan(24)
     expect(wheelTravel({ deltaX: 0, deltaY: 1, deltaMode: 2 }, box).y).toBe(box.height)
   })
+
+  it('scales each axis of a page by its own side, because a viewport is not square', () => {
+    expect(wheelTravel({ deltaX: 1, deltaY: 1, deltaMode: 2 }, box)).toEqual({
+      x: box.width,
+      y: box.height,
+    })
+  })
 })
 
 describe('wheelScale', () => {

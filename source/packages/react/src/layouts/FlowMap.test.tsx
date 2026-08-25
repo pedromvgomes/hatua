@@ -2,10 +2,19 @@ import { parseWorkflow } from '@hatua/document'
 import { LAYOUT, layout } from '@hatua/layout'
 import { boardOf, nameOf, stepKey, walkSteps } from '@hatua/model'
 import type { Manifest, WorkflowDefinition } from '@hatua/schema'
-import type { Cursor, DraftSession, EditToken, Lease, WorkflowStore } from '@hatua/services'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import type {
+  Cursor,
+  DraftSession,
+  EditCommand,
+  EditingStore,
+  EditToken,
+  Lease,
+  WorkflowStore,
+} from '@hatua/services'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { StrictMode, useEffect } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { HatuaProvider } from '../theme/HatuaProvider'
+import { HatuaProvider, useEditingStore } from '../theme/HatuaProvider'
 import { FlowMap } from './FlowMap'
 import { ZOOM } from './viewport'
 
@@ -882,6 +891,23 @@ describe('a Board is what the canvas draws one of', () => {
  * numbers; what is checked here is which gesture reaches which function, and
  * where the answer lands on screen.
  */
+/** A document with no `id` is not a Workflow Definition, so nothing projects. */
+const unnamed: EditCommand = {
+  label: 'unname the workflow',
+  apply: (document) => {
+    document.ast.delete('id')
+  },
+}
+
+/** Hands the test the editing store the provider built, to edit the document with. */
+function Probe({ onStore }: { onStore: (store: EditingStore) => void }) {
+  const store = useEditingStore()
+  useEffect(() => {
+    if (store) onStore(store)
+  }, [store, onStore])
+  return null
+}
+
 describe('FlowMap, panning and zooming', () => {
   /** The box that carries the pan and the zoom: the one the cards are laid on. */
   const surfaceOf = () => {
@@ -940,6 +966,113 @@ describe('FlowMap, panning and zooming', () => {
 
     // Far enough that its lower edge clears the margin, and no further.
     expect(surfaceOf().style.transform).toBe('translate(0px, -384px) scale(1)')
+  })
+
+  it('does not pan for its own chrome, which sits inside the margin and never moves', async () => {
+    mount(SOURCE, { defaultViewport: { x: 0, y: 0, scale: 1 } })
+    await canvas().findByText('Fetch mail')
+
+    const region = screen.getByRole('region', { name: 'Flow map' })
+    const frame = region.firstElementChild as HTMLElement
+    measuring(frame, { width: 800, height: 600, right: 800, bottom: 600 })
+    const toolbar = canvas().getByRole('button', { name: 'Zoom in' })
+    // The toolbar floats closer to the frame's edge than the margin a pan aims
+    // for, so panning to it would shift the map on every press — and it never
+    // moves, so the next press would shift it again.
+    measuring(toolbar, { top: 570, bottom: 596, left: 740, right: 766 })
+
+    fireEvent.focus(toolbar, { bubbles: true })
+
+    expect(surfaceOf().style.transform).toBe('translate(0px, 0px) scale(1)')
+  })
+
+  it('hands focus to the canvas after a pointer press, because the canvas pans on space', async () => {
+    mount(SOURCE, { defaultViewport: { x: 0, y: 0, scale: 1 } })
+    await canvas().findByText('Fetch mail')
+
+    const frame = screen.getByRole('region', { name: 'Flow map' }).firstElementChild
+    const zoomIn = canvas().getByRole('button', { name: 'Zoom in' })
+    zoomIn.focus()
+    // A browser leaves a clicked control focused, and a focused button owns the
+    // space bar — so the press after a zoom repeats it instead of arming a pan.
+    // The canvas and not nowhere, so the next Tab carries on from the map.
+    fireEvent.click(zoomIn, { detail: 1 })
+    expect(document.activeElement).toBe(frame)
+  })
+
+  it('leaves focus where a keyboard put it, which is the only thing saying where the user is', async () => {
+    mount(SOURCE, { defaultViewport: { x: 0, y: 0, scale: 1 } })
+    await canvas().findByText('Fetch mail')
+
+    const zoomIn = canvas().getByRole('button', { name: 'Zoom in' })
+    zoomIn.focus()
+    // `detail` is 0 when a keyboard activated the control.
+    fireEvent.click(zoomIn, { detail: 0 })
+    expect(document.activeElement).toBe(zoomIn)
+  })
+
+  it('keeps the pan through a document that stops projecting', async () => {
+    // A Text Mode edit is briefly not a Workflow Definition, and there is no
+    // map to draw. Where the user was looking is not the document's, so losing
+    // the canvas for those keystrokes must not lose the viewport with it.
+    let store: EditingStore | undefined
+    render(
+      <HatuaProvider ports={{ workflows: serving(SOURCE) }} workflowId="wf_map">
+        <Probe onStore={(one) => (store = one)} />
+        <FlowMap defaultViewport={{ x: 40, y: -60, scale: 1.5 }} />
+      </HatuaProvider>,
+    )
+    await canvas().findByText('Fetch mail')
+    fireEvent.click(canvas().getByRole('button', { name: 'Zoom in' }))
+    const moved = surfaceOf().style.transform
+
+    act(() => store?.apply(unnamed))
+    expect(canvas().getByText(/not a valid Workflow Definition yet/)).toBeDefined()
+
+    act(() => store?.undo())
+    await canvas().findByText('Fetch mail')
+    expect(surfaceOf().style.transform).toBe(moved)
+  })
+
+  it('reads defaultViewport once even where React renders twice', async () => {
+    // Every Host in development mounts under StrictMode, which double-invokes
+    // the component body and keeps the second result. A default consumed in a
+    // render is a default consumed in the pass React throws away.
+    render(
+      <StrictMode>
+        <HatuaProvider ports={{ workflows: serving(SOURCE) }} workflowId="wf_map">
+          <FlowMap defaultViewport={{ x: 40, y: -60, scale: 1.5 }} />
+        </HatuaProvider>
+      </StrictMode>,
+    )
+    await canvas().findByText('Fetch mail')
+
+    expect(surfaceOf().style.transform).toBe('translate(40px, -60px) scale(1.5)')
+  })
+
+  it('consumes every space keydown while a pan is held, not only the first', async () => {
+    mount(SOURCE, { defaultViewport: { x: 0, y: 0, scale: 1 } })
+    await canvas().findByText('Fetch mail')
+
+    const frame = screen.getByRole('region', { name: 'Flow map' }).firstElementChild as HTMLElement
+    frame.focus()
+
+    const held = (repeat: boolean) => {
+      const event = new KeyboardEvent('keydown', {
+        key: ' ',
+        repeat,
+        bubbles: true,
+        cancelable: true,
+      })
+      window.dispatchEvent(event)
+      return event.defaultPrevented
+    }
+
+    expect(held(false)).toBe(true)
+    // The browser starts repeating about half a second in, which is well inside
+    // one drag. A repeat that reaches the document scrolls the Host's page out
+    // from under the gesture.
+    expect(held(true)).toBe(true)
   })
 
   it('re-centres when a Block’s Board is opened, because the coordinates are Board-local', async () => {
