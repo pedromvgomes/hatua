@@ -172,17 +172,24 @@ describe('NodeCard', () => {
       outputs: [],
     }
 
-    const cases: { name: string; step: Step; manifest?: Manifest }[] = [
-      { name: 'nothing filled', step: { id: 'a', use: 'component.email.send' }, manifest: sending },
+    const cases: { name: string; step: Step; manifest?: Manifest; chips: string[] }[] = [
+      {
+        name: 'nothing filled',
+        step: { id: 'a', use: 'component.email.send' },
+        manifest: sending,
+        chips: [],
+      },
       {
         name: 'a connection only',
         step: { id: 'b', use: 'component.email.send', with: { connection: 'mailbox' } },
         manifest: sending,
+        chips: ['mailbox'],
       },
       {
         name: 'a slot only',
         step: { id: 'c', use: 'component.email.send', with: { to: 'x@example.com' } },
         manifest: sending,
+        chips: ['x@example.com'],
       },
       {
         name: 'both',
@@ -192,18 +199,22 @@ describe('NodeCard', () => {
           with: { connection: 'mailbox', to: 'x@example.com' },
         },
         manifest: sending,
+        chips: ['mailbox', 'x@example.com'],
       },
       {
         name: 'no manifest',
         step: { id: 'e', use: 'component.email.send', with: { connection: 'mailbox' } },
+        chips: ['mailbox'],
       },
     ]
 
-    for (const { name, step, manifest } of cases) {
-      const { container, unmount } = render(
+    for (const { name, step, manifest, chips } of cases) {
+      const { unmount } = render(
         <NodeCard step={step} rect={rect} manifest={manifest} connections={new Map()} />,
       )
-      const drawn = container.querySelector('[class*="meta"]') !== null
+      // What the row holds, which is the row: `chipsFor` renders one `<span>`
+      // per chip and nothing at all when there are none.
+      const drawn = chips.some((text) => screen.queryByText(text) !== null)
       expect({ name, drawn }).toEqual({ name, drawn: hasMeta(step, manifest) })
       unmount()
     }

@@ -234,7 +234,10 @@ export function Build({ className, ...rest }: BuildProps) {
                 // Board on screen, and never a Step nobody is looking at.
                 setPending(null)
               }}
-              selected={selected}
+              // `null` and not `undefined`: this view holds the selection, so
+              // it is saying "nothing is selected on this Board" rather than
+              // "nobody has an opinion" — and the two are different props.
+              selected={selected ?? null}
               onSelect={(ref) => setSelectedOn((was) => ({ ...was, [boardKey(board)]: ref }))}
               collapsed={collapsed}
               onCollapseChange={setCollapsed}
