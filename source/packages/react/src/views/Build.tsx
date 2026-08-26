@@ -1,4 +1,4 @@
-import type { BoardId, StepRef } from '@hatua/model'
+import { type BoardId, boardKey, type StepRef } from '@hatua/model'
 import { addStep, type InsertPoint, rootStepCount } from '@hatua/services'
 import { type ComponentPropsWithRef, useState } from 'react'
 import { Components } from '../layouts/Components'
@@ -76,7 +76,15 @@ export function Build({ className, ...rest }: BuildProps) {
    */
   const [tab, setTab] = useState('components')
   const [pending, setPending] = useState<InsertPoint | null>(null)
-  const [selected, setSelected] = useState<StepRef | undefined>(undefined)
+  /*
+   * The selected Step on each Board, keyed by Board.
+   *
+   * One per Board rather than one shared: a `StepRef` names the Board it is on,
+   * so a selection is meaningless on any other, and going through a doorway and
+   * coming back finds the Step that was left selected rather than nothing
+   * (ADR-0017).
+   */
+  const [selectedOn, setSelectedOn] = useState<Readonly<Record<string, StepRef>>>({})
   const [collapsed, setCollapsed] = useState<readonly StepRef[]>([])
   /*
    * Which Board is on screen, and the reason it is up here rather than inside
@@ -94,6 +102,7 @@ export function Build({ className, ...rest }: BuildProps) {
    * a diff in the Host's repository for nothing.
    */
   const [board, setBoard] = useState<BoardId>(null)
+  const selected = selectedOn[boardKey(board)]
 
   /**
    * Read at click time, not at render time. <Build> deliberately does not
@@ -192,19 +201,28 @@ export function Build({ className, ...rest }: BuildProps) {
               boardId={board}
               onBoardChange={(next) => {
                 setBoard(next)
-                // Selection does not survive the doorway. A `StepRef` names the
-                // Board it is on, so a selection from the Board just left would
-                // highlight nothing here and would still be what the step
-                // editor was handed — a panel describing a Step on a screen
-                // nobody is looking at.
-                setSelected(undefined)
-                // And the pending insert point goes with it, for the reason the
-                // tab strip drops it: kept, it names a list on another Board and
-                // the next Component would land somewhere nobody chose.
+                // The pending insert point does not survive the doorway: kept,
+                // it names a list on another Board and the next Component would
+                // land somewhere nobody chose. Selection does survive, held per
+                // Board — the step editor is handed the one belonging to the
+                // Board on screen, and never a Step nobody is looking at.
                 setPending(null)
               }}
               selected={selected}
-              onSelect={setSelected}
+              onSelect={(ref) =>
+                setSelectedOn((was) => {
+                  const key = boardKey(board)
+                  // Deselecting clears this Board's entry rather than storing an
+                  // absent one: an entry holding `undefined` and no entry are
+                  // the same answer, and keeping both spellings would make them
+                  // look like different states.
+                  if (!ref) {
+                    const { [key]: _gone, ...rest } = was
+                    return rest
+                  }
+                  return { ...was, [key]: ref }
+                })
+              }
               collapsed={collapsed}
               onCollapseChange={setCollapsed}
             />

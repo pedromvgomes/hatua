@@ -1,3 +1,5 @@
+export type { BoardTab, BoardTabsProps } from './BoardTabs'
+export { BoardTabs } from './BoardTabs'
 export { boxOf } from './box'
 export type { CanvasControlsProps } from './CanvasControls'
 export { CanvasControls } from './CanvasControls'

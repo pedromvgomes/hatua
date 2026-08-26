@@ -287,15 +287,50 @@ decides is the *word* over the region, not whether there is one.
 ### Which Board is on screen
 
 One Board at a time, with a call as a doorway into another (ADR-0013). A call site's card carries an
-**Open** control and the canvas's breadcrumb goes back; a Block's body is never drawn inline at its
-call sites, which would hand back everything extracting it bought and draw a Block called from three
-places three times.
+**Open** control; a Block's body is never drawn inline at its call sites, which would hand back
+everything extracting it bought and draw a Block called from three places three times.
 
-Which Board that is, is **chrome** — the document has no key for it, on the same argument that keeps
+The way back, and the way anywhere else, is a **tab strip** (ADR-0017). A breadcrumb was the first
+shape and it draws a path — but a Block called from three places has no single parent, so the `›`
+names whichever call site the user happened to click, which is a fact about the session rather than
+about the document. Boards are peers, so the canvas keeps a working set with one in front.
+
+| | |
+| --- | --- |
+| The root Board | always present, always first, no close control |
+| A Block's tab | opens on **Open**, or when the Block is declared |
+| Closing | any Block tab; the root takes focus, because it is the one tab always there |
+| A deleted Block | its tab goes, resolved against the document every render |
+| Opening an open Board | brings its tab forward; one tab per Board, never per call site |
+
+The strip is drawn only once a Block's Board is open. A strip holding nothing but the root names the
+one Board the canvas can draw, which is chrome saying what the map already is.
+
+It sits over the canvas rather than in a row above it, exactly as the toolbar does: the map is
+clipped to the whole of the viewport and pans underneath everything, so a strip in the flow would be
+a band the map could never occupy. `pointer-events` are off on the strip and on again for each tab,
+so a card behind the gaps stays clickable and draggable.
+
+**Each tab keeps its own pan, zoom and selection.** Coordinates are Board-local, so a pan carried
+*across* Boards lands in empty space — and a pan carried *back* to the Board it was made on lands
+where it was left. Keyed per Board rather than reset, a tab therefore holds its place without
+anything having to notice the Board changed. This is what ADR-0016's "opening a Block's Board resets
+the viewport" becomes: still true when a tab is opened, no longer true when one is returned to.
+
+Which Board is active is **chrome** — the document has no key for it, on the same argument that keeps
 node positions out. `<FlowMap>` holds it and lifts it into a caller through `boardId` /
 `onBoardChange`, the way `<TabbedPanel>` lifts which tab is open, and `<StepList>` takes a plain
 `board` prop. A Host mounting both gets one Board for both, because two surfaces showing two
 different Boards at once is the same defect as the map and the list disagreeing about a region.
+
+**Which Boards are open is not lifted**, and that is the same call the viewport makes: every other
+piece of chrome here is a controlled trio because a second reader appeared for it, and nothing
+outside the canvas has tabs.
+
+The strip is a `nav` and not a `role="tablist"`. A `tablist` promises a `tabpanel`, and the canvas is
+deliberately not one — it carries `tabIndex={-1}` so it can take focus after a pointer press without
+becoming a stop in the tab order, and a `tabpanel` is a stop by contract. Switching Board replaces
+what the canvas draws, which is navigation, so each tab is a button carrying `aria-current="page"`.
 
 Selection and collapse are named by a **`StepRef`** for the reason a Placement is: ids are
 Board-local, so a bare `ret` selects a Step on two Blocks and folds a container on both.

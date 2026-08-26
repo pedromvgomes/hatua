@@ -106,6 +106,18 @@ declaration in the document (a **Block**'s `params`/`outputs`, a **Variable**'s 
 language — a **Branch**'s `when` and a **Repeat**'s `until` are boolean because a condition is.
 _Avoid_: binding, target, assignment, field value
 
+**Contract**:
+What something declares it takes and what it publishes — each side a list of declarations, and each
+declaration a key, a friendly label and a declared type. A **Block**'s is its `params` and
+`outputs`; a **Component**'s is declared by its **Component Manifest**; the root **Board**'s is its
+**Triggers**, whose declared outputs are the workflow's parameters. A **Board**'s root *is* its
+contract, which is why one screen edits the **Triggers** at the root and a **Block**'s `params` and
+`outputs` inside one — they are the same slot.
+It is what lets a **Block** be reached from many call sites while scope stays an exact walk: a Block
+reads only what it declares and publishes only what it declares, so there is nothing to work out
+from the paths that arrive.
+_Avoid_: signature, interface, schema, API
+
 **Variable**:
 Named mutable state declared under a **Board**'s `vars:` and read anywhere on it as `{{var.<key>}}`,
 regardless of where it was written — which is what lets a **Repeat**'s body carry something back to

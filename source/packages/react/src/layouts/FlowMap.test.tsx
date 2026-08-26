@@ -154,6 +154,9 @@ const mount = (yaml = SOURCE, props: Parameters<typeof FlowMap>[0] = {}) =>
 
 const canvas = () => within(screen.getByRole('region', { name: 'Flow map' }))
 
+/** The canvas's tab strip, which is drawn only once a Block's Board is open. */
+const tabs = () => canvas().getByRole('navigation', { name: 'Boards' })
+
 /**
  * A `DataTransfer` jsdom does not implement.
  *
@@ -740,16 +743,68 @@ describe('a Board is what the canvas draws one of', () => {
     // The Block's Board, its contract as the root node, and its own Step.
     expect(canvas().getByText('Alpha returns')).toBeDefined()
     expect(canvas().getByText('0 params · 1 output')).toBeDefined()
-    // Named twice on purpose: the breadcrumb says where you are, and the root
-    // node says what this Board's contract is.
-    expect(
-      within(canvas().getByRole('navigation', { name: 'Board' })).getByText('Archive an entry'),
-    ).toBeDefined()
+    // Named twice on purpose: the tab says which Board is in front, and the
+    // root node says what this Board's contract is.
+    expect(within(tabs()).getByText('Archive an entry')).toBeDefined()
     expect(canvas().queryByText('Fetch mail')).toBeNull()
 
-    fireEvent.click(canvas().getByRole('button', { name: '← The workflow' }))
+    fireEvent.click(within(tabs()).getByRole('button', { name: 'The workflow' }))
     expect(onBoardChange).toHaveBeenLastCalledWith(null)
     expect(canvas().getByText('Fetch mail')).toBeDefined()
+  })
+
+  it('draws no tab strip while the root Board is the only one open', async () => {
+    // A strip holding nothing but the root names the one Board the canvas can
+    // draw, which is chrome saying what the map already is.
+    mount()
+    await canvas().findByText('Fetch mail')
+    expect(canvas().queryByRole('navigation', { name: 'Boards' })).toBeNull()
+  })
+
+  /** One tab per Board and never per call site (ADR-0017). */
+  it('brings an open Board forward rather than opening a second tab for it', async () => {
+    mount(SOURCE)
+    await canvas().findByText('Archive one')
+
+    fireEvent.click(canvas().getByRole('button', { name: 'Open Archive one' }))
+    fireEvent.click(within(tabs()).getByRole('button', { name: 'The workflow' }))
+    fireEvent.click(canvas().getByRole('button', { name: 'Open Archive one' }))
+
+    // The root and one Block, after visiting that Block twice.
+    expect(within(tabs()).getAllByRole('listitem')).toHaveLength(2)
+  })
+
+  it('closes a Block tab and falls back to the root Board', async () => {
+    const onBoardChange = vi.fn()
+    mount(SOURCE, { onBoardChange })
+    await canvas().findByText('Archive one')
+
+    fireEvent.click(canvas().getByRole('button', { name: 'Open Archive one' }))
+    expect(canvas().queryByText('Fetch mail')).toBeNull()
+
+    fireEvent.click(within(tabs()).getByRole('button', { name: 'Close Archive an entry' }))
+    expect(onBoardChange).toHaveBeenLastCalledWith(null)
+    // Drawing the root again, and with nothing else open there is no strip left
+    // to draw either.
+    expect(canvas().getByText('Fetch mail')).toBeDefined()
+    expect(canvas().queryByRole('navigation', { name: 'Boards' })).toBeNull()
+  })
+
+  /**
+   * The root is the fallback because it is the one tab that is always there.
+   * Closing a tab that is not in front is not a way to leave the Board that is.
+   */
+  it('leaves the Board on screen alone when a different tab is closed', async () => {
+    mount(SOURCE)
+    await canvas().findByText('Archive one')
+
+    fireEvent.click(canvas().getByRole('button', { name: 'Open Archive one' }))
+    fireEvent.click(within(tabs()).getByRole('button', { name: 'The workflow' }))
+    fireEvent.click(canvas().getByRole('button', { name: 'Open Archive another' }))
+
+    fireEvent.click(within(tabs()).getByRole('button', { name: 'Close Archive an entry' }))
+    expect(canvas().getByText('Beta returns')).toBeDefined()
+    expect(within(tabs()).getAllByRole('listitem')).toHaveLength(2)
   })
 
   it('offers no doorway on a Step that calls nothing', async () => {
@@ -763,7 +818,7 @@ describe('a Board is what the canvas draws one of', () => {
     // may name a tree the document no longer has.
     mount(SOURCE, { defaultBoardId: 'nowhere' })
     expect(await canvas().findByText('Fetch mail')).toBeDefined()
-    expect(canvas().queryByRole('navigation', { name: 'Board' })).toBeNull()
+    expect(canvas().queryByRole('navigation', { name: 'Boards' })).toBeNull()
   })
 
   /**

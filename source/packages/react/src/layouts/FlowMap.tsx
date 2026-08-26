@@ -5,6 +5,7 @@ import {
   type BoardId,
   blockIdOf,
   blockOf,
+  boardKey,
   boardOf,
   type Diagnostic,
   type InsertPoint,
@@ -32,6 +33,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type SetStateAction,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -41,6 +43,7 @@ import {
 } from 'react'
 import { cx } from '../primitives/classNames'
 import { useEditingStore, useManifestStore, useValidationStore } from '../theme/HatuaProvider'
+import { type BoardTab, BoardTabs } from '../units/BoardTabs'
 import { CanvasControls } from '../units/CanvasControls'
 import { Connectors } from '../units/Connectors'
 import { InsertDot } from '../units/InsertDot'
@@ -103,11 +106,14 @@ import {
  * A call is a doorway into another Board rather than a body drawn inline
  * (ADR-0013): drawing a Block at its call sites hands back everything the
  * extraction bought, and a Block called from three places is drawn three times.
- * So a call site's card carries an **Open** control, this region holds which
- * Board is on screen, and the breadcrumb goes back. Which Board is chrome — the
- * document has no key for it, the same line ADR-0001 draws around node
- * positions — so it is held here and lifted into a caller that wants the Flow
- * tab to follow, exactly as `TabbedPanel` lifts which tab is open.
+ * So a call site's card carries an **Open** control, and the canvas keeps a
+ * tab strip: Boards are peers rather than a path, so a working set with one in
+ * front is what says where you are and how to get anywhere else (ADR-0017).
+ * Which Board is chrome — the document has no key for it, the same line
+ * ADR-0001 draws around node positions — so it is held here and lifted into a
+ * caller that wants the Flow tab to follow, exactly as `TabbedPanel` lifts
+ * which tab is open. WHICH Boards are open is not lifted, because nothing
+ * outside the canvas has tabs.
  *
  * ## The canvas pans and zooms, and the viewport is chrome
  *
@@ -136,7 +142,7 @@ export interface FlowMapProps extends Omit<ComponentPropsWithRef<'section'>, 'on
    * `??`, which would read the root Board as "nobody said".
    */
   boardId?: BoardId
-  /** Fired when a call is opened or the breadcrumb goes back. */
+  /** Fired when a call is opened, or another tab is brought forward. */
   onBoardChange?: (board: BoardId) => void
   /**
    * Which Step is selected, as a `StepRef` and never a bare id.
@@ -262,6 +268,21 @@ export function FlowMap({
   const catalogue = useManifestStore()
   const validation = useValidationStore()
   const [ownBoard, setOwnBoard] = useState<BoardId>(defaultBoardId)
+  /*
+   * Which Boards are open, root first.
+   *
+   * Held here and offered as no prop at all, the same call the viewport makes:
+   * every other piece of chrome on this region is a controlled trio because a
+   * second reader appeared for it, and nothing outside the canvas has tabs.
+   * Which Board is ACTIVE keeps its trio — the step editor and a <StepList> a
+   * Host mounts beside this both follow it.
+   *
+   * The root is always in the set and always first, so there is always a Board
+   * to fall back to when one is closed (ADR-0017).
+   */
+  const [ownOpen, setOwnOpen] = useState<readonly BoardId[]>(
+    defaultBoardId === null ? [null] : [null, defaultBoardId],
+  )
   const [ownSelected, setOwnSelected] = useState<StepRef | undefined>(defaultSelected)
   const [ownCollapsed, setOwnCollapsed] = useState<readonly StepRef[]>(defaultCollapsed ?? [])
   const [ownFoldedRegions, setOwnFoldedRegions] = useState<readonly RegionRef[]>(
@@ -331,9 +352,23 @@ export function FlowMap({
   const wanted = boardId !== undefined ? boardId : ownBoard
   // Resolved against the document every render rather than held. A Block the
   // user deletes in Text Mode while its Board is open would otherwise leave this
-  // drawing a tree that is gone; falling back to the root is what a breadcrumb
+  // drawing a tree that is gone; falling back to the root is what a tab
   // pointing at nothing would have to do anyway.
   const board = definition ? (boardOf(definition, wanted) ?? boardOf(definition, null)) : undefined
+
+  /*
+   * The open Boards that still exist, root first.
+   *
+   * Filtered against the document every render rather than pruned when a Block
+   * goes, for the reason `board` is resolved that way: a Block deleted in Text
+   * Mode would otherwise leave a tab whose Board is not there, and pressing it
+   * is how the user would find out.
+   */
+  const tabs: BoardTab[] = definition
+    ? ownOpen
+        .filter((id) => id === null || blockOf(definition, id) !== undefined)
+        .map((id) => ({ id, label: tabLabel(definition, id) }))
+    : []
 
   const selection = selected ?? ownSelected
   const folded = collapsed ?? ownCollapsed
@@ -343,7 +378,23 @@ export function FlowMap({
     // The internal state is kept in step even while controlled, so a caller that
     // stops passing `boardId` does not snap back to the Board it opened on.
     setOwnBoard(next)
+    // One tab per Board and never per call site: a Block called from three
+    // places has one Board, so opening it a second time brings its tab forward
+    // rather than adding another (ADR-0017).
+    setOwnOpen((was) => (was.includes(next) ? was : [...was, next]))
     onBoardChange?.(next)
+  }
+
+  /*
+   * Close one Block's tab.
+   *
+   * Closing the Board being looked at falls back to the root rather than to a
+   * neighbour, because the root is the one tab that is always there — a
+   * neighbour is a tab that may itself have just been closed.
+   */
+  const closeBoard = (block: string) => {
+    setOwnOpen((was) => was.filter((id) => id !== block))
+    if (wanted === block) openBoard(null)
   }
 
   const select = (ref: StepRef) => {
@@ -393,22 +444,46 @@ export function FlowMap({
    * pass React may throw away, and under a Host's `StrictMode` — which is every
    * Host in development — it is the discarded pass that reads it.
    */
-  const [view, setView] = useState<Viewport | null>(defaultViewport ?? null)
+  const [views, setViews] = useState<Readonly<Record<string, Viewport>>>(() =>
+    defaultViewport ? { [boardKey(defaultBoardId)]: defaultViewport } : {},
+  )
 
   /*
-   * Opening another Board re-places the canvas, because coordinates are
-   * Board-local and carrying a pan across Boards lands in empty space.
+   * One viewport per Board, and a Board with no entry yet is `null` — which is
+   * what makes the canvas measure a box and fit to it.
+   *
+   * Coordinates are Board-local, so a pan carried across Boards lands in empty
+   * space; a pan carried BACK to the Board it was made on lands exactly where
+   * it was left. Keyed rather than reset, a tab therefore keeps its own place
+   * without anything having to notice that the Board changed (ADR-0017).
    *
    * Keyed on the Board that was asked for rather than the one that resolved, so
-   * this settles before the document has loaded and does not fire again when it
+   * an entry settles before the document has loaded and is not re-made when it
    * does.
    */
-  const boardKey = boardKeyOf(wanted)
-  const drawing = useRef(boardKey)
-  if (drawing.current !== boardKey) {
-    drawing.current = boardKey
-    setView(null)
-  }
+  const viewKey = boardKey(wanted)
+  const view = views[viewKey] ?? null
+
+  /*
+   * Stable, and reading the Board through a ref to stay that way. `useViewport`
+   * lists it as a dependency of the layout effect that measures the box and of
+   * the hand-registered `wheel` listener, so a setter with a fresh identity
+   * every render would re-measure and re-register on every one.
+   */
+  const keyed = useRef(viewKey)
+  keyed.current = viewKey
+  const setView = useCallback<Dispatch<SetStateAction<Viewport | null>>>(
+    (next) =>
+      setViews((was) => {
+        const key = keyed.current
+        const to = typeof next === 'function' ? next(was[key] ?? null) : next
+        // A Board with no viewport holds no entry rather than a `null` one:
+        // absent and "not placed yet" are the same answer, and storing both
+        // spellings would make them look like different states.
+        return to ? { ...was, [key]: to } : was
+      }),
+    [],
+  )
 
   /*
    * The observer is held in a ref and the report keyed on the viewport alone. A
@@ -481,7 +556,9 @@ export function FlowMap({
             onSelect={select}
             onToggle={toggle}
             onToggleRegion={toggleRegion}
+            tabs={tabs}
             onOpenBoard={openBoard}
+            onCloseBoard={closeBoard}
             onInsert={onInsert}
             onDropComponent={onDropComponent}
             onDragStart={setDragging}
@@ -495,13 +572,6 @@ export function FlowMap({
     </>
   )
 }
-
-/**
- * The canvas's identity, so it remounts when the Board changes and a pan cannot
- * survive into coordinates it means nothing in. Prefixed, because the root
- * Board is `null` and a Block whose id is the empty string would key the same.
- */
-const boardKeyOf = (id: BoardId): string => (id === null ? 'root' : `block:${id}`)
 
 function Canvas({
   definition,
@@ -519,7 +589,9 @@ function Canvas({
   onSelect,
   onToggle,
   onToggleRegion,
+  tabs,
   onOpenBoard,
+  onCloseBoard,
   onInsert,
   onDropComponent,
   onDragStart,
@@ -543,7 +615,9 @@ function Canvas({
   onSelect: (ref: StepRef) => void
   onToggle: (ref: StepRef) => void
   onToggleRegion: (ref: RegionRef) => void
+  tabs: readonly BoardTab[]
   onOpenBoard: (board: BoardId) => void
+  onCloseBoard: (block: string) => void
   onInsert?: (at: InsertPoint) => void
   onDropComponent?: (component: ComponentDrag, at: InsertPoint) => void
   onDragStart: (id: string) => void
@@ -572,7 +646,7 @@ function Canvas({
   return (
     /*
       The clipped box. It never scrolls and never moves; `.surface` inside it
-      carries the pan and the zoom, so the toolbar and the breadcrumb stay put
+      carries the pan and the zoom, so the toolbar and the tab strip stay put
       while the map goes past underneath them.
 
       No role and no handler that would make it one: watching a wheel and a
@@ -604,7 +678,14 @@ function Canvas({
       onFocus={canvas.onFocus}
       onClick={canvas.onClick}
     >
-      <Breadcrumb board={board} onOpenBoard={onOpenBoard} />
+      {/*
+        Only once a Block's Board is open. A strip holding nothing but the root
+        names the one Board the canvas can draw, which is chrome over the map
+        saying what the map already is.
+      */}
+      {tabs.length > 1 ? (
+        <BoardTabs tabs={tabs} active={board.id} onActivate={onOpenBoard} onClose={onCloseBoard} />
+      ) : null}
       {/*
         A Component dragged in from the catalogue is recognised here, at the
         surface, rather than at each gap.
@@ -954,7 +1035,7 @@ function useViewport({
      * that happens instead. Without it, tabbing to a card off the edge of the
      * map moves focus to something nobody can see.
      *
-     * The chrome is excluded, and it has to be: the toolbar and the breadcrumb
+     * The chrome is excluded, and it has to be: the toolbar and the tab strip
      * sit closer to the frame's edge than the margin a pan aims for, so panning
      * to them would shift the map a few pixels every time one is pressed — and
      * they never move, so every press shifts it again.
@@ -1069,30 +1150,13 @@ function insertLabel(link: Link, steps: ReadonlyMap<string, Step>, board: Board)
 }
 
 /**
- * Where the canvas is, and the way back out.
+ * What the strip calls one open Board.
  *
- * A Board is not nested inside another — a Block is called, possibly from three
- * places — so this is two entries and never a path. "The workflow" is where
- * Open came from and where Back returns to, which is the whole of the doorway.
+ * The root is "The workflow" rather than "Triggers": the tab names the whole
+ * thing the user came from, while `rootTitle` names the node that starts it.
  */
-function Breadcrumb({
-  board,
-  onOpenBoard,
-}: {
-  board: Board
-  onOpenBoard: (board: BoardId) => void
-}) {
-  if (board.id === null) return null
-
-  return (
-    <nav className={styles.crumbs} aria-label="Board">
-      <button type="button" className={styles.back} onClick={() => onOpenBoard(null)}>
-        ← The workflow
-      </button>
-      <span className={styles.here}>{board.block?.name || board.id}</span>
-    </nav>
-  )
-}
+const tabLabel = (definition: WorkflowDefinition, id: BoardId): string =>
+  id === null ? 'The workflow' : blockOf(definition, id)?.name || id
 
 /** Every Step on one Board, tagged with the ref that names it. */
 function* walk(board: Board): Generator<{ step: Step; ref: StepRef }> {
