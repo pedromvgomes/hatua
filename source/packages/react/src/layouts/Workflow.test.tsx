@@ -12,7 +12,7 @@ import type {
   VersionSummary,
   WorkflowStore,
 } from '@hatua/services'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { HatuaProvider } from '../theme/HatuaProvider'
 import { boardTabLabel, Workflow } from './Workflow'
@@ -1145,5 +1145,146 @@ blocks:
     expect(screen.getByText('var.attempts')).toBeDefined()
     expect(screen.queryByText('triggers.t1')).toBeNull()
     expect(screen.queryByText('var.digest_to')).toBeNull()
+  })
+})
+
+/**
+ * Folding a row.
+ *
+ * A contract with six parameters is a page of boxes expanded, so every row in
+ * the panel folds. Folded it is one line — not just the name, which spends the
+ * width without answering "which one is this": the summary carries the whole
+ * declaration, the way the canvas already says a Board's root as
+ * `2 params · 1 output`.
+ */
+describe('a row folds', () => {
+  const WITH_BLOCK = `id: wf_morning
+name: n
+version: 1
+status: draft
+
+triggers:
+  - id: t1
+    use: component.email.received
+    name: "Every morning"
+
+vars:
+  - key: digest_to
+    t: text
+    value: "ops@example.com"
+
+steps: []
+
+blocks:
+  - id: archive_entry
+    name: "Archive an entry"
+    params:
+      - { k: thread, label: "Thread", t: text }
+    outputs:
+      - { k: url, label: "Where it went", t: text }
+    steps: []
+`
+
+  const onBoard = (board: BoardId, source: Host) =>
+    render(
+      <HatuaProvider
+        ports={{ workflows: source.port, manifests: serving(CATALOGUE) }}
+        workflowId="wf_morning"
+      >
+        <Workflow board={board} />
+      </HatuaProvider>,
+    )
+
+  /*
+   * Folding is a user managing clutter. A tab that opened folded would hide the
+   * editor from somebody who came to edit, and a Block with one parameter would
+   * hide its only field for nothing.
+   */
+  it('opens showing its fields, and says so', async () => {
+    onBoard('archive_entry', host(WITH_BLOCK))
+
+    const fold = await screen.findByRole('button', { name: 'Collapse thread' })
+    expect(fold.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByLabelText('Key of thread')).toBeDefined()
+  })
+
+  it('folds to one line carrying the name, the key and the type', async () => {
+    onBoard('archive_entry', host(WITH_BLOCK))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Collapse thread' }))
+
+    expect(screen.queryByLabelText('Key of thread')).toBeNull()
+    expect(screen.queryByLabelText('Name of thread')).toBeNull()
+    expect(screen.queryByLabelText('Type of thread')).toBeNull()
+    // The name alone would not say which parameter this is; the key is what a
+    // Template writes and the type is what it is checked against.
+    expect(screen.getByText('Thread')).toBeDefined()
+    expect(screen.getByText('thread · text')).toBeDefined()
+  })
+
+  it('unfolds again, and the row it did not touch stays as it was', async () => {
+    onBoard('archive_entry', host(WITH_BLOCK))
+
+    const fold = await screen.findByRole('button', { name: 'Collapse thread' })
+    fireEvent.click(fold)
+    expect(fold.getAttribute('aria-expanded')).toBe('false')
+    // Its neighbour on the other side of the contract is untouched.
+    expect(screen.getByLabelText('Key of url')).toBeDefined()
+
+    fireEvent.click(fold)
+    expect(fold.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByLabelText('Key of thread')).toBeDefined()
+  })
+
+  it('folds a variable to its key and its type, which is all a variable has', async () => {
+    onBoard(null, host(WITH_BLOCK))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Collapse digest_to' }))
+    expect(screen.queryByLabelText('Value of digest_to')).toBeNull()
+    expect(screen.getByText('digest_to')).toBeDefined()
+    expect(screen.getByText('text')).toBeDefined()
+  })
+
+  /*
+   * A Trigger named after its own Component — which is what adding one gives
+   * you — would fold to its name printed twice if the summary carried the type.
+   * The id is what `{{ triggers.t1.… }}` writes, so it is a Trigger's key in the
+   * sense a declaration's `k` is.
+   */
+  it('folds a Trigger to its name and its id, never its name twice', async () => {
+    const named = `id: wf_morning\nname: n\nversion: 1\nstatus: draft\ntriggers:\n  - id: t1\n    use: component.email.received\n    name: "When mail arrives"\nsteps: []\n`
+    onBoard(null, host(named))
+
+    const fold = await screen.findByRole('button', { name: 'Collapse When mail arrives' })
+    fireEvent.click(fold)
+
+    // Scoped to the folded row: the catalogue's Trigger picker offers a type
+    // under the same name, which is exactly why this Trigger is named after it.
+    const head = within(fold.parentElement as HTMLElement)
+    expect(head.getAllByText('When mail arrives')).toHaveLength(1)
+    expect(head.getByText('t1')).toBeDefined()
+  })
+
+  /*
+   * The fold manages height; it does not silence the checker. A folded row that
+   * hid its own diagnostic would let somebody tidy a problem off their screen.
+   */
+  it('keeps a Trigger’s diagnostic on screen while the row is folded', async () => {
+    onBoard(null, host(WITH_BLOCK))
+
+    const problem = await screen.findByText(/Mailbox is required/)
+    expect(problem).toBeDefined()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse Every morning' }))
+    expect(screen.queryByLabelText('Name of Every morning')).toBeNull()
+    expect(screen.getByText(/Mailbox is required/)).toBeDefined()
+  })
+
+  it('gives a newly added row its fields, because naming it is the next thing', async () => {
+    onBoard('archive_entry', host(WITH_BLOCK))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Add parameter' }))
+    const fold = await screen.findByRole('button', { name: 'Collapse new_parameter' })
+    expect(fold.getAttribute('aria-expanded')).toBe('true')
   })
 })

@@ -468,6 +468,41 @@ Board is on screen is chrome, and the canvas is the only surface with a doorway 
 | 2 | Triggers | Contract — parameters and outputs |
 | 3 | Variables — the workflow's | Variables — the Block's |
 
+### Every row is a card, and every box says what it is
+
+One shape across the three sections: a **Trigger**, a parameter, an output and a variable are each a
+bordered card, and every box inside one carries an uppercase caption — `NAME`, `KEY`, `TYPE`,
+`VALUE`. Without both, the sections are boxes of identical shape stacked at one gap: a parameter's
+name, its key and its type read as a single run, and four parameters are twelve boxes with no
+structure.
+
+The caption is a `<span>` rather than a `<label>`. Every control already carries an accessible name
+saying which row owns it — `Name of thread`, `Type of digest_to` — and a real label would put four
+controls on one panel all answering to "Name". The caption is what a reader sees, the `aria-label` is
+what a reader hears, and the first is a prefix of the second.
+
+The **bin sits on the caption's line**, not beside the box. Beside it, it took 32px off a key, a
+**Template** and a friendly name alike, and it is a property of the row rather than of one box in it.
+
+**Every card folds**, from a chevron on the same line. Folded it is one line carrying the name and
+the one fact that identifies the row elsewhere in the document: `Thread · thread · text` for a
+declaration, `digest_to · text` for a variable, and a **Trigger**'s id — never its Component's name,
+because a Trigger named after its own Component would fold to its name printed twice. This is the
+panel saying what the canvas already says with `2 params · 1 output`.
+
+A card **opens expanded**. Folding is a user managing clutter; a tab that opened folded would hide
+the editor from somebody who came to edit, and a Block with one parameter would hide its only field
+for nothing. The state is each card's own — nothing outside this panel draws a declaration, so there
+is no second surface to keep in step, which is exactly why the canvas's collapse is lifted into
+`views/Build` and this is not.
+
+A row's **diagnostic sits outside the fold**. Folding manages height; it does not silence the
+checker, and a folded row that hid its own problem would let someone tidy it off their screen.
+
+At 304px a folded line cannot always hold three facts, and **the prose name is what gives way** — it
+ellipses and carries a `title`, while the key beside it stays whole. A key truncated to nothing is
+the row losing the thing that identifies it; a shortened label is a hover and an unfold away.
+
 ### 1. Identity
 
 The name and the slug, as labelled `Input`s. This is the first region that edits the document
@@ -518,6 +553,10 @@ schema requires, which is why a new row is written with all three rather than ad
 **Appended, never inserted above.** A call site's fields are drawn in declaration order, so a new
 parameter landing at the top reorders a form somebody is already looking at.
 
+**A new row is named from its key** — `new_parameter_2` becomes *New parameter 2*. Seeded with the
+key in both boxes it is two identical boxes holding identical text, and the caption is then the only
+thing telling them apart; seeded with a constant, two new rows arrive under one name.
+
 **`of` has no control.** A `list` or an `object` may declare the shape of its members; the row says
 what type it is, and Text Mode is where a shape is written.
 
@@ -531,9 +570,10 @@ The workflow's at the root, the Block's inside one — rebuilt on every invocati
 outside it, so a `core.set_var` can never reach out of the Board it is on. Every variable command has
 taken a Board since it was written; this is the editor for the other half.
 
-Rows of a mono `Input size="sm"` for the key plus a ghost trash button, a full-width `Select` for
-the declared type, and the value below, then `Button size="sm" variant="secondary" icon="plus"`
-**Add variable**.
+A card per variable — its key, its declared type and its value — then
+`Button size="sm" variant="secondary" icon="plus"` **Add variable**. A variable's key *is* its name:
+it carries no friendly label, because `{{ var.digest_to }}` is what the builder shows and there is
+nothing else to call it.
 
 **A variable's value is a Template**, not a literal. It may hold `{{ … }}`, so the value input is a
 [Template input](#the-template-input) like any other, and it gets the same completion.
