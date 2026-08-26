@@ -102,6 +102,47 @@
     gap: 2px;
   }
 
+  /*
+    A Block's row: its card, and the bin beside it.
+
+    The bin is a column of its own rather than an overlay that appears on hover:
+    a control only pointer users can find is a control a keyboard user cannot,
+    and the card beside it is already the full width of the panel.
+  */
+  .row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 2px;
+  }
+
+  /* What the checker says about a Block, under the card it belongs to and
+     across both columns, so a long sentence does not squeeze the bin off. */
+  .problems {
+    grid-column: 1 / -1;
+    margin: 0;
+    padding: 0 8px 6px;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: var(--hatua-status-error);
+    text-wrap: pretty;
+  }
+
+  /* A group with nothing in it yet still says so, in the panel's own voice. */
+  .empty {
+    margin: 0;
+    padding: 4px 12px 8px;
+    color: var(--hatua-text-muted);
+    font-size: 0.8125rem;
+    line-height: 1.5;
+  }
+
+  /* Inset to the cards' own gutter, so the control lines up with the list it
+     adds to rather than with the panel's edge. */
+  .action {
+    padding: 4px 8px 0;
+  }
+
   .card {
     inline-size: 100%;
     display: grid;

@@ -352,41 +352,6 @@
 
   /* Ghost until the row is hovered or the button is focused: a bin drawn at
      full strength on every row reads as the row's purpose. */
-  .remove {
-    display: grid;
-    place-items: center;
-    inline-size: 26px;
-    block-size: 26px;
-    padding: 0;
-    border: 1px solid transparent;
-    border-radius: var(--hatua-radius-sm);
-    background: transparent;
-    color: var(--hatua-text-muted);
-    cursor: pointer;
-    opacity: 0.6;
-  }
-
-  .remove:hover {
-    border-color: var(--hatua-border-subtle);
-    background: var(--hatua-status-error-wash);
-    color: var(--hatua-status-error);
-    opacity: 1;
-  }
-
-  .remove:focus-visible {
-    outline: 2px solid var(--hatua-focus-ring);
-    outline-offset: -2px;
-    opacity: 1;
-  }
-
-  .icon {
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1.25;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-  }
-
   /* Reachable and announced, never painted. `display: none` and
      `visibility: hidden` both take it out of the accessibility tree. */
   .offscreen {

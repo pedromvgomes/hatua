@@ -49,11 +49,19 @@ export function blockPath(document: WorkflowDocument, id: string): Path {
 }
 
 /**
+ * The id the next Block would be declared under.
+ *
  * Ids are minted rather than random, so the same edits produce the same
  * document twice — the property the round-trip tests rest on and the reason a
  * diff in the Host's repository stays readable.
+ *
+ * Exported because a surface that declares a Block usually has to say which one
+ * it just declared — a new Block's Board opens as its tab (ADR-0017), and a
+ * caller cannot open one it does not know the name of. Asking here and passing
+ * the answer to `addBlock` keeps one minting rule instead of a second copy that
+ * agrees by inspection.
  */
-function mintId(document: WorkflowDocument): string {
+export function nextBlockId(document: WorkflowDocument): string {
   const taken = new Set<string>()
   for (const { entry } of entriesOf(document, 'blocks')) {
     if (typeof entry.id === 'string') taken.add(entry.id)
@@ -78,7 +86,17 @@ export function addBlock(block: NewBlock = {}): EditCommand {
     apply(document) {
       if (block.id !== undefined) requireUsableName(block.id)
       const listPath = topLevelList(document, 'blocks')
-      const id = block.id ?? mintId(document)
+      const id = block.id ?? nextBlockId(document)
+
+      // Two blocks under one id is worse than a refused declaration, for the
+      // reason `renameBlock` gives: every reader resolves the FIRST match, so
+      // the second block's Board opens on the first's steps and `removeBlock`
+      // deletes the wrong one. A minted id is free of this by construction; one
+      // a caller chose is not, and neither is a minted one applied against a
+      // document that has moved on since it was asked for.
+      for (const { entry } of entriesOf(document, 'blocks')) {
+        if (entry.id === id) throw new Error(`A block named "${id}" already exists`)
+      }
 
       // Key by key rather than an object literal, so the order in the file is
       // the order the schema documents instead of whatever insertion order an

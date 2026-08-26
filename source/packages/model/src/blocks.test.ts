@@ -1,7 +1,7 @@
 import { validate } from '@hatua/expressions'
 import type { Manifest, WorkflowDefinition } from '@hatua/schema'
 import { describe, expect, it } from 'vitest'
-import { callSlots, cyclicBlocks, returnSlots } from './blocks'
+import { callSitesOf, callSlots, contractSummary, cyclicBlocks, returnSlots } from './blocks'
 import { indexManifests } from './connections'
 import { blockOutputType, boardScope, scopeFor } from './scope'
 import { boards, stepKey, walkDocument } from './tree'
@@ -715,5 +715,65 @@ describe('a block that declares one output twice', () => {
     }
 
     expect(blockOutputType(block)).toEqual({ type: 'object', members: { out: { type: 'text' } } })
+  })
+})
+
+describe('who calls a block', () => {
+  it('finds every call site on every board, not just the root', () => {
+    // A count taken off the root alone tells a user deleting a block that one
+    // step calls it while another block calls it too.
+    expect(callSitesOf(ARCHIVE, 'archive_entry')).toEqual([
+      { board: null, id: 'audit_1' },
+      { board: null, id: 'audit_2' },
+      { board: 'notify_and_archive', id: 'kept' },
+    ])
+  })
+
+  it('finds a call nested inside a container', () => {
+    // A call inside a Fork branch is a call. Read off the top level alone, the
+    // sites hardest to find again are the ones that go unreported.
+    const nested = doc({
+      blocks: [{ id: 'inner', steps: [] }],
+      steps: [
+        {
+          id: 'fork',
+          use: 'core.fork',
+          branches: [
+            { label: 'A', when: '{{ true }}', steps: [{ id: 'deep', use: 'block.inner' }] },
+          ],
+        },
+      ],
+    })
+
+    expect(callSitesOf(nested, 'inner')).toEqual([{ board: null, id: 'deep' }])
+  })
+
+  it('answers nothing for a block nobody calls', () => {
+    expect(callSitesOf(ARCHIVE, 'notify_and_archive')).toHaveLength(1)
+    expect(callSitesOf(ARCHIVE, 'nobody_calls_this')).toEqual([])
+  })
+})
+
+describe('the contract in a line', () => {
+  it('counts what a block takes and what it publishes, singular and plural', () => {
+    expect(contractSummary(ARCHIVE.blocks?.[0])).toBe('1 param · 1 output')
+    expect(contractSummary({ id: 'x', steps: [] })).toBe('0 params · 0 outputs')
+    expect(
+      contractSummary({
+        id: 'x',
+        steps: [],
+        params: [
+          { k: 'a', label: 'A', t: 'text' },
+          { k: 'b', label: 'B', t: 'text' },
+        ],
+      }),
+    ).toBe('2 params · 0 outputs')
+  })
+
+  it('reads an absent block as a contract of nothing rather than as an empty line', () => {
+    // A Board resolved against a document that no longer declares it still
+    // draws a node, and a summary that vanishes reads as a Board with no
+    // contract instead of one that is not there.
+    expect(contractSummary(undefined)).toBe('0 params · 0 outputs')
   })
 })

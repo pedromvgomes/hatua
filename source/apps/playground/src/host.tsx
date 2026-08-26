@@ -1,10 +1,10 @@
 import {
+  type ComponentDrag,
   Components,
   createTheme,
   FlowMap,
   HatuaProvider,
   Inspector,
-  type Manifest,
   StepList,
   TabbedPanel,
   TopBar,
@@ -130,7 +130,7 @@ function HostPage() {
   const [sourceName, setSourceName] = useState<SourceName>('ready')
   const [storeName, setStoreName] = useState<StoreName>('local')
   const [connectionsName, setConnectionsName] = useState<ConnectionsName>('ready')
-  const [lastSelected, setLastSelected] = useState<Manifest | null>(null)
+  const [lastSelected, setLastSelected] = useState<ComponentDrag | null>(null)
 
   // Memoised on the name, because <HatuaProvider> keys its editing store on the
   // port it is handed: a Host that rebuilt one every render would look exactly
