@@ -1,5 +1,14 @@
 import type { Manifest } from '@hatua/schema'
-import type { ManifestSource } from '@hatua/services'
+import type {
+  Cursor,
+  DraftSession,
+  EditToken,
+  Lease,
+  ManifestSource,
+  PublishedVersion,
+  VersionSummary,
+  WorkflowStore,
+} from '@hatua/services'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { Components } from './Components'
 
@@ -114,6 +123,80 @@ const serving = (manifests: Manifest[]): ManifestSource => ({
  */
 const READY = { ports: { manifests: serving(CATALOGUE) } }
 
+/**
+ * A workflow declaring three Blocks, two of which call each other.
+ *
+ * Recursion is here on purpose: `cyclicBlocks` answers direct and indirect
+ * together, and a story showing only a Block that calls itself would leave the
+ * half that takes two Blocks to produce unlooked at.
+ */
+const DOCUMENT = `id: wf_blocks
+name: "Morning inbox triage"
+version: 1
+status: draft
+
+steps:
+  - id: s1
+    use: block.archive_entry
+    name: "File the thread away"
+
+blocks:
+  - id: archive_entry
+    name: "Archive an entry"
+    params:
+      - { k: thread, label: "Thread", t: text }
+    outputs:
+      - { k: url, label: "Where it went", t: text }
+    steps:
+      - id: done
+        use: core.return
+        with:
+          url: "https://archive.example.com/{{ params.thread }}"
+  - id: loop_a
+    name: "Loop A"
+    steps:
+      - id: c1
+        use: block.loop_b
+  - id: loop_b
+    name: "Loop B"
+    steps:
+      - id: c2
+        use: block.loop_a
+`
+
+const token = 'tok_story' as EditToken
+const lease: Lease = { token, expiresAt: '2099-01-01T00:00:00.000Z' }
+
+/**
+ * A Host, in as few lines as the port allows. Everything below the seam is
+ * faked; the seam itself is exactly what a real Host implements.
+ */
+const holding = (yaml: string): WorkflowStore => ({
+  async openDraft(): Promise<DraftSession> {
+    return { token, lease, yaml, resumed: false }
+  },
+  async saveDraft() {},
+  async renewLease(): Promise<Lease> {
+    return lease
+  },
+  async publish(): Promise<PublishedVersion> {
+    return { version: 2, publishedAt: '2026-01-01T00:00:00.000Z' }
+  },
+  async releaseDraft() {},
+  async discardDraft() {},
+  async listVersions(): Promise<Cursor<VersionSummary>> {
+    return { items: [] }
+  },
+  async loadVersion() {
+    return yaml
+  },
+})
+
+const WITH_BLOCKS = {
+  ports: { manifests: serving(CATALOGUE), workflows: holding(DOCUMENT) },
+  workflowId: 'wf_blocks',
+}
+
 const meta = {
   title: 'Layouts/Components',
   component: Components,
@@ -141,7 +224,7 @@ export const Populated: Story = { parameters: READY }
 /** With a handler, every card becomes a control. Without one, none does. */
 export const Selectable: Story = {
   parameters: READY,
-  args: { onSelect: (manifest) => console.info('selected', manifest.use) },
+  args: { onSelect: (component) => console.info('selected', component.use) },
 }
 
 export const Filtered: Story = {
@@ -190,3 +273,36 @@ export const Failed: Story = {
 
 /** No ManifestSource at all — a wiring mistake, told apart from an empty one. */
 export const Unconfigured: Story = {}
+
+/**
+ * The Blocks this document declares, above the Host's groups.
+ *
+ * Two of them call each other, so both carry the checker's account of it. A
+ * Block in a cycle is still offered: it is a Block the user is working on, and
+ * a card that quietly disappeared would say the panel had changed its mind
+ * rather than what is wrong.
+ */
+export const WithBlocks: Story = {
+  parameters: WITH_BLOCKS,
+  args: { onSelect: (component) => console.info('selected', component.use) },
+}
+
+/**
+ * A document that declares none. The group stays, because it is the only place
+ * a Block is made — an empty list with no way to add to it is a dead end.
+ */
+export const NoBlocksYet: Story = {
+  parameters: {
+    ports: {
+      manifests: serving(CATALOGUE),
+      workflows: holding('id: wf_bare\nname: Bare\nversion: 1\nstatus: draft\nsteps: []\n'),
+    },
+    workflowId: 'wf_bare',
+  },
+}
+
+/** The filter narrows a document's Blocks the way it narrows a Host's Components. */
+export const FilteredToABlock: Story = {
+  parameters: WITH_BLOCKS,
+  args: { defaultQuery: 'loop' },
+}

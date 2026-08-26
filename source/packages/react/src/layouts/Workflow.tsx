@@ -51,6 +51,7 @@ import { Button } from '../primitives/Button'
 import { cx } from '../primitives/classNames'
 import { Select } from '../primitives/Select'
 import { useEditingStore, useManifestStore, useValidationStore } from '../theme/HatuaProvider'
+import { RemoveButton } from '../units/RemoveButton'
 import { CommittedInput, Fields } from './Fields'
 import styles from './Workflow.module.css'
 import css from './Workflow.module.css?inline'
@@ -159,6 +160,7 @@ const NO_PROBLEMS: ReadonlyMap<string, Diagnostic[]> = new Map()
 const UNCHECKED: ValidationState = {
   byStep: NO_PROBLEMS,
   byTrigger: NO_PROBLEMS,
+  byBlock: NO_PROBLEMS,
   all: [],
   ready: false,
 }
@@ -549,6 +551,9 @@ function RowCard({
           </svg>
         </button>
         {open ? <span className={styles.label}>{caption}</span> : summary}
+        {/* On the header's line rather than beside the box below, so the box
+            keeps the whole width — a key, a Template and a friendly name each
+            need it, and a bin in a second column takes 32px off every one. */}
         <RemoveButton label={removeLabel} onClick={onRemove} />
       </div>
       {note}
@@ -581,37 +586,6 @@ function RowSummary({ name, meta, mono }: { name: string; meta: string; mono?: b
       </span>
       <span className={styles.summaryMeta}>{meta}</span>
     </p>
-  )
-}
-
-/**
- * The bin that removes a row.
- *
- * On the caption's line rather than beside the box, so the box keeps the whole
- * width — a key, a Template and a friendly name each need it, and a bin in a
- * second column takes 32px off every one of them.
- *
- * A bin, not a cross. `×` is the glyph for dismissing a thing — closing a
- * panel, clearing a filter — and this deletes something out of the document.
- * Drawn rather than set in type: the only bin in a text font is an emoji, which
- * renders at a size and colour the row does not control.
- */
-function RemoveButton({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <button type="button" className={styles.remove} aria-label={label} onClick={onClick}>
-      <svg
-        className={styles.icon}
-        viewBox="0 0 16 16"
-        width="14"
-        height="14"
-        focusable="false"
-        aria-hidden="true"
-      >
-        <path d="M3 4.5h10M6.5 4.5V3.2a.7.7 0 0 1 .7-.7h1.6a.7.7 0 0 1 .7.7v1.3" />
-        <path d="M4.4 4.5l.6 8a1 1 0 0 0 1 .9h4a1 1 0 0 0 1-.9l.6-8" />
-        <path d="M6.8 7v3.6M9.2 7v3.6" />
-      </svg>
-    </button>
   )
 }
 

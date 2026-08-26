@@ -177,13 +177,15 @@ export function Build({ className, ...rest }: BuildProps) {
                   content: (
                     <Components
                       pending={pending !== null}
-                      onSelect={(manifest) => {
-                        store?.apply(
-                          addStep(
-                            { use: manifest.use, name: manifest.name },
-                            pending ?? appendPoint(),
-                          ),
-                        )
+                      onSelect={(component) => {
+                        store?.apply(addStep(component, pending ?? appendPoint()))
+                        setPending(null)
+                      }}
+                      onBoardOpen={(block) => {
+                        // A Block's tab opens when the Block is declared
+                        // (ADR-0017), and there is nothing on its Board yet —
+                        // so the canvas going there is what says it exists.
+                        setBoard(block)
                         setPending(null)
                       }}
                     />

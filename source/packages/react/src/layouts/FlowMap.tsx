@@ -7,6 +7,7 @@ import {
   blockOf,
   boardKey,
   boardOf,
+  contractSummary,
   type Diagnostic,
   type InsertPoint,
   nameOf,
@@ -244,6 +245,7 @@ const NO_PROBLEMS: ReadonlyMap<string, Diagnostic[]> = new Map()
 const UNCHECKED: ValidationState = {
   byStep: NO_PROBLEMS,
   byTrigger: NO_PROBLEMS,
+  byBlock: NO_PROBLEMS,
   all: [],
   ready: false,
 }
@@ -1274,7 +1276,5 @@ function rootSummary(definition: WorkflowDefinition, board: Board): string {
     const count = definition.triggers?.length ?? 0
     return `${count} ${count === 1 ? 'trigger' : 'triggers'}`
   }
-  const params = board.block?.params?.length ?? 0
-  const outputs = board.block?.outputs?.length ?? 0
-  return `${params} ${params === 1 ? 'param' : 'params'} · ${outputs} ${outputs === 1 ? 'output' : 'outputs'}`
+  return contractSummary(board.block)
 }

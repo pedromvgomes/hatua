@@ -162,6 +162,7 @@ const NO_PROBLEMS: ReadonlyMap<string, Diagnostic[]> = new Map()
 const UNCHECKED: ValidationState = {
   byStep: NO_PROBLEMS,
   byTrigger: NO_PROBLEMS,
+  byBlock: NO_PROBLEMS,
   all: [],
   ready: false,
 }

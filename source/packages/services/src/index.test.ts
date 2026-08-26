@@ -49,6 +49,7 @@ const SURFACE = [
   'addBlock',
   'addDeclaration',
   'blockPath',
+  'nextBlockId',
   'removeBlock',
   'removeDeclaration',
   'renameBlock',

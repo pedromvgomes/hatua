@@ -33,6 +33,7 @@ export type {
   WorkflowStore,
 } from '@hatua/services'
 export type {
+  ComponentDrag,
   ComponentsProps,
   DataProps,
   FlowMapProps,

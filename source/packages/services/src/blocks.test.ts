@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   addBlock,
   addDeclaration,
+  nextBlockId,
   removeBlock,
   removeDeclaration,
   renameBlock,
@@ -426,5 +427,30 @@ describe('editing a declaration', () => {
     expect(out).toContain('# Weekday mornings only.')
     expect(out).toContain('name: "Morning inbox triage"')
     expect(out).toContain('# Everything starts here.')
+  })
+})
+
+describe('minting an id', () => {
+  it('counts from the ids already declared, so the same edits produce the same file twice', () => {
+    const first = parseWorkflow(SOURCE)
+    expect(nextBlockId(first)).toBe('block_1')
+
+    const twice = apply(SOURCE, addBlock({ id: 'block_1' }))
+    expect(nextBlockId(parseWorkflow(twice))).toBe('block_2')
+  })
+
+  it('steps over an id a user took by hand', () => {
+    const held = apply(SOURCE, addBlock({ id: 'block_2' }))
+    expect(nextBlockId(parseWorkflow(held))).toBe('block_1')
+  })
+
+  it('refuses to declare a second block under an id already taken', () => {
+    // Every reader resolves the FIRST match, so a second block's Board would
+    // open on the first's steps and `removeBlock` would delete the wrong one.
+    const held = parseWorkflow(apply(SOURCE, addBlock({ id: 'archive_entry' })))
+
+    expect(() => addBlock({ id: 'archive_entry' }).apply(held)).toThrow(/already exists/)
+    // And the document is left as it was, holding one.
+    expect(held.toString().match(/- id: archive_entry/g)).toHaveLength(1)
   })
 })

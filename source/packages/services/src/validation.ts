@@ -37,6 +37,17 @@ export interface ValidationState {
    * filed under a Step's would be painted on whichever row happened to match.
    */
   byTrigger: ReadonlyMap<string, Diagnostic[]>
+  /**
+   * The same, per Block, for what belongs to the Block rather than to any Step
+   * on its Board — a duplicate id, a duplicate key in its contract, recursion,
+   * a Board that promises outputs and has a path off the end.
+   *
+   * A third map for the same reason the second exists: the surface that lists
+   * the Blocks a document declares is not the one that draws its Steps, and a
+   * Block id filed under a Step's key would be painted on whichever row
+   * happened to match.
+   */
+  byBlock: ReadonlyMap<string, Diagnostic[]>
   /** Everything — what a count in the toolbar is drawn from. */
   all: readonly Diagnostic[]
   /**
@@ -72,6 +83,7 @@ const NOTHING: readonly Diagnostic[] = []
 const PENDING: ValidationState = {
   byStep: NONE,
   byTrigger: NONE,
+  byBlock: NONE,
   all: NOTHING,
   ready: false,
 }

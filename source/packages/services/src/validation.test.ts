@@ -82,6 +82,7 @@ describe('withholding an answer', () => {
     expect(validation.getSnapshot()).toEqual({
       byStep: new Map(),
       byTrigger: new Map(),
+      byBlock: new Map(),
       all: [],
       ready: false,
     })
@@ -169,6 +170,19 @@ describe('the answer', () => {
     expect(state.ready).toBe(true)
     expect(state.byStep.size).toBe(0)
     expect(state.all).toHaveLength(0)
+  })
+
+  it('indexes what belongs to a Block rather than to any Step on it', async () => {
+    // A third map for the reason the second exists: the surface listing the
+    // Blocks a document declares is not the one drawing its Steps, and a Block
+    // id filed under a Step's key would be painted on whichever row matched.
+    const recursive = `id: wf\nname: n\nversion: 1\nstatus: draft\nsteps: []\nblocks:\n  - id: loop\n    steps:\n      - id: again\n        use: block.loop\n`
+    const { validation } = await opened(recursive)
+    const state = validation.getSnapshot()
+
+    expect([...state.byBlock.keys()]).toEqual(['loop'])
+    expect(state.byBlock.get('loop')?.map((one) => one.code)).toEqual(['BLOCK_RECURSION'])
+    expect(state.byStep.size).toBe(0)
   })
 
   it('marks every Step when the catalogue declares none of them', async () => {

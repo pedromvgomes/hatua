@@ -429,8 +429,14 @@ each.
 
 ## Components tab
 
-The Component Manifests a Host serves, as cards ready to be added to the Workflow Definition as
-Steps.
+Everything a Step can be, as cards ready to be added to the Workflow Definition.
+
+**Two of the three roots of the verb namespace are here.** A verb's root says who declares it:
+`component.email.send` is a Host's, `block.archive_entry` is this document's, and both are
+Components by the domain's own definition. So the tab lists the Host's Component Manifests *and*
+the Blocks the document declares, and a card does the same thing whichever root it carries — click
+it or drag it onto the canvas and the Step it becomes is written with its verb. One payload for
+both gestures and both roots: the verb, and what to call it.
 
 Renamed from "Library". **Component** is the glossary term; "Library" appears nowhere in the domain
 language, and the region is `<Components>` so the label and the region name are the same word. That
@@ -449,6 +455,31 @@ Layout: `Input size="sm" icon="search"` (*Search components*), then groups. Grou
 `once: true` Components already placed render at `opacity: 0.45` and refuse insertion with a toast.
 When an insertion point is pending, a `--accent-wash` strip sits above the list: *Pick a component
 to drop into the flow.*
+
+### The Blocks group
+
+A section of its own rather than another entry in the Host's groups, and first. A Host's groups are
+ordered as the Host declared them and this is not one the Host chose, so it neither joins that
+ordering nor displaces it; it goes first because it is the section the user authored and the only
+one carrying a control that creates something. A Block's card shows the neutral coin the canvas
+already draws on a call, its name, and its contract in the line the canvas says it in —
+`1 param · 1 output`.
+
+| | |
+| --- | --- |
+| **New block** | declares one under a minted id and opens its Board, because a Block's tab opens when the Block is declared (ADR-0017) |
+| **Deleting** | straight through when the Block is empty and nothing calls it; otherwise a `danger` confirm naming both costs |
+| **A cycle** | marked, never withheld — the card carries `BLOCK_RECURSION` the way a Trigger's card carries its own diagnostics |
+
+The confirm exists to **tell**, not to repair. Deleting a Block leaves its call sites naming
+something that is not there — the rule `removeBlock` follows and `renameBlock` beside it — so the
+dialog says how many Steps call it and that they will be left calling a block that is not here.
+It is skipped only where nothing is lost that the card did not already show: no Steps on its Board,
+and no call sites.
+
+Both costs come off the model. `callSitesOf(doc, id)` walks every Board and every nested region,
+because a call inside a Fork branch is a call and a count taken off the root alone under-reports
+exactly the sites hardest to find again.
 
 ---
 

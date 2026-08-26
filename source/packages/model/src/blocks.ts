@@ -1,6 +1,6 @@
 import type { Slot } from '@hatua/expressions'
 import type { Block, Declaration, Step, WorkflowDefinition } from '@hatua/schema'
-import { own, regionsOf } from './tree'
+import { own, regionsOf, type StepRef, walkDocument } from './tree'
 
 /**
  * Blocks: what a call takes, what a return publishes, and which Blocks reach
@@ -134,4 +134,38 @@ export function cyclicBlocks(doc: WorkflowDefinition): Set<string> {
 
   for (const id of edges.keys()) visit(id, [])
   return cyclic
+}
+
+/**
+ * Every Step that calls a Block, on every Board including the Block's own.
+ *
+ * The other direction from `callsOf`, and it walks the whole document rather
+ * than one Board: a call sits wherever somebody wrote it, and a count that only
+ * looked at the root would tell a user deleting a Block that nothing calls it
+ * while two other Blocks do.
+ */
+export function callSitesOf(doc: WorkflowDefinition, id: string): StepRef[] {
+  const found: StepRef[] = []
+  for (const { step, board, id: stepId } of walkDocument(doc)) {
+    if (blockIdOf(step.use) === id) found.push({ board, id: stepId })
+  }
+  return found
+}
+
+/**
+ * What a Block takes and publishes, in a line: `1 param · 2 outputs`.
+ *
+ * One definition because two surfaces say it — the canvas's root node for the
+ * Board a Block opens, and the card that Board is reached from. Two spellings
+ * of the same count read as two different facts about one Block.
+ *
+ * An absent Block reads as a contract of nothing rather than as an empty
+ * string: a Board resolved against a document that no longer declares it still
+ * draws a node, and a summary that vanishes reads as a Board with no contract
+ * instead of one that is not there.
+ */
+export const contractSummary = (block: Block | undefined): string => {
+  const params = block?.params?.length ?? 0
+  const outputs = block?.outputs?.length ?? 0
+  return `${params} ${params === 1 ? 'param' : 'params'} · ${outputs} ${outputs === 1 ? 'output' : 'outputs'}`
 }

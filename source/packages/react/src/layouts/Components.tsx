@@ -1,7 +1,22 @@
-import type { Manifest, ManifestEntry } from '@hatua/schema'
-import type { ManifestState } from '@hatua/services'
+import {
+  BLOCK_PREFIX,
+  callSitesOf,
+  contractSummary,
+  type Diagnostic,
+  walkSteps,
+} from '@hatua/model'
+import type { Block, Manifest, ManifestEntry, WorkflowDefinition } from '@hatua/schema'
+import {
+  addBlock,
+  type EditingState,
+  type ManifestState,
+  nextBlockId,
+  removeBlock,
+  type ValidationState,
+} from '@hatua/services'
 import {
   type ComponentPropsWithRef,
+  type ReactNode,
   useEffect,
   useId,
   useMemo,
@@ -9,14 +24,16 @@ import {
   useSyncExternalStore,
 } from 'react'
 import { Button } from '../primitives/Button'
+import { ConfirmDialog } from '../primitives/ConfirmDialog'
 import { cx } from '../primitives/classNames'
 import { Input } from '../primitives/Input'
-import { useManifestStore } from '../theme/HatuaProvider'
+import { useEditingStore, useManifestStore, useValidationStore } from '../theme/HatuaProvider'
 import { setDragChip } from '../units/dragChip'
 import { IconCoin } from '../units/IconCoin'
+import { RemoveButton } from '../units/RemoveButton'
 import styles from './Components.module.css'
 import css from './Components.module.css?inline'
-import { COMPONENT_MIME, encodeComponent } from './dragging'
+import { COMPONENT_MIME, type ComponentDrag, encodeComponent } from './dragging'
 
 export interface ComponentsProps extends Omit<ComponentPropsWithRef<'section'>, 'onSelect'> {
   /**
@@ -26,8 +43,24 @@ export interface ComponentsProps extends Omit<ComponentPropsWithRef<'section'>, 
    *
    * Props out, not document state. Adding the Step is the editing store's job,
    * and reaching for it here would tie the catalogue to the tree.
+   *
+   * **The verb and the name, not the manifest.** Two of the three roots of the
+   * verb namespace are listed here — a Host's Components and this document's
+   * Blocks (CONTEXT.md) — and a Block has no manifest to hand back. What both
+   * kinds of card have is what writes the Step: the verb, and what to call it.
+   * That is the same payload the drag carries, so the two gestures cannot
+   * disagree about what was picked.
    */
-  onSelect?: (manifest: Manifest) => void
+  onSelect?: (component: ComponentDrag) => void
+  /**
+   * Fired when a Block is declared here, naming the one that now exists.
+   *
+   * ADR-0017: a Block's tab opens when the Block is declared. Which Board is on
+   * screen is chrome and this region does not hold it, so declaring one is
+   * reported rather than acted on — and a caller that ignores it still gets the
+   * Block, reachable from the strip the next time a call site is opened.
+   */
+  onBoardOpen?: (block: string) => void
   /**
    * A place on the canvas is waiting for a Component, so the panel says so.
    *
@@ -43,8 +76,34 @@ export interface ComponentsProps extends Omit<ComponentPropsWithRef<'section'>, 
 }
 
 /**
- * The Components tab: the Components a Host's Component Manifests declare,
- * ready to be added to the Workflow Definition as Steps.
+ * The Components tab: everything a Step can be, ready to be added to the
+ * Workflow Definition.
+ *
+ * ## Two roots, one tab
+ *
+ * A verb's root says who declares it (CONTEXT.md): `component.email.send` is a
+ * Host's and `block.archive_entry` is this document's. Both are Components by
+ * the domain's own definition, so both are cards here, and a card does the same
+ * thing whichever root it carries — click it or drag it onto the canvas and the
+ * Step it becomes is written with its verb.
+ *
+ * The Blocks are a section of their own rather than another entry in
+ * `groupsOf`. A Host's groups are ordered as the Host declared them and this is
+ * not one the Host chose, so it neither joins that ordering nor displaces it;
+ * it goes first because it is the section the user authored and the only one
+ * carrying a control that creates something.
+ *
+ * ## What it edits, and what it only reports
+ *
+ * Declaring a Block and removing one are edits and go through the editing store
+ * as commands, the way every edit on the Workflow tab does. Which Board is on
+ * screen is chrome this region does not hold, so opening one is a prop out.
+ *
+ * Nothing here restates the document's own states. A Host that wired no
+ * storage, a Draft still opening, a file that does not project — the Workflow
+ * tab says all three, and a second copy in this panel would be two sentences
+ * about one problem. The Blocks section is simply absent until there is a
+ * document to read.
  *
  * **Components and nothing else.** A catalogue serves two `kind`s and this
  * region renders one, because adding a Trigger belongs to the Workflow tab: a
@@ -67,28 +126,34 @@ export interface ComponentsProps extends Omit<ComponentPropsWithRef<'section'>, 
  * region subscribes; it does not fetch, and it does not copy what it reads into
  * state of its own.
  *
- * What it deliberately does not do: add anything. `once: true` — at most one
- * instance per workflow — would grey out an already-used Component, and knowing
- * that needs the Workflow Definition. Half of that check is worse than none,
- * because the half that is missing is the half a user notices. Dragging onto
- * the canvas waits for the canvas.
+ * What it deliberately does not do: mark a Host's Component as already used.
+ * `once: true` — at most one instance per workflow — would grey one out, and
+ * half of that check is worse than none, because the half that is missing is
+ * the half a user notices.
  */
 export function Components({
   onSelect,
+  onBoardOpen,
   pending = false,
   defaultQuery = '',
   className,
   ...rest
 }: ComponentsProps) {
   const store = useManifestStore()
+  const editing = useEditingStore()
+  const validation = useValidationStore()
   const [query, setQuery] = useState(defaultQuery)
+  /** The Block a confirmation is standing in front of, and what it costs. */
+  const [confirming, setConfirming] = useState<Cost | null>(null)
   const filterId = useId()
 
-  // The one side effect: tell the store somebody is reading. It is idempotent,
-  // so every region that mounts may call it and only the first fetches.
+  // The one side effect: tell each store somebody is reading. Both are
+  // idempotent, so every region that mounts may call them and only the first
+  // fetches the catalogue or opens the Draft.
   useEffect(() => {
     store?.load()
-  }, [store])
+    editing?.open()
+  }, [store, editing])
 
   const state = useSyncExternalStore<CatalogueState>(
     store ? store.subscribe : subscribeToNothing,
@@ -99,13 +164,76 @@ export function Components({
     store ? readLoading : readUnconfigured,
   )
 
+  const document = useSyncExternalStore<DocumentState>(
+    editing ? editing.subscribe : subscribeToNothing,
+    editing ? editing.getSnapshot : readUnopened,
+    editing ? readOpening : readUnopened,
+  )
+
+  const checks = useSyncExternalStore<ValidationState>(
+    validation ? validation.subscribe : subscribeToNothing,
+    validation ? validation.getSnapshot : readUnchecked,
+    readUnchecked,
+  )
+
   const manifests = state.status === 'ready' ? state.manifests : NONE
   const components = useMemo(
     () => manifests.filter((entry): entry is Manifest => kindOf(entry) === 'component'),
     [manifests],
   )
   const groups = useMemo(() => groupsOf(components, query), [components, query])
-  const matched = groups.reduce((n, group) => n + group.manifests.length, 0)
+
+  /*
+   * The Blocks this document declares — absent until it projects, because a
+   * Block is read off the typed projection and a half-written file has none.
+   *
+   * `null` and not an empty array: "no document to read" and "a document that
+   * declares no Blocks" are different screens, and only the second is offered a
+   * way to declare the first one.
+   */
+  const definition = document.status === 'ready' ? (document.workflow.definition ?? null) : null
+  const blocks = useMemo(
+    () => (definition ? filtered(definition.blocks ?? [], query) : null),
+    [definition, query],
+  )
+  // Absent, not empty. Every Step is an unknown component until the manifests
+  // land, so painting `byBlock` before `ready` marks every Block on every load.
+  const problems = checks.ready ? checks.byBlock : NO_PROBLEMS
+
+  const matched = groups.reduce((n, group) => n + group.manifests.length, 0) + (blocks?.length ?? 0)
+
+  /**
+   * Declare a Block, and say which one.
+   *
+   * The id is minted here rather than left to `addBlock` because the tab that
+   * opens next has to be named (ADR-0017), and a command reports nothing back.
+   * Read at click time, not at render time: the document may have moved since
+   * this last drew, and an id minted against a stale one is the duplicate
+   * `addBlock` refuses.
+   */
+  const declare = () => {
+    const held = editing?.getSnapshot()
+    if (!editing || held?.status !== 'ready') return
+    const id = nextBlockId(held.workflow.document)
+    editing.apply(addBlock({ id }))
+    onBoardOpen?.(id)
+  }
+
+  /**
+   * Remove a Block, once the user has been told what it costs.
+   *
+   * Deleting one that nothing calls and that holds no Steps takes nothing away
+   * that is not on the card, so it goes straight through — a dialog in front of
+   * it is friction with nothing to report. Everything else is confirmed,
+   * because both costs are invisible from here: the Steps on its Board are on
+   * another screen, and its call sites are wherever somebody wrote them.
+   */
+  const remove = (block: Block) => {
+    if (!editing || !definition) return
+    const cost = costOf(definition, block)
+    if (cost.steps === 0 && cost.calls === 0) editing.apply(removeBlock(block.id))
+    else setConfirming(cost)
+  }
 
   const searching = query.trim() !== ''
   const ready = state.status === 'ready'
@@ -119,10 +247,13 @@ export function Components({
   /** Loaded and correctly shaped, and there is simply no Component in it. */
   const none = ready && components.length === 0 && !undeclared
 
+  /** Everything the panel would list with the filter box empty. */
+  const listed = components.length + (definition?.blocks?.length ?? 0)
+
   const liveMessage =
     state.status === 'loading'
       ? 'Loading components…'
-      : components.length > 0 && matched === 0 && searching
+      : listed > 0 && matched === 0 && searching
         ? `Nothing matches “${query}”.`
         : ''
 
@@ -133,8 +264,9 @@ export function Components({
       </style>
       <section aria-label="Components" className={cx(styles.components, className)} {...rest}>
         {/* Only once there is something to filter. A search box over a failed
-            load offers to narrow nothing. */}
-        {components.length > 0 ? (
+            load offers to narrow nothing — and a document's Blocks are as much
+            of the list as a Host's Components, so either is enough. */}
+        {listed > 0 ? (
           <div className={styles.filter}>
             <label className={styles.filterLabel} htmlFor={filterId}>
               Filter
@@ -216,6 +348,44 @@ export function Components({
             </p>
           ) : null}
 
+          {/*
+            This document's own Components, above the Host's. A Block declared
+            here is called as `block.<id>`, which is the third root of the verb
+            namespace and the only one the user writes themselves.
+          */}
+          {blocks ? (
+            <div className={styles.group}>
+              <h2 className={styles.groupHeading}>Blocks</h2>
+
+              {blocks.length === 0 ? (
+                <p className={styles.empty}>{searching ? 'No blocks match.' : 'No blocks yet.'}</p>
+              ) : (
+                <ul className={styles.cards}>
+                  {blocks.map((block) => (
+                    <BlockRow
+                      key={block.id}
+                      block={block}
+                      problems={problems.get(block.id)}
+                      onSelect={onSelect}
+                      onRemove={() => remove(block)}
+                    />
+                  ))}
+                </ul>
+              )}
+
+              {/* Not while filtering. A list narrowed to nothing still offers
+                  this, and a Block declared out of a search reads as the thing
+                  that was searched for. */}
+              {searching ? null : (
+                <div className={styles.action}>
+                  <Button size="sm" onClick={declare}>
+                    New block
+                  </Button>
+                </div>
+              )}
+            </div>
+          ) : null}
+
           {groups.map((group) => (
             <div key={group.name} className={styles.group}>
               <h2 className={styles.groupHeading}>{group.name}</h2>
@@ -233,26 +403,150 @@ export function Components({
           ))}
         </div>
       </section>
+
+      {/*
+        What deleting a Block costs, said before it happens rather than found
+        afterwards. Its call sites are left naming a Block that is not there —
+        the rule `removeBlock` follows — so the dialog is where the user is told
+        that, not a repair mechanism standing in for it.
+      */}
+      <ConfirmDialog
+        open={confirming !== null}
+        tone="danger"
+        title={confirming ? `Delete “${confirming.name}”?` : ''}
+        description={confirming ? costLine(confirming) : undefined}
+        confirmLabel="Delete"
+        onConfirm={() => {
+          if (confirming) editing?.apply(removeBlock(confirming.id))
+          setConfirming(null)
+        }}
+        onCancel={() => setConfirming(null)}
+      />
     </>
   )
 }
 
 /**
+ * One Host Component.
+ *
+ * A card with no name still draws, because dropping it would leave a Host
+ * debugging a catalogue by counting rows that are not there. What it cannot do
+ * without a verb is become a Step, so that — and not the name — is what decides
+ * whether it is a control at all.
+ */
+function Card({
+  manifest,
+  onSelect,
+}: {
+  manifest: Manifest
+  onSelect?: (component: ComponentDrag) => void
+}) {
+  const use = textOf(manifest.use)
+  // The Host's name and not the fallback below: this is written into the
+  // document as the Step's own name, and "Unnamed component" is a sentence
+  // about a broken manifest rather than something to call a Step.
+  const declared = textOf(manifest.name)
+  const name = declared ?? use ?? 'Unnamed component'
+
+  return (
+    <CatalogueCard
+      icon={<IconCoin manifest={manifest} />}
+      name={name}
+      blurb={textOf(manifest.blurb)}
+      // An entry the Host malformed badly enough to have no verb is a row to
+      // read, never a control: there is nothing to write a Step with, so a
+      // button here would take a tab stop and answer a click by doing nothing.
+      drag={use ? { use, ...(declared ? { name: declared } : {}) } : undefined}
+      onSelect={onSelect}
+    />
+  )
+}
+
+/**
+ * One Block this document declares, and the bin that takes it away.
+ *
+ * The bin is beside the card rather than inside it: a button cannot contain a
+ * button, and they are two commands — the same reason the canvas's tab strip
+ * puts its close control beside the label rather than in it.
+ */
+function BlockRow({
+  block,
+  problems,
+  onSelect,
+  onRemove,
+}: {
+  block: Block
+  problems?: Diagnostic[]
+  onSelect?: (component: ComponentDrag) => void
+  onRemove: () => void
+}) {
+  const name = block.name || block.id
+
+  return (
+    <li className={styles.row}>
+      <CatalogueCard
+        // No manifest, because nothing declares a Block but the document it is
+        // in. The neutral square is what the canvas already draws on a call for
+        // the same reason, so the card and the node it becomes agree.
+        icon={<IconCoin />}
+        name={name}
+        blurb={contractSummary(block)}
+        drag={{ use: `${BLOCK_PREFIX}${block.id}`, name }}
+        onSelect={onSelect}
+      />
+      <RemoveButton label={`Delete ${name}`} onClick={onRemove} />
+
+      {/*
+        Recursion, a duplicate id, a Board that promises an output and has a
+        path off the end. Marked and never withheld: a Block in a cycle is still
+        a Block the user is working on, and the checker names the problem where
+        a greyed-out card would only say the panel had changed its mind.
+
+        `role="status"` rather than `alert`: the same line ADR-0009 draws — this
+        blocks Publish, never editing.
+      */}
+      {problems?.length ? (
+        <p className={styles.problems} role="status">
+          {problems.map((problem) => problem.message).join(' ')}
+        </p>
+      ) : null}
+    </li>
+  )
+}
+
+/**
+ * The card both roots of the verb namespace are drawn as.
+ *
  * A card is a button only when something happens on click. A control that does
  * nothing still takes a tab stop, still says "button" to a screen reader and
  * still invites a click — so the Host that mounts <Components /> to browse a
  * catalogue gets a list, and the one that passes onSelect gets controls.
+ *
+ * Draggable whenever it is actionable, because the canvas's `+` is a drop
+ * target and this is the other half of that gesture. The click path stays:
+ * HTML5 drag and drop is unreachable from the keyboard, so a catalogue whose
+ * only route into the tree is a drag is a catalogue some people cannot use.
+ *
+ * Both gestures carry one payload — the verb and what to call it — so a card
+ * dropped and the same card clicked cannot write two different Steps.
  */
-function Card({ manifest, onSelect }: { manifest: Manifest; onSelect?: (m: Manifest) => void }) {
-  // A card with no name still draws, because dropping it would leave a Host
-  // debugging a catalogue by counting rows that are not there. The verb is the
-  // fallback, since it is what a Step would be written with.
-  const name = textOf(manifest.name) ?? textOf(manifest.use) ?? 'Unnamed component'
-  const blurb = textOf(manifest.blurb)
-
+function CatalogueCard({
+  icon,
+  name,
+  blurb,
+  drag,
+  onSelect,
+}: {
+  icon: ReactNode
+  name: string
+  blurb?: string
+  /** What a Step made from this card is written with, or undefined when there is nothing to write. */
+  drag?: ComponentDrag
+  onSelect?: (component: ComponentDrag) => void
+}) {
   const body = (
     <>
-      <IconCoin manifest={manifest} />
+      {icon}
       <span className={styles.text}>
         <span className={styles.name}>{name}</span>
         {blurb ? <span className={styles.blurb}>{blurb}</span> : null}
@@ -260,34 +554,22 @@ function Card({ manifest, onSelect }: { manifest: Manifest; onSelect?: (m: Manif
     </>
   )
 
-  /*
-   * Draggable whenever it is actionable, because the canvas's `+` is a drop
-   * target and this is the other half of that gesture. The click path stays:
-   * HTML5 drag and drop is unreachable from the keyboard, so a catalogue whose
-   * only route into the tree is a drag is a catalogue some people cannot use.
-   *
-   * The payload is the verb. It is what a Step is written with, it is what the
-   * drop target needs to look the manifest back up, and it is the one field a
-   * manifest always has.
-   */
-  return onSelect ? (
+  return onSelect && drag ? (
     <button
       type="button"
       className={cx(styles.card, styles.actionable)}
       draggable
-      onClick={() => onSelect(manifest)}
+      onClick={() => onSelect(drag)}
       onDragStart={(event) => {
-        const use = textOf(manifest.use)
-        if (!use) {
-          event.preventDefault()
-          return
-        }
         event.dataTransfer.effectAllowed = 'copy'
-        event.dataTransfer.setData(COMPONENT_MIME, encodeComponent({ use, name }))
-        event.dataTransfer.setData('text/plain', use)
+        event.dataTransfer.setData(COMPONENT_MIME, encodeComponent(drag))
+        // `text/plain` for everyone else on the page: a drop into any other
+        // editor still pastes the verb, which is the one thing that identifies
+        // what was dragged.
+        event.dataTransfer.setData('text/plain', drag.use)
         // The same chip a Step dragged across the canvas carries, so the two
         // gestures look alike and neither covers the gap it is aimed at.
-        setDragChip(event.dataTransfer, event.currentTarget, name || use)
+        setDragChip(event.dataTransfer, event.currentTarget, name || drag.use)
       }}
     >
       {body}
@@ -304,9 +586,21 @@ function Card({ manifest, onSelect }: { manifest: Manifest; onSelect?: (m: Manif
  */
 type CatalogueState = ManifestState | { status: 'unconfigured' }
 
+/** The same distinction for the document, which this region reads and never reports. */
+type DocumentState = EditingState | { status: 'unconfigured' }
+
 const UNCONFIGURED = { status: 'unconfigured' } as const
 const LOADING = { status: 'loading' } as const
+const OPENING = { status: 'opening' } as const
 const NONE: ManifestEntry[] = []
+const NO_PROBLEMS: ReadonlyMap<string, Diagnostic[]> = new Map()
+const UNCHECKED: ValidationState = {
+  byStep: NO_PROBLEMS,
+  byTrigger: NO_PROBLEMS,
+  byBlock: NO_PROBLEMS,
+  all: [],
+  ready: false,
+}
 
 /**
  * The kinds an entry may declare. Anything else is a malformed catalogue.
@@ -348,6 +642,9 @@ const textOf = (value: unknown): string | undefined =>
 const subscribeToNothing = () => () => {}
 const readUnconfigured = (): CatalogueState => UNCONFIGURED
 const readLoading = (): CatalogueState => LOADING
+const readUnopened = (): DocumentState => UNCONFIGURED
+const readOpening = (): DocumentState => OPENING
+const readUnchecked = (): ValidationState => UNCHECKED
 
 interface Group {
   name: string
@@ -386,4 +683,52 @@ function groupsOf(components: Manifest[], query: string): Group[] {
   return [...groups]
     .sort(([a], [b]) => Number(a === UNGROUPED) - Number(b === UNGROUPED))
     .map(([name, manifests]) => ({ name, manifests }))
+}
+
+/** A Block matches what a Component would: what it is called, and what calls it. */
+const filtered = (blocks: readonly Block[], query: string): readonly Block[] => {
+  const needle = query.trim().toLowerCase()
+  if (!needle) return blocks
+  return blocks.filter((block) =>
+    [block.name, block.id].some((field) => textOf(field)?.toLowerCase().includes(needle)),
+  )
+}
+
+/** What deleting one Block takes with it. */
+interface Cost {
+  id: string
+  /** What to call it on the dialog — its name, or the id standing in for one. */
+  name: string
+  /** Steps on its Board, at every depth: a call inside a Fork branch goes too. */
+  steps: number
+  /** Steps that call it, anywhere in the document. */
+  calls: number
+}
+
+const costOf = (definition: WorkflowDefinition, block: Block): Cost => ({
+  id: block.id,
+  name: block.name || block.id,
+  steps: [...walkSteps(block.steps)].length,
+  calls: callSitesOf(definition, block.id).length,
+})
+
+/**
+ * What the confirmation says, in the order the user is about to lose it.
+ *
+ * The call sites come last because they are the half that outlives the Block:
+ * the Steps on its Board go with it, and the calls stay behind naming something
+ * that is not there. Each half is said only when it is true — a sentence about
+ * "0 steps" is a fact the dialog invented to have three sentences.
+ */
+function costLine({ steps, calls }: Cost): string {
+  const parts: string[] = []
+  if (steps > 0) parts.push(`It has ${steps} ${steps === 1 ? 'step' : 'steps'} on it.`)
+  if (calls > 0) {
+    parts.push(
+      calls === 1
+        ? 'One step calls it, and will be left calling a block that is not here.'
+        : `${calls} steps call it, and will be left calling a block that is not here.`,
+    )
+  }
+  return parts.join(' ')
 }
