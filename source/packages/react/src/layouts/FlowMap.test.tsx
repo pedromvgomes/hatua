@@ -154,6 +154,10 @@ const mount = (yaml = SOURCE, props: Parameters<typeof FlowMap>[0] = {}) =>
 
 const canvas = () => within(screen.getByRole('region', { name: 'Flow map' }))
 
+/** The clipped box the pan and the zoom are worked out against. */
+const surface = () =>
+  screen.getByRole('region', { name: 'Flow map' }).querySelector('[tabindex="-1"]') as HTMLElement
+
 /** The canvas's tab strip, which is drawn only once a Block's Board is open. */
 const tabs = () => canvas().getByRole('navigation', { name: 'Boards' })
 
@@ -805,6 +809,57 @@ describe('a Board is what the canvas draws one of', () => {
     fireEvent.click(within(tabs()).getByRole('button', { name: 'Close Archive an entry' }))
     expect(canvas().getByText('Beta returns')).toBeDefined()
     expect(within(tabs()).getAllByRole('listitem')).toHaveLength(2)
+  })
+
+  /**
+   * A controlled caller names the Board, and the strip is the only way off it.
+   * Seeded from `openBoard` alone, a Host that sets `boardId` itself strands
+   * the user on a Block's Board with no navigation at all.
+   */
+  it('opens a tab for a Board the caller names, not only one it opened itself', async () => {
+    mount(SOURCE, { boardId: 'alpha' })
+    await canvas().findByText('Alpha returns')
+
+    expect(within(tabs()).getAllByRole('listitem')).toHaveLength(2)
+    expect(within(tabs()).getByRole('button', { name: 'The workflow' })).toBeDefined()
+  })
+
+  /**
+   * Closing a tab drops its viewport with it, so re-opening the Board fits to
+   * it rather than restoring a pan made before it was closed — the fit only
+   * runs where there is no entry.
+   */
+  it("drops a closed Board's viewport, so re-opening it fits again", async () => {
+    const onViewportChange = vi.fn()
+    mount(SOURCE, { onViewportChange })
+    await canvas().findByText('Archive one')
+
+    fireEvent.click(canvas().getByRole('button', { name: 'Open Archive one' }))
+    const placed = onViewportChange.mock.lastCall?.[0]
+
+    // A pixel-mode wheel pans by its deltas whatever the box measures, which is
+    // what makes this reachable at all without a layout engine.
+    fireEvent.wheel(surface(), { deltaX: 120, deltaY: 80, deltaMode: 0 })
+    expect(onViewportChange.mock.lastCall?.[0]).not.toEqual(placed)
+
+    fireEvent.click(within(tabs()).getByRole('button', { name: 'Close Archive an entry' }))
+    fireEvent.click(canvas().getByRole('button', { name: 'Open Archive one' }))
+
+    // Placed again, rather than restored to a pan made before it was closed.
+    expect(onViewportChange).toHaveBeenLastCalledWith(placed)
+  })
+
+  /**
+   * Falling back in `board` alone leaves `wanted` naming the deleted Block, so
+   * the viewport stays keyed to a dead Board and a caller holding which Board
+   * is open still holds the one that is gone.
+   */
+  it('reports moving back to the root when the open Block is not there', async () => {
+    const onBoardChange = vi.fn()
+    mount(SOURCE, { defaultBoardId: 'nowhere', onBoardChange })
+    await canvas().findByText('Fetch mail')
+
+    expect(onBoardChange).toHaveBeenCalledWith(null)
   })
 
   it('offers no doorway on a Step that calls nothing', async () => {

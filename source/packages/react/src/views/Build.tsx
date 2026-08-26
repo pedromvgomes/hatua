@@ -209,20 +209,7 @@ export function Build({ className, ...rest }: BuildProps) {
                 setPending(null)
               }}
               selected={selected}
-              onSelect={(ref) =>
-                setSelectedOn((was) => {
-                  const key = boardKey(board)
-                  // Deselecting clears this Board's entry rather than storing an
-                  // absent one: an entry holding `undefined` and no entry are
-                  // the same answer, and keeping both spellings would make them
-                  // look like different states.
-                  if (!ref) {
-                    const { [key]: _gone, ...rest } = was
-                    return rest
-                  }
-                  return { ...was, [key]: ref }
-                })
-              }
+              onSelect={(ref) => setSelectedOn((was) => ({ ...was, [boardKey(board)]: ref }))}
               collapsed={collapsed}
               onCollapseChange={setCollapsed}
             />
