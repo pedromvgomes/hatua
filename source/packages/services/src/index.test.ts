@@ -32,6 +32,11 @@ const SURFACE = [
   // Composition.
   'sequence',
 
+  // The rule every command that writes a user-chosen name checks, so a field
+  // can ask the same question the command will.
+  'isUsableName',
+  'requireUsableName',
+
   // Commands: the Step tree, on whichever Board an InsertPoint names.
   'addStep',
   'boardPath',

@@ -312,10 +312,10 @@
     overflow-wrap: anywhere;
   }
 
-  /* A key box and, under it, the reason a name was refused. `min-inline-size:
-     0` because it sits in a `minmax(0, 1fr)` column beside a bin button, and a
-     grid item defaults to its content's minimum width — which a long key would
-     push past the panel. */
+  /* A name box and, under it, the reason a name was refused. `min-inline-size:
+     0` because it can sit in a `minmax(0, 1fr)` column, and a grid item defaults
+     to its content's minimum width — which a long name would push past the
+     panel. */
   .unique {
     display: grid;
     gap: 4px;

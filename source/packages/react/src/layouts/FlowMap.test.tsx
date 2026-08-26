@@ -1121,10 +1121,17 @@ describe('FlowMap, panning and zooming', () => {
     expect(document.activeElement).toBe(zoomIn)
   })
 
-  it('keeps the pan through a document that stops projecting', async () => {
-    // A Text Mode edit is briefly not a Workflow Definition, and there is no
-    // map to draw. Where the user was looking is not the document's, so losing
-    // the canvas for those keystrokes must not lose the viewport with it.
+  /*
+   * The canvas keeps its map AND its pan, because the edit never lands.
+   *
+   * `EditingStore.apply` refuses a command that would turn a document that
+   * projects into one that does not: every surface reads `definition`, so such
+   * a command would empty the canvas, the side panel and the step editor at
+   * once and leave nobody anything to click on to undo it. This is that
+   * guarantee seen from the canvas — the region a user is looking at when a
+   * name box commits.
+   */
+  it('does not lose the map to a command that would stop the document projecting', async () => {
     let store: EditingStore | undefined
     render(
       <HatuaProvider ports={{ workflows: serving(SOURCE) }} workflowId="wf_map">
@@ -1137,11 +1144,29 @@ describe('FlowMap, panning and zooming', () => {
     const moved = surfaceOf().style.transform
 
     act(() => store?.apply(unnamed))
-    expect(canvas().getByText(/not a valid Workflow Definition yet/)).toBeDefined()
 
-    act(() => store?.undo())
-    await canvas().findByText('Fetch mail')
+    expect(canvas().queryByText(/not a valid Workflow Definition yet/)).toBeNull()
+    expect(canvas().getByText('Fetch mail')).toBeDefined()
     expect(surfaceOf().style.transform).toBe(moved)
+  })
+
+  /*
+   * The screen that IS reachable: a Host whose stored file does not project.
+   * ADR-0001 makes the text the source of truth, so a hand-edited Workflow
+   * Definition opens and is held rather than refused — there is simply no tree
+   * to lay out, and the canvas says so instead of drawing an empty map.
+   */
+  it('says so, rather than drawing nothing, when the Host’s document does not project', async () => {
+    const HALF =
+      'id: wf_map\nname: n\nversion: 1\nstatus: draft\nsteps:\n  - use: component.email.send\n'
+    render(
+      <HatuaProvider ports={{ workflows: serving(HALF) }} workflowId="wf_map">
+        <FlowMap />
+      </HatuaProvider>,
+    )
+
+    expect(await canvas().findByText(/not a valid Workflow Definition yet/)).toBeDefined()
+    expect(canvas().queryByRole('button', { name: /Insert a Step/ })).toBeNull()
   })
 
   it('reads defaultViewport once even where React renders twice', async () => {

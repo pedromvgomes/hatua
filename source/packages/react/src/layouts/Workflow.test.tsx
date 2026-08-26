@@ -1103,6 +1103,46 @@ blocks:
     )
   })
 
+  /*
+   * The defect this closes: `Variable 1` is not an `identifier`, so committing
+   * it stopped the whole document projecting — and the canvas, the side panel
+   * and the step editor all read the projection, so one blur emptied the entire
+   * builder and left a raw zod pattern on screen as the only thing to read.
+   */
+  it('refuses a name the document cannot address, and says what is allowed', async () => {
+    const source = host(WITH_BLOCK)
+    onBoard(null, source)
+
+    type(await screen.findByLabelText('Name of digest_to'), 'Variable 1')
+
+    expect(screen.getByText(/letters, numbers and underscores/)).toBeDefined()
+    // The document still projects, so every other section is still on screen.
+    expect(screen.getByLabelText('Name of digest_to')).toHaveProperty('value', 'digest_to')
+    expect(screen.getByRole('region', { name: 'Triggers' })).toBeDefined()
+    // Nothing a Host would have to store, either.
+    await waitFor(() => expect(source.writes).toEqual([]))
+  })
+
+  it('says nothing about a name the schema does hold', async () => {
+    const source = host(WITH_BLOCK)
+    onBoard(null, source)
+
+    type(await screen.findByLabelText('Name of digest_to'), 'digest_cc')
+
+    expect(screen.queryByText(/letters, numbers and underscores/)).toBeNull()
+    await waitFor(() => expect(source.writes).toHaveLength(1), AUTOSAVED)
+    expect(source.writes[0]).toContain('key: digest_cc')
+  })
+
+  it('refuses one in a contract key too, because it is the same rule', async () => {
+    onBoard('archive_entry', host(WITH_BLOCK))
+
+    type(await screen.findByLabelText('Key of thread'), 'thread id')
+
+    expect(screen.getByText(/letters, numbers and underscores/)).toBeDefined()
+    expect(screen.getByLabelText('Key of thread')).toHaveProperty('value', 'thread')
+  })
+
   it('refuses a slug another Block answers to, and says why', async () => {
     onBoard('archive_entry', host(WITH_BLOCK))
 

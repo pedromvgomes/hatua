@@ -17,6 +17,7 @@ import {
   type ContractSide,
   declareConnection,
   type EditingState,
+  isUsableName,
   type ManifestState,
   removeDeclaration,
   removeTrigger,
@@ -153,7 +154,6 @@ const OPENING = { status: 'opening' } as const
 const CATALOGUE_UNCONFIGURED = { status: 'unconfigured' } as const
 const CATALOGUE_LOADING = { status: 'loading' } as const
 const NO_ENTRIES: ManifestEntry[] = []
-const NO_NAMES: readonly string[] = []
 const NO_SCOPE: readonly ScopeEntry[] = []
 const NO_PROBLEMS: ReadonlyMap<string, Diagnostic[]> = new Map()
 const UNCHECKED: ValidationState = {
@@ -315,12 +315,15 @@ export function Workflow({ className, board = null, onBoardRename, ...rest }: Wo
                   name={block.name ?? ''}
                   namePlaceholder={block.id}
                   slug={block.id}
-                  // A slug that another Block already answers to is refused by
-                  // the command, and `EditingStore.apply` turns that throw into
-                  // a no-op — so the field says so itself rather than appearing
-                  // to drop characters at random.
-                  taken={blocks.filter((other) => other.id !== block.id).map((other) => other.id)}
-                  takenMessage="Another block already uses this slug."
+                  // A slug the command would refuse — a duplicate, or a name
+                  // the schema cannot hold — is refused here too, because
+                  // `EditingStore.apply` turns the command's throw into a
+                  // no-op and the field would otherwise appear to drop
+                  // characters at random.
+                  refuseSlugName={refuseName(
+                    blocks.filter((other) => other.id !== block.id).map((other) => other.id),
+                    'Another block already uses this slug.',
+                  )}
                   onName={(next) => store?.apply(setBlockName(block.id, next))}
                   onSlug={(next) => {
                     store?.apply(renameBlock(block.id, next))
@@ -334,6 +337,7 @@ export function Workflow({ className, board = null, onBoardRename, ...rest }: Wo
                 <Identity
                   name={definition.name}
                   slug={definition.id}
+                  refuseSlugName={refuseSlug}
                   onName={(next) => store?.apply(setWorkflowName(next))}
                   onSlug={(next) => store?.apply(setWorkflowSlug(next))}
                 />
@@ -612,33 +616,54 @@ function RemoveButton({ label, onClick }: { label: string; onClick: () => void }
 }
 
 /**
- * A key box that refuses a name something else already answers to, and says so.
+ * Why a name cannot be used here, or `null` when it can.
  *
- * Every rename command here throws on a collision — two Blocks under one id, or
- * two variables under one key, resolve to the FIRST match everywhere, so the
- * second row's bin button deletes the first row's declaration. `EditingStore`
- * catches that throw and puts the document back, which is the right thing to do
- * with a command built against a tree that has moved on and the wrong thing to
- * do to a person typing: the field appears to reject characters at random and
- * says nothing about why.
+ * Two rules, one message at a time. The **shape** comes from `@hatua/schema`'s
+ * `identifier` through `isUsableName`, so the field and the command answer the
+ * same question from the same definition rather than agreeing by inspection —
+ * and the field never has to spell the pattern, which is a thing no end user
+ * can act on and the copy rule refuses outright.
  *
- * So the box detects the collision itself and declines to commit. The name goes
- * back to the one that is still true and the reason sits under the field, which
- * is the half that was missing: a box that reverts and says nothing is
- * indistinguishable from one that is broken.
+ * The **collision** is per kind, because "another parameter" and "another
+ * variable" are different sentences about different lists.
  */
-function UniqueInput({
+const refuseName =
+  (taken: readonly string[], collision: string) =>
+  (next: string): string | null => {
+    if (!isUsableName(next))
+      return 'Use letters, numbers and underscores, and don’t start with a number.'
+    return taken.includes(next) ? collision : null
+  }
+
+/** A workflow's slug is a non-empty string and not an `identifier`; see `setWorkflowSlug`. */
+const refuseSlug = (next: string): string | null =>
+  next.trim() === '' ? 'A workflow needs a slug.' : null
+
+/**
+ * A name box that refuses a name the document cannot hold, and says so.
+ *
+ * Every command that writes a name throws on one it cannot use — a duplicate
+ * key, or a name the schema's `identifier` refuses — and `EditingStore.apply`
+ * turns a throw into a no-op. That is the right thing to do with a command
+ * built against a tree that has moved on, and the wrong thing to do to a person
+ * typing: the field appears to reject characters at random and says nothing
+ * about why.
+ *
+ * So the box asks the same question the command will and declines to commit.
+ * The name goes back to the one that is still true and the reason sits under
+ * the field, which is the half that was missing: a box that reverts and says
+ * nothing is indistinguishable from one that is broken.
+ */
+function NameInput({
   value,
-  taken,
-  message,
+  refuse,
   onCommit,
   className,
   ...rest
 }: {
   value: string
-  /** Every name that is already spoken for, excluding this row's own. */
-  taken: readonly string[]
-  message: string
+  /** Why the typed name cannot be used, or null. */
+  refuse: (next: string) => string | null
   onCommit: (next: string) => void
   label: string
   mono?: boolean
@@ -660,8 +685,9 @@ function UniqueInput({
         aria-invalid={clash ? true : undefined}
         value={value}
         onCommit={(next) => {
-          if (taken.includes(next)) {
-            setClash(next)
+          const why = refuse(next)
+          if (why) {
+            setClash(why)
             return
           }
           setClash(null)
@@ -673,7 +699,7 @@ function UniqueInput({
         // something the user is in the middle of, not an interruption, and the
         // same line ADR-0009 draws for a Trigger that is not filled in.
         <p className={styles.problems} id={noteId} role="status">
-          {message}
+          {clash}
         </p>
       ) : null}
     </div>
@@ -697,17 +723,15 @@ function Identity({
   name,
   namePlaceholder,
   slug,
-  taken = NO_NAMES,
-  takenMessage = '',
+  refuseSlugName,
   onName,
   onSlug,
 }: {
   name: string
   namePlaceholder?: string
   slug: string
-  /** Slugs another thing already answers to. Empty where none can collide. */
-  taken?: readonly string[]
-  takenMessage?: string
+  /** Why a typed slug cannot be used here. The two Boards have different rules. */
+  refuseSlugName: (next: string) => string | null
   onName: (next: string) => void
   onSlug: (next: string) => void
 }) {
@@ -732,13 +756,12 @@ function Identity({
         <label className={styles.label} htmlFor={slugId}>
           Slug
         </label>
-        <UniqueInput
+        <NameInput
           id={slugId}
           label="Slug"
           value={slug}
           mono
-          taken={taken}
-          message={takenMessage}
+          refuse={refuseSlugName}
           onCommit={onSlug}
         />
       </div>
@@ -1142,13 +1165,12 @@ function DeclarationRow({
       }
     >
       <RowField caption="Key">
-        <UniqueInput
+        <NameInput
           label={`Key of ${declaration.k}`}
           value={declaration.k}
           mono
-          taken={taken}
-          message={clash}
-          onCommit={(next) => next && next !== declaration.k && onRename(next)}
+          refuse={refuseName(taken, clash)}
+          onCommit={(next) => next !== declaration.k && onRename(next)}
         />
       </RowField>
 
@@ -1244,15 +1266,17 @@ function Variables({
               removeLabel={`Remove ${variable.key}`}
               onRemove={() => onRemove(variable.key)}
               name={
-                <UniqueInput
+                <NameInput
                   label={`Name of ${variable.key}`}
                   value={variable.key}
                   mono
-                  taken={variables
-                    .filter((other) => other.key !== variable.key)
-                    .map((other) => other.key)}
-                  message="Another variable already uses this name."
-                  onCommit={(next) => next && next !== variable.key && onRename(variable.key, next)}
+                  refuse={refuseName(
+                    variables
+                      .filter((other) => other.key !== variable.key)
+                      .map((other) => other.key),
+                    'Another variable already uses this name.',
+                  )}
+                  onCommit={(next) => next !== variable.key && onRename(variable.key, next)}
                 />
               }
             >
