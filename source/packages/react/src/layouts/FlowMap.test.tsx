@@ -862,6 +862,56 @@ describe('a Board is what the canvas draws one of', () => {
     expect(onBoardChange).toHaveBeenCalledWith(null)
   })
 
+  /*
+   * The latch that stops the fallback re-reporting is about a Board that is
+   * gone, and a Board that is back is a different fact. Held across the return,
+   * the SECOND deletion of the same Block is silent: `wanted` goes on naming a
+   * Board that is not there, the viewport is written into an entry nothing
+   * reads, and a controlled caller keeps the stale id.
+   */
+  it('reports the fallback again when the same Block is deleted a second time', async () => {
+    const onBoardChange = vi.fn()
+    let store: EditingStore | undefined
+    const WITH_ALPHA = `id: wf_map\nname: n\nversion: 1\nstatus: draft\nsteps:\n  - id: call\n    use: block.alpha\n    name: "Call alpha"\n    with: {}\nblocks:\n  - id: alpha\n    name: "Alpha"\n    steps:\n      - id: deep\n        use: component.email.send\n        name: "Deep"\n`
+
+    render(
+      <HatuaProvider ports={{ workflows: serving(WITH_ALPHA) }} workflowId="wf_map">
+        <Probe onStore={(one) => (store = one)} />
+        <FlowMap onBoardChange={onBoardChange} />
+      </HatuaProvider>,
+    )
+    await canvas().findByText('Call alpha')
+
+    const drop: EditCommand = {
+      label: 'Drop alpha',
+      apply: (document) => {
+        document.ast.delete('blocks')
+      },
+    }
+
+    const openAlpha = () =>
+      fireEvent.click(canvas().getByRole('button', { name: 'Open Call alpha' }))
+
+    openAlpha()
+    expect(onBoardChange).toHaveBeenLastCalledWith('alpha')
+
+    onBoardChange.mockClear()
+    act(() => store?.apply(drop))
+    expect(onBoardChange).toHaveBeenCalledWith(null)
+
+    // Back, walked into again, and taken away again. The latch is about a Board
+    // that is gone, so a Board that returned has to release it.
+    act(() => store?.undo())
+    await canvas().findByText('Call alpha')
+    openAlpha()
+    expect(onBoardChange).toHaveBeenLastCalledWith('alpha')
+
+    onBoardChange.mockClear()
+    act(() => store?.apply(drop))
+
+    expect(onBoardChange).toHaveBeenCalledWith(null)
+  })
+
   it('offers no doorway on a Step that calls nothing', async () => {
     mount()
     await canvas().findByText('Fetch mail')
@@ -1060,6 +1110,60 @@ describe('FlowMap, panning and zooming', () => {
     expect(onViewportChange).toHaveBeenLastCalledWith(expect.objectContaining({ scale: 2 }))
   })
 
+  /*
+   * A Host mounting Hatua inside a hidden tab panel measures 0×0, and this is
+   * placed once per Board — so a pan worked out against a width of nothing
+   * would be permanent, with only Fit to recover it. Kept as the best answer
+   * available and redone the first time a real measurement arrives.
+   */
+  it('re-places an opening view that was worked out against a box with no size', async () => {
+    mount()
+    await canvas().findByText('Fetch mail')
+
+    // What jsdom measures, and what a display:none panel measures too:
+    // `openingView` centres the root against a width of nothing.
+    const provisional = surfaceOf().style.transform
+
+    const region = screen.getByRole('region', { name: 'Flow map' })
+    measuring(region.firstElementChild as HTMLElement, {
+      width: 900,
+      height: 600,
+      right: 900,
+      bottom: 600,
+    })
+
+    /*
+     * A render that moves nothing itself — selecting a card — so what changes
+     * is the placement and not the gesture. The map is rebuilt on every render,
+     * so the effect is already running whenever anything moves.
+     */
+    fireEvent.click(canvas().getByText('Fetch mail'))
+
+    // Centred against 900 rather than against 0: exactly half the box further
+    // along, and the same y.
+    const before = Number(/translate\((-?[\d.]+)px/.exec(provisional)?.[1])
+    const after = Number(/translate\((-?[\d.]+)px/.exec(surfaceOf().style.transform)?.[1])
+    expect(after).toBe(before + 450)
+  })
+
+  it('leaves a viewport the caller supplied alone, however the canvas measures', async () => {
+    mount(SOURCE, { defaultViewport: { x: 40, y: -60, scale: 1 } })
+    await canvas().findByText('Fetch mail')
+
+    const region = screen.getByRole('region', { name: 'Flow map' })
+    measuring(region.firstElementChild as HTMLElement, {
+      width: 900,
+      height: 600,
+      right: 900,
+      bottom: 600,
+    })
+    fireEvent.click(canvas().getByRole('button', { name: 'Zoom in' }))
+
+    // Zoomed about the centre, but never re-placed: 40/-60 was not a guess this
+    // region made against a box it could not measure.
+    expect(surfaceOf().style.transform).not.toContain('translate(0px,')
+  })
+
   it('pans until a focused card is on screen, which no scroll container is left to do', async () => {
     mount(SOURCE, { defaultViewport: { x: 0, y: 0, scale: 1 } })
     const card = await canvas().findByText('Fetch mail')
@@ -1076,6 +1180,63 @@ describe('FlowMap, panning and zooming', () => {
 
     // Far enough that its lower edge clears the margin, and no further.
     expect(surfaceOf().style.transform).toBe('translate(0px, -384px) scale(1)')
+  })
+
+  /*
+   * `undefined` means uncontrolled and `null` means nothing selected, which is
+   * what makes `onSelect`'s documented clear performable at all: read with a
+   * `??`, a caller clearing is indistinguishable from one that never had an
+   * opinion, and the canvas falls back to the card it last selected itself.
+   */
+  it('clears the selection when the caller says nothing is selected', async () => {
+    // One ports object across both renders: <HatuaProvider> keys the store on
+    // what it is handed, so a fresh `serving()` would reopen the document and
+    // the canvas would be empty at the assertion rather than cleared.
+    const ports = { workflows: serving(SOURCE) }
+    const highlighted = () =>
+      canvas()
+        .getAllByRole('button')
+        .find((button) => button.getAttribute('aria-current') === 'true')?.firstElementChild
+        ?.textContent
+
+    const { rerender } = render(
+      <HatuaProvider ports={ports} workflowId="wf_map">
+        <FlowMap selected={{ board: null, id: 'fetch' }} />
+      </HatuaProvider>,
+    )
+    await canvas().findByText('Fetch mail')
+    expect(highlighted()).toBe('Fetch mail')
+
+    /*
+     * A press the caller ignores, which is what leaves this region holding a
+     * selection of its own. Without it the fallback has nothing to fall back
+     * TO, and a `??` clears by accident — so the clear below would pass against
+     * the defect it exists to catch.
+     */
+    fireEvent.click(canvas().getByText('How urgent?'))
+    // The highlight does not move, because the caller is the one saying what is
+    // selected — but this region is now holding a selection of its own, which
+    // is exactly what a `??` falls back to when the caller clears.
+    expect(highlighted()).toBe('Fetch mail')
+
+    rerender(
+      <HatuaProvider ports={ports} workflowId="wf_map">
+        <FlowMap selected={null} />
+      </HatuaProvider>,
+    )
+    expect(highlighted()).toBeUndefined()
+  })
+
+  it('keeps its own selection when the caller has no opinion at all', async () => {
+    mount()
+    fireEvent.click(await canvas().findByText('Fetch mail'))
+
+    expect(
+      canvas()
+        .getAllByRole('button')
+        .find((button) => button.getAttribute('aria-current') === 'true')?.firstElementChild
+        ?.textContent,
+    ).toBe('Fetch mail')
   })
 
   it('does not pan for its own chrome, which sits inside the margin and never moves', async () => {

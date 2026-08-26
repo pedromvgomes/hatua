@@ -117,8 +117,14 @@ export interface StepListProps extends Omit<ComponentPropsWithRef<'section'>, 'o
    * one thing across this region, the canvas and the step editor, and only one
    * of the three is remounted by the tab strip — so the region that holds it
    * has to be able to say what the others show.
+   *
+   * `undefined` means uncontrolled; `null` is a value and means nothing is
+   * selected. Two spellings because one value cannot carry both meanings, and
+   * `onSelect` reports `undefined` when the selected Step is removed — a caller
+   * handing that straight back would otherwise be saying "nobody said" and get
+   * the row this region last highlighted itself.
    */
-  selected?: StepRef
+  selected?: StepRef | null
   defaultSelected?: StepRef
   /**
    * Which containers start collapsed, and a way to hear about it.
@@ -208,7 +214,7 @@ export function StepList({
   // gone; falling back to the root is what the canvas's breadcrumb does too.
   const listed = definition ? (boardOf(definition, board) ?? boardOf(definition, null)) : undefined
 
-  const selection = selected ?? ownSelected
+  const selection = selected !== undefined ? (selected ?? undefined) : ownSelected
   const folded = collapsed ?? ownCollapsed
   const foldedHere = new Set(folded.filter((ref) => ref.board === listed?.id).map((ref) => ref.id))
   const refOf = (id: string): StepRef => ({ board: listed?.id ?? null, id })

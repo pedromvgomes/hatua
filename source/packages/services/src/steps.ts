@@ -270,14 +270,28 @@ export function moveStep(ref: StepRef, to: InsertPoint): EditCommand {
 
 /**
  * How many Steps the root sequence holds, whether or not the document is a
- * valid Workflow Definition.
+ * valid Workflow Definition, and whether or not the Board is still there.
  *
  * `definition?.steps.length ?? 0` cannot tell "no Steps" from "does not
  * project", and a caller appending at that index would prepend instead. This
  * reads the same loose projection every command reads.
+ *
+ * **A Board that is gone holds no Steps.** `boardPath` throws for one, which is
+ * right for a command — an edit aimed at a Board that is not there must refuse
+ * rather than land somewhere else — and wrong for a reader: this one is called
+ * inside a click handler, synchronously, with nothing to catch it, and "how
+ * many Steps" has a perfectly good answer for a Board nobody can find. The
+ * append that follows is then a command against a missing Board, which is a
+ * no-op with an undo entry rather than an exception out of an event handler.
  */
 export const rootStepCount = (document: WorkflowDocument, board?: BoardId): number => {
-  const steps = readAt(document, boardPath(document, board))
+  let path: Path
+  try {
+    path = boardPath(document, board)
+  } catch {
+    return 0
+  }
+  const steps = readAt(document, path)
   return Array.isArray(steps) ? steps.length : 0
 }
 

@@ -150,15 +150,21 @@ export interface FlowMapProps extends Omit<ComponentPropsWithRef<'section'>, 'on
    * Ids are Board-local, so two Blocks may each hold a Step called `ret`
    * (ADR-0013) and a bare `ret` selects both. Selection now spans this region,
    * `<StepList>` and the step editor, which is when that stops being latent.
+   *
+   * `undefined` means uncontrolled; `null` is a value and means nothing is
+   * selected. Resolved with an explicit `!== undefined` rather than `??`, for
+   * the reason `boardId` above is — otherwise a caller clearing the selection
+   * is indistinguishable from one that never had an opinion, and the canvas
+   * falls back to whatever it last selected itself.
    */
-  selected?: StepRef
+  selected?: StepRef | null
   defaultSelected?: StepRef
   /**
    * Fired when a Step is selected, and never with nothing.
    *
    * The canvas has no gesture that clears a selection — a press on empty canvas
    * pans, and a press on a card selects it — so this reports a Step or does not
-   * fire. Clearing is the caller's, by passing `selected={undefined}`.
+   * fire. Clearing is the caller's, by passing `selected={null}`.
    */
   onSelect?: (ref: StepRef) => void
   /**
@@ -394,14 +400,31 @@ export function FlowMap({
    */
   const disowned = useRef<BoardId>(null)
   useEffect(() => {
-    if (!definition || wanted === null || blockOf(definition, wanted)) return
+    if (!definition) return
+
+    // Released the moment the Board it names is back — an undo, or a Host
+    // writing the Block again. Held, the SECOND deletion of the same Block is
+    // silent: the fallback below sees its own latch and reports nothing, and
+    // `wanted` goes on naming a Board that is not there.
+    if (disowned.current !== null && blockOf(definition, disowned.current)) {
+      disowned.current = null
+    }
+
+    if (wanted === null || blockOf(definition, wanted)) return
     if (disowned.current === wanted) return
     disowned.current = wanted
     setOwnBoard(null)
     onBoardChange?.(null)
   }, [definition, wanted, onBoardChange])
 
-  const selection = selected ?? ownSelected
+  /*
+   * `undefined` means uncontrolled and `null` is a value — nothing selected —
+   * which is the same shape `boardId` carries and for the same reason. A `??`
+   * here reads "the caller cleared it" as "nobody said" and falls through to
+   * the selection this region made itself, which is what makes `onSelect`'s
+   * documented clear impossible to perform.
+   */
+  const selection = selected !== undefined ? (selected ?? undefined) : ownSelected
   const folded = collapsed ?? ownCollapsed
   const foldedRegions = collapsedRegions ?? ownFoldedRegions
 
@@ -953,11 +976,34 @@ function useViewport({
   const shift = (fn: (from: Viewport) => Viewport) => setAt((from) => (from ? fn(from) : from))
   const sizeOf = () => box.current?.getBoundingClientRect() ?? NO_BOX
 
+  /*
+   * Whether the viewport on screen is one THIS placed against a box with no
+   * size. A viewport a caller supplied is neither provisional nor this
+   * effect's to redo, however the canvas happened to measure at the time.
+   */
+  const provisional = useRef(false)
+
   useLayoutEffect(() => {
-    if (at) return
     const el = box.current
     if (!el) return
-    setAt(openingView(root, el.getBoundingClientRect()))
+    const frame = el.getBoundingClientRect()
+
+    /*
+     * A canvas measured before it is laid out is 0×0 — a Host mounting Hatua
+     * inside a hidden tab panel is the ordinary way to arrive there — and
+     * `openingView` then centres the root against a width of nothing. Placed
+     * once and never again, that pan is permanent and only Fit recovers it.
+     *
+     * So a placement made against no box is provisional: kept, because it is
+     * the best answer available and every later gesture builds on it, and
+     * redone the first time a real measurement arrives. `map` is rebuilt on
+     * every render, so this effect is already running whenever anything moves.
+     */
+    if (at && !provisional.current) return
+    if (at && frame.width === 0) return
+
+    provisional.current = frame.width === 0
+    setAt(openingView(root, frame))
   }, [at, root, setAt])
 
   /*
