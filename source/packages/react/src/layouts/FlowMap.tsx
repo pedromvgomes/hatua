@@ -153,7 +153,14 @@ export interface FlowMapProps extends Omit<ComponentPropsWithRef<'section'>, 'on
    */
   selected?: StepRef
   defaultSelected?: StepRef
-  onSelect?: (ref: StepRef | undefined) => void
+  /**
+   * Fired when a Step is selected, and never with nothing.
+   *
+   * The canvas has no gesture that clears a selection — a press on empty canvas
+   * pans, and a press on a card selects it — so this reports a Step or does not
+   * fire. Clearing is the caller's, by passing `selected={undefined}`.
+   */
+  onSelect?: (ref: StepRef) => void
   /**
    * Which containers are drawn collapsed, and a way to hear about it.
    *
@@ -280,9 +287,7 @@ export function FlowMap({
    * The root is always in the set and always first, so there is always a Board
    * to fall back to when one is closed (ADR-0017).
    */
-  const [ownOpen, setOwnOpen] = useState<readonly BoardId[]>(
-    defaultBoardId === null ? [null] : [null, defaultBoardId],
-  )
+  const [ownOpen, setOwnOpen] = useState<readonly BoardId[]>([null])
   const [ownSelected, setOwnSelected] = useState<StepRef | undefined>(defaultSelected)
   const [ownCollapsed, setOwnCollapsed] = useState<readonly StepRef[]>(defaultCollapsed ?? [])
   const [ownFoldedRegions, setOwnFoldedRegions] = useState<readonly RegionRef[]>(
@@ -364,11 +369,37 @@ export function FlowMap({
    * Mode would otherwise leave a tab whose Board is not there, and pressing it
    * is how the user would find out.
    */
+  const open = ownOpen.includes(wanted) ? ownOpen : [...ownOpen, wanted]
   const tabs: BoardTab[] = definition
-    ? ownOpen
+    ? open
         .filter((id) => id === null || blockOf(definition, id) !== undefined)
         .map((id) => ({ id, label: tabLabel(definition, id) }))
     : []
+
+  /*
+   * A Block deleted while its Board is open puts the canvas back on the root,
+   * and says so rather than only looking as though it did.
+   *
+   * `board` already falls back, so nothing draws a tree that is gone — but the
+   * fallback alone leaves `wanted` naming the deleted Block. The viewport is
+   * keyed by it, so the root would be drawn at the dead Board's pan, every pan
+   * after would be written into an entry nothing reads, and the root's own
+   * saved viewport would be shadowed with no fit to recover it. A caller
+   * holding which Board is open would still hold the deleted one, so a Step
+   * added from the catalogue would target a Board that is not there.
+   *
+   * Reported once per Board. A controlled caller that ignores the change leaves
+   * `wanted` naming the same missing Block on the next render, and re-reporting
+   * it is a loop between this and whatever handed the prop down.
+   */
+  const disowned = useRef<BoardId>(null)
+  useEffect(() => {
+    if (!definition || wanted === null || blockOf(definition, wanted)) return
+    if (disowned.current === wanted) return
+    disowned.current = wanted
+    setOwnBoard(null)
+    onBoardChange?.(null)
+  }, [definition, wanted, onBoardChange])
 
   const selection = selected ?? ownSelected
   const folded = collapsed ?? ownCollapsed
@@ -394,6 +425,11 @@ export function FlowMap({
    */
   const closeBoard = (block: string) => {
     setOwnOpen((was) => was.filter((id) => id !== block))
+    // The viewport goes with the tab. Kept, re-opening the Board restores a pan
+    // made before it was closed rather than fitting to it — and the fit only
+    // runs where there is no entry, so a Block whose contents changed in the
+    // meantime opens on empty canvas with nothing to bring it back.
+    setViews(({ [boardKey(block)]: _closed, ...rest }) => rest)
     if (wanted === block) openBoard(null)
   }
 
@@ -465,24 +501,31 @@ export function FlowMap({
   const view = views[viewKey] ?? null
 
   /*
-   * Stable, and reading the Board through a ref to stay that way. `useViewport`
-   * lists it as a dependency of the layout effect that measures the box and of
-   * the hand-registered `wheel` listener, so a setter with a fresh identity
-   * every render would re-measure and re-register on every one.
+   * Keyed on the Board, and memoised on it rather than on nothing.
+   *
+   * `useViewport` lists this as a dependency of the layout effect that measures
+   * the box and of the hand-registered `wheel` listener, so a setter with a
+   * fresh identity every render would re-measure and re-register on every one.
+   * Changing identity when the BOARD changes is not that — it is exactly when
+   * re-measuring is correct.
+   *
+   * The Board is read from the render that produced this closure and never
+   * through a ref written during render: a render React throws away — which
+   * under a Host's `StrictMode` is every second one — would leave the ref
+   * naming a Board that is not on screen, and the next pan would be committed
+   * into its entry instead. The Board on screen would not move and another
+   * would be silently displaced.
    */
-  const keyed = useRef(viewKey)
-  keyed.current = viewKey
   const setView = useCallback<Dispatch<SetStateAction<Viewport | null>>>(
     (next) =>
       setViews((was) => {
-        const key = keyed.current
-        const to = typeof next === 'function' ? next(was[key] ?? null) : next
+        const to = typeof next === 'function' ? next(was[viewKey] ?? null) : next
         // A Board with no viewport holds no entry rather than a `null` one:
         // absent and "not placed yet" are the same answer, and storing both
         // spellings would make them look like different states.
-        return to ? { ...was, [key]: to } : was
+        return to ? { ...was, [viewKey]: to } : was
       }),
-    [],
+    [viewKey],
   )
 
   /*
