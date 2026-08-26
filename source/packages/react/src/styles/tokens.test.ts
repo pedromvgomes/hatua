@@ -258,3 +258,70 @@ describe('no stylesheet (ADR-0003)', () => {
     },
   )
 })
+
+/**
+ * One height for every control a value is typed or chosen in.
+ *
+ * `<Input>`, `<Select>` and the Template input are stacked in one card all over
+ * the side panel — a variable is a name box, a type picker and a value box, one
+ * under the other — and three files each writing their own number is three
+ * numbers that drift. They had: two of them were 34px and one was 40px, so
+ * every card in the Workflow tab showed three different heights.
+ *
+ * jsdom has no layout engine, so nothing in the suite can measure a rendered
+ * box. What is checkable is the property that makes the numbers agree: each
+ * control's own rule takes its height from the token and writes no number.
+ */
+describe('the controls are one height', () => {
+  const HEIGHT = '--hatua-control-height'
+
+  /** The rule that sizes the box, per file that draws one. */
+  const CONTROLS = [
+    { path: 'src/primitives/Input.module.css', rule: 'input' },
+    { path: 'src/primitives/Select.module.css', rule: 'select' },
+    { path: 'src/compounds/TemplateInput.module.css', rule: 'box' },
+  ]
+
+  /**
+   * The declarations of one class's rule, and nothing nested under it.
+   *
+   * Scoped to the rule rather than searched over the file, because a stylesheet
+   * is full of heights that are not the control's: a chevron is 12px, the ⚡
+   * button inside the Template input is 32px, and `.tall` is 76px because a
+   * `kind: textarea` field asks for a taller box on purpose. Only the box's own
+   * rule is this rule's business.
+   */
+  const ruleFor = (text: string, cls: string): string | null => {
+    const at = text.search(new RegExp(`^\\s*\\.${cls}\\s*\\{`, 'm'))
+    if (at === -1) return null
+    const open = text.indexOf('{', at)
+    let depth = 0
+    for (let i = open; i < text.length; i++) {
+      if (text[i] === '{') depth++
+      else if (text[i] === '}' && --depth === 0) return text.slice(open + 1, i)
+    }
+    return null
+  }
+
+  it('defines the height once, in the file that owns the vocabulary', () => {
+    const base = sources.find((f) => f.path === BASE)?.text ?? ''
+    expect(definitionsIn(base).has(HEIGHT)).toBe(true)
+  })
+
+  it.each(CONTROLS)(
+    'sizes .$rule in $path from the token, and writes no number',
+    ({ path, rule }) => {
+      const text = cssFiles.find((f) => f.path === path)?.text
+      expect(text, `${path} is not in the scan`).toBeDefined()
+
+      const declarations = ruleFor(text ?? '', rule)
+      expect(declarations, `.${rule} is not in ${path}`).not.toBeNull()
+
+      const heights = [
+        ...(declarations ?? '').matchAll(/(?:min-)?(?:block-size|height)\s*:\s*([^;]+);/g),
+      ].map((match) => (match[1] as string).trim())
+      expect(heights).not.toEqual([])
+      for (const value of heights) expect(value).toBe(`var(${HEIGHT})`)
+    },
+  )
+})
