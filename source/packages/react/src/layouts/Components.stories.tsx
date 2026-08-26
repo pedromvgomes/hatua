@@ -284,6 +284,18 @@ export const Unconfigured: Story = {}
  */
 export const WithBlocks: Story = {
   parameters: WITH_BLOCKS,
+  args: {
+    onSelect: (component) => console.info('selected', component.use),
+    onBoardOpen: (block) => console.info('open board', block),
+  },
+}
+
+/**
+ * Without a caller holding which Board is on screen there is nowhere for a
+ * doorway to go, so the row is the card and the bin.
+ */
+export const BlocksWithNowhereToGo: Story = {
+  parameters: WITH_BLOCKS,
   args: { onSelect: (component) => console.info('selected', component.use) },
 }
 

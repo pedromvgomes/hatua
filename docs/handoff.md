@@ -468,8 +468,11 @@ already draws on a call, its name, and its contract in the line the canvas says 
 | | |
 | --- | --- |
 | **New block** | declares one under a minted id and opens its Board, because a Block's tab opens when the Block is declared (ADR-0017) |
+| **Open** | brings that Block's Board forward — the same word the canvas puts on a call site, because it is the same doorway |
 | **Deleting** | straight through when the Block is empty and nothing calls it; otherwise a `danger` confirm naming both costs |
 | **A cycle** | marked, never withheld — the card carries `BLOCK_RECURSION` the way a Trigger's card carries its own diagnostics |
+
+**Open is a control and not a gesture.** A Block that nothing calls has no other route to its Board: the tab strip lists only Boards already open, and the canvas's own doorway is on a call site — so a Block could be declared, its tab closed, and never opened again. A double-click on the card was the alternative and it is refused, because the card's single click already *edits the document*: `click` fires twice before `dblclick`, so the gesture adds two calls before it navigates, and guarding it means holding every single click to see whether a second one follows. It also has no keyboard equivalent, which is the hole the click path exists to close for the drag.
 
 The confirm exists to **tell**, not to repair. Deleting a Block leaves its call sites naming
 something that is not there — the rule `removeBlock` follows and `renameBlock` beside it — so the

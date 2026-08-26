@@ -597,6 +597,30 @@ describe('the Blocks a document declares', () => {
     expect(setData).toHaveBeenCalledWith('text/plain', 'block.archive_entry')
   })
 
+  it('opens the Board of a Block nothing calls, which nothing else can reach', async () => {
+    const onBoardOpen = vi.fn()
+    const onSelect = vi.fn()
+    withDocument(<Components onBoardOpen={onBoardOpen} onSelect={onSelect} />)
+
+    // `spare` has no call site, so the canvas has no doorway into it and the
+    // tab strip lists only Boards already open. Without this control it can be
+    // declared and never opened again.
+    fireEvent.click(await screen.findByRole('button', { name: 'Open spare' }))
+
+    expect(onBoardOpen).toHaveBeenCalledWith('spare')
+    // Going to the Board is not adding a call to it.
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('offers no doorway when the caller holds no Board to open', async () => {
+    // Which Board is on screen is chrome this region does not hold, so with
+    // nobody listening there is nowhere for the control to go.
+    withDocument(<Components />)
+
+    await blocksGroup()
+    expect(screen.queryByRole('button', { name: 'Open spare' })).toBeNull()
+  })
+
   it('filters Blocks the way it filters the Host’s Components', async () => {
     withDocument(<Components defaultQuery="archive" />)
 
