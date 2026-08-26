@@ -414,6 +414,71 @@ function Section({ heading, children }: { heading: string; children: ReactNode }
 }
 
 /**
+ * One captioned control inside a row card.
+ *
+ * The caption is a `<span>` and **not** a `<label>`. Every control here already
+ * carries an accessible name saying which row it belongs to — `Name of thread`,
+ * `Type of digest_to` — and a real `<label>` would put four controls on one
+ * panel all answering to "Name". So the caption is what a reader sees, the
+ * `aria-label` is what a reader hears, and the first is a prefix of the second.
+ *
+ * Without it the rows are three boxes of identical shape: a key, a label and a
+ * type read as one six-box run the moment a second row appears, and nothing on
+ * screen says which box is which.
+ */
+function RowField({
+  caption,
+  aside,
+  children,
+}: {
+  caption: string
+  /** A control belonging to the row rather than to the box — the bin. */
+  aside?: ReactNode
+  children: ReactNode
+}) {
+  return (
+    <div className={styles.field}>
+      <div className={styles.fieldHead}>
+        <span className={styles.label}>{caption}</span>
+        {aside}
+      </div>
+      {children}
+    </div>
+  )
+}
+
+/**
+ * The bin that removes a row.
+ *
+ * On the caption's line rather than beside the box, so the box keeps the whole
+ * width — a key, a Template and a friendly name each need it, and a bin in a
+ * second column takes 32px off every one of them.
+ *
+ * A bin, not a cross. `×` is the glyph for dismissing a thing — closing a
+ * panel, clearing a filter — and this deletes something out of the document.
+ * Drawn rather than set in type: the only bin in a text font is an emoji, which
+ * renders at a size and colour the row does not control.
+ */
+function RemoveButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button type="button" className={styles.remove} aria-label={label} onClick={onClick}>
+      <svg
+        className={styles.icon}
+        viewBox="0 0 16 16"
+        width="14"
+        height="14"
+        focusable="false"
+        aria-hidden="true"
+      >
+        <path d="M3 4.5h10M6.5 4.5V3.2a.7.7 0 0 1 .7-.7h1.6a.7.7 0 0 1 .7.7v1.3" />
+        <path d="M4.4 4.5l.6 8a1 1 0 0 0 1 .9h4a1 1 0 0 0 1-.9l.6-8" />
+        <path d="M6.8 7v3.6M9.2 7v3.6" />
+      </svg>
+    </button>
+  )
+}
+
+/**
  * A key box that refuses a name something else already answers to, and says so.
  *
  * Every rename command here throws on a collision — two Blocks under one id, or
@@ -709,40 +774,22 @@ function TriggerCard({
 
   return (
     <div className={styles.card}>
-      <div className={styles.cardHead}>
+      <RowField
+        caption="Name"
+        aside={
+          <RemoveButton
+            label={`Remove ${trigger.name || trigger.id}`}
+            onClick={() => onRemove(trigger.id)}
+          />
+        }
+      >
         <CommittedInput
           label={`Name of ${trigger.name || trigger.id}`}
           value={trigger.name ?? ''}
           placeholder={manifest?.name ?? trigger.use}
           onCommit={(next) => onName(trigger.id, next)}
         />
-        <button
-          type="button"
-          className={styles.remove}
-          aria-label={`Remove ${trigger.name || trigger.id}`}
-          onClick={() => onRemove(trigger.id)}
-        >
-          {/*
-            A bin, not a cross. `×` is the glyph for dismissing a thing —
-            closing a panel, clearing a filter — and this deletes a Trigger out
-            of the document. Drawn rather than set in type: the only bin in a
-            text font is an emoji, which renders at a size and colour the row
-            does not control.
-          */}
-          <svg
-            className={styles.icon}
-            viewBox="0 0 16 16"
-            width="14"
-            height="14"
-            focusable="false"
-            aria-hidden="true"
-          >
-            <path d="M3 4.5h10M6.5 4.5V3.2a.7.7 0 0 1 .7-.7h1.6a.7.7 0 0 1 .7.7v1.3" />
-            <path d="M4.4 4.5l.6 8a1 1 0 0 0 1 .9h4a1 1 0 0 0 1-.9l.6-8" />
-            <path d="M6.8 7v3.6M9.2 7v3.6" />
-          </svg>
-        </button>
-      </div>
+      </RowField>
 
       {/* The verb and the id, mono, because both are what a Template writes:
           `{{ triggers.t1.… }}` addresses this row by the id shown here. */}
@@ -807,6 +854,19 @@ const SIDES = [
   },
 ] as const
 
+/**
+ * The friendly name a minted key deserves: `new_parameter_2` → `New parameter 2`.
+ *
+ * Derived rather than left equal to the key, because a row seeded with the key
+ * in both boxes is two identical boxes holding identical text, and the caption
+ * is then the only thing telling them apart. Derived rather than constant so
+ * two new rows do not arrive under one name.
+ */
+function labelFor(key: string): string {
+  const words = key.replace(/_/g, ' ')
+  return words.charAt(0).toUpperCase() + words.slice(1)
+}
+
 /** `new_parameter`, then `new_parameter_2` — the shape `addVariable` mints. */
 function mintKey(seed: string, taken: readonly string[]): string {
   const first = `new_${seed}`
@@ -870,7 +930,7 @@ function Contract({
             {declared.length > 0 ? (
               <ul className={styles.declarations}>
                 {declared.map((declaration) => (
-                  <li key={declaration.k} className={styles.declaration}>
+                  <li key={declaration.k} className={styles.card}>
                     <DeclarationRow
                       declaration={declaration}
                       taken={keys.filter((k) => k !== declaration.k)}
@@ -889,7 +949,7 @@ function Contract({
               size="sm"
               onClick={() => {
                 const k = mintKey(seed, keys)
-                onAdd(side, { k, label: k, t: 'text' })
+                onAdd(side, { k, label: labelFor(k), t: 'text' })
               }}
             >
               {add}
@@ -902,12 +962,16 @@ function Contract({
 }
 
 /**
- * One parameter or one output: the key every Reference names, a friendly name,
+ * One parameter or one output: a friendly name, the key every Reference names,
  * and the declared type.
  *
- * The key is mono and first for the reason a variable's is: it is what a
- * Template writes. The label is not — it is prose, shown in the reference tree
- * and on the call site's field, and nothing addresses it.
+ * **The name is first and the key is second**, which is the order a Trigger's
+ * card already uses and the order they are read in: the name is what shows on
+ * the call site's field and in the reference tree, and the key is what a
+ * Template writes. Both are editable and neither explains the other, so both
+ * are captioned — a name box above a key box with nothing saying which is which
+ * is two identical boxes, and a new row seeded with the key in both is two
+ * identical boxes holding identical text.
  */
 function DeclarationRow({
   declaration,
@@ -929,52 +993,42 @@ function DeclarationRow({
 }) {
   return (
     <>
-      <div className={styles.variableHead}>
-        <UniqueInput
+      <RowField
+        caption="Name"
+        aside={<RemoveButton label={`Remove ${declaration.k}`} onClick={onRemove} />}
+      >
+        <CommittedInput
           label={`Name of ${declaration.k}`}
+          value={declaration.label}
+          onCommit={(next) => next && onLabel(next)}
+        />
+      </RowField>
+
+      <RowField caption="Key">
+        <UniqueInput
+          label={`Key of ${declaration.k}`}
           value={declaration.k}
           mono
           taken={taken}
           message={clash}
           onCommit={(next) => next && next !== declaration.k && onRename(next)}
         />
-        <button
-          type="button"
-          className={styles.remove}
-          aria-label={`Remove ${declaration.k}`}
-          onClick={onRemove}
+      </RowField>
+
+      <RowField caption="Type">
+        <Select
+          aria-label={`Type of ${declaration.k}`}
+          className={styles.control}
+          value={declaration.t}
+          onChange={(event) => onType(event.target.value)}
         >
-          <svg
-            className={styles.icon}
-            viewBox="0 0 16 16"
-            width="14"
-            height="14"
-            focusable="false"
-            aria-hidden="true"
-          >
-            <path d="M3 4.5h10M6.5 4.5V3.2a.7.7 0 0 1 .7-.7h1.6a.7.7 0 0 1 .7.7v1.3" />
-            <path d="M4.4 4.5l.6 8a1 1 0 0 0 1 .9h4a1 1 0 0 0 1-.9l.6-8" />
-            <path d="M6.8 7v3.6M9.2 7v3.6" />
-          </svg>
-        </button>
-      </div>
-      <CommittedInput
-        label={`Label of ${declaration.k}`}
-        value={declaration.label}
-        onCommit={(next) => next && onLabel(next)}
-      />
-      <Select
-        aria-label={`Type of ${declaration.k}`}
-        className={styles.varType}
-        value={declaration.t}
-        onChange={(event) => onType(event.target.value)}
-      >
-        {DECLARED_TYPES.map((t) => (
-          <option key={t} value={t}>
-            {t}
-          </option>
-        ))}
-      </Select>
+          {DECLARED_TYPES.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </Select>
+      </RowField>
     </>
   )
 }
@@ -1042,8 +1096,19 @@ function Variables({
       {variables.length > 0 ? (
         <ul className={styles.variables}>
           {variables.map((variable) => (
-            <li key={variable.key} className={styles.variable}>
-              <div className={styles.variableHead}>
+            <li key={variable.key} className={styles.card}>
+              {/* A variable's key IS its name — it carries no friendly label,
+                  because `{{ var.digest_to }}` is what the builder shows and
+                  there is nothing else to call it. */}
+              <RowField
+                caption="Name"
+                aside={
+                  <RemoveButton
+                    label={`Remove ${variable.key}`}
+                    onClick={() => onRemove(variable.key)}
+                  />
+                }
+              >
                 <UniqueInput
                   label={`Name of ${variable.key}`}
                   value={variable.key}
@@ -1054,53 +1119,41 @@ function Variables({
                   message="Another variable already uses this name."
                   onCommit={(next) => next && next !== variable.key && onRename(variable.key, next)}
                 />
-                <button
-                  type="button"
-                  className={styles.remove}
-                  aria-label={`Remove ${variable.key}`}
-                  onClick={() => onRemove(variable.key)}
+              </RowField>
+
+              <RowField caption="Type">
+                <Select
+                  aria-label={`Type of ${variable.key}`}
+                  className={styles.control}
+                  value={variable.t}
+                  onChange={(event) => onType(variable.key, event.target.value)}
                 >
-                  <svg
-                    className={styles.icon}
-                    viewBox="0 0 16 16"
-                    width="14"
-                    height="14"
-                    focusable="false"
-                    aria-hidden="true"
-                  >
-                    <path d="M3 4.5h10M6.5 4.5V3.2a.7.7 0 0 1 .7-.7h1.6a.7.7 0 0 1 .7.7v1.3" />
-                    <path d="M4.4 4.5l.6 8a1 1 0 0 0 1 .9h4a1 1 0 0 0 1-.9l.6-8" />
-                    <path d="M6.8 7v3.6M9.2 7v3.6" />
-                  </svg>
-                </button>
-              </div>
-              <Select
-                aria-label={`Type of ${variable.key}`}
-                className={styles.varType}
-                value={variable.t}
-                onChange={(event) => onType(variable.key, event.target.value)}
-              >
-                {DECLARED_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </Select>
-              <TemplateInput
-                label={`Value of ${variable.key}`}
-                value={
-                  variable.value === undefined || variable.value === null
-                    ? ''
-                    : String(variable.value)
-                }
-                scope={scope}
-                // What the completion list judges a candidate against. It marks
-                // the rows that fit rather than the field itself — nothing here
-                // is ever marked wrong — so declaring the type is what lets the
-                // picker rail a row at all, where before it could rail none.
-                expectedType={variable.t}
-                onCommit={(next) => onValue(variable.key, next)}
-              />
+                  {DECLARED_TYPES.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </Select>
+              </RowField>
+
+              <RowField caption="Value">
+                <TemplateInput
+                  label={`Value of ${variable.key}`}
+                  value={
+                    variable.value === undefined || variable.value === null
+                      ? ''
+                      : String(variable.value)
+                  }
+                  scope={scope}
+                  // What the completion list judges a candidate against. It
+                  // marks the rows that fit rather than the field itself —
+                  // nothing here is ever marked wrong — so declaring the type is
+                  // what lets the picker rail a row at all, where before it
+                  // could rail none.
+                  expectedType={variable.t}
+                  onCommit={(next) => onValue(variable.key, next)}
+                />
+              </RowField>
             </li>
           ))}
         </ul>
