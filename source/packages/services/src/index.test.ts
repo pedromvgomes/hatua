@@ -47,7 +47,10 @@ const SURFACE = [
   'removeBlock',
   'removeDeclaration',
   'renameBlock',
+  'renameDeclaration',
   'setBlockName',
+  'setDeclarationLabel',
+  'setDeclarationType',
 
   // Commands: the workflow's own keys.
   'addTrigger',

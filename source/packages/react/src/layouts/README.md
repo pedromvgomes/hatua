@@ -38,6 +38,26 @@ the catalogue twice over: the Component Manifests decide which Trigger types can
 be added, and the Run Context declaration in the same flat array decides what a
 Template on the tab may read.
 
+### The Workflow tab shows the active Board
+
+`Workflow` takes a `board` prop, the way `<StepList>` does and for the same reason: which Board is on
+screen is chrome, the canvas is where the doorway is, and a region that reached for it would be a
+second answer to a question `views/Build` already holds one answer to. Absent means the root, so a
+Host that never opens a Block mounts it exactly as before.
+
+**A Board's root IS its contract** (CONTEXT.md), so its middle section is the Triggers at the root
+and a Block's `params`/`outputs` inside one — one slot, said twice. `boardTabLabel(board)` is
+exported beside the region because `views/Build` puts the same string on the tab above it, and a
+landmark and its tab label that disagree are one region with two names. The tab's **id** does not
+move with the label: an id that changed on every doorway would reopen the Components tab each time.
+
+Renaming a Block's slug is the one edit here that changes what a caller is holding. `renameBlock`
+leaves every `use:` naming the old slug — the rule a variable key follows — and the Block is then
+one nothing resolves under its old id, which the canvas reads as a *deleted* Block. So the region
+emits `onBoardRename`, and `views/Build` follows it into the new id with the selection held on that
+Board. Without it, committing the slug drops the user back to the root and closes the tab they were
+editing in.
+
 `TabbedPanel` still owns no data. It gained a controlled `tabId`, which is a
 different thing: the tab that is open is still chrome, and lifting it into a
 caller is what lets `views/Build` open the Components tab when an insert point
@@ -64,6 +84,13 @@ it, so a required data prop would break both. Everything a region reads arrives
 through `<HatuaProvider>` — the Host's ports go in, and the stores that read
 them come out.
 
+**Chrome is not data, and does come in.** `TabbedPanel` takes `tabId`, `FlowMap`
+takes `boardId`, `StepList` and `Workflow` take a `board`. None of it is in the
+Workflow Definition and the editing store has no opinion on any of it — which is
+exactly why it can be lifted into a caller without reaching the document. Every
+one of them is optional and falls back to its own answer, so a region still
+mounts bare.
+
 What regions still send *out* is props. `Components` takes an optional `onSelect`
 and `StepList` an optional `onInsert`; neither adds the Step. That is not a
 missing feature — it is the only place the two halves can meet. `StepList` knows
@@ -86,7 +113,7 @@ because neither needs a catalogue.
 | `FlowMap` | The canvas: one Board's tree as a map of cards and the regions around them, filling the middle column. Not a tab. |
 | `Inspector` | The step editor. |
 | `Components` | The Component Manifests a Host serves, as cards. Components only — a Trigger is not a Step, and adding one is the Workflow tab's job. |
-| `Workflow` | Everything scoped to the workflow rather than to a Step: the name and slug, the Triggers, the variables. |
+| `Workflow` | Everything scoped to a **Board** rather than to a Step: the name and slug, the Board's root, the variables. |
 | `Data` | The reference tree the step editor expands into. Not a tab. |
 
 `Fields` is not a region and is never exported: it is the form for one Component

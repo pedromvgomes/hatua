@@ -1,7 +1,9 @@
-import { boardScope, type Diagnostic, type ScopeEntry } from '@hatua/model'
+import { type BoardId, blockOf, boardScope, type Diagnostic, type ScopeEntry } from '@hatua/model'
 import {
+  type Block,
   type Connection,
   contextKeysIn,
+  type Declaration,
   type Manifest,
   type ManifestEntry,
   manifestsIn,
@@ -9,15 +11,23 @@ import {
   type Variable,
 } from '@hatua/schema'
 import {
+  addDeclaration,
   addTrigger,
   addVariable,
+  type ContractSide,
   declareConnection,
   type EditingState,
   type ManifestState,
+  removeDeclaration,
   removeTrigger,
   removeVariable,
+  renameBlock,
+  renameDeclaration,
   renameVariable,
   sequence,
+  setBlockName,
+  setDeclarationLabel,
+  setDeclarationType,
   setTriggerField,
   setTriggerName,
   setVariableType,
@@ -45,12 +55,26 @@ import styles from './Workflow.module.css'
 import css from './Workflow.module.css?inline'
 
 /**
- * The Workflow tab: everything scoped to the workflow rather than to a Step.
+ * The Workflow tab: everything scoped to a **Board** rather than to a Step.
  *
- * Three sections — the name and slug, the Triggers, the variables — and one
+ * Three sections — the name and slug, the Board's root, the variables — and one
  * thing they have in common: none of them is addressed by a position in the
  * Step tree. That is what makes them one region rather than three, and it is
  * why the Flow tab beside it holds none of them.
+ *
+ * ## A Board's root is its contract, so the middle section changes
+ *
+ * At the root Board that section is the **Triggers**; on a Block's Board it is
+ * that Block's **Contract** — its parameters and its outputs. They are the same
+ * slot said twice (CONTEXT.md), which the canvas has drawn as one `<RootNode>`
+ * all along: `Triggers` / `1 trigger` at the root, the Block's name and
+ * `2 params · 1 output` inside one. This is that slot's editor.
+ *
+ * Identity and the variables are the same section on both, addressing whichever
+ * Board is on screen: `setBlockName` rather than `setWorkflowName`, and a
+ * Block's own `vars:` rather than the workflow's. Every variable command has
+ * taken a Board since it was written, because a `core.set_var` can never reach
+ * out of the Board it is on.
  *
  * ## The Triggers section is the surface, not the form
  *
@@ -84,16 +108,42 @@ import css from './Workflow.module.css?inline'
  * state rather than throwing, and "the Host wired nothing" stays distinct from
  * "the Host declared nothing".
  *
- * ## Where the document comes from
+ * ## Which Board, and where the document comes from
  *
- * Not from props. Both embeddings mount this region bare —
- * `apps/playground/src/host.tsx` writes `<Workflow />` and
+ * The Board arrives as a prop, the way `<StepList>` takes one: which Board is
+ * on screen is chrome, held by whatever composes the screen, and the canvas is
+ * the only surface with a doorway in it. Absent means the root, so a Host that
+ * never opens a Block mounts this exactly as it always did.
+ *
+ * The document does not arrive that way. Both embeddings mount this region
+ * bare — `apps/playground/src/host.tsx` writes `<Workflow />` and
  * `layouts/regions.test.tsx` renders it with nothing above it — so a document
  * prop would break the promise those two exist to keep. Every edit goes through
  * the editing store as a command, which is what makes an edit here and a text
  * edit the same edit.
  */
-export type WorkflowProps = ComponentPropsWithRef<'section'>
+export interface WorkflowProps extends ComponentPropsWithRef<'section'> {
+  /** Whose Identity, root and variables are shown. `null` is the root Board. */
+  board?: BoardId
+  /**
+   * Fired when a Block's slug is committed: the Board on screen is now called
+   * `to`, and a caller holding the old id is holding one nothing resolves.
+   */
+  onBoardRename?: (from: string, to: string) => void
+}
+
+/**
+ * What this region is called while it is showing `board`.
+ *
+ * The label names the KIND of thing, never which one. The canvas's tab strip
+ * already says which Block is open, and repeating it here spends the panel's
+ * width twice and breaks a two-tab strip on a long name.
+ *
+ * Exported because `views/Build` puts the same string on the tab above this
+ * region, and a landmark and its tab label that disagree are one region with
+ * two names.
+ */
+export const boardTabLabel = (board: BoardId): string => (board === null ? 'Workflow' : 'Block')
 
 /** "The Host wired nothing" is not a phase of the load, so it is not the store's to report. */
 type PanelState = EditingState | { status: 'unconfigured' }
@@ -103,6 +153,7 @@ const OPENING = { status: 'opening' } as const
 const CATALOGUE_UNCONFIGURED = { status: 'unconfigured' } as const
 const CATALOGUE_LOADING = { status: 'loading' } as const
 const NO_ENTRIES: ManifestEntry[] = []
+const NO_NAMES: readonly string[] = []
 const NO_SCOPE: readonly ScopeEntry[] = []
 const NO_PROBLEMS: ReadonlyMap<string, Diagnostic[]> = new Map()
 const UNCHECKED: ValidationState = {
@@ -124,7 +175,7 @@ const readUnchecked = (): ValidationState => UNCHECKED
 
 type CatalogueState = ManifestState | { status: 'unconfigured' }
 
-export function Workflow({ className, ...rest }: WorkflowProps) {
+export function Workflow({ className, board = null, onBoardRename, ...rest }: WorkflowProps) {
   const store = useEditingStore()
   const manifests = useManifestStore()
   const validation = useValidationStore()
@@ -160,6 +211,15 @@ export function Workflow({ className, ...rest }: WorkflowProps) {
 
   const workflow = state.status === 'ready' ? state.workflow : null
   const definition = workflow?.definition ?? null
+  /*
+   * The Block this Board belongs to, or `null` at the root — and `null` again
+   * when `board` names one the document does not declare, which is what a Block
+   * removed in Text Mode leaves behind. Told apart below, because "the root
+   * Board" and "a Board that is not there" are different screens.
+   */
+  const block = definition && board !== null ? (blockOf(definition, board) ?? null) : null
+  const missingBlock = board !== null && !block
+  const blocks = definition?.blocks ?? []
   // Split by kind, because the array a Host serves holds three. The Triggers
   // section wants the Component Manifests; scope wants the Run Context keys.
   const entries = catalogue.status === 'ready' ? catalogue.manifests : NO_ENTRIES
@@ -181,8 +241,8 @@ export function Workflow({ className, ...rest }: WorkflowProps) {
    * express a mapping that cannot resolve.
    */
   const scope = useMemo(
-    () => (definition ? boardScope(definition, null, served, context) : NO_SCOPE),
-    [definition, served, context],
+    () => (definition ? boardScope(definition, board, served, context) : NO_SCOPE),
+    [definition, board, served, context],
   )
 
   const liveMessage =
@@ -197,7 +257,11 @@ export function Workflow({ className, ...rest }: WorkflowProps) {
       <style href="hatua-workflow" precedence="hatua">
         {css}
       </style>
-      <section aria-label="Workflow" className={cx(styles.workflow, className)} {...rest}>
+      <section
+        aria-label={boardTabLabel(board)}
+        className={cx(styles.workflow, className)}
+        {...rest}
+      >
         <div className={styles.body}>
           {state.status === 'unconfigured' ? (
             <p className={styles.note}>
@@ -240,47 +304,97 @@ export function Workflow({ className, ...rest }: WorkflowProps) {
             </p>
           ) : null}
 
-          {definition ? (
+          {definition && missingBlock ? (
+            <p className={styles.note}>That block is not in this workflow.</p>
+          ) : null}
+
+          {definition && !missingBlock ? (
             <>
-              <Identity
-                name={definition.name}
-                slug={definition.id}
-                onName={(next) => store?.apply(setWorkflowName(next))}
-                onSlug={(next) => store?.apply(setWorkflowSlug(next))}
-              />
-              <Triggers
-                triggers={definition.triggers ?? []}
-                catalogue={catalogue}
-                manifests={served}
-                problems={problems}
-                onAdd={(manifest) =>
-                  store?.apply(addTrigger({ use: manifest.use, name: manifest.name }))
-                }
-                onRemove={(id) => store?.apply(removeTrigger(id))}
-                connections={definition.connections ?? []}
-                scope={scope}
-                onName={(id, name) => store?.apply(setTriggerName(id, name))}
-                onField={(id, key, value) => store?.apply(setTriggerField(id, key, value))}
-                onDeclareConnection={(triggerId, key, name, ref) =>
-                  // One undoable change: binding the handle and pointing the
-                  // field at it are two edits and one thing the user did.
-                  store?.apply(
-                    sequence(
-                      `Use ${name}`,
-                      declareConnection(name, ref),
-                      setTriggerField(triggerId, key, name),
-                    ),
-                  )
-                }
-              />
+              {block ? (
+                <Identity
+                  name={block.name ?? ''}
+                  namePlaceholder={block.id}
+                  slug={block.id}
+                  // A slug that another Block already answers to is refused by
+                  // the command, and `EditingStore.apply` turns that throw into
+                  // a no-op — so the field says so itself rather than appearing
+                  // to drop characters at random.
+                  taken={blocks.filter((other) => other.id !== block.id).map((other) => other.id)}
+                  takenMessage="Another block already uses this slug."
+                  onName={(next) => store?.apply(setBlockName(block.id, next))}
+                  onSlug={(next) => {
+                    store?.apply(renameBlock(block.id, next))
+                    // Reported rather than assumed: a caller holding the old id
+                    // is holding one nothing resolves, and the canvas reads that
+                    // as a deleted Block and drops back to the root.
+                    onBoardRename?.(block.id, next)
+                  }}
+                />
+              ) : (
+                <Identity
+                  name={definition.name}
+                  slug={definition.id}
+                  onName={(next) => store?.apply(setWorkflowName(next))}
+                  onSlug={(next) => store?.apply(setWorkflowSlug(next))}
+                />
+              )}
+
+              {block ? (
+                <Contract
+                  block={block}
+                  onAdd={(side, declaration) =>
+                    store?.apply(addDeclaration(block.id, side, declaration))
+                  }
+                  onRemove={(side, k) => store?.apply(removeDeclaration(block.id, side, k))}
+                  onRename={(side, from, to) =>
+                    store?.apply(renameDeclaration(block.id, side, from, to))
+                  }
+                  onLabel={(side, k, label) =>
+                    store?.apply(setDeclarationLabel(block.id, side, k, label))
+                  }
+                  onType={(side, k, t) => store?.apply(setDeclarationType(block.id, side, k, t))}
+                />
+              ) : (
+                <Triggers
+                  triggers={definition.triggers ?? []}
+                  catalogue={catalogue}
+                  manifests={served}
+                  problems={problems}
+                  onAdd={(manifest) =>
+                    store?.apply(addTrigger({ use: manifest.use, name: manifest.name }))
+                  }
+                  onRemove={(id) => store?.apply(removeTrigger(id))}
+                  connections={definition.connections ?? []}
+                  scope={scope}
+                  onName={(id, name) => store?.apply(setTriggerName(id, name))}
+                  onField={(id, key, value) => store?.apply(setTriggerField(id, key, value))}
+                  onDeclareConnection={(triggerId, key, name, ref) =>
+                    // One undoable change: binding the handle and pointing the
+                    // field at it are two edits and one thing the user did.
+                    store?.apply(
+                      sequence(
+                        `Use ${name}`,
+                        declareConnection(name, ref),
+                        setTriggerField(triggerId, key, name),
+                      ),
+                    )
+                  }
+                />
+              )}
+
               <Variables
-                variables={definition.vars ?? []}
+                variables={(block ? block.vars : definition.vars) ?? []}
+                blurb={
+                  block
+                    ? 'Values this block keeps while it runs, read anywhere on it as '
+                    : 'Values this workflow keeps, read anywhere as '
+                }
                 scope={scope}
-                onAdd={() => store?.apply(addVariable())}
-                onRemove={(key) => store?.apply(removeVariable(key))}
-                onRename={(from, to) => store?.apply(renameVariable(from, to))}
-                onType={(key, t) => store?.apply(setVariableType(key, t))}
-                onValue={(key, value) => store?.apply(setVariableValue(key, value))}
+                onAdd={() => store?.apply(addVariable(undefined, board))}
+                onRemove={(key) => store?.apply(removeVariable(key, board))}
+                onRename={(from, to) => store?.apply(renameVariable(from, to, board))}
+                onType={(key, t) => store?.apply(setVariableType(key, t, board))}
+                onValue={(key, value) => store?.apply(setVariableValue(key, value, board))}
               />
             </>
           ) : null}
@@ -300,19 +414,102 @@ function Section({ heading, children }: { heading: string; children: ReactNode }
 }
 
 /**
- * The name and the slug.
+ * A key box that refuses a name something else already answers to, and says so.
+ *
+ * Every rename command here throws on a collision — two Blocks under one id, or
+ * two variables under one key, resolve to the FIRST match everywhere, so the
+ * second row's bin button deletes the first row's declaration. `EditingStore`
+ * catches that throw and puts the document back, which is the right thing to do
+ * with a command built against a tree that has moved on and the wrong thing to
+ * do to a person typing: the field appears to reject characters at random and
+ * says nothing about why.
+ *
+ * So the box detects the collision itself and declines to commit. The name goes
+ * back to the one that is still true and the reason sits under the field, which
+ * is the half that was missing: a box that reverts and says nothing is
+ * indistinguishable from one that is broken.
+ */
+function UniqueInput({
+  value,
+  taken,
+  message,
+  onCommit,
+  className,
+  ...rest
+}: {
+  value: string
+  /** Every name that is already spoken for, excluding this row's own. */
+  taken: readonly string[]
+  message: string
+  onCommit: (next: string) => void
+  label: string
+  mono?: boolean
+} & Omit<ComponentPropsWithRef<'input'>, 'value' | 'onChange' | 'onBlur'>) {
+  const [clash, setClash] = useState<string | null>(null)
+  const noteId = useId()
+
+  return (
+    // One element and not a fragment. Every row this sits in is a grid — a key
+    // box beside a bin button — so a loose message would take the bin's column
+    // and push it onto a line of its own.
+    <div className={cx(styles.unique, className)}>
+      <CommittedInput
+        {...rest}
+        // `aria-describedby` only while there is something to describe:
+        // pointing at an element that is not rendered describes nothing and
+        // gives a screen reader a dangling reference.
+        aria-describedby={clash ? noteId : rest['aria-describedby']}
+        aria-invalid={clash ? true : undefined}
+        value={value}
+        onCommit={(next) => {
+          if (taken.includes(next)) {
+            setClash(next)
+            return
+          }
+          setClash(null)
+          onCommit(next)
+        }}
+      />
+      {clash ? (
+        // `role="status"` rather than `alert`: this is a correction to
+        // something the user is in the middle of, not an interruption, and the
+        // same line ADR-0009 draws for a Trigger that is not filled in.
+        <p className={styles.problems} id={noteId} role="status">
+          {message}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+/**
+ * The name and the slug — of the workflow at the root Board, of the Block
+ * inside one.
  *
  * A 304px panel with two labelled fields is a better place to rename a workflow
  * than an inline-edited breadcrumb, and it keeps the top bar to display.
+ *
+ * **The slug goes stale without rewriting what names it.** Every `use:` calling
+ * a renamed Block keeps the old slug and the checker reports it, which is the
+ * rule `renameVariable` follows and for the same reason: mid-typing every
+ * intermediate key is a rename too, so warning instead of rewriting would be a
+ * dialog on every character.
  */
 function Identity({
   name,
+  namePlaceholder,
   slug,
+  taken = NO_NAMES,
+  takenMessage = '',
   onName,
   onSlug,
 }: {
   name: string
+  namePlaceholder?: string
   slug: string
+  /** Slugs another thing already answers to. Empty where none can collide. */
+  taken?: readonly string[]
+  takenMessage?: string
   onName: (next: string) => void
   onSlug: (next: string) => void
 }) {
@@ -325,13 +522,27 @@ function Identity({
         <label className={styles.label} htmlFor={nameId}>
           Name
         </label>
-        <CommittedInput id={nameId} label="Name" value={name} onCommit={onName} />
+        <CommittedInput
+          id={nameId}
+          label="Name"
+          value={name}
+          placeholder={namePlaceholder}
+          onCommit={onName}
+        />
       </div>
       <div className={styles.field}>
         <label className={styles.label} htmlFor={slugId}>
           Slug
         </label>
-        <CommittedInput id={slugId} label="Slug" value={slug} mono onCommit={onSlug} />
+        <UniqueInput
+          id={slugId}
+          label="Slug"
+          value={slug}
+          mono
+          taken={taken}
+          message={takenMessage}
+          onCommit={onSlug}
+        />
       </div>
     </Section>
   )
@@ -572,8 +783,211 @@ function TriggerCard({
   )
 }
 
-/** The types a variable may declare, in the order the schema lists them. */
-const VARIABLE_TYPES = ['text', 'number', 'boolean', 'datetime', 'object', 'list'] as const
+/** What a new row is written with, and why it is written with anything at all. */
+const SIDES = [
+  {
+    side: 'params' as ContractSide,
+    heading: 'Parameters',
+    empty: 'This block takes nothing.',
+    add: 'Add parameter',
+    clash: 'Another parameter already uses this name.',
+    // Deterministic, so the same edits produce the same document twice, and
+    // named rather than blank for the reason `addVariable` mints a key: the
+    // schema requires `k`, `label` and `t`, so a row missing one is a document
+    // that stops projecting the moment it appears.
+    seed: 'parameter',
+  },
+  {
+    side: 'outputs' as ContractSide,
+    heading: 'Outputs',
+    empty: 'This block publishes nothing.',
+    add: 'Add output',
+    clash: 'Another output already uses this name.',
+    seed: 'output',
+  },
+] as const
+
+/** `new_parameter`, then `new_parameter_2` — the shape `addVariable` mints. */
+function mintKey(seed: string, taken: readonly string[]): string {
+  const first = `new_${seed}`
+  if (!taken.includes(first)) return first
+  for (let n = 2; ; n++) {
+    const key = `new_${seed}_${n}`
+    if (!taken.includes(key)) return key
+  }
+}
+
+/**
+ * A Block's contract: what it takes, and what it publishes.
+ *
+ * The section a Board's root gets, which at the root Board is the Triggers. It
+ * is one section and not two because it is one idea — a Board's root IS its
+ * contract (CONTEXT.md), and the canvas draws both halves in one `<RootNode>`
+ * summary. Two sections here would put a divider through the middle of the
+ * thing the panel is naming.
+ *
+ * **A row is appended, never inserted above.** A call site's fields are drawn in
+ * declaration order, so a new parameter landing at the top would reorder a form
+ * somebody is already looking at.
+ *
+ * **`of` has no control.** A `list` or an `object` may declare the shape of its
+ * members, and nothing in the builder edits one yet — the row says what type it
+ * is and Text Mode is where a shape is written.
+ */
+function Contract({
+  block,
+  onAdd,
+  onRemove,
+  onRename,
+  onLabel,
+  onType,
+}: {
+  block: Block
+  onAdd: (side: ContractSide, declaration: Declaration) => void
+  onRemove: (side: ContractSide, k: string) => void
+  onRename: (side: ContractSide, from: string, to: string) => void
+  onLabel: (side: ContractSide, k: string, label: string) => void
+  onType: (side: ContractSide, k: string, t: string) => void
+}) {
+  return (
+    <Section heading="Contract">
+      <p className={styles.blurb}>
+        What this block takes, read inside it as{' '}
+        <code className={styles.code}>{'{{ params.name }}'}</code>, and what it publishes when it
+        ends.
+      </p>
+
+      {SIDES.map(({ side, heading, empty, add, clash, seed }) => {
+        const declared = (side === 'params' ? block.params : block.outputs) ?? []
+        const keys = declared.map((declaration) => declaration.k)
+
+        return (
+          <div key={side} className={styles.group}>
+            <h3 className={styles.groupHeading}>{heading}</h3>
+
+            {declared.length === 0 ? <p className={styles.empty}>{empty}</p> : null}
+
+            {declared.length > 0 ? (
+              <ul className={styles.declarations}>
+                {declared.map((declaration) => (
+                  <li key={declaration.k} className={styles.declaration}>
+                    <DeclarationRow
+                      declaration={declaration}
+                      taken={keys.filter((k) => k !== declaration.k)}
+                      clash={clash}
+                      onRemove={() => onRemove(side, declaration.k)}
+                      onRename={(to) => onRename(side, declaration.k, to)}
+                      onLabel={(label) => onLabel(side, declaration.k, label)}
+                      onType={(t) => onType(side, declaration.k, t)}
+                    />
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+
+            <Button
+              size="sm"
+              onClick={() => {
+                const k = mintKey(seed, keys)
+                onAdd(side, { k, label: k, t: 'text' })
+              }}
+            >
+              {add}
+            </Button>
+          </div>
+        )
+      })}
+    </Section>
+  )
+}
+
+/**
+ * One parameter or one output: the key every Reference names, a friendly name,
+ * and the declared type.
+ *
+ * The key is mono and first for the reason a variable's is: it is what a
+ * Template writes. The label is not — it is prose, shown in the reference tree
+ * and on the call site's field, and nothing addresses it.
+ */
+function DeclarationRow({
+  declaration,
+  taken,
+  clash,
+  onRemove,
+  onRename,
+  onLabel,
+  onType,
+}: {
+  declaration: Declaration
+  taken: readonly string[]
+  /** What to say when the typed key is one of `taken`. */
+  clash: string
+  onRemove: () => void
+  onRename: (to: string) => void
+  onLabel: (label: string) => void
+  onType: (t: string) => void
+}) {
+  return (
+    <>
+      <div className={styles.variableHead}>
+        <UniqueInput
+          label={`Name of ${declaration.k}`}
+          value={declaration.k}
+          mono
+          taken={taken}
+          message={clash}
+          onCommit={(next) => next && next !== declaration.k && onRename(next)}
+        />
+        <button
+          type="button"
+          className={styles.remove}
+          aria-label={`Remove ${declaration.k}`}
+          onClick={onRemove}
+        >
+          <svg
+            className={styles.icon}
+            viewBox="0 0 16 16"
+            width="14"
+            height="14"
+            focusable="false"
+            aria-hidden="true"
+          >
+            <path d="M3 4.5h10M6.5 4.5V3.2a.7.7 0 0 1 .7-.7h1.6a.7.7 0 0 1 .7.7v1.3" />
+            <path d="M4.4 4.5l.6 8a1 1 0 0 0 1 .9h4a1 1 0 0 0 1-.9l.6-8" />
+            <path d="M6.8 7v3.6M9.2 7v3.6" />
+          </svg>
+        </button>
+      </div>
+      <CommittedInput
+        label={`Label of ${declaration.k}`}
+        value={declaration.label}
+        onCommit={(next) => next && onLabel(next)}
+      />
+      <Select
+        aria-label={`Type of ${declaration.k}`}
+        className={styles.varType}
+        value={declaration.t}
+        onChange={(event) => onType(event.target.value)}
+      >
+        {DECLARED_TYPES.map((t) => (
+          <option key={t} value={t}>
+            {t}
+          </option>
+        ))}
+      </Select>
+    </>
+  )
+}
+
+/**
+ * The types a `t` may name, in the order the schema lists them.
+ *
+ * One list for a variable and a declaration because the schema spells their `t`
+ * identically "so one function reads both" — the six values, and `item`
+ * deliberately absent from either, because `item` resolves by following a loop's
+ * `list` back to a source output and neither of these is the output of anything.
+ */
+const DECLARED_TYPES = ['text', 'number', 'boolean', 'datetime', 'object', 'list'] as const
 
 /**
  * The workflow's variables: a key, a declared type and a Template, per row.
@@ -598,6 +1012,7 @@ const VARIABLE_TYPES = ['text', 'number', 'boolean', 'datetime', 'object', 'list
  */
 function Variables({
   variables,
+  blurb,
   scope,
   onAdd,
   onRemove,
@@ -606,6 +1021,8 @@ function Variables({
   onValue,
 }: {
   variables: readonly Variable[]
+  /** Whose values these are; the reference form is the same on every Board. */
+  blurb: string
   scope: readonly ScopeEntry[]
   onAdd: () => void
   onRemove: (key: string) => void
@@ -616,7 +1033,7 @@ function Variables({
   return (
     <Section heading="Variables">
       <p className={styles.blurb}>
-        Values this workflow keeps, read anywhere as{' '}
+        {blurb}
         <code className={styles.code}>{'{{ var.name }}'}</code>.
       </p>
 
@@ -627,11 +1044,14 @@ function Variables({
           {variables.map((variable) => (
             <li key={variable.key} className={styles.variable}>
               <div className={styles.variableHead}>
-                <CommittedInput
+                <UniqueInput
                   label={`Name of ${variable.key}`}
-                  className={styles.key}
                   value={variable.key}
                   mono
+                  taken={variables
+                    .filter((other) => other.key !== variable.key)
+                    .map((other) => other.key)}
+                  message="Another variable already uses this name."
                   onCommit={(next) => next && next !== variable.key && onRename(variable.key, next)}
                 />
                 <button
@@ -660,7 +1080,7 @@ function Variables({
                 value={variable.t}
                 onChange={(event) => onType(variable.key, event.target.value)}
               >
-                {VARIABLE_TYPES.map((t) => (
+                {DECLARED_TYPES.map((t) => (
                   <option key={t} value={t}>
                     {t}
                   </option>

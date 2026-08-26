@@ -454,7 +454,19 @@ to drop into the flow.*
 
 ## Workflow tab
 
-Everything scoped to the workflow rather than to a Step. Three sections, one divider between each.
+Everything scoped to a **Board** rather than to a Step. Three sections, one divider between each.
+
+**The tab shows the active Board, and its label says which kind.** At the root Board it is
+*Workflow*; on a **Block**'s it is *Block* — the kind of thing, never which one, because the canvas's
+tab strip already names the Block and repeating it here spends the panel's width twice and breaks a
+two-tab strip on a long name. The Board arrives as a prop, the way `<StepList>` takes one: which
+Board is on screen is chrome, and the canvas is the only surface with a doorway in it.
+
+|   | Root Board | Block Board |
+| --- | --- | --- |
+| 1 | Identity — the workflow's name and slug | Identity — the Block's name and slug |
+| 2 | Triggers | Contract — parameters and outputs |
+| 3 | Variables — the workflow's | Variables — the Block's |
 
 ### 1. Identity
 
@@ -463,6 +475,17 @@ outside the Step tree.
 
 A 304px panel with two labelled fields is a better place to rename a workflow than an inline-edited
 breadcrumb, and it keeps the top bar to display.
+
+On a Block's Board the two fields are `setBlockName` and `renameBlock`. **The slug goes stale
+without rewriting what names it** — every `use: block.<slug>` keeps the old spelling and the checker
+reports it, the same rule a variable key follows and for the same reason. `renameBlock` *throws* on a
+slug another Block already answers to, and `EditingStore.apply` turns a throw into a silent no-op, so
+the field detects the collision itself, declines to commit and says why. A box that reverts and says
+nothing is indistinguishable from one that is broken.
+
+A renamed Block is one nothing resolves under its old id, which every reader — the canvas included —
+reads as a *deleted* Block. So the region reports the rename, and whoever holds the Board follows it
+rather than dropping the user back to the root mid-edit.
 
 ### 2. Triggers
 
@@ -480,7 +503,33 @@ it as chrome rather than as a `steps[]` entry is what makes the original handoff
 `unknownComponents` does not flag it. The guarantees come from the model instead of from two
 booleans.
 
-### 3. Workflow variables
+### 2b. Contract — on a Block's Board
+
+**A Board's root *is* its contract** (CONTEXT.md), which is why one section serves both: the
+Triggers at the root, a Block's parameters and outputs inside one. The canvas has been drawing both
+in one `<RootNode>` all along — *Triggers* / `1 trigger` at the root, the Block's name and
+`2 params · 1 output` inside one — and this is that slot's editor.
+
+One section holding two labelled groups, **Parameters** and **Outputs**, rather than two sections: a
+divider between them would cut through the middle of the thing the section is naming. A row is a key
+(mono, because it is what a Template writes), a friendly label, and a declared type — the three the
+schema requires, which is why a new row is written with all three rather than added blank.
+
+**Appended, never inserted above.** A call site's fields are drawn in declaration order, so a new
+parameter landing at the top reorders a form somebody is already looking at.
+
+**`of` has no control.** A `list` or an `object` may declare the shape of its members; the row says
+what type it is, and Text Mode is where a shape is written.
+
+A key that another declaration on the same side holds is refused and said, exactly as the slug is —
+every reader resolves the first match, so two rows under one key make the second row's bin button
+delete the first row's declaration.
+
+### 3. The Board's variables
+
+The workflow's at the root, the Block's inside one — rebuilt on every invocation and invisible
+outside it, so a `core.set_var` can never reach out of the Board it is on. Every variable command has
+taken a Board since it was written; this is the editor for the other half.
 
 Rows of a mono `Input size="sm"` for the key plus a ghost trash button, a full-width `Select` for
 the declared type, and the value below, then `Button size="sm" variant="secondary" icon="plus"`
@@ -489,8 +538,8 @@ the declared type, and the value below, then `Button size="sm" variant="secondar
 **A variable's value is a Template**, not a literal. It may hold `{{ … }}`, so the value input is a
 [Template input](#the-template-input) like any other, and it gets the same completion.
 
-What it can read is the **unpositioned scope**: Run Context, Triggers, and earlier variables. Never
-Step outputs — a variable has no position in the tree, so no Step is guaranteed to have run. That
+What it can read is the **unpositioned scope** of the Board it is on: Run Context, then the
+Triggers or the Block's parameters, then that Board's variables. Never Step outputs — a variable has no position in the tree, so no Step is guaranteed to have run. That
 subset already exists inside `scopeFor`, which computes it before appending upstream Steps; extract
 it as `boardScope(doc, board, manifests, runContext)` and let `scopeFor` be that plus the Steps, so the two readers
 share one definition.
