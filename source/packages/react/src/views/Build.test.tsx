@@ -113,6 +113,9 @@ describe('Build wires the Components tab to the canvas', () => {
 
   const SOURCE = `id: wf\nname: n\nversion: 1\nstatus: draft\nsteps:\n  - id: s1\n    use: a\n    name: "First"\n  - id: s2\n    use: b\n    name: "Second"\n`
 
+  /** The same, with a call into a Block — a second Board to walk into. */
+  const CALLING = `id: wf\nname: n\nversion: 1\nstatus: draft\nsteps:\n  - id: s1\n    use: a\n    name: "First"\n  - id: call\n    use: block.inner\n    name: "Do the inner thing"\n    with: {}\nblocks:\n  - id: inner\n    name: "Inner"\n    steps:\n      - id: deep\n        use: b\n        name: "Deep"\n`
+
   const wired = (yaml = SOURCE) => {
     const writes: string[] = []
     const workflows: WorkflowStore = {
@@ -317,7 +320,6 @@ describe('Build wires the Components tab to the canvas', () => {
    * editor is handed nothing every time (ADR-0017).
    */
   it('remembers the selected Step on each Board across the doorway', async () => {
-    const CALLING = `id: wf\nname: n\nversion: 1\nstatus: draft\nsteps:\n  - id: s1\n    use: a\n    name: "First"\n  - id: call\n    use: block.inner\n    name: "Do the inner thing"\n    with: {}\nblocks:\n  - id: inner\n    name: "Inner"\n    steps:\n      - id: deep\n        use: b\n        name: "Deep"\n`
     wired(CALLING)
     await map().findByText('First')
 
@@ -334,6 +336,56 @@ describe('Build wires the Components tab to the canvas', () => {
     const strip = within(map().getByRole('navigation', { name: 'Boards' }))
     fireEvent.click(strip.getByRole('button', { name: 'The workflow' }))
     expect(selectedIn(map())).toBe('First')
+  })
+
+  /*
+   * The label names the KIND of thing the tab holds; the canvas's strip already
+   * says which Block. The id underneath it does not move, or walking through a
+   * doorway would leave the panel pointing at a tab that is gone.
+   */
+  it('calls the side panel’s first tab Block while a Block’s Board is open', async () => {
+    wired(CALLING)
+    await map().findByText('First')
+
+    expect(screen.getByRole('tab', { name: 'Workflow' })).toBeDefined()
+
+    fireEvent.click(map().getByRole('button', { name: 'Open Do the inner thing' }))
+    expect(screen.getByRole('tab', { name: 'Block' })).toBeDefined()
+    expect(screen.queryByRole('tab', { name: 'Workflow' })).toBeNull()
+
+    const strip = within(map().getByRole('navigation', { name: 'Boards' }))
+    fireEvent.click(strip.getByRole('button', { name: 'The workflow' }))
+    expect(screen.getByRole('tab', { name: 'Workflow' })).toBeDefined()
+  })
+
+  /*
+   * A renamed Block is one nothing resolves under its old id, and the canvas
+   * reads that as a deleted Block: without following the rename, committing the
+   * slug drops the user back to the root Board mid-edit and closes the tab they
+   * were working in.
+   */
+  it('follows a Block’s slug rename, keeping its Board and its selection', async () => {
+    wired(CALLING)
+    await map().findByText('First')
+
+    fireEvent.click(map().getByRole('button', { name: 'Open Do the inner thing' }))
+    fireEvent.click(map().getByText('Deep'))
+    expect(selectedIn(map())).toBe('Deep')
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Block' }))
+    const slug = screen.getByLabelText('Slug')
+    fireEvent.change(slug, { target: { value: 'renamed' } })
+    fireEvent.blur(slug)
+
+    await waitFor(() => expect(screen.getByLabelText('Slug')).toHaveProperty('value', 'renamed'))
+    // Still on the Block's Board, and still on the Step that was selected.
+    expect(map().getByText('Deep')).toBeDefined()
+    expect(selectedIn(map())).toBe('Deep')
+    expect(
+      within(map().getByRole('navigation', { name: 'Boards' })).getByRole('button', {
+        name: 'Inner',
+      }),
+    ).toBeDefined()
   })
 
   it('keeps a collapsed container collapsed through the same round trip', async () => {

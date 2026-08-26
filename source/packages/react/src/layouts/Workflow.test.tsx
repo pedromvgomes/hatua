@@ -1,3 +1,4 @@
+import type { BoardId } from '@hatua/model'
 import type { Manifest } from '@hatua/schema'
 import type {
   ConnectionDescriber,
@@ -14,7 +15,7 @@ import type {
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { HatuaProvider } from '../theme/HatuaProvider'
-import { Workflow } from './Workflow'
+import { boardTabLabel, Workflow } from './Workflow'
 
 /**
  * The Workflow tab against a Host's ports.
@@ -914,5 +915,212 @@ describe('variables', () => {
     mount(host('id: wf\nname: n\nversion: 1\nstatus: draft\nsteps: []\n'))
     expect(await screen.findByText('No variables yet.')).toBeDefined()
     expect(screen.getByRole('button', { name: 'Add variable' })).toBeDefined()
+  })
+})
+
+/**
+ * The same three sections, addressed at a Block's Board.
+ *
+ * A Board's root IS its contract (CONTEXT.md), so the middle section is the
+ * Triggers at the root and a Block's `params`/`outputs` inside one. Identity and
+ * the variables are the same sections pointed at a different Board.
+ */
+describe('the tab on a Block’s Board', () => {
+  const WITH_BLOCK = `# The overnight triage.
+id: wf_morning
+name: "Morning inbox triage"
+version: 4
+status: draft
+
+triggers:
+  - id: t1
+    use: component.schedule.cron
+    name: "Every morning"
+
+vars:
+  # The workflow's own, and not the block's.
+  - key: digest_to
+    t: text
+    value: "ops@example.com"
+
+steps:
+  - id: s1
+    use: block.archive_entry
+    with: {}
+
+blocks:
+  - id: archive_entry
+    name: "Archive an entry"
+    params:
+      - { k: thread, label: "Thread", t: text }
+    outputs:
+      - { k: url, label: "Where it went", t: text }
+    vars:
+      - key: attempts
+        t: number
+        value: 0
+    steps: []
+  - id: other
+    name: "Something else"
+    steps: []
+`
+
+  const onBoard = (
+    board: BoardId,
+    source: Host,
+    onBoardRename?: (from: string, to: string) => void,
+  ) =>
+    render(
+      <HatuaProvider
+        ports={{ workflows: source.port, manifests: serving(CATALOGUE) }}
+        workflowId="wf_morning"
+      >
+        <Workflow board={board} onBoardRename={onBoardRename} />
+      </HatuaProvider>,
+    )
+
+  /*
+   * The label names the KIND of thing, never which one: the canvas's tab strip
+   * already says which Block is open, and repeating it here spends the panel's
+   * width twice.
+   */
+  it('is called Workflow at the root and Block inside one', () => {
+    expect(boardTabLabel(null)).toBe('Workflow')
+    expect(boardTabLabel('archive_entry')).toBe('Block')
+  })
+
+  it('names itself for the Board it is showing, so a landmark and its tab agree', async () => {
+    onBoard('archive_entry', host(WITH_BLOCK))
+    expect(await screen.findByRole('region', { name: 'Block' })).toBeDefined()
+    expect(screen.queryByRole('region', { name: 'Workflow' })).toBeNull()
+  })
+
+  it('shows the Block’s name and slug, not the workflow’s', async () => {
+    onBoard('archive_entry', host(WITH_BLOCK))
+    expect((await screen.findByLabelText('Name')) as HTMLInputElement).toHaveProperty(
+      'value',
+      'Archive an entry',
+    )
+    expect(screen.getByLabelText('Slug')).toHaveProperty('value', 'archive_entry')
+  })
+
+  it('puts the contract where the Triggers are, because they are the same slot', async () => {
+    onBoard('archive_entry', host(WITH_BLOCK))
+    expect(await screen.findByRole('region', { name: 'Contract' })).toBeDefined()
+    expect(screen.queryByRole('region', { name: 'Triggers' })).toBeNull()
+
+    expect(screen.getByLabelText('Name of thread')).toHaveProperty('value', 'thread')
+    expect(screen.getByLabelText('Label of thread')).toHaveProperty('value', 'Thread')
+    expect(screen.getByLabelText('Type of thread')).toHaveProperty('value', 'text')
+    expect(screen.getByLabelText('Name of url')).toHaveProperty('value', 'url')
+  })
+
+  it('keeps the Triggers at the root, where the workflow’s contract is', async () => {
+    onBoard(null, host(WITH_BLOCK))
+    expect(await screen.findByRole('region', { name: 'Triggers' })).toBeDefined()
+    expect(screen.queryByRole('region', { name: 'Contract' })).toBeNull()
+  })
+
+  it('lists the Block’s variables and none of the workflow’s', async () => {
+    onBoard('archive_entry', host(WITH_BLOCK))
+    expect(await screen.findByLabelText('Name of attempts')).toBeDefined()
+    expect(screen.queryByLabelText('Name of digest_to')).toBeNull()
+  })
+
+  it('writes a contract edit into the Block, and adds at the end of its list', async () => {
+    const source = host(WITH_BLOCK)
+    onBoard('archive_entry', source)
+
+    type(await screen.findByLabelText('Label of thread'), 'The thread')
+    fireEvent.click(screen.getByRole('button', { name: 'Add output' }))
+    await waitFor(() => expect(source.writes.length).toBeGreaterThan(0), AUTOSAVED)
+
+    const written = source.writes.at(-1) as string
+    // The user's quoting comes back as they wrote it — a flow mapping stays a
+    // flow mapping and a quoted scalar stays quoted (ADR-0001).
+    expect(written).toContain('{ k: thread, label: "The thread", t: text }')
+    // Appended, never inserted above: a call site's fields are drawn in
+    // declaration order, so a new one at the top reorders a form somebody is
+    // already looking at.
+    expect(written.indexOf('k: url')).toBeLessThan(written.indexOf('new_output'))
+    // The other Block is untouched, and so is the workflow around it.
+    expect(written).toContain('# The overnight triage.')
+    expect(written).toContain('id: other')
+  })
+
+  it('writes a variable edit into the Block’s own vars, not the workflow’s', async () => {
+    const source = host(WITH_BLOCK)
+    onBoard('archive_entry', source)
+
+    type(await screen.findByLabelText('Name of attempts'), 'tries')
+    await waitFor(() => expect(source.writes).toHaveLength(1), AUTOSAVED)
+
+    const written = source.writes[0] as string
+    expect(written).toContain('key: tries')
+    expect(written).toContain('key: digest_to')
+    expect(written).toContain("# The workflow's own, and not the block's.")
+  })
+
+  /*
+   * The commands throw on a collision and `EditingStore.apply` turns a throw
+   * into a no-op, so a field wired straight to one appears to reject characters
+   * at random. The box has to detect it and say so.
+   */
+  it('refuses a key another declaration on the same side holds, and says why', async () => {
+    const source = host(WITH_BLOCK)
+    onBoard('archive_entry', source)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Add parameter' }))
+    type(await screen.findByLabelText('Name of new_parameter'), 'thread')
+
+    expect(screen.getByText('Another parameter already uses this name.')).toBeDefined()
+    // The name that is still true is what the box shows, and the row it would
+    // have collided with is untouched.
+    expect(screen.getByLabelText('Name of new_parameter')).toHaveProperty('value', 'new_parameter')
+    expect(screen.getByLabelText('Name of thread')).toHaveProperty('value', 'thread')
+  })
+
+  it('refuses a slug another Block answers to, and says why', async () => {
+    onBoard('archive_entry', host(WITH_BLOCK))
+
+    type(await screen.findByLabelText('Slug'), 'other')
+    expect(screen.getByText('Another block already uses this slug.')).toBeDefined()
+    expect(screen.getByLabelText('Slug')).toHaveProperty('value', 'archive_entry')
+  })
+
+  /*
+   * A renamed Block is one nothing resolves under its old id, which every
+   * reader — the canvas included — reads as a deleted Block. Reported, so a
+   * caller holding the Board can follow it rather than being dropped back to
+   * the root mid-edit.
+   */
+  it('reports a slug rename, because the Board on screen is now called something else', async () => {
+    const renames: [string, string][] = []
+    onBoard('archive_entry', host(WITH_BLOCK), (from, to) => renames.push([from, to]))
+
+    type(await screen.findByLabelText('Slug'), 'archived')
+    expect(renames).toEqual([['archive_entry', 'archived']])
+  })
+
+  it('says so when the Board names a Block the document does not declare', async () => {
+    onBoard('gone', host(WITH_BLOCK))
+    expect(await screen.findByText('That block is not in this workflow.')).toBeDefined()
+    expect(screen.queryByRole('region', { name: 'Identity' })).toBeNull()
+  })
+
+  /*
+   * A Block reads only what it declares plus the Run Context — never the
+   * workflow's Triggers or its variables (ADR-0013). The value box's completion
+   * list is where that reaches a screen.
+   */
+  it('offers the Block’s scope to a variable’s value, and not the workflow’s', async () => {
+    onBoard('archive_entry', host(WITH_BLOCK))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Insert into Value of attempts' }))
+
+    expect(await screen.findByText('params.thread')).toBeDefined()
+    expect(screen.getByText('var.attempts')).toBeDefined()
+    expect(screen.queryByText('triggers.t1')).toBeNull()
+    expect(screen.queryByText('var.digest_to')).toBeNull()
   })
 })

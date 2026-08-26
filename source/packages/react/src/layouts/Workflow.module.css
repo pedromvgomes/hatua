@@ -35,6 +35,24 @@
     color: var(--hatua-text-secondary);
   }
 
+  /*
+   * The two halves of a contract, inside one section. A divider between them is
+   * deliberately absent: `.section + .section` is what separates one idea from
+   * the next in this panel, and a Block's parameters and its outputs are two
+   * halves of one.
+   */
+  .group {
+    display: grid;
+    gap: 8px;
+  }
+
+  .groupHeading {
+    margin: 0;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--hatua-text-secondary);
+  }
+
   .blurb {
     margin: 0;
     font-size: 0.75rem;
@@ -145,6 +163,24 @@
     gap: 8px;
   }
 
+  /*
+   * A declaration is three stacked boxes that look alike, so the space BETWEEN
+   * two rows has to be plainly larger than the space inside one — at the same
+   * gap a parameter's type box reads as the next parameter's key.
+   */
+  .declarations {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 16px;
+  }
+
+  .declaration {
+    display: grid;
+    gap: 6px;
+  }
+
   .card {
     display: grid;
     gap: 8px;
@@ -191,7 +227,13 @@
     gap: 6px;
   }
 
-  .key {
+  /* A key box and, under it, the reason a name was refused. `min-inline-size:
+     0` because it sits in a `minmax(0, 1fr)` column beside a bin button, and a
+     grid item defaults to its content's minimum width — which a long key would
+     push past the panel. */
+  .unique {
+    display: grid;
+    gap: 4px;
     min-inline-size: 0;
   }
 

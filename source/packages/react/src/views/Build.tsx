@@ -6,7 +6,7 @@ import { FlowMap } from '../layouts/FlowMap'
 import { Inspector } from '../layouts/Inspector'
 import { TabbedPanel } from '../layouts/TabbedPanel'
 import { TopBar } from '../layouts/TopBar'
-import { Workflow } from '../layouts/Workflow'
+import { boardTabLabel, Workflow } from '../layouts/Workflow'
 import { cx } from '../primitives/classNames'
 import { useEditingStore } from '../theme/HatuaProvider'
 import styles from './Build.module.css'
@@ -144,7 +144,33 @@ export function Build({ className, ...rest }: BuildProps) {
               // it is <FlowMap>, which is not a tab and never was. See
               // layouts/README.
               tabs={[
-                { id: 'workflow', label: 'Workflow', content: <Workflow /> },
+                {
+                  // The id is stable and the label is not. The label names the
+                  // KIND of thing the tab holds — the canvas's strip already
+                  // says which Block — and an id that moved with it would
+                  // reopen the Components tab every time a doorway was walked
+                  // through.
+                  id: 'workflow',
+                  label: boardTabLabel(board),
+                  content: (
+                    <Workflow
+                      board={board}
+                      onBoardRename={(from, to) => {
+                        // A renamed Block is a Block nothing resolves under its
+                        // old id, which every reader here — the canvas included
+                        // — reads as a deleted one. Following the rename keeps
+                        // the Board on screen and its selection with it.
+                        setBoard((was) => (was === from ? to : was))
+                        setSelectedOn((was) => {
+                          const held = was[boardKey(from)]
+                          if (!held) return was
+                          const { [boardKey(from)]: _gone, ...rest } = was
+                          return { ...rest, [boardKey(to)]: { ...held, board: to } }
+                        })
+                      }}
+                    />
+                  ),
+                },
                 {
                   id: 'components',
                   label: 'Components',

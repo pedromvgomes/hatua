@@ -6,7 +6,10 @@ import {
   removeBlock,
   removeDeclaration,
   renameBlock,
+  renameDeclaration,
   setBlockName,
+  setDeclarationLabel,
+  setDeclarationType,
 } from './blocks'
 import type { EditCommand } from './command'
 import { addStep, moveStep, removeStep } from './steps'
@@ -342,5 +345,86 @@ describe('a block’s own variables', () => {
   it('still edits the workflow’s variables when no board is named', () => {
     const out = apply(SOURCE, addVariable('threshold'))
     expect(projected(out).vars?.map((v) => v.key)).toEqual(['digest_to', 'threshold'])
+  })
+})
+
+/**
+ * Editing a declaration that is already there.
+ *
+ * `addDeclaration` writes a minted key, a label and a `t`, because the schema
+ * requires all three and a row missing one stops the document projecting. So
+ * naming a parameter is these three commands and not the add — which is what
+ * makes the Contract section an editor rather than an add-and-remove list.
+ */
+describe('editing a declaration', () => {
+  const WITH_CONTRACT = apply(
+    SOURCE,
+    addBlock({ id: 'archive' }),
+    addDeclaration('archive', 'params', { k: 'thread', label: 'Thread', t: 'text' }),
+    addDeclaration('archive', 'params', { k: 'urgent', label: 'Urgent', t: 'boolean' }),
+    addDeclaration('archive', 'outputs', { k: 'url', label: 'Where it went', t: 'text' }),
+  )
+
+  const paramsOf = (yaml: string) => projected(yaml).blocks?.[0]?.params
+  const outputsOf = (yaml: string) => projected(yaml).blocks?.[0]?.outputs
+
+  it('renames a key, leaving the label and the type where they were', () => {
+    const out = apply(WITH_CONTRACT, renameDeclaration('archive', 'params', 'thread', 'subject'))
+
+    expect(paramsOf(out)).toEqual([
+      { k: 'subject', label: 'Thread', t: 'text' },
+      { k: 'urgent', label: 'Urgent', t: 'boolean' },
+    ])
+  })
+
+  /*
+   * Every reader resolves the FIRST match — `boardScope` offers it, the rename
+   * edits it, `removeDeclaration` deletes it — so two rows under one key would
+   * make the second row's bin button delete the first row's declaration, and
+   * `{{ params.<k> }}` a Reference with two answers and no diagnostic.
+   */
+  it('refuses a rename onto a key the same side already declares', () => {
+    expect(() =>
+      apply(WITH_CONTRACT, renameDeclaration('archive', 'params', 'thread', 'urgent')),
+    ).toThrow(/already declared/)
+  })
+
+  /* The two sides are two lists and two namespaces: `params.url` and
+     `steps.<call>.url` never meet. */
+  it('allows a parameter to take a key an output already uses', () => {
+    const out = apply(WITH_CONTRACT, renameDeclaration('archive', 'params', 'thread', 'url'))
+
+    expect(paramsOf(out)?.map((d) => d.k)).toEqual(['url', 'urgent'])
+    expect(outputsOf(out)?.map((d) => d.k)).toEqual(['url'])
+  })
+
+  it('writes a label, which nothing references', () => {
+    const out = apply(
+      WITH_CONTRACT,
+      setDeclarationLabel('archive', 'outputs', 'url', 'Archive link'),
+    )
+    expect(outputsOf(out)).toEqual([{ k: 'url', label: 'Archive link', t: 'text' }])
+  })
+
+  it('writes a type, which every call site is checked against', () => {
+    const out = apply(WITH_CONTRACT, setDeclarationType('archive', 'params', 'urgent', 'number'))
+    expect(paramsOf(out)?.map((d) => d.t)).toEqual(['text', 'number'])
+  })
+
+  it('refuses to edit a key the side does not declare', () => {
+    expect(() =>
+      apply(WITH_CONTRACT, setDeclarationType('archive', 'params', 'url', 'number')),
+    ).toThrow(/No "url" declared under params/)
+  })
+
+  /* A Workflow Definition lives in the Host's repository: an edit to one
+     declaration must not reformat the file around it (ADR-0001). */
+  it('leaves the rest of the document as the user wrote it', () => {
+    const out = apply(WITH_CONTRACT, renameDeclaration('archive', 'params', 'thread', 'subject'))
+
+    expect(out).toContain('# The overnight triage.')
+    expect(out).toContain('# Weekday mornings only.')
+    expect(out).toContain('name: "Morning inbox triage"')
+    expect(out).toContain('# Everything starts here.')
   })
 })

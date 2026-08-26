@@ -189,13 +189,97 @@ export function removeDeclaration(id: string, side: ContractSide, k: string): Ed
   return {
     label: `Remove ${k}`,
     apply(document) {
-      const listPath = [...blockPath(document, id), side]
-      for (const { entry, index } of entriesOf(document, listPath)) {
-        if (entry.k !== k) continue
-        detachNode(document, listPath, index)
-        return
+      const { listPath, index } = locateDeclaration(document, id, side, k)
+      detachNode(document, listPath, index)
+    },
+  }
+}
+
+/** The index of the declaration under `k`, against the list as the document holds it. */
+function locateDeclaration(
+  document: WorkflowDocument,
+  id: string,
+  side: ContractSide,
+  k: string,
+): { listPath: Path; index: number } {
+  const listPath = [...blockPath(document, id), side]
+  for (const { entry, index } of entriesOf(document, listPath)) {
+    if (entry.k === k) return { listPath, index }
+  }
+  throw new Error(`No "${k}" declared under ${side}`)
+}
+
+/**
+ * Rename a declaration's key. **References are not rewritten**, for the reason
+ * `renameVariable` gives: every intermediate keystroke is a rename too, so a
+ * mechanism that followed one would edit the user's file on every character.
+ *
+ * A stale `{{ params.<k> }}` inside the Block, and a value left under an unknown
+ * key at every call site, are both states the model already has and already
+ * reports.
+ */
+export function renameDeclaration(
+  id: string,
+  side: ContractSide,
+  from: string,
+  to: string,
+): EditCommand {
+  return {
+    label: `Rename ${from}`,
+    apply(document) {
+      const { listPath, index } = locateDeclaration(document, id, side, from)
+
+      // Two declarations under one key is worse than a refused rename. Every
+      // reader here resolves the FIRST match — `boardScope` offers it, this
+      // command edits it and `removeDeclaration` deletes it — so the second row
+      // would edit the first row's declaration while `{{ params.<k> }}` named a
+      // value with two answers and no diagnostic.
+      for (const other of entriesOf(document, listPath)) {
+        if (other.index !== index && other.entry.k === to) {
+          throw new Error(`A "${to}" is already declared under ${side}`)
+        }
       }
-      throw new Error(`No "${k}" declared under ${side}`)
+
+      setScalar(document, [...listPath, index, 'k'], to)
+    },
+  }
+}
+
+/** Write a declaration's friendly label, which nothing references. */
+export function setDeclarationLabel(
+  id: string,
+  side: ContractSide,
+  k: string,
+  label: string,
+): EditCommand {
+  return {
+    label: `Rename ${k}`,
+    apply(document) {
+      const { listPath, index } = locateDeclaration(document, id, side, k)
+      setScalar(document, [...listPath, index, 'label'], label)
+    },
+  }
+}
+
+/**
+ * Write a declaration's declared type.
+ *
+ * The one edit on a contract row that re-checks anything: a parameter's `t` is
+ * what the Slot at every call site is checked against, and an output's is what
+ * `{{ steps.<call>.<k> }}` carries downstream. Neither is read off a value —
+ * a Block's Board is rebuilt on every invocation and holds no literal to read.
+ */
+export function setDeclarationType(
+  id: string,
+  side: ContractSide,
+  k: string,
+  t: string,
+): EditCommand {
+  return {
+    label: `Retype ${k}`,
+    apply(document) {
+      const { listPath, index } = locateDeclaration(document, id, side, k)
+      setScalar(document, [...listPath, index, 't'], t)
     },
   }
 }
