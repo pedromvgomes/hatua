@@ -13,6 +13,7 @@ import {
   topLevelList,
 } from './ast'
 import type { EditCommand } from './command'
+import { requireUsableName } from './names'
 
 /**
  * The commands that address a Block: its declaration, its contract, and its
@@ -75,6 +76,7 @@ export function addBlock(block: NewBlock = {}): EditCommand {
   return {
     label: `Add ${block.name ?? 'a block'}`,
     apply(document) {
+      if (block.id !== undefined) requireUsableName(block.id)
       const listPath = topLevelList(document, 'blocks')
       const id = block.id ?? mintId(document)
 
@@ -115,6 +117,7 @@ export function renameBlock(from: string, to: string): EditCommand {
   return {
     label: `Rename ${from}`,
     apply(document) {
+      requireUsableName(to)
       const path = blockPath(document, from)
 
       // Two blocks under one id is worse than a refused rename. Every reader
@@ -156,6 +159,7 @@ export function addDeclaration(
   return {
     label: side === 'params' ? `Add ${declaration.label}` : `Publish ${declaration.label}`,
     apply(document) {
+      requireUsableName(declaration.k)
       const block = blockPath(document, id)
       const listPath = listIn(document, block, side, BLOCK_KEY_ORDER)
 
@@ -227,6 +231,7 @@ export function renameDeclaration(
   return {
     label: `Rename ${from}`,
     apply(document) {
+      requireUsableName(to)
       const { listPath, index } = locateDeclaration(document, id, side, from)
 
       // Two declarations under one key is worse than a refused rename. Every

@@ -96,10 +96,20 @@ export function setWorkflowName(name: string): EditCommand {
  * Mode, so a builder that refused to would only be harder to use than a text
  * editor.
  */
+/**
+ * Write the workflow's slug.
+ *
+ * Refuses an empty one, and nothing more: the schema spells a workflow's `id`
+ * as a non-empty string rather than as an `identifier`, unlike a Block's or a
+ * variable's key. Nothing addresses it from inside the document — it is the
+ * Host's handle on the file — so the tighter rule the other names carry would
+ * be this command inventing a constraint the contract does not have.
+ */
 export function setWorkflowSlug(slug: string): EditCommand {
   return {
     label: 'Change the slug',
     apply(document) {
+      if (slug === '') throw new Error('A workflow needs a slug')
       setScalar(document, ['id'], slug)
     },
   }

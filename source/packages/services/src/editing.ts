@@ -607,6 +607,16 @@ export function createEditingStore(
         return
       }
 
+      /*
+       * Whether the document projected BEFORE this command, read off the last
+       * published snapshot rather than validated again.
+       *
+       * A document that already does not project is not this command's doing
+       * and is not judged below — that state is ADR-0001's and belongs to the
+       * user's file. What is judged is a command that MAKES one.
+       */
+      const projected = state.status === 'ready' && state.workflow.definition !== null
+
       let after: string
       try {
         command.apply(document)
@@ -628,6 +638,31 @@ export function createEditingStore(
       }
 
       if (after === before) return
+
+      /*
+       * **A command may not turn a document that projects into one that does
+       * not.** Inheriting an invalid document from the Host's file is a state
+       * this store is built to hold — ADR-0001 makes the text the source of
+       * truth, and the panel has a screen that says so. MANUFACTURING one is a
+       * different thing entirely: every surface in the product reads
+       * `definition`, so a single command that breaks the projection empties
+       * the canvas, the side panel and the step editor at once, and the user is
+       * left with nothing to click on to undo it.
+       *
+       * Every command that writes a user-chosen name refuses a name the schema
+       * cannot hold, which is where a refusal can say something useful. This is
+       * the backstop under all of them, and under every command written later:
+       * a whole class of defect that would otherwise be one field's oversight
+       * each time.
+       */
+      if (projected && !document.validate().success) {
+        try {
+          document = parseWorkflow(before)
+        } catch {
+          // Unreachable while `before` came out of this document.
+        }
+        return
+      }
 
       history.push({ text: before, label: command.label })
       if (history.length > HISTORY_LIMIT) history.shift()

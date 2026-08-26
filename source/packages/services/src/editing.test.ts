@@ -1,3 +1,4 @@
+import type { WorkflowDocument } from '@hatua/document'
 import { regionsOf } from '@hatua/model'
 import type { Step } from '@hatua/schema'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -412,6 +413,77 @@ describe('a command that cannot be applied', () => {
 
     expect(ready(store).text).toBe(before)
     expect(ready(store).undoLabel).toBeNull()
+  })
+})
+
+/**
+ * The invariant under every command there is, and every command written later.
+ *
+ * Inheriting a document that does not project is a state this store is built to
+ * hold — ADR-0001 makes the text the source of truth, and `a document that does
+ * not project` above covers it. MANUFACTURING one is a different thing: every
+ * surface in the product reads `definition`, so a command that breaks the
+ * projection empties the canvas, the side panel and the step editor at once and
+ * leaves the user nothing to click on to undo it.
+ */
+describe('a command may not break the projection', () => {
+  const open = async (yaml?: string) => {
+    const host = recorder(yaml ? { yaml } : {})
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+    return { host, store }
+  }
+
+  /** Writes a key the schema's `identifier` refuses, exactly as a name box would. */
+  const writeKey = (key: string) => ({
+    label: 'Rename',
+    apply(document: WorkflowDocument) {
+      document.ast.setIn(['vars', 0, 'key'], key)
+    },
+  })
+
+  const WITH_VAR = `id: wf_morning\nname: n\nversion: 1\nstatus: draft\nvars:\n  - key: digest_to\n    t: text\n    value: ""\nsteps: []\n`
+
+  it('refuses the edit and leaves the text as it was', async () => {
+    const { store, host } = await open(WITH_VAR)
+    const before = ready(store).text
+    expect(ready(store).definition).not.toBeNull()
+
+    store.apply(writeKey('Variable 1'))
+
+    expect(ready(store).text).toBe(before)
+    expect(ready(store).definition).not.toBeNull()
+    // Nothing reached the undo stack, so there is nothing to undo back out of.
+    expect(ready(store).undoLabel).toBeNull()
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(host.writes).toEqual([])
+  })
+
+  it('lets the same command through when the name is one the schema holds', async () => {
+    const { store } = await open(WITH_VAR)
+    store.apply(writeKey('digest_cc'))
+
+    expect(ready(store).text).toContain('key: digest_cc')
+    expect(ready(store).definition).not.toBeNull()
+  })
+
+  /*
+   * Only a document that projected is protected. One that did not is the user's
+   * file being wrong, and refusing every edit to it would leave nothing able to
+   * fix it — which is the opposite of what ADR-0001 asks for.
+   */
+  it('does not judge a document that did not project to begin with', async () => {
+    const HALF =
+      'id: wf\nname: n\nversion: 1\nstatus: draft\nsteps:\n  - use: component.email.send\n'
+    const { store } = await open(HALF)
+    expect(ready(store).definition).toBeNull()
+    const before = ready(store).text
+
+    store.apply(setWorkflowName('Renamed'))
+
+    expect(ready(store).text).not.toBe(before)
+    expect(ready(store).text).toContain('Renamed')
   })
 })
 

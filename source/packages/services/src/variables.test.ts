@@ -234,3 +234,37 @@ describe('retyping a variable changes what an Expression checks against', () => 
     expect(verdicts(written, '{{ var.threshold }}', 'number')).toEqual([])
   })
 })
+
+/**
+ * A key the schema cannot hold.
+ *
+ * `Variable 1` is not an `identifier`, so writing it stops the whole document
+ * projecting — and every surface in the product reads the projection, so one
+ * committed keystroke empties the canvas, the side panel and the step editor
+ * together. Refused by name here, so a field has something to report;
+ * `EditingStore.apply` refuses the outcome generically underneath.
+ */
+describe('a name the document cannot address', () => {
+  it('refuses a rename onto one, whatever is wrong with it', () => {
+    for (const bad of ['Variable 1', 'digest-to', '1st', '', 'olá']) {
+      expect(() => apply(SOURCE, renameVariable('digest_to', bad)), bad).toThrow(/usable name/)
+    }
+  })
+
+  it('still allows every name the schema does hold', () => {
+    for (const good of ['digest_cc', '_private', 'a1', 'A_LONG_ONE']) {
+      const text = apply(SOURCE, renameVariable('digest_to', good)).toString()
+      expect(varsOf(text).map((variable) => variable.key)).toContain(good)
+    }
+  })
+
+  it('refuses one handed to addVariable, rather than writing a row that stops projecting', () => {
+    expect(() => apply(SOURCE, addVariable('Variable 1'))).toThrow(/usable name/)
+  })
+
+  /* A minted key is the command's own and is always one the schema holds. */
+  it('mints without complaint when no key is given', () => {
+    const text = apply(SOURCE, addVariable()).toString()
+    expect(varsOf(text).map((variable) => variable.key)).toContain('new_variable')
+  })
+})

@@ -496,6 +496,16 @@ for nothing. The state is each card's own — nothing outside this panel draws a
 is no second surface to keep in step, which is exactly why the canvas's collapse is lifted into
 `views/Build` and this is not.
 
+**A name box refuses a name the document cannot address**, and says what is allowed rather than what
+is wrong: *Use letters, numbers and underscores, and don't start with a number.* A variable's key, a
+declaration's key and a **Block**'s slug are all `identifier`s, so `Variable 1` is not one — and
+writing it stops the whole document projecting, which empties the canvas, this panel and the step
+editor together (ADR-0019). The field asks the same question the command will, from the same
+definition, so the two cannot drift.
+
+A workflow's slug is the exception: the schema spells it as a non-empty string rather than an
+`identifier`, so the only thing refused there is nothing at all.
+
 A row's **diagnostic sits outside the fold**. Folding manages height; it does not silence the
 checker, and a folded row that hid its own problem would let someone tidy it off their screen.
 
