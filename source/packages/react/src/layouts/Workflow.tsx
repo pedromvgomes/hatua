@@ -874,7 +874,7 @@ function AddTrigger({
           </option>
         ))}
       </Select>
-      <Button size="sm" onClick={() => chosen && onAdd(chosen)}>
+      <Button className={styles.addAction} size="sm" onClick={() => chosen && onAdd(chosen)}>
         Add trigger
       </Button>
     </div>

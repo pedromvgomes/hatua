@@ -699,8 +699,15 @@ in the Step editor exactly as any Component's are, and the table stays four rows
 
 ### The Template input
 
-`min-height` 40px (76px for textarea), `--radius-md`, 1px `--border-strong`, `--surface-card`,
-`padding: 8px 10px`, `cursor: text`, mono. A single-line field holds one line and scrolls, exactly as
+`min-height` `--control-height` — 40px, the same height `Input` and `Select` take, because the three
+stack in one card all over the side panel and three files each writing their own number is three
+numbers that drift. 76px for textarea, `--radius-md`, 1px `--border-strong`, `--surface-card`,
+`padding: 8px 10px`, `cursor: text`, mono.
+
+**A button is not one of these.** `Button` stays 28/34: a control that is *pressed* is a different
+thing from one that holds a value. A button placed **inline with a field** does match the field, and
+that is the row's business rather than the primitive's — the Trigger picker and its *Add trigger* are
+one line and one height. A single-line field holds one line and scrolls, exactly as
 an `<input>` does; only the textarea wraps. **Its height belongs to the field kind, never to the
 value** — a manifest declaring `kind: text` gets a 40px control and `kind: textarea` gets 76px, and a
 field that resized itself from its content would take that decision away from the declaration and

@@ -333,11 +333,21 @@
     inline-size: 100%;
   }
 
+  /*
+   * A picker and the button that acts on it, on one line. The button takes the
+   * field's height rather than its own: a control sitting INLINE with a field
+   * matching that field is this row's business, not <Button>'s — a button is
+   * pressed and a field holds a value, and they are not one size everywhere.
+   */
   .add {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
     gap: 6px;
+  }
+
+  .addAction {
+    block-size: var(--hatua-control-height);
   }
 
   /* Ghost until the row is hovered or the button is focused: a bin drawn at
