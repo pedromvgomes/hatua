@@ -265,8 +265,8 @@ describe('no stylesheet (ADR-0003)', () => {
  * `<Input>`, `<Select>` and the Template input are stacked in one card all over
  * the side panel — a variable is a name box, a type picker and a value box, one
  * under the other — and three files each writing their own number is three
- * numbers that drift. They had: two of them were 34px and one was 40px, so
- * every card in the Workflow tab showed three different heights.
+ * numbers that drift. Nothing in the panel survives that: every card in the
+ * Workflow tab shows the three heights side by side, one under the next.
  *
  * jsdom has no layout engine, so nothing in the suite can measure a rendered
  * box. What is checkable is the property that makes the numbers agree: each

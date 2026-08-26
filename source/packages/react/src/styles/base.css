@@ -88,11 +88,11 @@
 
     /*
      * One height for every control a value is typed or chosen in — <Input>,
-     * <Select> and the Template input alike. Three literals is three numbers
-     * that drift, and they had: a card stacking a name box, a type picker and a
-     * value box showed three different heights. 40px is what `docs/handoff.md`
-     * specifies for the Template input, which is the only one of the three the
-     * design of record puts a number on.
+     * <Select> and the Template input alike. Written once here because three
+     * literals are three numbers that drift, and a card stacking a name box, a
+     * type picker and a value box shows every millimetre of the drift at once.
+     * 40px is what `docs/handoff.md` specifies for the Template input, which is
+     * the only one of the three the design of record puts a number on.
      *
      * A button is not one of these. `<Button>` stays 28/34, because a control
      * that is pressed is a different thing from one that holds a value — and a

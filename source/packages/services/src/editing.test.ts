@@ -460,6 +460,39 @@ describe('a command may not break the projection', () => {
     expect(host.writes).toEqual([])
   })
 
+  /*
+   * The snapshot publishes `workflow.document` BY REFERENCE, and a refused
+   * command has already mutated that object. Restoring the store's own handle
+   * is not enough: until the next successful command, a reader holding the
+   * snapshot is holding the tree the store threw away — and `views/Build` reads
+   * exactly that to work out where a Component appends.
+   */
+  it('publishes the restored document, not the one the refused command mutated', async () => {
+    const { store } = await open(WITH_VAR)
+
+    store.apply(writeKey('Variable 1'))
+
+    const held = ready(store).document
+    expect(held.toString()).toBe(ready(store).text)
+    expect(held.validate().success).toBe(true)
+  })
+
+  it('does the same for a command that throws, which restores by the same path', async () => {
+    const { store } = await open(WITH_VAR)
+
+    store.apply({
+      label: 'Half an edit',
+      apply(document: WorkflowDocument) {
+        document.ast.setIn(['vars', 0, 'key'], 'part_way')
+        throw new Error('gave up')
+      },
+    })
+
+    const held = ready(store).document
+    expect(held.toString()).toBe(ready(store).text)
+    expect(held.toString()).not.toContain('part_way')
+  })
+
   it('lets the same command through when the name is one the schema holds', async () => {
     const { store } = await open(WITH_VAR)
     store.apply(writeKey('digest_cc'))
