@@ -963,6 +963,9 @@ blocks:
   - id: other
     name: "Something else"
     steps: []
+  - id: hollow
+    name: "Nothing declared yet"
+    steps: []
 `
 
   const onBoard = (
@@ -1009,10 +1012,10 @@ blocks:
     expect(await screen.findByRole('region', { name: 'Contract' })).toBeDefined()
     expect(screen.queryByRole('region', { name: 'Triggers' })).toBeNull()
 
-    expect(screen.getByLabelText('Name of thread')).toHaveProperty('value', 'thread')
-    expect(screen.getByLabelText('Label of thread')).toHaveProperty('value', 'Thread')
+    expect(screen.getByLabelText('Name of thread')).toHaveProperty('value', 'Thread')
+    expect(screen.getByLabelText('Key of thread')).toHaveProperty('value', 'thread')
     expect(screen.getByLabelText('Type of thread')).toHaveProperty('value', 'text')
-    expect(screen.getByLabelText('Name of url')).toHaveProperty('value', 'url')
+    expect(screen.getByLabelText('Key of url')).toHaveProperty('value', 'url')
   })
 
   it('keeps the Triggers at the root, where the workflow’s contract is', async () => {
@@ -1031,7 +1034,7 @@ blocks:
     const source = host(WITH_BLOCK)
     onBoard('archive_entry', source)
 
-    type(await screen.findByLabelText('Label of thread'), 'The thread')
+    type(await screen.findByLabelText('Name of thread'), 'The thread')
     fireEvent.click(screen.getByRole('button', { name: 'Add output' }))
     await waitFor(() => expect(source.writes.length).toBeGreaterThan(0), AUTOSAVED)
 
@@ -1071,13 +1074,33 @@ blocks:
     onBoard('archive_entry', source)
 
     fireEvent.click(await screen.findByRole('button', { name: 'Add parameter' }))
-    type(await screen.findByLabelText('Name of new_parameter'), 'thread')
+    type(await screen.findByLabelText('Key of new_parameter'), 'thread')
 
     expect(screen.getByText('Another parameter already uses this name.')).toBeDefined()
-    // The name that is still true is what the box shows, and the row it would
+    // The key that is still true is what the box shows, and the row it would
     // have collided with is untouched.
-    expect(screen.getByLabelText('Name of new_parameter')).toHaveProperty('value', 'new_parameter')
-    expect(screen.getByLabelText('Name of thread')).toHaveProperty('value', 'thread')
+    expect(screen.getByLabelText('Key of new_parameter')).toHaveProperty('value', 'new_parameter')
+    expect(screen.getByLabelText('Key of thread')).toHaveProperty('value', 'thread')
+  })
+
+  /*
+   * A row seeded with its key in both boxes is two identical boxes holding
+   * identical text, and no caption is enough to tell them apart when the
+   * content does not.
+   */
+  it('gives a new row a name that is not its key, and a second one its own', async () => {
+    onBoard('hollow', host(WITH_BLOCK))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Add parameter' }))
+    expect(screen.getByLabelText('Key of new_parameter')).toHaveProperty('value', 'new_parameter')
+    expect(screen.getByLabelText('Name of new_parameter')).toHaveProperty('value', 'New parameter')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add parameter' }))
+    await waitFor(() => expect(screen.getByLabelText('Key of new_parameter_2')).toBeDefined())
+    expect(screen.getByLabelText('Name of new_parameter_2')).toHaveProperty(
+      'value',
+      'New parameter 2',
+    )
   })
 
   it('refuses a slug another Block answers to, and says why', async () => {

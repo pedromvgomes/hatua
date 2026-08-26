@@ -120,6 +120,24 @@
     gap: 4px;
   }
 
+  /*
+   * A field's caption, and anything belonging to the row rather than to the box
+   * beside it. The bin sits here so the box keeps the panel's whole width — a
+   * key, a Template and a friendly name each need it, and a bin in a second
+   * column takes 32px off every one of them.
+   *
+   * A minimum height, because a caption is 11px and a bin is 26px: without it
+   * the first field of a card is taller than the rest and the cards in a list
+   * stop lining up.
+   */
+  .fieldHead {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 6px;
+    min-block-size: 26px;
+  }
+
   .label {
     font-size: 0.6875rem;
     font-weight: 600;
@@ -163,24 +181,21 @@
     gap: 8px;
   }
 
-  /*
-   * A declaration is three stacked boxes that look alike, so the space BETWEEN
-   * two rows has to be plainly larger than the space inside one — at the same
-   * gap a parameter's type box reads as the next parameter's key.
-   */
   .declarations {
     list-style: none;
     margin: 0;
     padding: 0;
     display: grid;
-    gap: 16px;
+    gap: 8px;
   }
 
-  .declaration {
-    display: grid;
-    gap: 6px;
-  }
-
+  /*
+   * Every row in this panel is a card: a Trigger, a parameter, an output, a
+   * variable. Each is several boxes of identical shape, and a border around
+   * them is what says which boxes are one thing — stacked in a flat list at the
+   * gap that separates a key from its type, four parameters read as one run of
+   * twelve boxes.
+   */
   .card {
     display: grid;
     gap: 8px;
@@ -190,41 +205,12 @@
     background: var(--hatua-surface-raised);
   }
 
-  .cardHead {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 6px;
-  }
-
   .meta {
     margin: 0;
     font-family: var(--hatua-font-mono);
     font-size: 0.6875rem;
     color: var(--hatua-text-muted);
     overflow-wrap: anywhere;
-  }
-
-  /* Key 118px and the value flexible, as the design has it: a key is short and
-     a Template is not, so an even split wastes the half that needs the room. */
-  /*
-   * The key and the bin on one line, the value beneath it.
-   *
-   * A Template input is 40px tall and carries a 40px button inside its trailing
-   * edge, so a three-column row leaves it about 110px of writing space in a
-   * 304px panel — narrower than most of the paths it is there to hold, and
-   * every one of them then scrolls sideways under the caret.
-   */
-  .variable {
-    display: grid;
-    gap: 6px;
-  }
-
-  .variableHead {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 6px;
   }
 
   /* A key box and, under it, the reason a name was refused. `min-inline-size:
@@ -238,12 +224,13 @@
   }
 
   /*
-   * Its own row between the key and the value, rather than a third column in
-   * the head: the head is already a name box that must stay wide enough to read
-   * a key in, and squeezing a type box in beside the bin button makes both
-   * unreadable at the panel's width.
+   * A `Select` on its own row rather than beside the box above it. A Template
+   * input is 40px tall and carries a 40px button inside its trailing edge, so a
+   * two-column row leaves it about 110px of writing space in a 304px panel —
+   * narrower than most of the paths it is there to hold, and every one of them
+   * then scrolls sideways under the caret.
    */
-  .varType {
+  .control {
     inline-size: 100%;
   }
 
