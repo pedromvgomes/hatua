@@ -58,6 +58,14 @@ emits `onBoardRename`, and `views/Build` follows it into the new id with the sel
 Board. Without it, committing the slug drops the user back to the root and closes the tab they were
 editing in.
 
+One shape serves all three of its sections: a Trigger, a parameter, an output
+and a variable are each a `RowCard` — a bordered card whose every box carries a
+caption, whose bin sits on the caption's line, and which folds from a chevron to
+one line saying the row's name and the fact that identifies it elsewhere in the
+document. Folding is the card's own state and is deliberately not lifted: nothing
+outside this panel draws a declaration, so there is no second surface to keep in
+step, which is the test the canvas's collapse fails and this one passes.
+
 `TabbedPanel` still owns no data. It gained a controlled `tabId`, which is a
 different thing: the tab that is open is still chrome, and lifting it into a
 caller is what lets `views/Build` open the Components tab when an insert point

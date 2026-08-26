@@ -198,11 +198,110 @@
    */
   .card {
     display: grid;
-    gap: 8px;
+    gap: 4px;
     padding: 10px;
     border: 1px solid var(--hatua-border-subtle);
     border-radius: var(--hatua-radius-md);
     background: var(--hatua-surface-raised);
+  }
+
+  /*
+   * The fold control, the row's caption or its summary, and the bin. Three
+   * columns, because the chevron and the bin are each a property of the row and
+   * the middle is whatever the row is currently saying about itself.
+   */
+  .cardHead {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    /* Tighter than the panel's usual 6px. A folded row carries three facts on
+       one line inside 304px, and every pixel spent between the chevron, the
+       summary and the bin comes off the name. */
+    gap: 4px;
+    min-block-size: 26px;
+  }
+
+  /* 4px under the header caption, 8px between the fields below it: the caption
+     belongs to the box under it, and the boxes belong to each other less. */
+  .cardBody {
+    display: grid;
+    gap: 8px;
+  }
+
+  .disclosure {
+    display: grid;
+    place-items: center;
+    inline-size: 20px;
+    block-size: 20px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: var(--hatua-radius-sm);
+    background: transparent;
+    color: var(--hatua-text-muted);
+    cursor: pointer;
+  }
+
+  .disclosure:hover {
+    border-color: var(--hatua-border-subtle);
+    color: var(--hatua-text-primary);
+  }
+
+  .disclosure:focus-visible {
+    outline: 2px solid var(--hatua-focus-ring);
+    outline-offset: -2px;
+  }
+
+  .chevron {
+    rotate: 0deg;
+    transition: rotate 140ms ease;
+  }
+
+  /* Pointing at the row it is holding shut, over the same window the card takes
+     to fold. */
+  .shut {
+    rotate: -90deg;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .chevron {
+      transition: none;
+    }
+  }
+
+  /*
+   * A folded row on one line. The name shrinks before the rest does: a long
+   * name is the half a reader recognises from its start, and the key and the
+   * type are what the line exists to say.
+   */
+  .summary {
+    display: grid;
+    /* Each takes what it needs and the leftover goes between them, so a short
+       name is not padded out to the bin. Only the name may shrink: a key and a
+       type truncated to nothing are what the line exists to say. */
+    grid-template-columns: minmax(0, max-content) max-content;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 6px;
+    margin: 0;
+    min-inline-size: 0;
+  }
+
+  .summaryName,
+  .summaryMeta {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .summaryName {
+    font-size: 0.8125rem;
+    color: var(--hatua-text-primary);
+  }
+
+  .summaryMeta {
+    font-family: var(--hatua-font-mono);
+    font-size: 0.6875rem;
+    color: var(--hatua-text-muted);
   }
 
   .meta {

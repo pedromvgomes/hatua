@@ -448,6 +448,139 @@ function RowField({
 }
 
 /**
+ * One row of the panel — a Trigger, a parameter, an output, a variable — as a
+ * card that folds.
+ *
+ * **Folded, the row is one line and not just its name.** A contract with six
+ * parameters is a page of boxes expanded and six lines folded, and a line
+ * carrying only the name spends the width without answering the question the
+ * user came with: the summary is `Thread · thread · text`, which is the whole
+ * declaration. The canvas already says a Board's root this way — `2 params · 1
+ * output` — so it is the panel agreeing with the map rather than a new idea.
+ *
+ * **Open by default.** Folding is a user managing clutter; a tab that opens
+ * folded hides the editor from somebody who came to edit, and a Block with one
+ * parameter would hide its only field for nothing.
+ *
+ * The state is the card's own. Nothing outside this panel draws a declaration,
+ * so there is no second surface to keep in step — which is the whole reason the
+ * canvas's collapse is lifted into `views/Build` and this is not. It resets
+ * when the row's key changes, because the key is the React key: that is a row
+ * somebody has just renamed and is still working on.
+ *
+ * The chevron is a button of its own rather than the whole header. The summary
+ * holds a key a user may want to select, and text inside a button cannot be
+ * selected — and an icon button with an `aria-label` is what the bin beside it
+ * already is.
+ */
+function RowCard({
+  title,
+  summary,
+  caption,
+  name,
+  note,
+  removeLabel,
+  onRemove,
+  children,
+}: {
+  /** Which row this is, for the fold and remove controls to name. */
+  title: string
+  /** The whole row on one line, for when it is folded. */
+  summary: ReactNode
+  /** The first field's caption, which the header carries while open. */
+  caption: string
+  /** The first field's control. */
+  name: ReactNode
+  /**
+   * What is wrong with this row, if anything.
+   *
+   * Outside the fold and not inside it: a folded row that hid its own
+   * diagnostic would let somebody tidy a problem off their screen, and the
+   * fold is for managing height rather than for silencing the checker.
+   */
+  note?: ReactNode
+  removeLabel: string
+  onRemove: () => void
+  children?: ReactNode
+}) {
+  const [open, setOpen] = useState(true)
+  const bodyId = useId()
+
+  return (
+    <li className={styles.card}>
+      <div className={styles.cardHead}>
+        <button
+          type="button"
+          className={styles.disclosure}
+          aria-expanded={open}
+          // Only while the body exists. Pointing at an id that is not rendered
+          // gives a screen reader a region it cannot navigate to.
+          aria-controls={open ? bodyId : undefined}
+          aria-label={`Collapse ${title}`}
+          onClick={() => setOpen((was) => !was)}
+        >
+          {/*
+            Drawn rather than typed, for the reason the canvas's is: a Host
+            chooses the face this renders in and the theme's own draws `▾` at
+            four pixels wide. It turns to point at the row it is holding shut
+            instead of swapping for a second character, so the two states are
+            one shape at two angles.
+          */}
+          <svg
+            className={cx(styles.chevron, !open && styles.shut)}
+            viewBox="0 0 10 10"
+            width="10"
+            height="10"
+            focusable="false"
+            aria-hidden="true"
+          >
+            <path
+              d="M2 4 5 7 8 4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+        {open ? <span className={styles.label}>{caption}</span> : summary}
+        <RemoveButton label={removeLabel} onClick={onRemove} />
+      </div>
+      {note}
+      {open ? (
+        <div id={bodyId} className={styles.cardBody}>
+          {name}
+          {children}
+        </div>
+      ) : null}
+    </li>
+  )
+}
+
+/**
+ * A folded row on one line: what it is called, then what it is.
+ *
+ * The name gives way before the rest does. A long name is the half a reader
+ * recognises from its start and can hover or unfold to finish; a key truncated
+ * to nothing is the row losing the thing that identifies it.
+ */
+function RowSummary({ name, meta, mono }: { name: string; meta: string; mono?: boolean }) {
+  return (
+    <p className={styles.summary}>
+      {/* `title` because a 304px panel cannot always hold three facts on one
+          line, and the name is the one that gives way: the key beside it is
+          what every call site writes, so the row stays identifiable while the
+          prose is a hover and an unfold away. */}
+      <span className={cx(styles.summaryName, mono && styles.mono)} title={name}>
+        {name}
+      </span>
+      <span className={styles.summaryMeta}>{meta}</span>
+    </p>
+  )
+}
+
+/**
  * The bin that removes a row.
  *
  * On the caption's line rather than beside the box, so the box keeps the whole
@@ -661,19 +794,18 @@ function Triggers({
 
       <ul className={styles.triggers}>
         {triggers.map((trigger) => (
-          <li key={trigger.id} className={styles.trigger}>
-            <TriggerCard
-              trigger={trigger}
-              manifest={byUse.get(trigger.use)}
-              problems={problems.get(trigger.id)}
-              connections={connections}
-              scope={scope}
-              onRemove={onRemove}
-              onName={onName}
-              onField={onField}
-              onDeclareConnection={onDeclareConnection}
-            />
-          </li>
+          <TriggerCard
+            key={trigger.id}
+            trigger={trigger}
+            manifest={byUse.get(trigger.use)}
+            problems={problems.get(trigger.id)}
+            connections={connections}
+            scope={scope}
+            onRemove={onRemove}
+            onName={onName}
+            onField={onField}
+            onDeclareConnection={onDeclareConnection}
+          />
         ))}
       </ul>
 
@@ -773,41 +905,45 @@ function TriggerCard({
   const values = (trigger.with ?? {}) as Record<string, unknown>
 
   return (
-    <div className={styles.card}>
-      <RowField
-        caption="Name"
-        aside={
-          <RemoveButton
-            label={`Remove ${trigger.name || trigger.id}`}
-            onClick={() => onRemove(trigger.id)}
-          />
-        }
-      >
+    <RowCard
+      title={trigger.name || trigger.id}
+      caption="Name"
+      summary={
+        /* The id and not the type: a Trigger named after its own Component —
+           which is what adding one gives you — would otherwise fold to its name
+           printed twice. The id is what `{{ triggers.overnight.… }}` writes, so
+           it is a Trigger's key in the sense a declaration's `k` is. */
+        <RowSummary name={trigger.name || trigger.id} meta={trigger.id} />
+      }
+      removeLabel={`Remove ${trigger.name || trigger.id}`}
+      onRemove={() => onRemove(trigger.id)}
+      name={
         <CommittedInput
           label={`Name of ${trigger.name || trigger.id}`}
           value={trigger.name ?? ''}
           placeholder={manifest?.name ?? trigger.use}
           onCommit={(next) => onName(trigger.id, next)}
         />
-      </RowField>
-
+      }
+      note={
+        /*
+          `role="status"` rather than `alert`: an unfilled field is the normal
+          state of a Trigger someone just added, and interrupting a screen
+          reader for it every time would make the builder unusable. ADR-0009
+          draws the same line — this blocks Publish, never editing.
+        */
+        problems?.length ? (
+          <p className={styles.problems} role="status">
+            {problems.map((problem) => problem.message).join(' ')}
+          </p>
+        ) : null
+      }
+    >
       {/* The verb and the id, mono, because both are what a Template writes:
           `{{ triggers.t1.… }}` addresses this row by the id shown here. */}
       <p className={styles.meta}>
         {trigger.use} · {trigger.id}
       </p>
-
-      {/*
-        `role="status"` rather than `alert`: an unfilled field is the normal
-        state of a Trigger someone just added, and interrupting a screen reader
-        for it every time would make the builder unusable. ADR-0009 draws the
-        same line — this blocks Publish, never editing.
-      */}
-      {problems?.length ? (
-        <p className={styles.problems} role="status">
-          {problems.map((problem) => problem.message).join(' ')}
-        </p>
-      ) : null}
 
       {manifest ? (
         <Fields
@@ -826,7 +962,7 @@ function TriggerCard({
           <p className={styles.empty}>Nothing declares this trigger type, so it has no settings.</p>
         )
       )}
-    </div>
+    </RowCard>
   )
 }
 
@@ -930,17 +1066,16 @@ function Contract({
             {declared.length > 0 ? (
               <ul className={styles.declarations}>
                 {declared.map((declaration) => (
-                  <li key={declaration.k} className={styles.card}>
-                    <DeclarationRow
-                      declaration={declaration}
-                      taken={keys.filter((k) => k !== declaration.k)}
-                      clash={clash}
-                      onRemove={() => onRemove(side, declaration.k)}
-                      onRename={(to) => onRename(side, declaration.k, to)}
-                      onLabel={(label) => onLabel(side, declaration.k, label)}
-                      onType={(t) => onType(side, declaration.k, t)}
-                    />
-                  </li>
+                  <DeclarationRow
+                    key={declaration.k}
+                    declaration={declaration}
+                    taken={keys.filter((k) => k !== declaration.k)}
+                    clash={clash}
+                    onRemove={() => onRemove(side, declaration.k)}
+                    onRename={(to) => onRename(side, declaration.k, to)}
+                    onLabel={(label) => onLabel(side, declaration.k, label)}
+                    onType={(t) => onType(side, declaration.k, t)}
+                  />
                 ))}
               </ul>
             ) : null}
@@ -992,18 +1127,20 @@ function DeclarationRow({
   onType: (t: string) => void
 }) {
   return (
-    <>
-      <RowField
-        caption="Name"
-        aside={<RemoveButton label={`Remove ${declaration.k}`} onClick={onRemove} />}
-      >
+    <RowCard
+      title={declaration.k}
+      caption="Name"
+      summary={<RowSummary name={declaration.label} meta={`${declaration.k} · ${declaration.t}`} />}
+      removeLabel={`Remove ${declaration.k}`}
+      onRemove={onRemove}
+      name={
         <CommittedInput
           label={`Name of ${declaration.k}`}
           value={declaration.label}
           onCommit={(next) => next && onLabel(next)}
         />
-      </RowField>
-
+      }
+    >
       <RowField caption="Key">
         <UniqueInput
           label={`Key of ${declaration.k}`}
@@ -1029,7 +1166,7 @@ function DeclarationRow({
           ))}
         </Select>
       </RowField>
-    </>
+    </RowCard>
   )
 }
 
@@ -1096,19 +1233,17 @@ function Variables({
       {variables.length > 0 ? (
         <ul className={styles.variables}>
           {variables.map((variable) => (
-            <li key={variable.key} className={styles.card}>
-              {/* A variable's key IS its name — it carries no friendly label,
-                  because `{{ var.digest_to }}` is what the builder shows and
-                  there is nothing else to call it. */}
-              <RowField
-                caption="Name"
-                aside={
-                  <RemoveButton
-                    label={`Remove ${variable.key}`}
-                    onClick={() => onRemove(variable.key)}
-                  />
-                }
-              >
+            /* A variable's key IS its name — it carries no friendly label,
+               because `{{ var.digest_to }}` is what the builder shows and there
+               is nothing else to call it. */
+            <RowCard
+              key={variable.key}
+              title={variable.key}
+              caption="Name"
+              summary={<RowSummary name={variable.key} meta={variable.t} mono />}
+              removeLabel={`Remove ${variable.key}`}
+              onRemove={() => onRemove(variable.key)}
+              name={
                 <UniqueInput
                   label={`Name of ${variable.key}`}
                   value={variable.key}
@@ -1119,8 +1254,8 @@ function Variables({
                   message="Another variable already uses this name."
                   onCommit={(next) => next && next !== variable.key && onRename(variable.key, next)}
                 />
-              </RowField>
-
+              }
+            >
               <RowField caption="Type">
                 <Select
                   aria-label={`Type of ${variable.key}`}
@@ -1154,7 +1289,7 @@ function Variables({
                   onCommit={(next) => onValue(variable.key, next)}
                 />
               </RowField>
-            </li>
+            </RowCard>
           ))}
         </ul>
       ) : null}

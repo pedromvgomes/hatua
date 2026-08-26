@@ -116,6 +116,25 @@ blocks:
   - id: hollow
     name: "Nothing declared yet"
     steps: []
+  - id: busy
+    name: "Reconcile an invoice"
+    params:
+      - { k: invoice_id, label: "Invoice", t: text }
+      - { k: raised_at, label: "Raised on", t: datetime }
+      - { k: amount, label: "Amount", t: number }
+      - { k: line_items, label: "Line items", t: list }
+      - { k: dry_run, label: "Dry run only", t: boolean }
+    outputs:
+      - { k: matched, label: "Matched", t: boolean }
+      - { k: note, label: "What happened", t: text }
+    vars:
+      - key: attempts
+        t: number
+        value: 0
+      - key: last_error
+        t: text
+        value: ""
+    steps: []
 `
 
 const BARE = `id: wf_new
@@ -389,5 +408,19 @@ export const BlockWithNothingDeclared: Story = {
  */
 export const BoardThatIsNotThere: Story = {
   args: { board: 'deleted' },
+  parameters: wired(serving(WITH_BLOCKS)),
+}
+
+/**
+ * A contract with enough in it to be worth folding.
+ *
+ * Five parameters, two outputs and two variables is a page of boxes with every
+ * row open, which is what every row folding is for: folded, each is one line
+ * carrying its name, its key and its type, and the whole Block reads without
+ * scrolling. Open by default all the same — folding is a user managing clutter,
+ * not a state a tab should open in.
+ */
+export const ABlockWithPlentyDeclared: Story = {
+  args: { board: 'busy' },
   parameters: wired(serving(WITH_BLOCKS)),
 }
