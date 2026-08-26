@@ -111,9 +111,39 @@
   */
   .row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto auto;
     align-items: center;
     gap: 2px;
+  }
+
+  /*
+    The doorway into the Block's Board, in the treatment the canvas gives the
+    same control on a call site.
+
+    Sized to the bin beside it rather than to its own text, so two controls of
+    different kinds still read as one row of controls.
+  */
+  .open {
+    block-size: 26px;
+    padding: 0 8px;
+    border: 1px solid var(--hatua-border-subtle);
+    border-radius: var(--hatua-radius-sm);
+    background: var(--hatua-surface-raised);
+    color: var(--hatua-text-secondary);
+    font: inherit;
+    font-size: 11px;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .open:hover {
+    border-color: var(--hatua-border-accent);
+    color: var(--hatua-text-accent);
+  }
+
+  .open:focus-visible {
+    outline: 2px solid var(--hatua-focus-ring);
+    outline-offset: -2px;
   }
 
   /* What the checker says about a Block, under the card it belongs to and

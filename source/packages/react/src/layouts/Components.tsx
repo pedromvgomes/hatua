@@ -53,12 +53,17 @@ export interface ComponentsProps extends Omit<ComponentPropsWithRef<'section'>, 
    */
   onSelect?: (component: ComponentDrag) => void
   /**
-   * Fired when a Block is declared here, naming the one that now exists.
+   * Fired when a Block's Board should come forward — one just declared here, or
+   * one whose card's Open was pressed.
    *
-   * ADR-0017: a Block's tab opens when the Block is declared. Which Board is on
-   * screen is chrome and this region does not hold it, so declaring one is
-   * reported rather than acted on — and a caller that ignores it still gets the
-   * Block, reachable from the strip the next time a call site is opened.
+   * ADR-0017: a Block's tab opens when the Block is declared, and when a call
+   * site is opened. Which Board is on screen is chrome and this region does not
+   * hold it, so both are reported rather than acted on.
+   *
+   * Without a handler a Block that nothing calls has no Board a user can reach:
+   * the strip lists only Boards already open, and the canvas's own doorway is on
+   * a call site. That is the state this closes, so a caller that lists Blocks
+   * and ignores this leaves a Block that can be declared and never opened.
    */
   onBoardOpen?: (block: string) => void
   /**
@@ -367,6 +372,7 @@ export function Components({
                       block={block}
                       problems={problems.get(block.id)}
                       onSelect={onSelect}
+                      onOpen={onBoardOpen && (() => onBoardOpen(block.id))}
                       onRemove={() => remove(block)}
                     />
                   ))}
@@ -473,11 +479,14 @@ function BlockRow({
   block,
   problems,
   onSelect,
+  onOpen,
   onRemove,
 }: {
   block: Block
   problems?: Diagnostic[]
   onSelect?: (component: ComponentDrag) => void
+  /** Absent when the caller holds no Board, which is when there is nowhere to go. */
+  onOpen?: () => void
   onRemove: () => void
 }) {
   const name = block.name || block.id
@@ -494,6 +503,21 @@ function BlockRow({
         drag={{ use: `${BLOCK_PREFIX}${block.id}`, name }}
         onSelect={onSelect}
       />
+      {/*
+        The doorway, in the word the canvas already uses on a call site and with
+        the accessible name that card gives it. Set in type rather than drawn: a
+        one-word control needs no glyph invented for it, and every mark near
+        this one already means something else — the catalogue's own Return card
+        is an arrow leaving a bracket, and a chevron is how a row unfolds.
+
+        A control of its own and not the card. The card adds a call; this goes
+        to the Board — two commands, and a button cannot contain a button.
+      */}
+      {onOpen ? (
+        <button type="button" className={styles.open} aria-label={`Open ${name}`} onClick={onOpen}>
+          Open
+        </button>
+      ) : null}
       <RemoveButton label={`Delete ${name}`} onClick={onRemove} />
 
       {/*
