@@ -441,20 +441,39 @@ function alwaysReturns(steps: readonly Step[]): boolean {
     const branches = step.branches ?? []
     if (branches.length === 0) return false
 
-    // A condition fork is first-match-wins, so one whose every branch carries a
-    // `when` can match none of them and fall straight through. Only an
-    // unconditional last branch — the fallback — makes it exhaustive, and the
-    // schema says that branch MAY be unconditional rather than must be. Without
-    // this the obligation is discharged by a fork that can skip every path, and
-    // a Step legitimately placed after such a fork is refused publish as
-    // unreachable.
-    // Presence rather than truthiness, which is how `malformedContainers` and
-    // `branchKeyword` read it too. One rule treating `when: ""` as the fallback
-    // while another treats it as a condition refuses publish to a Block that
-    // does return on every path.
-    if (branches.at(-1)?.when !== undefined) return false
+    /*
+     * Which fork this is, read from the branches because the schema has no mode
+     * field — the same question `regionsOf` and `branchUnreachableAfter` ask,
+     * and asked the same way. A fork where NO branch carries `when` is the
+     * parallel one.
+     *
+     * Presence rather than truthiness, which is how `malformedContainers` and
+     * `branchKeyword` read it too. One rule treating `when: ""` as the fallback
+     * while another treats it as a condition refuses publish to a Block that
+     * does return on every path.
+     */
+    if (branches.some((branch) => branch.when !== undefined)) {
+      // A condition fork is first-match-wins, so one whose every branch carries
+      // a `when` can match none of them and fall straight through. Only an
+      // unconditional last branch — the fallback — makes it exhaustive, and the
+      // schema says that branch MAY be unconditional rather than must be.
+      // Without this the obligation is discharged by a fork that can skip every
+      // path, and a Step legitimately placed after such a fork is refused
+      // publish as unreachable.
+      if (branches.at(-1)?.when !== undefined) return false
 
-    return branches.every((branch) => alwaysReturns(branch.steps))
+      // Exactly one branch runs, so every one of them has to carry a return.
+      return branches.every((branch) => alwaysReturns(branch.steps))
+    }
+
+    /*
+     * Every branch of a parallel fork runs, so ONE that always returns ends the
+     * Block — which is the opposite quantifier from the condition fork above,
+     * for the opposite reason. Asking `every` here refuses publish to a Block
+     * that does return on every path, and leaves a Step placed after such a
+     * fork unreported when it can never run.
+     */
+    return branches.some((branch) => alwaysReturns(branch.steps))
   })
 }
 

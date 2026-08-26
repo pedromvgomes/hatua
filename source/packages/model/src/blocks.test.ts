@@ -416,14 +416,25 @@ describe('every path returns', () => {
     expect(returned([{ id: 'ret', use: 'core.return', with: { url: 'x' } }])).toBe(true)
   })
 
-  it('accepts a fork whose every branch returns', () => {
+  /*
+   * A condition fork, and it says so: exactly one branch runs, so the question
+   * is whether every one of them returns. Which fork this is comes from the
+   * branches — a fork where NO branch carries `when` is the parallel one — so a
+   * fixture that omits `when` is asking a different question from the one its
+   * name states.
+   */
+  it('accepts a condition fork whose every branch returns', () => {
     expect(
       returned([
         {
           id: 'fork',
           use: 'core.fork',
           branches: [
-            { label: 'A', steps: [{ id: 'r1', use: 'core.return', with: { url: 'x' } }] },
+            {
+              label: 'A',
+              when: '{{ params.a }}',
+              steps: [{ id: 'r1', use: 'core.return', with: { url: 'x' } }],
+            },
             { label: 'B', steps: [{ id: 'r2', use: 'core.return', with: { url: 'y' } }] },
           ],
         },
@@ -454,6 +465,62 @@ describe('every path returns', () => {
               when: '{{ params.b }}',
               steps: [{ id: 'r2', use: 'core.return', with: { url: 'y' } }],
             },
+          ],
+        },
+      ]),
+    ).toBe(false)
+  })
+
+  /*
+   * A parallel fork is the opposite quantifier from a condition one, for the
+   * opposite reason: every branch runs, so ONE that always returns ends the
+   * Block. Asking `every` here — which is what a fork read without its mode
+   * gets — refuses publish to a Block that does return on every path.
+   */
+  it('accepts a parallel fork where one branch returns', () => {
+    expect(
+      returned([
+        {
+          id: 'fork',
+          use: 'core.fork',
+          branches: [
+            {
+              label: 'Archive it',
+              steps: [{ id: 'r1', use: 'core.return', with: { url: 'x' } }],
+            },
+            { label: 'Notify', steps: [{ id: 's1', use: 'component.email.send' }] },
+          ],
+        },
+      ]),
+    ).toBe(true)
+  })
+
+  it('calls a Step after one unreachable, which is the same claim said twice', () => {
+    const after = withBody([
+      {
+        id: 'fork',
+        use: 'core.fork',
+        branches: [
+          { label: 'Archive it', steps: [{ id: 'r1', use: 'core.return', with: { url: 'x' } }] },
+          { label: 'Notify', steps: [{ id: 's1', use: 'component.email.send' }] },
+        ],
+      },
+      { id: 'later', use: 'component.email.send' },
+    ])
+    expect(
+      validateDefinition(after, CATALOGUE).all.filter((d) => d.code === 'STEP_AFTER_RETURN'),
+    ).toHaveLength(1)
+  })
+
+  it('still refuses a parallel fork where no branch returns', () => {
+    expect(
+      returned([
+        {
+          id: 'fork',
+          use: 'core.fork',
+          branches: [
+            { label: 'Archive it', steps: [{ id: 's1', use: 'component.email.send' }] },
+            { label: 'Notify', steps: [{ id: 's2', use: 'component.email.send' }] },
           ],
         },
       ]),
@@ -536,14 +603,18 @@ describe('every path returns', () => {
     ).toBe(true)
   })
 
-  it('refuses a fork where one branch does not', () => {
+  it('refuses a condition fork where one branch does not', () => {
     expect(
       returned([
         {
           id: 'fork',
           use: 'core.fork',
           branches: [
-            { label: 'A', steps: [{ id: 'r1', use: 'core.return', with: { url: 'x' } }] },
+            {
+              label: 'A',
+              when: '{{ params.a }}',
+              steps: [{ id: 'r1', use: 'core.return', with: { url: 'x' } }],
+            },
             { label: 'B', steps: [] },
           ],
         },
