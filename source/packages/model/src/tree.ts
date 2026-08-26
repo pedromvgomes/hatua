@@ -347,6 +347,18 @@ export function* walkDocument(doc: WorkflowDefinition): Generator<StepRef & { st
 export const stepKey = ({ board, id }: StepRef): string => (board === null ? id : `${board}/${id}`)
 
 /**
+ * One Board as a string, for a reader that holds something per Board.
+ *
+ * Prefixed rather than the bare id, because the root Board is `null` and a
+ * Block whose id is the empty string would key the same — so the two would
+ * share whatever is held, and opening that Block would find the root's.
+ *
+ * Minted here for the reason `stepKey` is: a viewport keyed one way and a
+ * selection keyed another are two maps that disagree about which Board is which.
+ */
+export const boardKey = (id: BoardId): string => (id === null ? 'board:root' : `board:${id}`)
+
+/**
  * One child region, and the Step it hangs under.
  *
  * A `StepRef` widened by which of that Step's regions this is, because a

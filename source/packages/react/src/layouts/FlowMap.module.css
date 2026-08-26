@@ -71,43 +71,6 @@
   }
 
   /*
-    Chrome over the canvas rather than a row above it: the map is clipped to the
-    whole of the viewport and pans under everything, so a breadcrumb in the flow
-    would be a strip the map could never occupy.
-  */
-  .crumbs {
-    position: absolute;
-    inset-block-start: 12px;
-    inset-inline-start: 16px;
-    z-index: 1;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .back {
-    padding: 3px 8px;
-    border: 1px solid var(--hatua-border-subtle);
-    border-radius: var(--hatua-radius-sm);
-    background: var(--hatua-surface-card);
-    color: var(--hatua-text-secondary);
-    font: inherit;
-    font-size: 12px;
-    cursor: pointer;
-  }
-
-  .back:hover {
-    border-color: var(--hatua-border-accent);
-    color: var(--hatua-text-accent);
-  }
-
-  .here {
-    color: var(--hatua-text-primary);
-    font-weight: 600;
-    font-size: 13px;
-  }
-
-  /*
     The one positioned ancestor on the map. Every card, band and marker is
     absolute against this box, whose size is `layout`'s totals — so a folded
     container shrinks what fit has to fit rather than leaving room for cards

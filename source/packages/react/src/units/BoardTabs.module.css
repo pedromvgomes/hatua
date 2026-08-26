@@ -1,0 +1,97 @@
+@layer hatua {
+  /*
+    Chrome over the canvas rather than a row above it: the map is clipped to the
+    whole of the viewport and pans underneath everything, so a strip in the flow
+    would be a band the map could never occupy.
+
+    Logical insets, unlike everything the map draws. `boxOf` is physical because
+    flow-map coordinates are, and mirroring them under an RTL Host would draw a
+    Fork's first Branch last — but a tab strip is not on the map. It starts
+    where the reading direction starts and moves with it.
+  */
+  .tabs {
+    position: absolute;
+    inset-block-start: 12px;
+    inset-inline-start: 16px;
+    z-index: 1;
+    /*
+      The map runs under the strip and stays reachable: only the tabs
+      themselves take the pointer, so a card that happens to sit behind the
+      gaps between them can still be clicked and dragged.
+    */
+    pointer-events: none;
+  }
+
+  .list {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .tab {
+    display: flex;
+    align-items: center;
+    /*
+      One border and one radius around the pair, so a tab with a close button
+      reads as one control rather than two sitting next to each other.
+    */
+    border: 1px solid var(--hatua-border-subtle);
+    border-radius: var(--hatua-radius-sm);
+    background: var(--hatua-surface-card);
+    pointer-events: auto;
+  }
+
+  .current {
+    border-color: var(--hatua-border-accent);
+  }
+
+  .label {
+    max-width: 18ch;
+    padding: 3px 8px;
+    border: 0;
+    background: none;
+    color: var(--hatua-text-secondary);
+    font: inherit;
+    font-size: 12px;
+    /*
+      A Block's name is whatever its author typed. Truncated rather than
+      wrapped or allowed to run: the strip sits over the map, and a tab as wide
+      as its name covers the cards it is meant to sit above.
+    */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+  }
+
+  .label:hover {
+    color: var(--hatua-text-accent);
+  }
+
+  .current .label {
+    color: var(--hatua-text-primary);
+    font-weight: 600;
+  }
+
+  .close {
+    display: flex;
+    align-items: center;
+    /*
+      Padded on the leading side only. The label already carries the trailing
+      space, and doubling it puts a visible gap between a name and its own
+      close button.
+    */
+    padding: 3px 6px 3px 0;
+    border: 0;
+    background: none;
+    color: var(--hatua-text-muted);
+    cursor: pointer;
+  }
+
+  .close:hover {
+    color: var(--hatua-text-accent);
+  }
+}

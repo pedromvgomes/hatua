@@ -310,6 +310,32 @@ describe('Build wires the Components tab to the canvas', () => {
     expect(selectedIn(map())).toBe('First')
   })
 
+  /**
+   * A `StepRef` names the Board it is on, so a selection is meaningless
+   * anywhere else. Held per Board, a tab keeps the Step that was left selected
+   * on it; held as one shared answer, coming back finds nothing and the step
+   * editor is handed nothing every time (ADR-0017).
+   */
+  it('remembers the selected Step on each Board across the doorway', async () => {
+    const CALLING = `id: wf\nname: n\nversion: 1\nstatus: draft\nsteps:\n  - id: s1\n    use: a\n    name: "First"\n  - id: call\n    use: block.inner\n    name: "Do the inner thing"\n    with: {}\nblocks:\n  - id: inner\n    name: "Inner"\n    steps:\n      - id: deep\n        use: b\n        name: "Deep"\n`
+    wired(CALLING)
+    await map().findByText('First')
+
+    fireEvent.click(map().getByText('First'))
+    expect(selectedIn(map())).toBe('First')
+
+    fireEvent.click(map().getByRole('button', { name: 'Open Do the inner thing' }))
+    // A Board nobody has selected anything on has nothing selected — the
+    // selection did not follow through the doorway.
+    expect(selectedIn(map())).toBeUndefined()
+    fireEvent.click(map().getByText('Deep'))
+    expect(selectedIn(map())).toBe('Deep')
+
+    const strip = within(map().getByRole('navigation', { name: 'Boards' }))
+    fireEvent.click(strip.getByRole('button', { name: 'The workflow' }))
+    expect(selectedIn(map())).toBe('First')
+  })
+
   it('keeps a collapsed container collapsed through the same round trip', async () => {
     const NESTED = `id: wf\nname: n\nversion: 1\nstatus: draft\nsteps:\n  - id: s1\n    use: core.for_each\n    name: "Each"\n    steps:\n      - id: s2\n        use: b\n        name: "Inner"\n`
     wired(NESTED)
