@@ -1,5 +1,5 @@
 import type { Band, Join, Nest, Rect } from '@hatua/layout'
-import { LAYOUT } from '@hatua/layout'
+import { hasMeta, heightOf, LAYOUT } from '@hatua/layout'
 import type { Manifest, Step } from '@hatua/schema'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
@@ -118,6 +118,95 @@ describe('NodeCard', () => {
       <NodeCard step={fork} rect={rect} manifest={{ ...FETCH, use: 'core.fork', fields: [] }} />,
     )
     expect(screen.queryByText('condition')).toBeNull()
+  })
+
+  /**
+   * A Connection is a chip and is not a Slot.
+   *
+   * `conn` is not a mappable kind, so `slotsFor` never yields one — and a card
+   * whose only filled field is its mailbox still draws a row. The geometry has
+   * to reserve it: a card is exactly as tall as the box `heightOf` measured, so
+   * a row nobody measured for is drawn into the card's own padding.
+   */
+  it('shows a chosen Connection as a chip, and is measured tall enough for it', () => {
+    const sending: Manifest = {
+      kind: 'component',
+      use: 'component.email.send',
+      name: 'Send email',
+      fields: [
+        { k: 'connection', label: 'Mailbox', kind: 'conn', conn_type: 'email' },
+        { k: 'to', label: 'To', kind: 'text' },
+      ],
+      outputs: [],
+    }
+    const step: Step = { id: 's9', use: 'component.email.send', with: { connection: 'mailbox' } }
+
+    render(
+      <NodeCard
+        step={step}
+        rect={{ ...rect, height: heightOf(step, sending) }}
+        manifest={sending}
+        connections={new Map([['mailbox', 'Ops mailbox']])}
+      />,
+    )
+
+    expect(screen.getByText('Ops mailbox')).toBeDefined()
+    expect(heightOf(step, sending)).toBe(LAYOUT.nodeHeightWithMeta)
+  })
+
+  /*
+   * The two halves of one answer, held to each other. `hasMeta` decides the
+   * height in `@hatua/layout` and `chipsFor` decides the row in this package,
+   * and neither can see the other — so the property is asserted rather than
+   * agreed by inspection.
+   */
+  it('draws a row exactly when the layout reserved one', () => {
+    const sending: Manifest = {
+      kind: 'component',
+      use: 'component.email.send',
+      name: 'Send email',
+      fields: [
+        { k: 'connection', label: 'Mailbox', kind: 'conn', conn_type: 'email' },
+        { k: 'to', label: 'To', kind: 'text' },
+      ],
+      outputs: [],
+    }
+
+    const cases: { name: string; step: Step; manifest?: Manifest }[] = [
+      { name: 'nothing filled', step: { id: 'a', use: 'component.email.send' }, manifest: sending },
+      {
+        name: 'a connection only',
+        step: { id: 'b', use: 'component.email.send', with: { connection: 'mailbox' } },
+        manifest: sending,
+      },
+      {
+        name: 'a slot only',
+        step: { id: 'c', use: 'component.email.send', with: { to: 'x@example.com' } },
+        manifest: sending,
+      },
+      {
+        name: 'both',
+        step: {
+          id: 'd',
+          use: 'component.email.send',
+          with: { connection: 'mailbox', to: 'x@example.com' },
+        },
+        manifest: sending,
+      },
+      {
+        name: 'no manifest',
+        step: { id: 'e', use: 'component.email.send', with: { connection: 'mailbox' } },
+      },
+    ]
+
+    for (const { name, step, manifest } of cases) {
+      const { container, unmount } = render(
+        <NodeCard step={step} rect={rect} manifest={manifest} connections={new Map()} />,
+      )
+      const drawn = container.querySelector('[class*="meta"]') !== null
+      expect({ name, drawn }).toEqual({ name, drawn: hasMeta(step, manifest) })
+      unmount()
+    }
   })
 
   it('shows no row before a catalogue arrives, whatever the Step holds', () => {

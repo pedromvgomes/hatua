@@ -293,6 +293,17 @@ export interface FlowMap {
   /** One per gap in every step list on this Board, plus the join links. */
   readonly links: readonly Link[]
   readonly width: number
+  /**
+   * The extent of everything the map draws, which includes the gap below the
+   * last Step.
+   *
+   * That gap is not empty: one `Link` closes every step list, so the Board's
+   * root list ends with a line and the `+` that appends to it — the only way to
+   * add a Step at the end, and on an empty Board the only way to add one at
+   * all. A height that stopped at the last card would be a box that does not
+   * contain the map, which is what `fitView` fits: an empty Board fitted to a
+   * 64px root node zooms to 358% and leaves its one control off screen.
+   */
   readonly height: number
 }
 
@@ -363,19 +374,17 @@ export interface LayoutOptions {
  * over numbers this package never saw, so it could not compute them honestly —
  * and "how tall is a card" would have as many answers as there are callers.
  *
- * The meta row carries the container summary — how many branches, how many
- * steps, whether there is a handler — so a card is the taller one exactly when
- * the Step owns child regions. That is `isContainer`, asked of `regionsOf`: the
- * same enumeration that decides what this recurses into, so a card cannot be
- * the short one and still open into something.
+ * Two heights and no more: a card sized to its content makes a column's spine
+ * depend on what is written in it. Which of the two a Step gets is `hasMeta`.
  */
 export const heightOf = (step: Step, manifest?: Manifest): number =>
   hasMeta(step, manifest) ? LAYOUT.nodeHeightWithMeta : LAYOUT.nodeHeight
 
 /**
- * Whether a card has a meta row: the Step's filled **Slots**, as chips.
+ * Whether a card has a meta row: the Step's **Connections** and its filled
+ * **Slots**, as chips.
  *
- * Asked of `slotsFor` rather than of `step.with`, so the row shows what the
+ * Asked of the manifest rather than of `step.with`, so the row shows what the
  * Component's contract declares rather than whatever the YAML happens to hold.
  * That is the difference between a Fork and a loop on the reference design: both
  * carry a `with:`, and only `core.for_each` declares a field — so only the loop
@@ -384,9 +393,31 @@ export const heightOf = (step: Step, manifest?: Manifest): number =>
  * A verb no manifest declares gets the short card. The alternative is reserving
  * a row for a Step whose contract nobody can state, which is the taller card
  * with nothing in it.
+ *
+ * **Both kinds of chip, because the card draws both.** `units/NodeCard` is the
+ * other half of this answer and the two have to give the same one: a card is
+ * exactly as tall as the box laid out for it, and there is nowhere for a row it
+ * was not measured for to go.
  */
-export const hasMeta = (step: Step, manifest?: Manifest): boolean =>
-  manifest !== undefined && slotsFor(step, manifest).some((slot) => slot.template !== '')
+export const hasMeta = (step: Step, manifest?: Manifest): boolean => {
+  if (!manifest) return false
+
+  /*
+   * A Connection is a chip and is not a Slot. `conn` is not a mappable kind, so
+   * `slotsFor` never yields one — but the card draws a chip per filled `conn`
+   * before it draws any Slot, so a Step whose only filled field is its mailbox
+   * has a meta row and the geometry has to reserve it. Asked of the manifest
+   * and the values exactly as `chipsFor` asks it, because a card taller than
+   * the box laid out for it is a row drawn into the card's own padding.
+   */
+  const values = (step.with ?? {}) as Record<string, unknown>
+  const connected = (manifest.fields ?? []).some(
+    (field) =>
+      field.kind === 'conn' && typeof values[field.k] === 'string' && values[field.k] !== '',
+  )
+
+  return connected || slotsFor(step, manifest).some((slot) => slot.template !== '')
+}
 
 /**
  * One Board's Step tree as geometry.
@@ -412,8 +443,8 @@ export function layout(board: Board, options: LayoutOptions = {}): FlowMap {
     height: LAYOUT.nodeHeight,
   }
 
-  // An empty Board is the root node and nothing else. Reserving the gap below
-  // it would leave the map taller than everything drawn on it.
+  // An empty Board is the root node and the gap under it, which holds the one
+  // `+` there is: `linksOf` closes every step list, including an empty one.
   if (board.steps.length === 0) {
     const empty: FlowMap = {
       board: board.id,
@@ -424,7 +455,7 @@ export function layout(board: Board, options: LayoutOptions = {}): FlowMap {
       joins: [],
       links: [],
       width,
-      height: LAYOUT.nodeHeight,
+      height: LAYOUT.nodeHeight + LAYOUT.verticalGap,
     }
     return { ...empty, links: linksOf(empty, board, ctx) }
   }
@@ -440,7 +471,9 @@ export function layout(board: Board, options: LayoutOptions = {}): FlowMap {
     joins: placed.joins,
     links: [],
     width,
-    height: top + body.height,
+    // One gap below the last card, which is where the list's closing Link and
+    // its `+` are drawn — the same gap that sits between any two cards.
+    height: top + body.height + LAYOUT.verticalGap,
   }
   return { ...map, links: linksOf(map, board, ctx) }
 }

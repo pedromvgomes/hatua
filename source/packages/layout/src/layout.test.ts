@@ -130,14 +130,39 @@ describe('layout', () => {
     }
   })
 
-  it('is the root node and nothing else on an empty Board', () => {
+  it('is the root node and the gap that holds its one `+` on an empty Board', () => {
     const [board] = boardsOf(EMPTY_BOARD)
     if (!board) throw new Error('fixture lost its root Board')
     const map = layout(board)
 
     expect(map.placements).toEqual([])
-    expect(map.height).toBe(LAYOUT.nodeHeight)
     expect(map.width).toBe(LAYOUT.nodeWidth)
+    // Not the node alone. `linksOf` closes every step list including an empty
+    // one, so the gap under the root holds the only way to add a first Step —
+    // and a height stopping at the node is a box that does not contain the map.
+    expect(map.height).toBe(LAYOUT.nodeHeight + LAYOUT.verticalGap)
+  })
+
+  /*
+   * The property the number above is for: everything the map draws is inside
+   * the box the map reports, because that box is what `fitView` fits. An
+   * insert dot below the reported height is a control nobody can reach by
+   * pressing Fit.
+   */
+  it('reports a box that contains every link it emits', () => {
+    for (const { name, doc } of SHAPES) {
+      for (const board of boardsOf(doc)) {
+        const map = layout(board)
+        for (const link of map.links) {
+          // `dotAt` is present exactly when `at` is: a join link is drawn and
+          // inserts nowhere, so it carries neither.
+          const lowest = Math.max(link.from.y, link.to.y, link.dotAt?.y ?? 0)
+          expect(lowest, `${name} / ${board.id ?? 'root'} / ${link.kind}`).toBeLessThanOrEqual(
+            map.height,
+          )
+        }
+      }
+    }
   })
 })
 
