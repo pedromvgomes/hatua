@@ -254,11 +254,12 @@ export function scopeFor(
   manifests: readonly Manifest[] = [],
   context: readonly ContextKey[] = [],
 ): ScopeEntry[] {
-  return scopeAt(doc, ref, manifests, context, new Set())
+  return scopeAt(doc, ref, manifests, context, new Set(), new Map())
 }
 
 /**
- * `scopeFor`, plus the set of loops already being resolved.
+ * `scopeFor`, plus the set of loops already being resolved and what has already
+ * been worked out.
  *
  * `item` is typed by reading the loop's own `list` field, which means typing an
  * expression against the loop step's scope — so building one Step's scope can
@@ -267,6 +268,11 @@ export function scopeFor(
  * therefore never be its own. `resolving` is not that argument: it is the guard
  * for a document where two Steps share an id, which the schema permits into a
  * file and `STEP_ID_DUPLICATE` reports rather than refuses.
+ *
+ * **Terminating is not the same as finishing.** Every loop in the upstream is
+ * typed, and typing one asks for the scope at it — which types every loop
+ * upstream of THAT. Without `elements`, a chain of n loops costs 2ⁿ: twenty of
+ * them take minutes, and `validateDefinition` runs on every keystroke.
  */
 function scopeAt(
   doc: WorkflowDefinition,
@@ -274,6 +280,7 @@ function scopeAt(
   manifests: readonly Manifest[],
   context: readonly ContextKey[],
   resolving: ReadonlySet<string>,
+  elements: ElementMemo,
 ): ScopeEntry[] {
   const byUse = new Map(manifests.map((manifest) => [manifest.use, manifest]))
 
@@ -288,6 +295,7 @@ function scopeAt(
           manifests,
           context,
           resolving,
+          elements,
         }),
       }),
     ),
@@ -344,14 +352,27 @@ export function loopElementType(
   manifests: readonly Manifest[] = [],
   context: readonly ContextKey[] = [],
   resolving: ReadonlySet<string> = new Set(),
+  elements: ElementMemo = new Map(),
 ): TypeNode | null {
+  const key = stepKey({ board, id: step.id })
+
+  // `null` is an answer and `undefined` is "not asked yet", which is why this
+  // reads the Map rather than testing truthiness.
+  const known = elements.get(key)
+  if (known !== undefined) return known
+
   const template = own(step.with as Record<string, unknown> | undefined, FOR_EACH_LIST_FIELD)
-  if (typeof template !== 'string') return null
+  if (typeof template !== 'string') return remember(elements, key, null)
 
   const path = sourceReference(template)
-  if (path === null) return null
+  if (path === null) return remember(elements, key, null)
 
-  const key = stepKey({ board, id: step.id })
+  /*
+   * Not remembered. This null is a fact about the walk that reached here — a
+   * Step already being resolved further up — rather than about the Step, so
+   * storing it would let one path's guard answer for a path that has no cycle
+   * in it.
+   */
   if (resolving.has(key)) return null
 
   const scope = scopeAt(
@@ -360,19 +381,39 @@ export function loopElementType(
     manifests,
     context,
     new Set([...resolving, key]),
+    elements,
   )
   const node = typeAtPath(scope, path)
-  if (!node || node.type !== 'list') return null
+  if (!node || node.type !== 'list') return remember(elements, key, null)
 
-  // A list that declared no `of:` says nothing about its elements, so there is
-  // no shape to hand back. `elementOf` answers `object` for one — which is the
-  // right answer for a projection, where the question is "what does `.name`
-  // read off this?", and the wrong one here: it would mark `item` as an object
-  // nothing declared, and every scalar field it is written into would report a
-  // mismatch against a shape the document never said.
-  if (!node.members) return null
+  /*
+   * A list that declares no `of:` says nothing about its elements, and a list
+   * of scalars — `tags`, `recipients` — is exactly that. `elementOf` would hand
+   * back a memberless `{type: 'object'}`, which is the shape nothing declared
+   * that the paragraph above refuses: `{{ steps.<loop>.item }}` fed to a `text`
+   * field would then read as an object against text and be reported as a
+   * conflict on a workflow with nothing wrong with it.
+   */
+  if (!node.members) return remember(elements, key, null)
 
-  return elementOf(node)
+  return remember(elements, key, elementOf(node))
+}
+
+/**
+ * What one loop's element resolves to, for the length of one top-level walk.
+ *
+ * A Step's element type is a property of the document, so one walk asking for
+ * the same loop twice is asking the same question twice — and the walk asks for
+ * it once per path that reaches it, which is what makes the cost exponential
+ * without this. The map is created per `scopeFor` rather than held in the
+ * module: the document is an argument, and a cache outliving the call would be
+ * answering about a document that has since been edited.
+ */
+type ElementMemo = Map<string, TypeNode | null>
+
+const remember = (memo: ElementMemo, key: string, node: TypeNode | null): TypeNode | null => {
+  memo.set(key, node)
+  return node
 }
 
 /**
@@ -447,6 +488,7 @@ function stepOutputType(
     manifests: readonly Manifest[]
     context: readonly ContextKey[]
     resolving: ReadonlySet<string>
+    elements: ElementMemo
   },
 ): TypeNode {
   if (step.use === MAPPING_VERB) return mappingOutputType(step)
@@ -474,6 +516,7 @@ function stepOutputType(
     through.manifests,
     through.context,
     through.resolving,
+    through.elements,
   )
   if (!element) return declared
 
