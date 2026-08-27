@@ -64,6 +64,30 @@ const UNMOVED: Viewport = { x: 0, y: 0, scale: 1 }
 export const clampScale = (scale: number): number => Math.min(ZOOM.max, Math.max(ZOOM.min, scale))
 
 /**
+ * A viewport a Host supplied, made safe to build on — or `null` when it is not
+ * a viewport at all.
+ *
+ * `defaultViewport` is the one place a number this region did not compute
+ * reaches the transform, and a Host that persists what `onViewportChange`
+ * reported is persisting it somewhere Hatua does not own. A `scale` of `0`
+ * comes back as `Infinity` from `zoomAbout`'s `next / view.scale` on the first
+ * wheel event, and the surface is then translated by `Infinitypx` — the canvas
+ * is simply gone, with nothing on screen saying why. `NaN` does the same
+ * quietly.
+ *
+ * Clamped rather than refused, because a scale outside the range is a viewport
+ * that means something and a Host storing one is not a bug worth discarding the
+ * user's pan over. Only a value that is not a finite number at all is refused,
+ * since there is nothing in it to keep.
+ */
+export const usable = (view: Viewport | null | undefined): Viewport | null => {
+  if (!view) return null
+  const { x, y, scale } = view
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(scale)) return null
+  return { x, y, scale: clampScale(scale) }
+}
+
+/**
  * Zoom about a point, keeping whatever is under it under it.
  *
  * `at` is in the viewport's own coordinates — the offset of the pointer from

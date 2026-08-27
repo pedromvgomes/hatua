@@ -61,6 +61,7 @@ import {
   openingView,
   panInto,
   stepZoom,
+  usable,
   type Viewport,
   wheelScale,
   wheelTravel,
@@ -505,9 +506,10 @@ export function FlowMap({
    * pass React may throw away, and under a Host's `StrictMode` — which is every
    * Host in development — it is the discarded pass that reads it.
    */
-  const [views, setViews] = useState<Readonly<Record<string, Viewport>>>(() =>
-    defaultViewport ? { [boardKey(defaultBoardId)]: defaultViewport } : {},
-  )
+  const [views, setViews] = useState<Readonly<Record<string, Viewport>>>(() => {
+    const held = usable(defaultViewport)
+    return held ? { [boardKey(defaultBoardId)]: held } : {}
+  })
 
   /*
    * One viewport per Board, and a Board with no entry yet is `null` — which is
@@ -709,7 +711,7 @@ function Canvas({
     (definition.connections ?? []).map((one) => [one.id, one.ref ?? one.id]),
   )
 
-  const canvas = useViewport({ root: map.root, content: map, at: view, onView })
+  const canvas = useViewport({ root: map.root, content: map, at: view, board: board.id, onView })
 
   return (
     /*
@@ -960,11 +962,14 @@ function useViewport({
   root,
   content,
   at,
+  board,
   onView,
 }: {
   root: { x: number; width: number }
   content: { width: number; height: number }
   at: Viewport | null
+  /** Which Board `at` belongs to, because one canvas draws every tab in turn. */
+  board: BoardId
   onView: Dispatch<SetStateAction<Viewport | null>>
 }) {
   const box = useRef<HTMLDivElement>(null)
@@ -979,11 +984,19 @@ function useViewport({
   const sizeOf = () => box.current?.getBoundingClientRect() ?? NO_BOX
 
   /*
-   * Whether the viewport on screen is one THIS placed against a box with no
-   * size. A viewport a caller supplied is neither provisional nor this
-   * effect's to redo, however the canvas happened to measure at the time.
+   * Which Boards are showing a viewport THIS placed against a box with no size.
+   * A viewport a caller supplied is neither provisional nor this effect's to
+   * redo, however the canvas happened to measure at the time.
+   *
+   * A set and not a flag, because `views` is keyed per Board and this canvas is
+   * one instance across every tab. One flag is cleared by whichever Board is
+   * placed against a real box, so a Board still holding a 0×0 placement is then
+   * indistinguishable from one a caller supplied: the guard below returns early
+   * for it on every render afterwards and it stays pinned off screen, with only
+   * Fit to recover it.
    */
-  const provisional = useRef(false)
+  const provisional = useRef<Set<string>>(new Set())
+  const key = boardKey(board)
 
   useLayoutEffect(() => {
     const el = box.current
@@ -1001,12 +1014,13 @@ function useViewport({
      * redone the first time a real measurement arrives. `map` is rebuilt on
      * every render, so this effect is already running whenever anything moves.
      */
-    if (at && !provisional.current) return
+    if (at && !provisional.current.has(key)) return
     if (at && frame.width === 0) return
 
-    provisional.current = frame.width === 0
+    if (frame.width === 0) provisional.current.add(key)
+    else provisional.current.delete(key)
     setAt(openingView(root, frame))
-  }, [at, root, setAt])
+  }, [at, root, setAt, key])
 
   /*
    * `wheel` is registered by hand because it has to be cancellable: React

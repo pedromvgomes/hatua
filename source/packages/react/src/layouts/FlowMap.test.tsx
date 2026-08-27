@@ -1146,6 +1146,45 @@ describe('FlowMap, panning and zooming', () => {
     expect(after).toBe(before + 450)
   })
 
+  /*
+   * The flag is per Board, because the viewports are. One canvas draws every
+   * tab in turn, so a single flag is cleared by whichever Board is placed
+   * against a real box — and a Board still holding a 0×0 placement is then
+   * indistinguishable from one a caller supplied. It would stay pinned where a
+   * width of nothing put it, with only Fit to recover it.
+   */
+  it('re-places each Board that was placed against no box, not just the last one', async () => {
+    mount()
+    await canvas().findByText('Archive one')
+
+    // Both Boards placed while the canvas measures 0×0, the root first.
+    const rootAtNoWidth = surfaceOf().style.transform
+    fireEvent.click(canvas().getByRole('button', { name: 'Open Archive one' }))
+    await canvas().findByText('Alpha returns')
+
+    const region = screen.getByRole('region', { name: 'Flow map' })
+    measuring(region.firstElementChild as HTMLElement, {
+      width: 900,
+      height: 600,
+      right: 900,
+      bottom: 600,
+    })
+
+    // A render that moves nothing itself, so the Block's Board is re-placed.
+    fireEvent.click(canvas().getByText('Alpha returns'))
+    const blockPlaced = surfaceOf().style.transform
+
+    // Back to the root, whose placement is still the one made against nothing.
+    fireEvent.click(within(tabs()).getByRole('button', { name: 'The workflow' }))
+    await canvas().findByText('Archive one')
+
+    const before = Number(/translate\((-?[\d.]+)px/.exec(rootAtNoWidth)?.[1])
+    const after = Number(/translate\((-?[\d.]+)px/.exec(surfaceOf().style.transform)?.[1])
+    expect(blockPlaced).not.toBe(rootAtNoWidth)
+    // Centred against 900 rather than against 0: half the box further along.
+    expect(after).toBe(before + 450)
+  })
+
   it('leaves a viewport the caller supplied alone, however the canvas measures', async () => {
     mount(SOURCE, { defaultViewport: { x: 40, y: -60, scale: 1 } })
     await canvas().findByText('Fetch mail')
