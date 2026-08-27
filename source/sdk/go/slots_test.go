@@ -165,6 +165,45 @@ func TestUpstreamOfExcludesSiblingBranches(t *testing.T) {
 	}
 }
 
+// A loop's binding is one ELEMENT, and an element exists only while an iteration
+// is running. After the loop there is no element — not the last one, which the
+// file does not say, and not none, which has no type — so the loop is upstream
+// of its own body and of nothing after it. The same rule a core.try follows.
+//
+// The TypeScript half is the "is out of scope for a Step after the loop" case in
+// packages/model/src/loops.test.ts. A runner that offered `item` past the loop
+// while the builder refused it is exactly the divergence the SDK exists to
+// prevent.
+func TestUpstreamOfDropsALoopAfterItsBody(t *testing.T) {
+	doc := Definition{
+		Steps: []Step{
+			{ID: "fetch", Use: "component.inbox.fetch"},
+			{ID: "each", Use: ForEachVerb, With: map[string]any{"list": "{{ steps.fetch.messages }}"},
+				Steps: []Step{{ID: "inner", Use: "component.email.send"}}},
+			{ID: "later", Use: "component.email.send"},
+		},
+	}
+
+	ids := func(steps []Step) []string {
+		out := make([]string, 0, len(steps))
+		for _, step := range steps {
+			out = append(out, step.ID)
+		}
+		return out
+	}
+
+	// Inside the body the loop is upstream: that is where `item` means something.
+	if got := ids(UpstreamOf(doc, StepRef{ID: "inner"})); len(got) != 2 || got[1] != "each" {
+		t.Fatalf("expected the loop upstream of its own body, got %v", got)
+	}
+	// After it, the loop is gone and the Step before it is not: what is withdrawn
+	// is the binding, not everything above it.
+	got := ids(UpstreamOf(doc, StepRef{ID: "later"}))
+	if len(got) != 1 || got[0] != "fetch" {
+		t.Fatalf("expected [fetch] after the loop, got %v", got)
+	}
+}
+
 // WorkflowScope is what a value with no position in the tree may read: a
 // workflow variable's own value is not reached by running anything, so no step
 // is guaranteed to have run by the time it is evaluated.
