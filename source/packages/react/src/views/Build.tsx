@@ -222,9 +222,14 @@ export function Build({ className, ...rest }: BuildProps) {
               onDropComponent={(component, at) => {
                 // The same introduction as the click, arriving in one gesture
                 // rather than three: the canvas already knows where and the drag
-                // carried what, so nothing is left pending because nothing was
-                // left unanswered.
+                // carried what, so the drop answers where by itself.
                 store?.apply(addStep(component, at))
+                // Including a question somebody had already asked. A `+` pressed
+                // before the drag left an insert point outstanding, and the drop
+                // is the answer to it — kept, the panel goes on saying "pick a
+                // component" after one was picked, and the next card clicked
+                // lands at an index the drop has already shifted.
+                setPending(null)
               }}
               boardId={board}
               onBoardChange={(next) => {

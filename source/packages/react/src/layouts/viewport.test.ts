@@ -5,6 +5,7 @@ import {
   MARGIN,
   openingView,
   panInto,
+  usable,
   type Viewport,
   wheelScale,
   wheelTravel,
@@ -178,5 +179,38 @@ describe('wheelScale', () => {
 
   it('is symmetric: out then in returns to where it started', () => {
     expect(wheelScale(wheelScale(0.83, 120), -120)).toBeCloseTo(0.83, 9)
+  })
+})
+
+describe('a viewport a Host supplied', () => {
+  it('clamps a scale outside the range rather than discarding the pan', () => {
+    expect(usable({ x: 40, y: 10, scale: 99 })).toEqual({ x: 40, y: 10, scale: ZOOM.max })
+    expect(usable({ x: 40, y: 10, scale: 0.001 })).toEqual({ x: 40, y: 10, scale: ZOOM.min })
+  })
+
+  it('clamps a zero rather than refusing it, because the pan is still a pan', () => {
+    // `zoomAbout` divides by the scale it is given, so a 0 makes the next wheel
+    // event translate the surface by `Infinitypx` — the canvas is gone, with
+    // nothing on screen saying why. A clamped 0 keeps where the Host was
+    // looking and loses only a scale that could not be rendered anyway.
+    expect(usable({ x: 40, y: 10, scale: 0 })).toEqual({ x: 40, y: 10, scale: ZOOM.min })
+  })
+
+  it('refuses one that is not a finite viewport at all', () => {
+    // Nothing in it to keep: a clamp cannot rescue a coordinate that is not a
+    // number, and every later gesture builds on what this returns.
+    expect(usable({ x: 0, y: 0, scale: Number.NaN })).toBeNull()
+    expect(usable({ x: Number.POSITIVE_INFINITY, y: 0, scale: 1 })).toBeNull()
+    expect(usable(null)).toBeNull()
+  })
+
+  it('is what the canvas would otherwise build an Infinity on', () => {
+    // The defect stated as the arithmetic that produced it.
+    expect(zoomAbout({ x: 0, y: 0, scale: 0 }, 1.2, { x: 100, y: 50 }).x).toBe(
+      Number.NEGATIVE_INFINITY,
+    )
+    const held = usable({ x: 0, y: 0, scale: 0 })
+    expect(held).not.toBeNull()
+    expect(Number.isFinite(zoomAbout(held as Viewport, 1.2, { x: 100, y: 50 }).x)).toBe(true)
   })
 })

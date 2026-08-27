@@ -3,6 +3,7 @@ import type { DraftSession, EditToken, Lease, WorkflowStore } from '@hatua/servi
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ComponentPropsWithRef } from 'react'
 import { describe, expect, it } from 'vitest'
+import { COMPONENT_MIME } from '../layouts/dragging'
 import { HatuaProvider } from '../theme/HatuaProvider'
 import { Build, type BuildProps } from './Build'
 
@@ -109,6 +110,14 @@ describe('Build wires the Components tab to the canvas', () => {
       fields: [],
       outputs: [],
     },
+    {
+      kind: 'component',
+      use: 'component.agent.act',
+      name: 'Run agent',
+      blurb: 'Ask a model.',
+      fields: [],
+      outputs: [],
+    },
   ]
 
   const SOURCE = `id: wf\nname: n\nversion: 1\nstatus: draft\nsteps:\n  - id: s1\n    use: a\n    name: "First"\n  - id: s2\n    use: b\n    name: "Second"\n`
@@ -207,6 +216,40 @@ describe('Build wires the Components tab to the canvas', () => {
     // place the next click will not go.
     fireEvent.click(catalogue().getByRole('button', { name: /Send email/ }))
     expect(screen.queryByText(sentence)).toBeNull()
+  })
+
+  /*
+   * A drop is an answer to the same question a `+` asked, arriving by another
+   * route. Kept, the panel goes on saying "pick a component" after one was
+   * picked — and the outstanding point names an index the drop has already
+   * shifted, so the next card clicked lands one place off.
+   */
+  it('forgets a pending point when a dragged card answers it instead', async () => {
+    wired()
+    await map().findByText('First')
+
+    const sentence = 'Pick a component to drop into the flow.'
+    fireEvent.click(map().getByRole('button', { name: 'Insert a Step after First' }))
+    expect(catalogue().getByText(sentence)).toBeDefined()
+
+    const target = map().getByRole('button', { name: 'Insert a Step after Second' })
+    fireEvent.drop(target, {
+      dataTransfer: {
+        types: [COMPONENT_MIME],
+        getData: (type: string) =>
+          type === COMPONENT_MIME
+            ? JSON.stringify({ use: 'component.email.send', name: 'Send email' })
+            : '',
+      },
+    })
+
+    await waitFor(() => expect(rowNames()).toEqual(['First', 'Second', 'Send email']))
+    expect(screen.queryByText(sentence)).toBeNull()
+
+    // And the next card picked appends, rather than landing at the point the
+    // drop already answered.
+    fireEvent.click(catalogue().getByRole('button', { name: /Run agent/ }))
+    await waitFor(() => expect(rowNames()).toEqual(['First', 'Second', 'Send email', 'Run agent']))
   })
 
   it('adds the chosen Component at that point and comes back to the tree', async () => {
