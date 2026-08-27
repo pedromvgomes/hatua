@@ -326,6 +326,37 @@ describe('what a core.for_each binds', () => {
   })
 
   /**
+   * An element exists only while an iteration is running. After the loop there
+   * is no element — not the last one, which the file does not say, and not
+   * none, which has no type — so a Reference written past it is refused here
+   * rather than type-checking clean and resolving to nothing at run time. The
+   * same rule a `core.try` follows, for the same reason and one door along.
+   */
+  it('is out of scope for a Step after the loop, while the loop’s siblings stay readable', () => {
+    const after = doc({
+      steps: [
+        { id: 'fetch', use: 'component.inbox.fetch' },
+        {
+          id: 'each',
+          use: 'core.for_each',
+          with: { list: '{{ steps.fetch.messages }}' },
+          steps: [{ id: 's1', use: 'component.email.send' }],
+        },
+        { id: 'later', use: 'component.email.send' },
+      ],
+    })
+    const scope = scopeFor(after, { board: null, id: 'later' }, listing())
+
+    expect(
+      validate('{{ steps.each.item.subject }}', 'text', { scope, functions: coreFunctions() }),
+    ).toEqual([expect.objectContaining({ code: 'EXPR_UNKNOWN_REFERENCE' })])
+    // The Step before the loop is an ordinary upstream Step and stays offered:
+    // what is withdrawn is the binding, not everything above it.
+    expect(pathsIn(scope)).toContain('steps.fetch')
+    expect(pathsIn(scope)).not.toContain('steps.each')
+  })
+
+  /**
    * The whole reason the binding is an output of the container rather than a
    * bare token: two loops are two Step ids, so nesting needs no shadowing rule
    * and there is nothing for an inner loop to hide.
@@ -461,15 +492,22 @@ describe('what a core.for_each binds', () => {
    * under the unmemoised cost.
    */
   it('types a long chain of loops in one pass, not once per path that reaches it', () => {
+    /*
+     * NESTED and not a run of siblings. A loop's binding is readable inside its
+     * own body and nowhere after it, so a sibling chain reading
+     * `steps.L<n-1>.item` is a chain of References that cannot resolve — and the
+     * cost this guards is the nested shape anyway: asking for the scope at the
+     * innermost Step types every enclosing loop, and typing one asks for the
+     * scope at IT.
+     */
     const deep = (n: number): WorkflowDefinition => {
-      const steps: WorkflowDefinition['steps'] = [{ id: 'fetch', use: 'component.inbox.fetch' }]
-      let previous = 'steps.fetch.messages'
-      for (let i = 0; i < n; i++) {
-        steps.push({ id: `L${i}`, use: 'core.for_each', with: { list: `{{ ${previous} }}` } })
-        previous = `steps.L${i}.item`
+      const innermost: WorkflowDefinition['steps'] = [{ id: 'tail', use: 'component.email.send' }]
+      let body = innermost
+      for (let i = n - 1; i >= 0; i--) {
+        const list = i === 0 ? 'steps.fetch.messages' : `steps.L${i - 1}.item`
+        body = [{ id: `L${i}`, use: 'core.for_each', with: { list: `{{ ${list} }}` }, steps: body }]
       }
-      steps.push({ id: 'tail', use: 'component.email.send' })
-      return doc({ steps })
+      return doc({ steps: [{ id: 'fetch', use: 'component.inbox.fetch' }, ...body] })
     }
 
     const started = performance.now()

@@ -95,6 +95,14 @@ export function upstreamOf(doc: WorkflowDefinition, ref: StepRef): Step[] {
  * Its body cannot read it — the body is what produces it — and neither can a
  * Step after the try, because whether there was a failure at all is decided
  * during a run and not in the file.
+ *
+ * A `core.for_each` is the same shape for a different reason. Its binding is one
+ * ELEMENT — `{{steps.<loop id>.item}}` — and an element exists only while an
+ * iteration is running. After the loop there is no element: not the last one,
+ * which the file does not say, and not none, which has no type. So the loop is
+ * in scope for its own body and out of scope after it, exactly as the try is,
+ * and a Reference written after it is refused here rather than type-checking
+ * against a binding that cannot resolve when the workflow runs.
  */
 function collectUpstream(steps: readonly Step[], id: string, ancestors: Step[]): Step[] | null {
   const earlier: Step[] = []
@@ -102,6 +110,9 @@ function collectUpstream(steps: readonly Step[], id: string, ancestors: Step[]):
     if (step.id === id) return [...ancestors, ...earlier]
 
     const above = [...ancestors, ...earlier]
+    // The try alone, and not every binding Step: a loop's body is exactly where
+    // `{{steps.<loop id>.item}}` means something, while a try's body is what
+    // produces its `error` and cannot read it.
     const outside = step.use === TRY_VERB ? above : [...above, step]
 
     const regions: readonly (readonly [readonly Step[], Step[]])[] = [
@@ -115,10 +126,24 @@ function collectUpstream(steps: readonly Step[], id: string, ancestors: Step[]):
       if (hit) return hit
     }
 
-    if (step.use !== TRY_VERB) earlier.push(step)
+    if (!binds(step)) earlier.push(step)
   }
   return null
 }
+
+/**
+ * Whether a Step's own outputs exist only while its region is running, and
+ * therefore whether it is upstream of what comes AFTER it.
+ *
+ * A try's `error` and a loop's `item` are both produced inside a region and
+ * gone once it is over, so neither Step is upstream of anything that follows —
+ * while an ordinary Step's outputs are what it finished with and stay readable.
+ *
+ * Where each one is readable differs, which is why this is not the same
+ * question as the one above: a try is out of scope in its own body and in scope
+ * in its handler, and a loop is in scope in its body.
+ */
+const binds = (step: Step): boolean => step.use === TRY_VERB || step.use === FOR_EACH_VERB
 
 /**
  * Everything a Board offers with no position in its tree.
