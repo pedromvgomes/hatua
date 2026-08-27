@@ -201,6 +201,9 @@ export function readAt(document: WorkflowDocument, path: Path): unknown {
  */
 export const BLOCK_KEY_ORDER = ['id', 'name', 'params', 'outputs', 'vars', 'steps']
 
+/** The same, for a Trigger: `addTrigger` writes `name:` only when it is given. */
+export const TRIGGER_KEY_ORDER = ['id', 'use', 'name', 'with']
+
 /**
  * The key order `workflow-definition.schema.yaml` documents.
  *
@@ -222,7 +225,24 @@ export const KEY_ORDER = [
 ]
 
 interface Pair {
-  key?: { value?: unknown }
+  key?: unknown
+}
+
+/**
+ * A pair's key, however the pair was built.
+ *
+ * `yaml`'s own `setIn` creates an intermediate mapping whose key is a plain
+ * **string** rather than a `Scalar`, while a pair this file builds through
+ * `newPair` carries a `Scalar`. Reading only `key.value` therefore sees
+ * `undefined` for every key some other command created that way — so the key
+ * ranks as unrecognised and the next key placed lands after it instead of where
+ * the schema documents. Both spellings are the same key and this reads both.
+ */
+const keyOf = (pair: Pair): string | undefined => {
+  const key = pair.key
+  if (typeof key === 'string') return key
+  const held = (key as { value?: unknown } | undefined)?.value
+  return typeof held === 'string' ? held : undefined
 }
 
 /**
@@ -284,6 +304,45 @@ export function listIn(
   if (asSeq(existing)) return path
   if (existing !== undefined) throw new Error(`"${key}" is not a list`)
 
+  createKey(document, parent, key, order, [])
+  return path
+}
+
+/**
+ * Write a scalar under `key`, creating the key **in its documented place** when
+ * the mapping does not have it yet.
+ *
+ * `setScalar` alone appends. That is right for a key the document already has —
+ * it rewrites the node in place and nothing moves — and wrong for one it does
+ * not, because `setIn` puts a new pair at the end: naming a Block that was
+ * declared without a name writes `name:` below its `steps:`, which on a Board
+ * with fifty Steps is fifty lines from the `id` it belongs to. A Workflow
+ * Definition lives in the Host's repository and a person reads the diff, which
+ * is the same argument `listIn` and `KEY_ORDER` already make.
+ */
+export function setScalarIn(
+  document: WorkflowDocument,
+  parent: Path,
+  key: string,
+  order: readonly string[],
+  value: string | number | boolean,
+) {
+  const node = asScalar(document.ast.getIn([...parent, key], true))
+  if (node) {
+    node.value = value
+    return
+  }
+  createKey(document, parent, key, order, value)
+}
+
+/** Splice a pair into the mapping at `parent`, where `order` says it belongs. */
+function createKey(
+  document: WorkflowDocument,
+  parent: Path,
+  key: string,
+  order: readonly string[],
+  value: unknown,
+) {
   const pairs = pairsAt(document, parent)
   // A Workflow Definition is a mapping, and a document that is not one has
   // nowhere to put a top-level key: `setIn(['vars'], …)` against a sequence
@@ -296,12 +355,11 @@ export function listIn(
   // An unrecognised key ranks -1 and therefore sorts before everything, so a
   // new key lands after whatever the Host or the user added of their own.
   const before = pairs.findIndex((pair) => {
-    const name = pair.key?.value
-    return typeof name === 'string' && order.indexOf(name) > rank
+    const held = keyOf(pair)
+    return held !== undefined && order.indexOf(held) > rank
   })
 
-  pairs.splice(before === -1 ? pairs.length : before, 0, newPair(document, key, []))
-  return path
+  pairs.splice(before === -1 ? pairs.length : before, 0, newPair(document, key, value))
 }
 
 /**

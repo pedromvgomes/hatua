@@ -10,6 +10,7 @@ import {
   type Path,
   readAt,
   setScalar,
+  setScalarIn,
   topLevelList,
 } from './ast'
 import type { EditCommand } from './command'
@@ -152,12 +153,19 @@ export function renameBlock(from: string, to: string): EditCommand {
   }
 }
 
-/** Set a Block's display name, which nothing references. */
+/**
+ * Set a Block's display name, which nothing references.
+ *
+ * Through `setScalarIn`, because a Block declared here starts without one:
+ * `addBlock` writes `name:` only when it is given, so the first name a user
+ * types is a key the mapping does not have, and appending it puts the name
+ * below the Block's whole `steps:` list.
+ */
 export function setBlockName(id: string, name: string): EditCommand {
   return {
     label: `Rename ${id}`,
     apply(document) {
-      setScalar(document, [...blockPath(document, id), 'name'], name)
+      setScalarIn(document, blockPath(document, id), 'name', BLOCK_KEY_ORDER, name)
     },
   }
 }

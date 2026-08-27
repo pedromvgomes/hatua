@@ -202,6 +202,32 @@ describe('setTriggerField', () => {
   })
 })
 
+describe('naming a Trigger that was added without one', () => {
+  it('writes `name:` under its `use:`, not after the fields it was filled in with', () => {
+    // `addTrigger` writes `name:` only when it is given, so the first name a
+    // caller sets is a key the mapping does not have — and appended it lands
+    // below `with:`, away from the id and verb it identifies.
+    const bare = 'id: wf\nname: W\nversion: 1\nstatus: draft\nsteps: []\n'
+
+    // All three against ONE document, which is what the editing store does: it
+    // holds the parsed document across every command and re-parses nothing.
+    // Re-parsing between them hides the case entirely — `yaml`'s own `setIn`
+    // builds the `with:` pair with a plain string key rather than a Scalar, and
+    // a round trip through text turns it back into a Scalar. Held in memory it
+    // stays a string, reads as an unrecognised key, and lands `name:` after it.
+    const named = apply(
+      bare,
+      addTrigger({ use: 'component.email.received' }),
+      setTriggerField('t1', 'folder', 'Inbox'),
+      setTriggerName('t1', 'When mail arrives'),
+    ).toString()
+
+    expect(named).toContain(
+      '  - id: t1\n    use: component.email.received\n    name: When mail arrives\n    with:',
+    )
+  })
+})
+
 describe('a document that does not project', () => {
   /*
    * The state ADR-0001 forces on every command: someone is halfway through
