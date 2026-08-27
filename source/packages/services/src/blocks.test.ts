@@ -430,6 +430,28 @@ describe('editing a declaration', () => {
   })
 })
 
+describe('naming a block that was declared without one', () => {
+  it('writes `name:` under its `id`, not below the whole Board', () => {
+    // `addBlock` writes `name:` only when it is given, so the first name a user
+    // types is a key the mapping does not have. Appended, it lands under the
+    // Block's `steps:` — on a Board with fifty Steps, fifty lines from the `id`
+    // it belongs to, in a file that lives in the Host's repository.
+    const declared = apply(SOURCE, addBlock({ id: 'block_1' }))
+    const named = apply(declared, setBlockName('block_1', 'Archive an entry'))
+
+    expect(named).toContain('  - id: block_1\n    name: Archive an entry\n    steps: []')
+    expect(projected(named).blocks?.[0]?.name).toBe('Archive an entry')
+  })
+
+  it('rewrites a name the Block already has in place, moving nothing', () => {
+    const declared = apply(SOURCE, addBlock({ id: 'block_1', name: 'First' }))
+    const named = apply(declared, setBlockName('block_1', 'Second'))
+
+    expect(named).toContain('  - id: block_1\n    name: Second\n    steps: []')
+    expect(named).not.toContain('First')
+  })
+})
+
 describe('minting an id', () => {
   it('counts from the ids already declared, so the same edits produce the same file twice', () => {
     const first = parseWorkflow(SOURCE)

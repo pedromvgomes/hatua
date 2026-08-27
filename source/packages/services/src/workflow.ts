@@ -1,5 +1,14 @@
 import type { WorkflowDocument } from '@hatua/document'
-import { asObject, detachNode, entriesOf, insertNode, setScalar, topLevelList } from './ast'
+import {
+  asObject,
+  detachNode,
+  entriesOf,
+  insertNode,
+  setScalar,
+  setScalarIn,
+  TRIGGER_KEY_ORDER,
+  topLevelList,
+} from './ast'
 import type { EditCommand } from './command'
 
 /**
@@ -190,7 +199,13 @@ export function setTriggerName(id: string, name: string): EditCommand {
   return {
     label: `Rename ${id}`,
     apply(document) {
-      setScalar(document, ['triggers', locateTrigger(document, id), 'name'], name)
+      setScalarIn(
+        document,
+        ['triggers', locateTrigger(document, id)],
+        'name',
+        TRIGGER_KEY_ORDER,
+        name,
+      )
     },
   }
 }
