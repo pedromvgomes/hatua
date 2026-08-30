@@ -113,26 +113,67 @@ export function cyclicBlocks(doc: WorkflowDefinition): Set<string> {
     edges.set(block.id, callsOf(block.steps))
   }
 
+  /*
+   * Tarjan's strongly connected components, and not the path-slice walk this
+   * question invites.
+   *
+   * A depth-first walk that marks "everything from where this id reappears" is
+   * right about the cycle it is standing on and blind to every cycle that closes
+   * through a node it has already finished. With `b1 → b2`, `b2 → b3, b4`,
+   * `b3 → b1` and `b4 → b3`, the walk proves `b1 → b2 → b3 → b1`, finishes `b3`,
+   * and then meets `b3` again from `b4` as a *finished* node — so `b4` is never
+   * marked, though `b4 → b3 → b1 → b2 → b4` is as much a cycle as the first.
+   *
+   * An SCC is exactly the right shape for the question: two Blocks are in one
+   * component when each reaches the other, which is what "takes part in a cycle"
+   * means. A Block that merely *reaches* a cycle is a component of its own and
+   * stays unmarked, which is the distinction the old walk got right and this
+   * keeps.
+   */
   const cyclic = new Set<string>()
-  const visiting = new Set<string>()
-  const done = new Set<string>()
+  const index = new Map<string, number>()
+  const low = new Map<string, number>()
+  const stack: string[] = []
+  const onStack = new Set<string>()
+  let counter = 0
 
-  const visit = (id: string, path: string[]) => {
-    if (visiting.has(id)) {
-      // Everything from where this id first appears is on the cycle; what came
-      // before merely leads to it and is not itself recursive.
-      for (const member of path.slice(path.indexOf(id))) cyclic.add(member)
-      return
+  const visit = (id: string) => {
+    index.set(id, counter)
+    low.set(id, counter)
+    counter += 1
+    stack.push(id)
+    onStack.add(id)
+
+    for (const next of edges.get(id) ?? []) {
+      // A call to a block nothing declares is not an edge: BLOCK_UNKNOWN reports
+      // it, and following it here would invent a node with no calls of its own.
+      if (!edges.has(next)) continue
+      if (!index.has(next)) {
+        visit(next)
+        low.set(id, Math.min(low.get(id) ?? 0, low.get(next) ?? 0))
+      } else if (onStack.has(next)) {
+        low.set(id, Math.min(low.get(id) ?? 0, index.get(next) ?? 0))
+      }
     }
-    if (done.has(id) || !edges.has(id)) return
 
-    visiting.add(id)
-    for (const next of edges.get(id) ?? []) visit(next, [...path, id])
-    visiting.delete(id)
-    done.add(id)
+    if (low.get(id) !== index.get(id)) return
+
+    const component: string[] = []
+    let member: string | undefined
+    do {
+      member = stack.pop()
+      if (member === undefined) break
+      onStack.delete(member)
+      component.push(member)
+    } while (member !== id)
+
+    // A component of one is a cycle only when the Block calls itself: every
+    // other single Block reaches a cycle at most, and is not on one.
+    const callsItself = component.length === 1 && (edges.get(id) ?? []).includes(id)
+    if (component.length > 1 || callsItself) for (const one of component) cyclic.add(one)
   }
 
-  for (const id of edges.keys()) visit(id, [])
+  for (const id of edges.keys()) if (!index.has(id)) visit(id)
   return cyclic
 }
 

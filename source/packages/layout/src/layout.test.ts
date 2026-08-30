@@ -989,3 +989,63 @@ describe('nothing is persisted', () => {
     })
   }
 })
+
+/**
+ * Laying out a Board is linear in its Steps, not quadratic.
+ *
+ * `<FlowMap>` lays the Board out whenever the map changes and the canvas pans on
+ * every pointer sample, so a cost that grows with the square of the workflow is
+ * a canvas that becomes unusable exactly on the documents worth panning around.
+ *
+ * A ratio rather than a millisecond budget: absolute timings differ by an order
+ * of magnitude between a laptop and a loaded CI box, and what is being protected
+ * is the SHAPE of the growth. Quadratic work quadruples when the input doubles;
+ * the bound here is generous enough that only a return to that shape trips it.
+ */
+describe('the cost of laying out a Board', () => {
+  /** Containers, because a container is what has an extent to work out. */
+  const containers = (n: number): Step[] =>
+    Array.from({ length: n }, (_, i) => ({
+      id: `c${i}`,
+      use: 'core.for_each',
+      with: { list: '{{ x }}' },
+      steps: [
+        { id: `a${i}`, use: 'component.email.send' },
+        { id: `b${i}`, use: 'component.email.send' },
+      ],
+    })) as Step[]
+
+  /**
+   * The fastest of several runs, which is the only honest way to time anything
+   * while the rest of the monorepo's suites are running beside it.
+   *
+   * A single sample measures this machine's scheduler as much as this function:
+   * every interruption makes a run slower and none makes one faster, so the
+   * minimum is the sample least polluted by everything else. Taking a mean here
+   * fails the build on a loaded laptop for a property that has not changed.
+   */
+  const timed = (n: number): number => {
+    const board = { id: null, steps: containers(n) } as Board
+    let best = Number.POSITIVE_INFINITY
+    for (let run = 0; run < 5; run++) {
+      const started = performance.now()
+      layout(board, { manifests: new Map() })
+      best = Math.min(best, performance.now() - started)
+    }
+    return best
+  }
+
+  it('grows about as fast as the Board does, rather than as its square', () => {
+    // Warmed before either is measured, so neither pays for a compilation the
+    // other gets for free.
+    timed(200)
+
+    const small = timed(200)
+    const large = timed(800)
+
+    // Four times the Steps. Linear predicts about 4×, quadratic about 16×; the
+    // bound sits between them so that noise cannot fail it and the old shape
+    // cannot pass it.
+    expect(large / Math.max(small, 0.1)).toBeLessThan(10)
+  })
+})

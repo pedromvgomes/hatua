@@ -397,7 +397,19 @@ export function FlowMap({
   // user deletes in Text Mode while its Board is open would otherwise leave this
   // drawing a tree that is gone; falling back to the root is what a tab
   // pointing at nothing would have to do anyway.
-  const board = definition ? (boardOf(definition, wanted) ?? boardOf(definition, null)) : undefined
+  /*
+   * Held across renders, because the map below is keyed on it.
+   *
+   * `boardOf` builds its result rather than finding one — a Board is a view over
+   * the document, not a node in it — so an unmemoised call hands back a new
+   * object every render and every reader keyed on identity re-runs. The document
+   * itself is published by reference, so this changes exactly when the document
+   * or the open Board does.
+   */
+  const board = useMemo(
+    () => (definition ? (boardOf(definition, wanted) ?? boardOf(definition, null)) : undefined),
+    [definition, wanted],
+  )
 
   /*
    * The open Boards that still exist, root first.
@@ -413,6 +425,22 @@ export function FlowMap({
         .filter((id) => id === null || blockOf(definition, id) !== undefined)
         .map((id) => ({ id, label: tabLabel(definition, id) }))
     : []
+
+  /*
+   * A Board a CALLER opened joins the working set, the same as one opened by
+   * pressing a doorway.
+   *
+   * `open` above folds `wanted` in for the render that needs it, and a derived
+   * value is gone by the next one: a Board that only ever arrived through
+   * `boardId` would drop out of the set the moment the caller moved on, taking
+   * away the only way back to it. `views/Build` sets the Board directly when a
+   * Block is declared — the tab is what says the Block exists — so that is the
+   * ordinary path rather than an unusual one, and a working set that forgets
+   * what is in hand is the one thing the strip is there for (ADR-0017).
+   */
+  useEffect(() => {
+    setOwnOpen((was) => (was.includes(wanted) ? was : [...was, wanted]))
+  }, [wanted])
 
   /*
    * A Block deleted while its Board is open puts the canvas back on the root,
@@ -861,12 +889,28 @@ function Canvas({
   // Bare ids, because a Board is already `layout`'s argument. This is where a
   // set that spans Boards becomes the set for one of them, and it is the only
   // place the two spellings meet.
-  const collapsed = new Set(folded.filter((ref) => ref.board === board.id).map((ref) => ref.id))
+  const collapsed = useMemo(
+    () => new Set(folded.filter((ref) => ref.board === board.id).map((ref) => ref.id)),
+    [folded, board.id],
+  )
   // Not filtered by Board, because `regionKey` carries the Board itself — the
   // spelling is the same one `layout` mints, so a Block's `handler` and the root
   // Board's cannot collide the way two bare ids would.
-  const collapsedRegions = new Set(foldedRegions.map(regionKey))
-  const map = layout(board, { collapsed, collapsedRegions, manifests })
+  const collapsedRegions = useMemo(() => new Set(foldedRegions.map(regionKey)), [foldedRegions])
+  /*
+   * Held across renders, because most renders here do not change the map.
+   *
+   * The pan writes a viewport on every pointer sample and the zoom on every
+   * wheel tick, and neither moves a card: positions are Board-local and the
+   * whole map is carried by one transform (ADR-0016). Laying out in the render
+   * body puts a full layout of the Board between every sample and the paint that
+   * follows it, so the cost of dragging grows with the size of the workflow —
+   * which is precisely when a user is panning rather than reading.
+   */
+  const map = useMemo(
+    () => layout(board, { collapsed, collapsedRegions, manifests }),
+    [board, collapsed, collapsedRegions, manifests],
+  )
   const steps = new Map<string, Step>()
   for (const { step, ref } of walk(board)) steps.set(stepKey(ref), step)
   const connections = new Map(
@@ -1191,8 +1235,7 @@ function useViewport({
      *
      * So a placement made against no box is provisional: kept, because it is
      * the best answer available and every later gesture builds on it, and
-     * redone the first time a real measurement arrives. `map` is rebuilt on
-     * every render, so this effect is already running whenever anything moves.
+     * redone the first time a real measurement arrives.
      */
     if (at && !provisional.current.has(key)) return
     if (at && frame.width === 0) return
@@ -1200,7 +1243,21 @@ function useViewport({
     if (frame.width === 0) provisional.current.add(key)
     else provisional.current.delete(key)
     setAt(openingView(root, frame))
-  }, [at, root, setAt, key])
+    /*
+     * Deliberately every render, and deliberately no dependency array.
+     *
+     * What this waits for is a real MEASUREMENT, which is not a value React can
+     * be given: the box gains its size when a Host reveals the panel it is in,
+     * and nothing in this component's props or state changes when that happens.
+     * A dependency list would have to name something that churns on every render
+     * to be correct, which is the same thing said less honestly — and there is
+     * no ResizeObserver here to name instead.
+     *
+     * It is cheap by construction: a measurement and an early return once the
+     * placement is settled. The expensive work this used to sit beside — laying
+     * the Board out — is memoised precisely so that this can keep running.
+     */
+  })
 
   /*
    * `wheel` is registered by hand because it has to be cancellable: React

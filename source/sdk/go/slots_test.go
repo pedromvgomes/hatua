@@ -718,3 +718,56 @@ func TestBlockOutputTypeTakesTheFirstOfARepeatedKey(t *testing.T) {
 		t.Fatalf("expected the first declaration to win, got %#v", node.Members["out"])
 	}
 }
+
+// A list that declares no `of:` says nothing about its elements, so `item` stays
+// `item` and matches anything.
+//
+// The TypeScript side returns null here and leaves the declared `t: item` in
+// place; handing back ElementOf's `{object}` instead is a CLAIM — an object with
+// no fields — where the document made none. ScopeFor is what a Host's runner
+// reads and what the builder offers, so the two languages describing one
+// document differently is the divergence, whether or not a diagnostic differs
+// today.
+func TestLoopItemStaysItemForAListWithNoOf(t *testing.T) {
+	doc := Definition{
+		ID: "wf", Name: "W", Version: 1, Status: "draft",
+		Steps: []Step{
+			{ID: "fetch", Use: "component.inbox.fetch"},
+			{
+				ID:   "each",
+				Use:  ForEachVerb,
+				With: map[string]any{"list": "{{ steps.fetch.tags }}"},
+				Steps: []Step{
+					{ID: "send", Use: "component.email.send", With: map[string]any{"to": "x"}},
+				},
+			},
+		},
+	}
+	manifests := []Manifest{
+		{
+			Kind: "component", Use: "component.inbox.fetch", Name: "Fetch",
+			Outputs: []Output{{K: "tags", Label: "Tags", T: "list"}},
+		},
+		{
+			Kind: "component", Use: "component.email.send", Name: "Send",
+			Fields: []Field{{K: "to", Label: "To", Kind: "text", Req: true}},
+		},
+		{
+			Kind: "component", Use: ForEachVerb, Name: "For each",
+			Fields:  []Field{{K: "list", Label: "List", Kind: "ref", Req: true}},
+			Outputs: []Output{{K: "item", Label: "Item", T: "item"}},
+		},
+	}
+
+	scope := ScopeFor(doc, StepRef{ID: "send"}, manifests, nil)
+	for _, entry := range scope {
+		if entry.Path != "steps.each" {
+			continue
+		}
+		if got := entry.Type.Members["item"].Type; got != expressions.TypeItem {
+			t.Fatalf("expected item to stay %q, got %q", expressions.TypeItem, got)
+		}
+		return
+	}
+	t.Fatal("the loop's own outputs are not in scope")
+}

@@ -500,12 +500,16 @@ function linksOf(map: FlowMap, board: Board, ctx: Ctx): Link[] {
   const rects = new Map<string, Rect>()
   for (const placement of map.placements) rects.set(placement.ref.id, placement)
 
+  // Computed once for the Board rather than once per gap, which is what keeps
+  // laying out a large Board linear rather than quadratic.
+  const extents = extentsOf(map, board, ctx)
+
   const links: Link[] = []
 
   const bottomOf = (step: Step): Point => {
     const rect = rects.get(step.id)
     if (!rect) return { x: 0, y: 0 }
-    return { x: rect.x + rect.width / 2, y: extentOf(map, step, ctx) }
+    return { x: rect.x + rect.width / 2, y: extents.get(step.id) ?? rect.y + rect.height }
   }
   const topOf = (step: Step): Point => {
     const rect = rects.get(step.id)
@@ -568,13 +572,32 @@ function linksOf(map: FlowMap, board: Board, ctx: Ctx): Link[] {
     })
   }
 
+  /*
+   * The bands and the join belonging to each Step, indexed once.
+   *
+   * Asked per Step — filter every band, find among every join — this is linear
+   * in the Board for each Step on it, which is the same quadratic shape
+   * `extentsOf` above exists to avoid. Two passes here answer for every Step at
+   * once; the bands keep the order `layout` emitted them in, which is what lets
+   * `bandsHere[bandIndex++]` walk them beside `regionsOf`.
+   */
+  const bandsByOwner = new Map<string, Band[]>()
+  for (const band of map.bands) {
+    const held = bandsByOwner.get(band.owner.id)
+    if (held) held.push(band)
+    else bandsByOwner.set(band.owner.id, [band])
+  }
+  const joinByOwner = new Map<string, Join>()
+  for (const one of map.joins)
+    if (!joinByOwner.has(one.owner.id)) joinByOwner.set(one.owner.id, one)
+
   const walkStep = (step: Step) => {
     if (ctx.collapsed.has(step.id)) return
     if (!rects.has(step.id)) return
 
     const owner: StepRef = { board: ctx.board, id: step.id }
-    const bandsHere = map.bands.filter((band) => band.owner.id === step.id)
-    const mark = map.joins.find((one) => one.owner.id === step.id)
+    const bandsHere = bandsByOwner.get(step.id) ?? []
+    const mark = joinByOwner.get(step.id)
     const meeting = mark ? { x: mark.x + mark.width / 2, y: mark.y + mark.height / 2 } : undefined
 
     let branches = 0
@@ -642,45 +665,61 @@ function linksOf(map: FlowMap, board: Board, ctx: Ctx): Link[] {
 }
 
 /**
- * The bottom of everything one Step nests, so a line leaves a container below
- * its regions rather than out of the middle of them.
+ * The bottom of everything each Step nests, for every Step on the Board at once.
  *
- * Read off the geometry rather than recomputed: every box the Step owns is
- * already placed, and the deepest edge among them is where its subtree ends.
+ * A line leaves a container below its regions rather than out of the middle of
+ * them, so every gap after a container needs the deepest edge of that Step's
+ * whole subtree. Read off the geometry rather than recomputed: every box is
+ * already placed, and the deepest edge among them is where the subtree ends.
+ *
+ * **One post-order pass, and not one search per Step.** Asked per Step, the
+ * honest phrasing of the question — collect this Step's descendants, then scan
+ * the placements, the bands, the joins and the nests for anything belonging to
+ * them — is linear in the Board *each time*, so laying out one Board is
+ * quadratic in its Steps. That is not a theoretical cost: `<FlowMap>` lays the
+ * Board out on every render and pans on every pointer sample, so a Board of two
+ * thousand Steps drops the canvas to a few frames a second while the user is
+ * dragging it. A subtree's extent is its own boxes and its children's extents,
+ * which is exactly what a post-order walk already has in hand.
  */
-function extentOf(map: FlowMap, step: Step, ctx: Ctx): number {
-  const own = map.placements.find((placement) => placement.ref.id === step.id)
-  let bottom = own ? own.y + own.height : 0
-  if (ctx.collapsed.has(step.id)) return bottom
-
-  const ids = new Set<string>()
-  const collect = (steps: readonly Step[]) => {
-    for (const one of steps) {
-      ids.add(one.id)
-      for (const region of regionsOf(one)) collect(region.steps)
-    }
+function extentsOf(map: FlowMap, board: Board, ctx: Ctx): ReadonlyMap<string, number> {
+  const ownBottom = new Map<string, number>()
+  const deepest = (into: Map<string, number>, id: string, bottom: number) => {
+    const held = into.get(id)
+    if (held === undefined || bottom > held) into.set(id, bottom)
   }
-  for (const region of regionsOf(step)) collect(region.steps)
-
   for (const placement of map.placements) {
-    if (ids.has(placement.ref.id)) bottom = Math.max(bottom, placement.y + placement.height)
+    deepest(ownBottom, placement.ref.id, placement.y + placement.height)
   }
-  for (const band of map.bands) {
-    if (band.owner.id === step.id || ids.has(band.owner.id)) {
-      bottom = Math.max(bottom, band.y + band.height)
+
+  // The frames a Step owns, which reach below its last card: an empty Band has
+  // no placement inside it to infer a bottom from.
+  const framed = new Map<string, number>()
+  for (const band of map.bands) deepest(framed, band.owner.id, band.y + band.height)
+  for (const mark of map.joins) deepest(framed, mark.owner.id, mark.y + mark.height)
+  for (const nest of map.nests) deepest(framed, nest.owner.id, nest.y + nest.height)
+
+  const extents = new Map<string, number>()
+  const walk = (steps: readonly Step[]) => {
+    for (const step of steps) {
+      let bottom = ownBottom.get(step.id) ?? 0
+      // A collapsed Step's regions are not drawn, so its extent is its own card:
+      // nothing below it belongs to a box anybody can see.
+      if (!ctx.collapsed.has(step.id)) {
+        const frame = framed.get(step.id)
+        if (frame !== undefined) bottom = Math.max(bottom, frame)
+        for (const region of regionsOf(step)) {
+          walk(region.steps)
+          for (const child of region.steps) {
+            bottom = Math.max(bottom, extents.get(child.id) ?? 0)
+          }
+        }
+      }
+      extents.set(step.id, bottom)
     }
   }
-  for (const mark of map.joins) {
-    if (mark.owner.id === step.id || ids.has(mark.owner.id)) {
-      bottom = Math.max(bottom, mark.y + mark.height)
-    }
-  }
-  for (const nest of map.nests) {
-    if (nest.owner.id === step.id || ids.has(nest.owner.id)) {
-      bottom = Math.max(bottom, nest.y + nest.height)
-    }
-  }
-  return bottom
+  walk(board.steps)
+  return extents
 }
 
 /** One Board's Placement for a Step, or undefined when that Step is collapsed away. */
