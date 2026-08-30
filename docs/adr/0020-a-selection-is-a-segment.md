@@ -8,8 +8,8 @@ anywhere has to check whether a selection is extractable, and nothing has to ref
 
 ADR-0018 defines extraction over a Segment and refuses everything else: a non-contiguous pick would
 reorder execution, and a pick spanning two regions has no single list to become. Extraction is why
-multi-select exists at all — it takes several Steps, and until now there was no gesture that named
-several.
+multi-select exists at all: it takes several Steps, and a canvas that selects one has no gesture that
+names them.
 
 So the shape of a selection was going to be answered by extraction whatever happened. The only open
 question was **where the answer is enforced**, and there were three places to put it.
@@ -56,10 +56,9 @@ Bare arrow keys are deliberately **not** claimed. They are ambiguous on a two-di
 already moves between cards, and Hatua is a guest in someone's page — the same reason the space-pan
 handler fires only while the canvas is hovered or holds focus.
 
-`Escape` clears. The canvas previously had no gesture that cleared a selection, which is why
-`<FlowMap>`'s `onSelect` was documented as never firing with nothing; an action bar needs a
-dismissal that is not "pick something else", so it now reports `undefined` like `<StepList>`'s
-always has.
+`Escape` clears, because an action bar needs a dismissal that is not "pick something else". That is
+why `<FlowMap>`'s `onSelect` reports `undefined`, as `<StepList>`'s does: a caller holding the
+selection has to hear that it is gone, or it keeps handing back Steps nobody has selected.
 
 ## A Segment is named by Steps, not by positions
 
@@ -80,4 +79,4 @@ express a selection spanning two Boards, which is not a Segment and never can be
 shares, a `run` **Link** on the flow map is the gap *between* two Steps — the near-opposite of this,
 drawn on the same surface — and a **Workflow Execution** already lists the word on its `_Avoid_`
 line. *Span* was the closest alternative and fails the same way: a **Workflow Execution** rendered as
-a trace wants it. ADR-0018 was written saying "run" and is amended.
+a trace wants it. ADR-0018 says **Segment** throughout for the same reason.

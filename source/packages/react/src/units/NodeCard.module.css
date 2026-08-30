@@ -39,6 +39,25 @@
   }
 
   /*
+    This Step has a diagnostic against it.
+
+    The marker in the head is a 14px triangle, which is the whole of what says
+    so on a 236px card — at anything below 100% zoom it is a few pixels, and a
+    call site whose Block no longer exists reads as a healthy card. `<StepList>`
+    gives an invalid row an edge in the same colour, and one state drawn on one
+    of the two surfaces is the same defect as the two disagreeing about a Step's
+    regions.
+
+    After `.selected`, so a selected card that is also invalid still says
+    invalid: the problem is the thing the user has to act on, and selection is
+    already said by the background and by `aria-current`.
+  */
+  .invalid {
+    border-color: var(--hatua-status-error);
+    box-shadow: 0 0 0 1px var(--hatua-status-error);
+  }
+
+  /*
     This card's own Step is the one in flight.
 
     It stays where it is until the drop lands, so without a state of its own it

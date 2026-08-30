@@ -636,9 +636,17 @@ export function FlowMap({
    * Resolved against the document rather than trusted: a Segment is held across
    * edits, so a Step it names may have been removed since, and a caller may
    * hand one in that reaches Steps which are not siblings.
+   *
+   * **On the Board being drawn, and empty on every other.** A Segment names its
+   * Board because a selection is meaningless anywhere else (ADR-0017), and this
+   * feeds both the count and what Remove applies to — so a Segment held on the
+   * Board behind a doorway puts a bar on screen reporting Steps nobody can see,
+   * whose Remove deletes them.
    */
   const selectedSteps =
-    definition && selection ? segmentSteps(definition, selection) : EMPTY_SELECTION
+    definition && selection && board && selection.board === board.id
+      ? segmentSteps(definition, selection)
+      : EMPTY_SELECTION
 
   /*
    * Take the selected Steps out, as one undoable change.
@@ -650,11 +658,11 @@ export function FlowMap({
    */
   const removeSelection = () => {
     if (!selection || selectedSteps.length === 0) return
-    const board = selection.board
+    const on = selection.board
     store?.apply(
       sequence(
         `Remove ${selectedSteps.length} ${selectedSteps.length === 1 ? 'Step' : 'Steps'}`,
-        ...selectedSteps.map((step) => removeStep({ board, id: step.id })),
+        ...selectedSteps.map((step) => removeStep({ board: on, id: step.id })),
       ),
     )
     // Nothing is left to select, and a caller holding the Segment would

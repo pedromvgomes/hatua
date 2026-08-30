@@ -1613,4 +1613,26 @@ describe('the selection action bar', () => {
     expect(canvas().getByText('Archive one')).toBeTruthy()
     expect(bar()).toBeNull()
   })
+
+  /*
+   * A selection names the Board it is on, so it means nothing on any other —
+   * and the bar acts on what it counts. Counted against the held Segment rather
+   * than the Board being drawn, walking through a doorway leaves the bar
+   * reporting Steps that are not on screen and Remove deleting them.
+   */
+  it('says nothing about a selection held on a Board that is not on screen', async () => {
+    mount()
+    await canvas().findByText('Fetch mail')
+
+    fireEvent.click(cardOf('Fetch mail'))
+    fireEvent.click(cardOf('How urgent?'), { shiftKey: true })
+    expect(screen.getByText('2 steps selected')).toBeTruthy()
+
+    const [open] = canvas().getAllByRole('button', { name: /^Open / })
+    if (!open) throw new Error('the fixture lost its call sites')
+    fireEvent.click(open)
+    await canvas().findByText('Alpha returns')
+
+    expect(bar()).toBeNull()
+  })
 })
