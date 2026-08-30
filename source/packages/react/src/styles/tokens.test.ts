@@ -325,3 +325,56 @@ describe('the controls are one height', () => {
     },
   )
 })
+
+/**
+ * Every class a component reaches for exists in the stylesheet beside it.
+ *
+ * `styles.invalid` where the CSS defines no `.invalid` is not an error anywhere:
+ * the import resolves, the lookup is `undefined`, and `cx` drops it — so the
+ * element renders with every other class it asked for and the state is simply
+ * not drawn. A card carrying a diagnostic then looks exactly like a healthy one,
+ * which is the shape this missed: `<StepList>` gave an invalid row an edge and
+ * `<NodeCard>` asked for one that was never written.
+ *
+ * Read off the authored files for the reason the token rules are: CSS Modules
+ * rewrites class names and nothing else, so source and bundle answer this the
+ * same way and the check needs no build.
+ */
+describe('a class a component asks for is a class its stylesheet has', () => {
+  /**
+   * `styles.foo` and `styles["foo"]`, which are the two spellings in this repo.
+   *
+   * A component that computed a class name would defeat this, and none does —
+   * the point of the rule is that the set is knowable by reading.
+   */
+  const classesUsedIn = (text: string): string[] => [
+    ...new Set(
+      [...text.matchAll(/\bstyles(?:\.(\w+)|\[['"](\w+)['"]\])/g)].map(
+        (match) => (match[1] ?? match[2]) as string,
+      ),
+    ),
+  ]
+
+  /** A selector this file defines, including one only reached through `composes`. */
+  const classesDefinedIn = (text: string): Set<string> =>
+    new Set([...text.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)].map((match) => match[1] as string))
+
+  const pairs = componentFiles
+    .filter((file) => /\.tsx$/.test(file.path) && /from '\.\/[\w.]+\.module\.css'/.test(file.text))
+    .map((file) => ({
+      component: file.path,
+      sheet: file.path.replace(/\.tsx$/, '.module.css'),
+      text: file.text,
+    }))
+    .filter((pair) => cssFiles.some((f) => f.path === pair.sheet))
+
+  it('finds the components to check, so an empty scan cannot pass', () => {
+    expect(pairs.length).toBeGreaterThan(10)
+  })
+
+  it.each(pairs)('$component uses only classes $sheet defines', ({ sheet, text }) => {
+    const defined = classesDefinedIn(cssFiles.find((f) => f.path === sheet)?.text ?? '')
+    const missing = classesUsedIn(text).filter((name) => !defined.has(name))
+    expect(missing, `${sheet} defines no rule for these`).toEqual([])
+  })
+})

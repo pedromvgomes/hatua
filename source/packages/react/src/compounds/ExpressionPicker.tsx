@@ -377,7 +377,7 @@ function Inserter({
     .join(', ')})`
 
   return (
-    <div className={styles.inserter}>
+    <div>
       <div className={styles.inserterHead}>
         <Button size="sm" variant="ghost" onClick={onBack}>
           Back
