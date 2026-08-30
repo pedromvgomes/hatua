@@ -183,6 +183,32 @@ describe('setTriggerName', () => {
     expect(text).toContain('# Every weekday at six.')
     expect(text).toContain('at: "0 6 * * 1-5"')
   })
+
+  /*
+   * The other door onto the same defect the Block name guards: writing a scalar
+   * beside a collection already under the key leaves two `name:` pairs in one
+   * mapping. `yaml` resolves that last-wins, so the document still projects and
+   * nothing downstream reports it — and the next open of the file throws out of
+   * `toString()`.
+   */
+  it('refuses to rename a Trigger whose `name:` holds a collection', () => {
+    const handWritten = `id: wf
+name: n
+version: 1
+status: draft
+
+triggers:
+  - id: t1
+    use: component.schedule.cron
+    name:
+      - a list somebody wrote by hand
+
+steps: []
+`
+    const document = parseWorkflow(handWritten)
+    expect(() => setTriggerName('t1', 'Weekday mornings').apply(document)).toThrow(/not a scalar/i)
+    expect(document.toString()).toBe(handWritten)
+  })
 })
 
 describe('setTriggerField', () => {

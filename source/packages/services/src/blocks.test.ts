@@ -207,6 +207,36 @@ steps:
     expect(() => apply(built, renameBlock('b', 'a'))).toThrow(/already exists/)
   })
 
+  /*
+   * `name:` is a scalar key, and a hand-written file may hold anything under it.
+   * Writing a scalar beside the collection already there leaves TWO `name:`
+   * pairs in one mapping: yaml resolves that last-wins so `validate()` still
+   * succeeds and the projection backstop cannot see it, the text autosaves, and
+   * the next open throws out of `toString()` — a document the user can no longer
+   * load, from an edit that looked ordinary.
+   */
+  it('refuses to name a block whose `name:` holds a collection', () => {
+    const handWritten = `id: wf
+name: n
+version: 1
+status: draft
+
+blocks:
+  - id: archive
+    name:
+      - a list somebody wrote by hand
+    steps: []
+
+steps: []
+`
+    const document = parseWorkflow(handWritten)
+    expect(() => setBlockName('archive', 'Archive an entry').apply(document)).toThrow(
+      /not a scalar/i,
+    )
+    // And nothing was written on the way to refusing.
+    expect(document.toString()).toBe(handWritten)
+  })
+
   it('sets a display name, which nothing references', () => {
     const out = apply(SOURCE, addBlock({ id: 'a' }), setBlockName('a', 'Archive an entry'))
     expect(projected(out).blocks?.[0]?.name).toBe('Archive an entry')

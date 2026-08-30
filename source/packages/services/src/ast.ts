@@ -319,6 +319,18 @@ export function listIn(
  * with fifty Steps is fifty lines from the `id` it belongs to. A Workflow
  * Definition lives in the Host's repository and a person reads the diff, which
  * is the same argument `listIn` and `KEY_ORDER` already make.
+ *
+ * **A key already holding a collection is refused**, the way `listIn` refuses
+ * one holding anything but a list. Falling through to `createKey` there splices
+ * a SECOND pair under the same key, and a duplicate key is the one corruption
+ * nothing downstream catches: `yaml` resolves it last-wins so the document still
+ * projects and `validate()` still succeeds, ADR-0019's backstop sees a document
+ * that projects, the text autosaves — and the next `parseWorkflow` of it throws
+ * `Document with errors cannot be stringified`, out of a `toString()` no caller
+ * expects to fail. The user is left with a file they cannot open, from an edit
+ * that looked ordinary. Refusing is a no-op with nothing on the undo stack,
+ * which is what every command here does when it cannot address what it was
+ * given.
  */
 export function setScalarIn(
   document: WorkflowDocument,
@@ -327,11 +339,14 @@ export function setScalarIn(
   order: readonly string[],
   value: string | number | boolean,
 ) {
-  const node = asScalar(document.ast.getIn([...parent, key], true))
+  const existing = document.ast.getIn([...parent, key], true)
+  const node = asScalar(existing)
   if (node) {
     node.value = value
     return
   }
+  if (existing !== undefined) throw new Error(`"${key}" is not a scalar`)
+
   createKey(document, parent, key, order, value)
 }
 
