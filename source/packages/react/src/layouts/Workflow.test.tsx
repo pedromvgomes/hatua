@@ -822,11 +822,13 @@ describe('variables', () => {
     expect(source.writes[0]).toContain('# Runs before anyone is awake.')
   })
 
-  it('renames a key and leaves every Reference to the old one alone', async () => {
-    // Settled in docs/handoff.md: a Reference is stored verbatim, so
-    // `{{ var.digest_to }}` goes stale and the checker reports it. Rewriting
-    // every Template on a keystroke would edit the file where nobody is
-    // looking, and mid-typing every intermediate key is a rename too.
+  it('renames a key and rewrites every Reference that read it', async () => {
+    /*
+     * A named edit repairs what it invalidates (ADR-0021). The box commits on
+     * blur, so the rename is one moment and one undo entry rather than a
+     * rewrite of the user's file on every character — which is the fact the
+     * never-rewrite rule was written against and which was never true here.
+     */
     const source = host(`${SOURCE}    with:\n      to: "{{ var.digest_to }}"\n`)
     mount(source)
 
@@ -834,7 +836,11 @@ describe('variables', () => {
     await waitFor(() => expect(source.writes).toHaveLength(1), AUTOSAVED)
 
     expect(source.writes[0]).toContain('key: digest_recipient')
-    expect(source.writes[0]).toContain('{{ var.digest_to }}')
+    expect(source.writes[0]).toContain('{{ var.digest_recipient }}')
+    expect(source.writes[0]).not.toContain('{{ var.digest_to }}')
+    // The rewrite is surgical: the file around it comes back as it was written.
+    expect(source.writes[0]).toContain('# Runs before anyone is awake.')
+    expect(source.writes[0]).toContain('# Where the digest goes.')
   })
 
   it('stores a value as what the text denotes, so Text Mode and this box agree', async () => {

@@ -558,10 +558,11 @@ outside the Step tree.
 A 304px panel with two labelled fields is a better place to rename a workflow than an inline-edited
 breadcrumb, and it keeps the top bar to display.
 
-On a Block's Board the two fields are `setBlockName` and `renameBlock`. **The slug goes stale
-without rewriting what names it** — every `use: block.<slug>` keeps the old spelling and the checker
-reports it, the same rule a variable key follows and for the same reason. `renameBlock` *throws* on a
-slug another Block already answers to, and `EditingStore.apply` turns a throw into a silent no-op, so
+On a Block's Board the two fields are `setBlockName` and `renameBlock`. **Renaming the slug rewrites
+every `use: block.<slug>` that named it**, as one undoable change — the same rule a variable key
+follows and for the same reason (ADR-0021): the edit is discrete, unambiguous and named, so the
+gesture repairs what it invalidates rather than leaving the user to retype the substitution it
+already knew how to make. `renameBlock` *throws* on a slug another Block already answers to, and `EditingStore.apply` turns a throw into a silent no-op, so
 the field detects the collision itself, declines to commit and says why. A box that reverts and says
 nothing is indistinguishable from one that is broken.
 
@@ -657,16 +658,19 @@ one is a document that stops projecting the moment it appears.
 
 #### Renaming a key
 
-A Reference is stored verbatim, so `{{ var.old_name }}` does not follow a rename.
+**A rename rewrites every `{{ var.<key> }}` that read it** (ADR-0021), on that Board and no other —
+a Board's variables are its own, so a Block carrying its own `var.x` is untouched.
 
-**A rename is allowed and does not rewrite References.** The Reference goes stale and the checker
-reports it, exactly as it does for a Step that was removed. Rewriting every Template on a keystroke
-would edit the user's file in places they are not looking, and mid-typing every intermediate key is
-a rename too. Warning without acting would be a dialog on every character.
+The edit is discrete, unambiguous and named: `CommittedInput` writes on blur or `Enter` and reverts
+on `Escape`, so there is one moment that is the change and one `sequence()` to put on the undo stack.
+One undo puts every rewritten Template back.
 
-The consequence — a stale Reference — is already a state the model has, already detected, and
-already surfaced. This adds no new failure mode; it declines to invent a repair mechanism for one
-that is visible.
+The rewrite is **by span**. The grammar has no AST→text (ADR-0008), so nothing is reconstructed from
+a tree: the source is copied through and only stretches checked character for character are swapped.
+Where the two disagree — `{{ var . old_name }}` — that occurrence is left alone, goes stale, and the
+checker reports it exactly as it reports a Step that was removed. That is strictly better than the
+alternative in every case and worse in none: what is left behind is a subset of what a
+non-rewriting rename would have left behind entirely.
 
 ---
 

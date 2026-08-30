@@ -1,20 +1,28 @@
 import type { WorkflowDocument } from '@hatua/document'
+import { renamePath } from '@hatua/expressions'
+import { BLOCK_PREFIX, type BoardId } from '@hatua/model'
 import type { Declaration } from '@hatua/schema'
 import {
   asObject,
   BLOCK_KEY_ORDER,
+  boardTemplateRoots,
   detachNode,
   entriesOf,
   insertNode,
   listIn,
   type Path,
   readAt,
+  renameKeyIn,
+  rewriteTemplates,
+  rewriteValuesOfKey,
   setScalar,
   setScalarIn,
+  stepEntriesIn,
   topLevelList,
 } from './ast'
 import type { EditCommand } from './command'
 import { requireUsableName } from './names'
+import { boardPath } from './steps'
 
 /**
  * The commands that address a Block: its declaration, its contract, and its
@@ -131,7 +139,23 @@ export function removeBlock(id: string): EditCommand {
   }
 }
 
-/** Rename a Block. Its call sites go stale and are reported, never rewritten. */
+/** The roots a Reference begins with (ADR-0014). */
+const PARAMS_ROOT = 'params.'
+const STEPS_ROOT = 'steps.'
+
+/**
+ * Rename a Block, and rewrite every call that named it.
+ *
+ * One `sequence()`'s worth of change in one command, because the two halves are
+ * one thing the user did (ADR-0021): a slug renamed without its call sites is a
+ * Block nothing resolves, and every reader here — the canvas included — reads
+ * that as a *deleted* Block.
+ *
+ * `use:` is not a Template. `block.` is not an expression root (ADR-0014), so a
+ * call is a name in the document and the rewrite is a scalar edit rather than a
+ * substitution inside a hole. Its whole reach is the document, because a Block
+ * may be called from any Board including another Block's.
+ */
 export function renameBlock(from: string, to: string): EditCommand {
   return {
     label: `Rename ${from}`,
@@ -149,6 +173,12 @@ export function renameBlock(from: string, to: string): EditCommand {
       }
 
       setScalar(document, [...path, 'id'], to)
+
+      // After the declaration, so a refused rename leaves every call site alone:
+      // the collision check above throws before anything has been rewritten.
+      const was = `${BLOCK_PREFIX}${from}`
+      const now = `${BLOCK_PREFIX}${to}`
+      rewriteValuesOfKey(document, [], 'use', (value) => (value === was ? now : value))
     },
   }
 }
@@ -272,7 +302,75 @@ export function renameDeclaration(
       }
 
       setScalar(document, [...listPath, index, 'k'], to)
+
+      // After the declaration, so a refused rename leaves the document as it
+      // found it: the collision check above throws before anything else moves.
+      if (side === 'params') rewriteParamKey(document, id, from, to)
+      else rewriteOutputReferences(document, id, from, to)
     },
+  }
+}
+
+/**
+ * A parameter is read inside its Block and supplied at every call site, and the
+ * two are not the same kind of thing.
+ *
+ * Inside, `{{ params.<k> }}` is a Reference in a Template. At a call site the
+ * key is a **mapping key** under `with:` — the name of the field being filled,
+ * not a path being read — so that half is a structural rename and no
+ * substitution could reach it.
+ */
+function rewriteParamKey(document: WorkflowDocument, id: string, from: string, to: string) {
+  for (const root of boardTemplateRoots(document, id)) {
+    rewriteTemplates(document, root, (source) =>
+      renamePath(source, `${PARAMS_ROOT}${from}`, `${PARAMS_ROOT}${to}`),
+    )
+  }
+  for (const call of callSites(document, id)) {
+    renameKeyIn(document, [...call.listPath, call.index, 'with'], from, to)
+  }
+}
+
+/**
+ * An output is read at the call site, through the calling Step's id.
+ *
+ * `{{ steps.<call id>.<k> }}` and never `{{ block.… }}` — the path goes through
+ * the Step that called, because that is where the value arrives. So the rewrite
+ * is one substitution per call site, against the Board that call sits on, and a
+ * Block called from three Boards is three different prefixes.
+ */
+function rewriteOutputReferences(document: WorkflowDocument, id: string, from: string, to: string) {
+  for (const call of callSites(document, id)) {
+    const stepId = call.step.id
+    if (typeof stepId !== 'string') continue
+    for (const root of boardTemplateRoots(document, call.board)) {
+      rewriteTemplates(document, root, (source) =>
+        renamePath(source, `${STEPS_ROOT}${stepId}.${from}`, `${STEPS_ROOT}${stepId}.${to}`),
+      )
+    }
+  }
+}
+
+/**
+ * Every Step calling this Block, on every Board.
+ *
+ * An AST walk rather than `callSitesOf`, which takes a projection a command may
+ * not have (ADR-0001). A Block may be called from another Block's Board, so the
+ * root Board alone is not the answer.
+ */
+function* callSites(document: WorkflowDocument, id: string) {
+  const verb = `${BLOCK_PREFIX}${id}`
+  const blocks = asObject(document).blocks
+  const boards: BoardId[] = [null]
+  for (const entry of Array.isArray(blocks) ? blocks : []) {
+    const held = entry && typeof entry === 'object' ? (entry as Record<string, unknown>).id : null
+    if (typeof held === 'string') boards.push(held)
+  }
+  for (const board of boards) {
+    const root = boardPath(document, board)
+    for (const found of stepEntriesIn(readAt(document, root), root)) {
+      if (found.step.use === verb) yield { ...found, board }
+    }
   }
 }
 

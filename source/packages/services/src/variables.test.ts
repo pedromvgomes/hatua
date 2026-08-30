@@ -128,15 +128,118 @@ describe('removeVariable', () => {
 })
 
 describe('renameVariable', () => {
-  it('renames the key and rewrites no Reference', () => {
-    // Settled in docs/handoff.md: a Reference is stored verbatim, the rename is
-    // allowed, and `{{ var.digest_to }}` goes stale and is reported like any
-    // other stale Reference rather than being repaired behind the user.
+  /* A named edit repairs what it invalidates (ADR-0021). */
+  it('renames the key and rewrites every Reference that read it', () => {
     const withReference = `${SOURCE}    with:\n      to: "{{ var.digest_to }}"\n`
     const text = apply(withReference, renameVariable('digest_to', 'digest_recipient')).toString()
 
     expect(varsOf(text).map((v) => v.key)).toEqual(['digest_recipient', 'threshold'])
-    expect(text).toContain('{{ var.digest_to }}')
+    expect(text).toContain('{{ var.digest_recipient }}')
+    expect(text).not.toContain('{{ var.digest_to }}')
+  })
+
+  /* The walk is over Reference nodes, not over whether the Template is one —
+     a computed hole names the variable exactly as much as a bare path does. */
+  it('rewrites a Reference inside a computed hole', () => {
+    const withReference = `${SOURCE}    with:\n      to: "{{ text.upper(var.digest_to) }}!"\n`
+    const text = apply(withReference, renameVariable('digest_to', 'recipient')).toString()
+
+    expect(text).toContain('{{ text.upper(var.recipient) }}!')
+  })
+
+  /*
+   * A Board's variables are its own, so `{{ var.x }}` on the root and inside a
+   * Block are different names. A rewrite that walked the document would repair
+   * one by corrupting the other.
+   */
+  it('leaves a Block’s Templates alone when a root variable is renamed', () => {
+    const bothBoards = `id: wf
+name: n
+version: 1
+status: draft
+
+vars:
+  - key: digest_to
+    t: text
+    value: "root"
+
+blocks:
+  - id: inner
+    vars:
+      - key: digest_to
+        t: text
+        value: "the block's own"
+    steps:
+      - id: b1
+        use: component.email.send
+        with:
+          to: "{{ var.digest_to }}"
+
+steps:
+  - id: s1
+    use: component.email.send
+    with:
+      to: "{{ var.digest_to }}"
+`
+    const text = apply(bothBoards, renameVariable('digest_to', 'root_only', null)).toString()
+
+    // The root's Step follows its rename; the Block's Step still reads the
+    // variable the Block declares, which was not renamed.
+    expect(text).toContain('to: "{{ var.root_only }}"')
+    expect(text).toContain('to: "{{ var.digest_to }}"')
+    expect(text.match(/var\.root_only/g)).toHaveLength(1)
+  })
+
+  /* The mirror of it: renaming the Block's own key leaves the root's alone. */
+  it('leaves the root’s Templates alone when a Block’s variable is renamed', () => {
+    const bothBoards = `id: wf
+name: n
+version: 1
+status: draft
+
+vars:
+  - key: shared
+    t: text
+    value: "root"
+
+blocks:
+  - id: inner
+    vars:
+      - key: shared
+        t: text
+        value: "block"
+    steps:
+      - id: b1
+        use: component.email.send
+        with:
+          to: "{{ var.shared }}"
+
+steps:
+  - id: s1
+    use: component.email.send
+    with:
+      to: "{{ var.shared }}"
+`
+    const text = apply(bothBoards, renameVariable('shared', 'inner_only', 'inner')).toString()
+
+    expect(text.match(/var\.inner_only/g)).toHaveLength(1)
+    expect(text.match(/var\.shared/g)).toHaveLength(1)
+  })
+
+  /* A longer key that merely begins the same way is a different variable. */
+  it('leaves a Reference to a key that only starts the same way', () => {
+    const withReference = `${SOURCE}    with:\n      to: "{{ var.digest_to_cc }}"\n`
+    const text = apply(withReference, renameVariable('digest_to', 'sent_to')).toString()
+
+    expect(text).toContain('{{ var.digest_to_cc }}')
+  })
+
+  /* The collision throws before a character of the user's file has moved. */
+  it('leaves every Reference alone when the rename is refused', () => {
+    const withReference = `${SOURCE}    with:\n      to: "{{ var.digest_to }}"\n`
+    const document = parseWorkflow(withReference)
+    expect(() => renameVariable('digest_to', 'threshold').apply(document)).toThrow(/already exists/)
+    expect(document.toString()).toContain('{{ var.digest_to }}')
   })
 
   it('refuses a key another variable already has', () => {

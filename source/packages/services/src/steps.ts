@@ -11,7 +11,7 @@ import { type BoardId, bornRegionsOf, type InsertPoint, type StepRef } from '@ha
 export type { InsertPoint } from '@hatua/model'
 
 import type { Step } from '@hatua/schema'
-import { asObject, detachNode, insertNode, type Path, readAt } from './ast'
+import { asObject, detachNode, insertNode, type Path, readAt, stepEntriesIn } from './ast'
 import type { EditCommand } from './command'
 
 /**
@@ -59,34 +59,6 @@ interface Located {
  * Step deleted its neighbour instead. Skip in place; the index must stay the
  * index the document has.
  */
-function* walk(
-  steps: unknown,
-  base: Path,
-): Generator<{ step: Record<string, unknown>; listPath: Path; index: number }> {
-  const list = Array.isArray(steps) ? steps : []
-  for (let index = 0; index < list.length; index++) {
-    const entry = list[index]
-    if (!entry || typeof entry !== 'object') continue
-    const step = entry as Record<string, unknown>
-    yield { step, listPath: base, index }
-
-    const branches = Array.isArray(step.branches) ? step.branches : []
-    for (let b = 0; b < branches.length; b++) {
-      const branch = branches[b]
-      if (branch && typeof branch === 'object') {
-        yield* walk((branch as Record<string, unknown>).steps, [
-          ...base,
-          index,
-          'branches',
-          b,
-          'steps',
-        ])
-      }
-    }
-    if (step.steps) yield* walk(step.steps, [...base, index, 'steps'])
-    if (step.handler) yield* walk(step.handler, [...base, index, 'handler'])
-  }
-}
 
 /**
  * The YAML path of a Board's root sequence.
@@ -111,7 +83,7 @@ export function boardPath(document: WorkflowDocument, board: BoardId | undefined
 
 function locate(document: WorkflowDocument, ref: StepRef): Located | undefined {
   const root = boardPath(document, ref.board)
-  for (const found of walk(readAt(document, root), root)) {
+  for (const found of stepEntriesIn(readAt(document, root), root)) {
     if (found.step.id === ref.id) return { listPath: found.listPath, index: found.index }
   }
   return undefined
@@ -150,7 +122,7 @@ function mintId(document: WorkflowDocument, board: BoardId | undefined): string 
   // Ids are Board-local, so only this Board's are taken. Minting against the
   // whole document would make a block's first step `s7` because the root has
   // six, which is a name nobody chose about a tree nobody is looking at.
-  for (const { step } of walk(readAt(document, root), root)) {
+  for (const { step } of stepEntriesIn(readAt(document, root), root)) {
     if (typeof step.id === 'string') taken.add(step.id)
   }
   for (let n = 1; ; n++) {

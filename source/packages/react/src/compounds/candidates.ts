@@ -4,8 +4,8 @@ import {
   type Expression,
   elementOf,
   type FunctionSpec,
-  isReference,
   referencePath,
+  referencesIn,
   type TypeNode,
   type ValueType,
 } from '@hatua/expressions'
@@ -477,37 +477,4 @@ export function expressionChip(
 
   if (at < to) parts.push({ of: 'text', at, text: value.slice(at, to) })
   return parts
-}
-
-/**
- * The outermost References in an expression, in source order.
- *
- * Outermost, because `s2.messages[].subject` is one Reference and not four:
- * descending into a node that is already one would name its own prefix a second
- * time.
- */
-function referencesIn(node: Expression): Expression[] {
-  if (isReference(node)) return [node]
-
-  switch (node.kind) {
-    case 'Member':
-    case 'Project':
-      return referencesIn(node.object)
-    case 'Index':
-      return [...referencesIn(node.object), ...referencesIn(node.index)]
-    case 'Call':
-      return [...referencesIn(node.object), ...node.args.flatMap(referencesIn)]
-    case 'Unary':
-      return referencesIn(node.operand)
-    case 'Binary':
-      return [...referencesIn(node.left), ...referencesIn(node.right)]
-    case 'Ternary':
-      return [
-        ...referencesIn(node.cond),
-        ...referencesIn(node.whenTrue),
-        ...referencesIn(node.whenFalse),
-      ]
-    default:
-      return []
-  }
 }
