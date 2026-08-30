@@ -521,7 +521,10 @@ describe('building on the canvas', () => {
     // meta row and its own padding. Only the name and verb answered a click, so
     // most of the card was dead to the one thing a card is mostly for.
     const chosen: string[] = []
-    mount(SOURCE, { onSelect: (ref) => chosen.push(ref?.id ?? ''), onInsert: () => {} })
+    mount(SOURCE, {
+      onSelect: (one) => chosen.push(one?.steps.join(',') ?? ''),
+      onInsert: () => {},
+    })
     await canvas().findByText('Fetch mail')
 
     const card = canvas().getByText('Fetch mail').closest('[draggable]') as HTMLElement
@@ -540,7 +543,7 @@ describe('building on the canvas', () => {
     const chosen: string[] = []
     const folded: string[][] = []
     mount(SOURCE, {
-      onSelect: (ref) => chosen.push(ref?.id ?? ''),
+      onSelect: (one) => chosen.push(one?.steps.join(',') ?? ''),
       onCollapseChange: (all) => folded.push(all.map((one) => one.id)),
       onInsert: () => {},
     })
@@ -936,12 +939,12 @@ describe('a Board is what the canvas draws one of', () => {
     await canvas().findByText('Alpha returns')
 
     fireEvent.click(canvas().getByText('Alpha returns'))
-    expect(onSelect).toHaveBeenLastCalledWith({ board: 'alpha', id: 'ret' })
+    expect(onSelect).toHaveBeenLastCalledWith({ board: 'alpha', steps: ['ret'] })
 
     // The same id on the other Board, and the selection does not follow it.
     const view = render(
       <HatuaProvider ports={{ workflows: serving(SOURCE) }} workflowId="wf_map">
-        <FlowMap defaultBoardId="beta" selected={{ board: 'alpha', id: 'ret' }} />
+        <FlowMap defaultBoardId="beta" selected={{ board: 'alpha', steps: ['ret'] }} />
       </HatuaProvider>,
     )
     const other = within(view.container.querySelector('[aria-label="Flow map"]') as HTMLElement)
@@ -1240,7 +1243,7 @@ describe('FlowMap, panning and zooming', () => {
 
     const { rerender } = render(
       <HatuaProvider ports={ports} workflowId="wf_map">
-        <FlowMap selected={{ board: null, id: 'fetch' }} />
+        <FlowMap selected={{ board: null, steps: ['fetch'] }} />
       </HatuaProvider>,
     )
     await canvas().findByText('Fetch mail')
@@ -1423,5 +1426,191 @@ describe('FlowMap, panning and zooming', () => {
     // Read once means once: a Board opened later is placed by the canvas, not
     // by a prop the caller handed it for the Board it opened on.
     expect(surfaceOf().style.transform).not.toContain('scale(1.5)')
+  })
+})
+
+/**
+ * A selection is a **Segment** — contiguous sibling Steps in one region — and
+ * it is one by construction: no gesture here builds anything else, so nothing
+ * downstream has to ask whether a selection is extractable (ADR-0020).
+ */
+describe('a selection is a Segment', () => {
+  /** Every card drawn as selected, by name, in document order. */
+  const chosen = () =>
+    canvas()
+      .getAllByRole('button')
+      .filter((button) => button.getAttribute('aria-current') === 'true')
+      .map((button) => button.firstElementChild?.textContent)
+
+  /** The card whose name is this, as the click target the whole card is. */
+  const cardOf = (name: string) => canvas().getByText(name).closest('[draggable]') as HTMLElement
+
+  /*
+   * The element a key actually arrives on: a card's name is a `<button>` and
+   * that is what holds focus once a Step is selected. Firing at the card
+   * instead would miss every guard that asks what the target is.
+   */
+  const focusedIn = (name: string) => canvas().getByText(name).closest('button') as HTMLElement
+
+  it('extends from the anchor to a shift-clicked sibling', async () => {
+    mount()
+    await canvas().findByText('Fetch mail')
+
+    fireEvent.click(cardOf('Fetch mail'))
+    expect(chosen()).toEqual(['Fetch mail'])
+
+    fireEvent.click(cardOf('Archive one'), { shiftKey: true })
+    // Every sibling between the two ends, and not only the two that were
+    // clicked: `sort` sits between them on the root list.
+    expect(chosen()).toEqual(['Fetch mail', 'How urgent?', 'Archive one'])
+  })
+
+  it('says the same thing when the selection is extended upwards', async () => {
+    mount()
+    await canvas().findByText('Fetch mail')
+
+    fireEvent.click(cardOf('Archive one'))
+    fireEvent.click(cardOf('Fetch mail'), { shiftKey: true })
+    expect(chosen()).toEqual(['Fetch mail', 'How urgent?', 'Archive one'])
+  })
+
+  /*
+   * The property the whole decision rests on. A Segment cannot span two
+   * regions, so shift-clicking into one does what a plain click does rather
+   * than building a selection extraction would have to refuse — and rather than
+   * doing nothing, which reads as a fault.
+   */
+  it('selects alone, rather than reaching, when the shift-click is in another region', async () => {
+    mount()
+    await canvas().findByText('Fetch mail')
+
+    fireEvent.click(cardOf('Fetch mail'))
+    fireEvent.click(cardOf('Triage'), { shiftKey: true })
+    expect(chosen()).toEqual(['Triage'])
+
+    // And it became the anchor, so extending from it reaches within ITS region.
+    fireEvent.click(cardOf('Triage'), { shiftKey: true })
+    expect(chosen()).toEqual(['Triage'])
+  })
+
+  it('never reaches across a Fork’s sibling regions', async () => {
+    mount()
+    await canvas().findByText('Fetch mail')
+
+    fireEvent.click(cardOf('Triage'))
+    // `shelve` is the handler beside `triage`'s body — a sibling region, not a
+    // sibling Step (ADR-0015).
+    fireEvent.click(cardOf('Shelve it'), { shiftKey: true })
+    expect(chosen()).toEqual(['Shelve it'])
+  })
+
+  it('grows with Shift+ArrowDown and shrinks from the other end', async () => {
+    mount()
+    await canvas().findByText('Fetch mail')
+    const card = cardOf('Fetch mail')
+
+    fireEvent.click(card)
+    fireEvent.keyDown(focusedIn('Fetch mail'), { key: 'ArrowDown', shiftKey: true })
+    expect(chosen()).toEqual(['Fetch mail', 'How urgent?'])
+
+    /*
+     * The anchor stays and the head moves, so one keystroke undoes the last.
+     * Picking an end by the direction of the key instead walks off the top of a
+     * Segment grown downwards and leaves it where it was.
+     */
+    fireEvent.keyDown(focusedIn('Fetch mail'), { key: 'ArrowUp', shiftKey: true })
+    expect(chosen()).toEqual(['Fetch mail'])
+  })
+
+  it('stops at the end of the sibling list rather than leaving the region', async () => {
+    mount()
+    await canvas().findByText('Fetch mail')
+    const card = cardOf('Triage')
+
+    fireEvent.click(card)
+    // `triage` is alone in the body it sits in, so there is nowhere to extend.
+    fireEvent.keyDown(focusedIn('Triage'), { key: 'ArrowDown', shiftKey: true })
+    expect(chosen()).toEqual(['Triage'])
+  })
+
+  it('leaves a bare arrow to the Host, which is a guest’s manners', async () => {
+    mount()
+    await canvas().findByText('Fetch mail')
+    const card = cardOf('Fetch mail')
+
+    fireEvent.click(card)
+    fireEvent.keyDown(focusedIn('Fetch mail'), { key: 'ArrowDown' })
+    expect(chosen()).toEqual(['Fetch mail'])
+  })
+
+  it('clears on Escape, and says so', async () => {
+    const onSelect = vi.fn()
+    mount(SOURCE, { onSelect })
+    await canvas().findByText('Fetch mail')
+    const card = cardOf('Fetch mail')
+
+    fireEvent.click(card)
+    expect(chosen()).toEqual(['Fetch mail'])
+
+    fireEvent.keyDown(focusedIn('Fetch mail'), { key: 'Escape' })
+    expect(chosen()).toEqual([])
+    // Told, not merely forgotten: a caller holding the Segment would otherwise
+    // keep handing back Steps nobody has selected.
+    expect(onSelect).toHaveBeenLastCalledWith(undefined)
+  })
+})
+
+/**
+ * The bar of actions over the selection: what it says, and what Remove does.
+ */
+describe('the selection action bar', () => {
+  const cardOf = (name: string) => canvas().getByText(name).closest('[draggable]') as HTMLElement
+  /** The bar, found by the one line only it draws. */
+  const bar = () => screen.queryByText(/steps? selected$/)?.parentElement ?? null
+
+  it('is absent until something is selected', async () => {
+    mount()
+    await canvas().findByText('Fetch mail')
+    expect(bar()).toBeNull()
+  })
+
+  /* A Segment of one is a Segment (ADR-0018), and the canvas has no other way
+     to remove a Step. */
+  it('appears for a single Step, counted in the singular', async () => {
+    mount()
+    await canvas().findByText('Fetch mail')
+    fireEvent.click(cardOf('Fetch mail'))
+    expect(screen.getByText('1 step selected')).toBeTruthy()
+  })
+
+  it('counts what the selection holds', async () => {
+    mount()
+    await canvas().findByText('Fetch mail')
+    fireEvent.click(cardOf('Fetch mail'))
+    fireEvent.click(cardOf('Archive one'), { shiftKey: true })
+    expect(screen.getByText('3 steps selected')).toBeTruthy()
+  })
+
+  it('reserves extraction’s place rather than drawing a control with nothing behind it', async () => {
+    mount()
+    await canvas().findByText('Fetch mail')
+    fireEvent.click(cardOf('Fetch mail'))
+    expect(within(bar() as HTMLElement).queryByRole('button', { name: /block/i })).toBeNull()
+  })
+
+  it('removes every Step in the selection, and clears', async () => {
+    mount()
+    await canvas().findByText('Fetch mail')
+
+    fireEvent.click(cardOf('Fetch mail'))
+    fireEvent.click(cardOf('How urgent?'), { shiftKey: true })
+    fireEvent.click(within(bar() as HTMLElement).getByRole('button', { name: /^Remove/ }))
+
+    await waitFor(() => expect(canvas().queryByText('Fetch mail')).toBeNull())
+    expect(canvas().queryByText('How urgent?')).toBeNull()
+    // A container takes its regions with it, which is `removeStep`'s contract.
+    expect(canvas().queryByText('Triage')).toBeNull()
+    expect(canvas().getByText('Archive one')).toBeTruthy()
+    expect(bar()).toBeNull()
   })
 })

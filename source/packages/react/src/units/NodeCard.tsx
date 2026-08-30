@@ -44,7 +44,15 @@ export interface NodeCardProps {
   opens?: string
   /** This Step's diagnostics; a Step with none is handed nothing. */
   problems?: readonly Diagnostic[]
-  onSelect?: () => void
+  /**
+   * Selected, with whether the gesture asked to *extend* a selection rather
+   * than replace it — `shiftKey`, reported and not interpreted.
+   *
+   * What extending means is the canvas's question: this unit does not know what
+   * is already selected, which Steps are siblings, or that a selection is a
+   * Segment at all (ADR-0020).
+   */
+  onSelect?: (extend: boolean) => void
   onToggle?: () => void
   onOpen?: () => void
   onDragStart?: () => void
@@ -121,7 +129,7 @@ export function NodeCard({
         style={boxOf(rect)}
         title={summary}
         draggable={onDragStart !== undefined}
-        onClick={onSelect}
+        onClick={(event) => onSelect?.(event.shiftKey)}
         onDragStart={(event) => {
           event.stopPropagation()
           event.dataTransfer.effectAllowed = 'move'
@@ -169,7 +177,7 @@ export function NodeCard({
             // other.
             onClick={(event) => {
               event.stopPropagation()
-              onSelect?.()
+              onSelect?.(event.shiftKey)
             }}
           >
             <span className={styles.name}>{name}</span>

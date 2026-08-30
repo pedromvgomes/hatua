@@ -1,7 +1,8 @@
 # Extraction rewrites what it invalidates
 
-Extracting a run of **Steps** into a **Block** moves them onto a new **Board**, works out what the
-run reads from outside and publishes back, and replaces the run with a call. ADR-0013 names this
+Extracting a **Segment** — a contiguous stretch of sibling **Steps** in one region — into a
+**Block** moves them onto a new **Board**, works out what the Segment reads from outside and
+publishes back, and replaces it with a call. ADR-0013 names this
 twice as the reason `blocks:` exists — "extracting the middle into a Block leaves a root of three
 lines, exactly as extracting a function does" — and `blocks.ts` and `tree.ts` both say their seams
 were cut for it.
@@ -38,7 +39,7 @@ Extraction is not that trade. It is defined as **behaviour-preserving**: the wor
 steps in the same order before and after, and the only thing that changed is where they are written.
 A non-rewriting extraction breaks **every** downstream consumer at once, as an unavoidable side
 effect of a gesture whose entire purpose is to change nothing about behaviour — and it breaks them in
-proportion to how useful the extracted run was. It would be the one gesture in the product
+proportion to how useful the extracted Segment was. It would be the one gesture in the product
 guaranteed to leave the document worse than it found it, and the user's repair is to retype by hand
 exactly the mapping the gesture already computed.
 
@@ -47,19 +48,19 @@ the feature not work.
 
 ## What is rewritten, exactly
 
-Inside the run, against ADR-0013's contract rule — "a Block sees its own Board and the Host's Run
+Inside the Segment, against ADR-0013's contract rule — "a Block sees its own Board and the Host's Run
 Context, and nothing else … Anything else a Block needs, it takes as a parameter":
 
-| Reference in the extracted run | Becomes |
+| Reference in the extracted Segment | Becomes |
 | --- | --- |
 | `run.*` | unchanged — Run Context is on every Board |
-| `steps.X.*`, `X` inside the run | unchanged — `X` moved too, and ids are Board-local |
-| `steps.X.*`, `X` outside the run | a parameter, rewritten to `{{ params.<k> }}` |
+| `steps.X.*`, `X` inside the Segment | unchanged — `X` moved too, and ids are Board-local |
+| `steps.X.*`, `X` outside the Segment | a parameter, rewritten to `{{ params.<k> }}` |
 | `triggers.*`, `TRIGGER` | a parameter |
 | `var.*` | a parameter |
 | `params.*` | a parameter |
 
-Outside the run, on the Board it left: `{{ steps.X.y }}` naming an `X` that moved becomes an output,
+Outside the Segment, on the Board it left: `{{ steps.X.y }}` naming an `X` that moved becomes an output,
 rewritten to `{{ steps.<call>.<k> }}`. A `core.return` is appended to the new Board binding each
 output to `{{ steps.X.y }}`, which still resolves because `X` moved in. One appended return
 discharges `BLOCK_PATH_WITHOUT_RETURN` on every path, because sibling regions converge (ADR-0015).
@@ -75,11 +76,17 @@ reason as `addVariable`'s: the schema's `t` has six values and no `unknown`.
 
 ## What is refused rather than repaired
 
-**A run containing a `core.return`.** Extracted, that return would bind to the *new* Block's
+**A Segment containing a `core.return`.** Extracted, that return would bind to the *new* Block's
 `outputs:` and silently publish something else. There is no repair that preserves behaviour, so the
 gesture is not offered.
 
-**Anything that is not a contiguous run of siblings in one region.** A Block's Board is a list, so
-the extracted set has to be one: a non-contiguous pick would reorder execution, and a pick spanning
-two regions has no single list to become. A run of one is allowed, because a single container with
-its whole body is the flattening case ADR-0013 leads with.
+**Anything that is not a Segment.** A Block's Board is a list, so what is extracted has to be one: a
+non-contiguous pick would reorder execution, and a pick spanning two regions has no single list to
+become. That is why **Segment** is the shape the canvas's gesture builds rather than a check applied
+to a looser one (CONTEXT.md) — there is no selection this rule can be handed that it has to refuse.
+A Segment of one is allowed, because a single container with its whole body is the flattening case
+ADR-0013 leads with.
+
+The word is **Segment** and deliberately not *run*: `run.` is a namespace root, the **Run Context**
+is the scope every Board shares, and a `run` **Link** on the flow map is the gap *between* two
+Steps. A **Workflow Execution** already refuses the word.

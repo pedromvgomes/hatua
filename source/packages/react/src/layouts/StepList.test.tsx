@@ -268,7 +268,7 @@ describe('selection and collapse — chrome, not the document', () => {
     mount(source, { onSelect })
 
     fireEvent.click(await screen.findByRole('button', { name: /^Fetch mail/ }))
-    expect(onSelect).toHaveBeenCalledWith({ board: null, id: 's1' })
+    expect(onSelect).toHaveBeenCalledWith({ board: null, steps: ['s1'] })
     // Selection is chrome. Were it in the document it would autosave, and a
     // hand-edited file would gain a key about what some session highlighted.
     expect(source.writes).toHaveLength(0)
@@ -337,7 +337,7 @@ describe('edits go through the store as commands', () => {
     await screen.findByText('Fetch mail')
 
     fireEvent.click(screen.getByText('Fetch mail'))
-    expect(onSelect).toHaveBeenLastCalledWith({ board: null, id: 's1' })
+    expect(onSelect).toHaveBeenLastCalledWith({ board: null, steps: ['s1'] })
 
     fireEvent.click(screen.getByRole('button', { name: 'Remove Fetch mail' }))
     expect(onSelect).toHaveBeenLastCalledWith(undefined)

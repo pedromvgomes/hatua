@@ -186,7 +186,7 @@ export const FoldedRegion: Story = {
 /** A Step selected, which is the thing the step editor is about. */
 export const Selected: Story = {
   parameters: wired(serving(DEEP)),
-  args: { defaultSelected: { board: null, id: 's3' } },
+  args: { defaultSelected: { board: null, steps: ['s3'] } },
 }
 
 /**

@@ -2,8 +2,8 @@
 
 Presentational domain units — `NodeCard`, `Connectors`, `InsertDot`,
 `RegionBand`, `RegionNest`, `JoinMarker`, `RootNode`, `IconCoin`,
-`CanvasControls`, and the `boxOf` helper that turns a `Rect` into the style that
-puts a box where it says.
+`CanvasControls`, `SegmentBar`, and the `boxOf` helper that turns a `Rect` into
+the style that puts a box where it says.
 
 **Rule:** props in, events out. No reaching into `@hatua/services`. Enforced by
 `noRestrictedImports` in the workspace `biome.json`.
@@ -28,14 +28,25 @@ of its own" — and it holds one level down for the same reason. A unit that wor
 out where it went would be a second implementation of `layout.ts`, in the half of
 the codebase with no tests over coordinates.
 
-`CanvasControls` is the one unit that positions itself, and it is chrome rather
-than geometry: floating at the lower right of the canvas is what the toolbar
+`CanvasControls` and `SegmentBar` are the units that position themselves, and it
+is chrome rather than geometry: floating at the lower right of the canvas is what the toolbar
 *is*, so it carries that placement and needs a positioned ancestor. Its insets
 are logical while `boxOf`'s are physical, which is the same distinction said
 twice — the map's coordinates are physical by definition, a toolbar belongs at
 the end of the reading direction. It works no scale out either: it is handed one
 and reports which button was pressed, and `layouts/viewport.ts` does the
 arithmetic.
+
+`SegmentBar` takes the same exception and mirrors it, at the lower *start* so the
+two cannot collide on the narrowest embed. It is handed a count rather than a
+**Segment**: what a selection resolves to on the Board being drawn is the
+canvas's question, and this draws what it is told. Its actions are separate
+optional props, each drawing nothing when absent — which is how extraction's
+place is reserved without shipping a control that has nothing behind it and
+reads as broken (ADR-0018). It claims no ARIA role, for the reason
+`CanvasControls` claims none: `role="toolbar"` promises the arrow keys move
+between its items, and on this canvas the arrows with `Shift` held extend the
+selection instead.
 
 `boxOf` is where a `Rect` becomes CSS, minted once so four units cannot pick two
 conventions. It is deliberately `left`/`top` rather than the logical properties
@@ -56,6 +67,7 @@ numbers stayed the same — drawing a Fork's first Branch last.
 | `RootNode` | The node above the first Step — the Triggers, or a Block's contract. |
 | `IconCoin` | A Component's icon, as the Host serves it, in a fixed square. |
 | `CanvasControls` | The canvas's toolbar: `−`, the current percentage, `+`, and fit. |
+| `SegmentBar` | The actions over the selected Steps, and how many there are. |
 
 `RootNode` is not a `NodeCard` variant, for the same reason `FlowMap.root` is a
 `Rect` and not a `Placement`: **it names no Step.** An optional Step on the one
