@@ -488,6 +488,37 @@ func alwaysReturns(steps []Step) bool {
 		if step.Use != ForkVerb || len(step.Branches) == 0 {
 			continue
 		}
+
+		// Which fork this is, read from the branches because the schema has no
+		// mode field — the same question regionsOf and BranchUnreachableAfter
+		// ask, and asked the same way. A fork where NO branch carries a when is
+		// the parallel one.
+		conditional := false
+		for _, branch := range step.Branches {
+			if branch.When != "" {
+				conditional = true
+				break
+			}
+		}
+
+		if !conditional {
+			// Every branch of a parallel fork runs, so ONE that always returns
+			// ends the Block — the opposite quantifier from a condition fork, for
+			// the opposite reason. Asking every here refuses publish to a Block
+			// that does return on every path, and leaves a Step placed after such
+			// a fork unreported when it can never run.
+			for _, branch := range step.Branches {
+				if alwaysReturns(branch.Steps) {
+					return true
+				}
+			}
+			continue
+		}
+
+		// A condition fork is first-match-wins, so one whose every branch carries
+		// a when can match none of them and fall straight through. Only an
+		// unconditional last branch — the fallback — makes it exhaustive, and the
+		// schema says that branch MAY be unconditional rather than must be.
 		if step.Branches[len(step.Branches)-1].When != "" {
 			continue
 		}

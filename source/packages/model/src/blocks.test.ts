@@ -234,6 +234,33 @@ describe('recursion', () => {
     expect([...cyclicBlocks(indirect)].sort()).toEqual(['middle', 'tail'])
   })
 
+  /*
+   * A Block reaching the cycle through one already walked is still on it.
+   *
+   * `b4 → b3 → b1 → b2 → b4` is a cycle, and the depth-first walk finishes `b3`
+   * while proving `b1 → b2 → b3 → b1`. Skipping a finished node then hides
+   * every cycle that only closes through it, so a recursive Block is published
+   * with no BLOCK_RECURSION against it — the design-time answer ADR-0013 asks
+   * for, missing exactly where a runner would not survive it.
+   */
+  it('finds a cycle that closes through a block already walked', () => {
+    const shared = doc({
+      blocks: [
+        { id: 'b1', steps: [{ id: 'a', use: 'block.b2' }] },
+        {
+          id: 'b2',
+          steps: [
+            { id: 'b', use: 'block.b3' },
+            { id: 'c', use: 'block.b4' },
+          ],
+        },
+        { id: 'b3', steps: [{ id: 'd', use: 'block.b1' }] },
+        { id: 'b4', steps: [{ id: 'e', use: 'block.b3' }] },
+      ],
+    })
+    expect([...cyclicBlocks(shared)].sort()).toEqual(['b1', 'b2', 'b3', 'b4'])
+  })
+
   /* A call nested inside a fork or a loop still reaches. */
   it('finds a cycle through a call buried in a branch', () => {
     const nested = doc({

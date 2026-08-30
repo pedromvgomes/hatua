@@ -1430,6 +1430,49 @@ describe('FlowMap, panning and zooming', () => {
 })
 
 /**
+ * The working set the tab strip draws (ADR-0017).
+ */
+describe('the Boards a tab strip holds open', () => {
+  /*
+   * A Board opened by a CALLER joins the working set, exactly as one opened by
+   * pressing a doorway does.
+   *
+   * `views/Build` sets the Board directly when a Block is declared — the tab is
+   * what says the Block exists — so a Board that only ever arrived through
+   * `boardId` and never through `openBoard` would be dropped from the set the
+   * moment the user went back to the root, taking away the only way back to it.
+   * A working set that forgets what is in hand is the one thing the strip is
+   * there for (ADR-0017).
+   */
+  it('keeps a Board opened through the boardId prop in the working set', async () => {
+    const ports = { workflows: serving(SOURCE) }
+    const { rerender } = render(
+      <HatuaProvider ports={ports} workflowId="wf_map">
+        <FlowMap boardId={null} />
+      </HatuaProvider>,
+    )
+    await canvas().findByText('Fetch mail')
+
+    rerender(
+      <HatuaProvider ports={ports} workflowId="wf_map">
+        <FlowMap boardId="alpha" />
+      </HatuaProvider>,
+    )
+    await canvas().findByText('Alpha returns')
+
+    rerender(
+      <HatuaProvider ports={ports} workflowId="wf_map">
+        <FlowMap boardId={null} />
+      </HatuaProvider>,
+    )
+    await canvas().findByText('Fetch mail')
+
+    // Back on the root, and the Block's tab is still in hand.
+    expect(within(tabs()).getByRole('button', { name: 'Archive an entry' })).toBeTruthy()
+  })
+})
+
+/**
  * A selection is a **Segment** — contiguous sibling Steps in one region — and
  * it is one by construction: no gesture here builds anything else, so nothing
  * downstream has to ask whether a selection is extractable (ADR-0020).
