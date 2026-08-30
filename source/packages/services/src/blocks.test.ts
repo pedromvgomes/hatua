@@ -130,17 +130,70 @@ steps:
     expect(out).toContain('# Everything starts here.')
   })
 
-  /* A call site is a `use:` like any other: it goes stale and is reported. */
-  it('does not rewrite call sites when a block is renamed', () => {
+  /*
+   * A rename repairs what it invalidates (ADR-0021). A slug renamed without its
+   * call sites is a Block nothing resolves, which every reader here — the canvas
+   * included — reads as a deleted one.
+   */
+  it('rewrites every call site when a block is renamed', () => {
     const built = apply(
       SOURCE,
       addBlock({ id: 'archive' }),
       addStep({ use: 'block.archive', id: 'call' }, { index: 1 }),
+      addStep({ use: 'block.archive', id: 'again' }, { index: 2 }),
     )
     const out = apply(built, renameBlock('archive', 'archive_entry'))
 
-    expect(out).toContain('use: block.archive\n')
+    expect(out).not.toContain('use: block.archive\n')
+    expect(out.match(/use: block\.archive_entry/g)).toHaveLength(2)
     expect(projected(out).blocks?.[0]?.id).toBe('archive_entry')
+  })
+
+  /* A Block may be called from another Block's Board, so the reach is the whole
+     document rather than the root's Steps. */
+  it('rewrites a call site that sits on another block’s Board', () => {
+    const built = apply(
+      SOURCE,
+      addBlock({ id: 'archive' }),
+      addBlock({ id: 'outer' }),
+      addStep({ use: 'block.archive', id: 'call' }, { board: 'outer', index: 0 }),
+    )
+    const out = apply(built, renameBlock('archive', 'kept'))
+
+    expect(out).toContain('use: block.kept')
+    expect(out).not.toContain('use: block.archive')
+  })
+
+  /* A verb that merely begins the same way is a different Block. */
+  it('leaves a call site whose slug only starts with the renamed one', () => {
+    const built = apply(
+      SOURCE,
+      addBlock({ id: 'arch' }),
+      addBlock({ id: 'archive' }),
+      addStep({ use: 'block.archive', id: 'call' }, { index: 1 }),
+    )
+    const out = apply(built, renameBlock('arch', 'stored'))
+
+    expect(out).toContain('use: block.archive')
+  })
+
+  /*
+   * The collision throws before anything is rewritten, so a refused rename
+   * leaves every call site naming the Block it still names.
+   */
+  it('leaves call sites alone when the rename is refused', () => {
+    const built = apply(
+      SOURCE,
+      addBlock({ id: 'a' }),
+      addBlock({ id: 'b' }),
+      addStep({ use: 'block.b', id: 'call' }, { index: 1 }),
+    )
+    // Inspected after the throw rather than through `apply`, which rethrows:
+    // what is being protected is the document the command left behind, and
+    // `EditingStore` restores its text only because a command may not.
+    const document = parseWorkflow(built)
+    expect(() => renameBlock('b', 'a').apply(document)).toThrow(/already exists/)
+    expect(document.toString()).toContain('use: block.b')
   })
 
   /*
@@ -369,6 +422,50 @@ describe('editing a declaration', () => {
   const paramsOf = (yaml: string) => projected(yaml).blocks?.[0]?.params
   const outputsOf = (yaml: string) => projected(yaml).blocks?.[0]?.outputs
 
+  /*
+   * The same contract, called twice, with a Step reading each call's output and
+   * a Step of its own holding an output under the same key. Written as YAML
+   * rather than built from commands because `NewStep` carries no `with:` —
+   * every field here is exactly what the rename has to find or leave alone.
+   */
+  const CALLED = `id: wf_morning
+name: n
+version: 4
+status: draft
+
+blocks:
+  - id: archive
+    params:
+      - { k: thread, label: "Thread", t: text }
+      - { k: urgent, label: "Urgent", t: boolean }
+    outputs:
+      - { k: url, label: "Where it went", t: text }
+    steps:
+      - id: inner
+        use: component.email.send
+        with:
+          to: "{{ params.thread }}"
+
+steps:
+  - id: s1
+    use: component.email.fetch
+  - id: first
+    use: block.archive
+    with:
+      # what the caller passes
+      thread: "the thread"
+  - id: second
+    use: block.archive
+    with:
+      thread: "another"
+  - id: reads
+    use: component.email.send
+    with:
+      a: "{{ steps.first.url }}"
+      b: "{{ steps.second.url }}"
+      c: "{{ steps.s1.url }}"
+`
+
   it('renames a key, leaving the label and the type where they were', () => {
     const out = apply(WITH_CONTRACT, renameDeclaration('archive', 'params', 'thread', 'subject'))
 
@@ -388,6 +485,48 @@ describe('editing a declaration', () => {
     expect(() =>
       apply(WITH_CONTRACT, renameDeclaration('archive', 'params', 'thread', 'urgent')),
     ).toThrow(/already declared/)
+  })
+
+  /*
+   * A parameter is read inside its Block through `params.`, and supplied at
+   * every call site as a mapping KEY under `with:` — a name, not a path. So one
+   * rename is two different edits, and only one of them is a substitution.
+   */
+  it('rewrites a parameter’s Reference inside the Block and its key at the call site', () => {
+    const out = apply(CALLED, renameDeclaration('archive', 'params', 'thread', 'subject'))
+
+    expect(out).toContain('{{ params.subject }}')
+    expect(out).not.toContain('{{ params.thread }}')
+    // The call site's key moved; its value and its comment stayed put.
+    expect(out).toContain('subject: "the thread"')
+    expect(out).not.toContain('thread: "the thread"')
+    expect(out).toContain('# what the caller passes')
+  })
+
+  /*
+   * An output is read at the call site through the CALLING Step's id, so the
+   * prefix is `steps.<call>.` and a Block called twice is two prefixes.
+   */
+  it('rewrites an output’s Reference at every call site, through each caller’s id', () => {
+    const out = apply(CALLED, renameDeclaration('archive', 'outputs', 'url', 'link'))
+
+    expect(out).toContain('{{ steps.first.link }}')
+    expect(out).toContain('{{ steps.second.link }}')
+    expect(out).not.toContain('{{ steps.first.url }}')
+    expect(out).not.toContain('{{ steps.second.url }}')
+  })
+
+  /* A Step that is not a call site keeps an output of the same name. */
+  it('leaves an output Reference belonging to another Step alone', () => {
+    const out = apply(CALLED, renameDeclaration('archive', 'outputs', 'url', 'link'))
+    expect(out).toContain('{{ steps.s1.url }}')
+  })
+
+  /* A call site that never filled the parameter in has no pair to rename, and a
+     rename that threw there would refuse the whole edit for a blank field. */
+  it('renames a parameter even where a call site left it unset', () => {
+    const out = apply(CALLED, renameDeclaration('archive', 'params', 'urgent', 'now'))
+    expect(paramsOf(out)?.map((d) => d.k)).toEqual(['thread', 'now'])
   })
 
   /* The two sides are two lists and two namespaces: `params.url` and

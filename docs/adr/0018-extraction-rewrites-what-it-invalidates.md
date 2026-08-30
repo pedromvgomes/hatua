@@ -7,44 +7,29 @@ twice as the reason `blocks:` exists — "extracting the middle into a Block lea
 lines, exactly as extracting a function does" — and `blocks.ts` and `tree.ts` both say their seams
 were cut for it.
 
-**It rewrites every Reference it invalidates.** That contradicts a rule stated in `renameBlock`'s
-docstring and again in `docs/handoff.md`, and the rule is not weakened: this records why extraction
-is not an instance of it.
+**It rewrites every Reference it invalidates**, which is ADR-0021's rule and not an exception to
+anything: Hatua repairs the References an edit invalidates when the edit is discrete, unambiguous and
+named. Extraction is one gesture with one moment, one unambiguous before and after, and one
+`sequence()` — which exists for exactly this, "several commands as one undoable change",
+all-or-nothing, with `EditingStore.apply` restoring the document's previous **text** when any member
+throws. One undo, labelled, puts every Template back.
 
-## What the never-rewrite rule is actually about
+The three properties that decide it, and the reason a rename satisfies them too, are ADR-0021's to
+state. What follows here is the half that is extraction's own.
 
-> Rewriting every Template on a keystroke would edit the user's file in places they are not looking,
-> and mid-typing every intermediate key is a rename too.
+## Why extraction would need it even if nothing else did
 
-Three properties do the work in that sentence, and none of them is "an edit reached a Template the
-user was not looking at".
+Extraction is defined as **behaviour-preserving**: the workflow runs the same steps in the same order
+before and after, and the only thing that changed is where they are written.
 
-The edit is **continuous** — there is no moment that is the change, because every intermediate
-keystroke is as much a rename as the last one. It is **ambiguous** — `arch` on the way to `archive`
-is indistinguishable from `arch`, so the mechanism cannot know which renames to propagate. And it is
-**unnamed** — there is nothing to put on an undo entry, and nothing for a user to undo *to*.
-
-Extraction has none of the three. It is one gesture with one moment, one unambiguous before and
-after, and one `sequence()` — which exists for exactly this, "several commands as one undoable
-change", all-or-nothing, with `EditingStore.apply` restoring the document's previous **text** when
-any member throws. One undo, labelled, puts every Template back.
-
-## Not rewriting is not the conservative option
-
-A stale Reference after a rename is one Reference, and the user broke it on purpose — they retyped a
-key knowing what it was named. The checker reports it and they fix it, which is a fair trade for not
-editing a file mid-keystroke.
-
-Extraction is not that trade. It is defined as **behaviour-preserving**: the workflow runs the same
-steps in the same order before and after, and the only thing that changed is where they are written.
 A non-rewriting extraction breaks **every** downstream consumer at once, as an unavoidable side
 effect of a gesture whose entire purpose is to change nothing about behaviour — and it breaks them in
 proportion to how useful the extracted Segment was. It would be the one gesture in the product
 guaranteed to leave the document worse than it found it, and the user's repair is to retype by hand
 exactly the mapping the gesture already computed.
 
-Declining to rewrite here does not preserve the rule. It preserves the letter of the rule by making
-the feature not work.
+That is a sharper case than a rename, where what breaks is proportional to how widely one name was
+read. It is the same argument at a different size, which is why one rule covers both (ADR-0021).
 
 ## What is rewritten, exactly
 

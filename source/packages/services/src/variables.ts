@@ -1,7 +1,9 @@
 import type { WorkflowDocument } from '@hatua/document'
+import { renamePath } from '@hatua/expressions'
 import type { BoardId } from '@hatua/model'
 import {
   BLOCK_KEY_ORDER,
+  boardTemplateRoots,
   detachNode,
   entriesOf,
   insertNode,
@@ -9,6 +11,7 @@ import {
   listIn,
   type Path,
   readAt,
+  rewriteTemplates,
   setScalar,
 } from './ast'
 import { blockPath } from './blocks'
@@ -48,6 +51,9 @@ import { requireUsableName } from './names'
  * edits produce the same document twice.
  */
 /** Where a Board's variables live: the document's own list, or a Block's. */
+/** The root every variable Reference begins with (ADR-0014). */
+const VAR_ROOT = 'var.'
+
 function varsPath(document: WorkflowDocument, board: BoardId): Path {
   return board === null ? ['vars'] : [...blockPath(document, board), 'vars']
 }
@@ -163,6 +169,14 @@ export function renameVariable(from: string, to: string, board: BoardId = null):
       }
 
       setScalar(document, [...listPath, index, 'key'], to)
+
+      // After the rename, so a refused one leaves every Template alone: the
+      // checks above throw before a character of the user's file has moved.
+      for (const root of boardTemplateRoots(document, board)) {
+        rewriteTemplates(document, root, (source) =>
+          renamePath(source, `${VAR_ROOT}${from}`, `${VAR_ROOT}${to}`),
+        )
+      }
     },
   }
 }

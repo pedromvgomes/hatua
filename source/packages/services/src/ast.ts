@@ -335,6 +335,193 @@ export function setScalarIn(
   createKey(document, parent, key, order, value)
 }
 
+/**
+ * Every Step in a list, nested ones included, with the AST path of the list each
+ * sits in.
+ *
+ * Over the AST's own projection rather than the model's typed tree, because a
+ * command runs against a document that does not project (ADR-0001) — so
+ * `walkDocument` and every traversal beside it is unavailable to one. The path
+ * is what this adds over reading `asObject`: a caller editing *inside* a Step
+ * needs to say where it is, not only what it holds.
+ */
+export function* stepEntriesIn(
+  steps: unknown,
+  base: Path,
+): Generator<{ step: Record<string, unknown>; listPath: Path; index: number }> {
+  const list = Array.isArray(steps) ? steps : []
+  for (let index = 0; index < list.length; index++) {
+    const entry = list[index]
+    if (!entry || typeof entry !== 'object') continue
+    const step = entry as Record<string, unknown>
+    yield { step, listPath: base, index }
+
+    const branches = Array.isArray(step.branches) ? step.branches : []
+    for (let b = 0; b < branches.length; b++) {
+      const branch = branches[b]
+      if (branch && typeof branch === 'object') {
+        yield* stepEntriesIn((branch as Record<string, unknown>).steps, [
+          ...base,
+          index,
+          'branches',
+          b,
+          'steps',
+        ])
+      }
+    }
+    if (step.steps) yield* stepEntriesIn(step.steps, [...base, index, 'steps'])
+    if (step.handler) yield* stepEntriesIn(step.handler, [...base, index, 'handler'])
+  }
+}
+
+/**
+ * Everywhere on one Board that a Template can sit.
+ *
+ * A **Board** is the unit scope is computed against (CONTEXT.md), so it is also
+ * the unit a Board-local name is rewritten across: `{{ var.x }}` on the root and
+ * `{{ var.x }}` inside a Block are different variables, and a rewrite that
+ * walked the whole document would repair one by corrupting the other.
+ *
+ * The root Board is its Triggers, its variables and its Steps — three roots
+ * rather than the document, because `blocks:` sits between them and belongs to
+ * nobody's Board but its own. A Block's is its whole entry: its `params:` and
+ * `outputs:` hold no Templates, so including them costs a parse that changes
+ * nothing and saves a list that needs extending whenever a Block gains a key.
+ *
+ * A Board that is not there has nowhere for a Template to sit, and says so with
+ * an empty list rather than by throwing: the rewrite half of a rename must not
+ * turn a missing Block into a failed edit when the declaration half already
+ * refused for the same reason.
+ */
+export function boardTemplateRoots(document: WorkflowDocument, board: string | null): Path[] {
+  if (board === null) return [['triggers'], ['vars'], ['steps']]
+  const blocks = asObject(document).blocks
+  const list = Array.isArray(blocks) ? blocks : []
+  const index = list.findIndex(
+    (entry) =>
+      entry && typeof entry === 'object' && (entry as Record<string, unknown>).id === board,
+  )
+  return index === -1 ? [] : [['blocks', index]]
+}
+
+/**
+ * Rewrite every Template under `root`, through one substitution.
+ *
+ * The half of a rename that `@hatua/expressions` cannot do: it knows what a path
+ * is and nothing about where Templates live, and this knows where they live and
+ * nothing about the grammar (ADR-0021).
+ *
+ * **Every string scalar, rather than the Slots the manifests declare.** A
+ * command runs against a document that does not project (ADR-0001), so
+ * `slotsFor` and every other model answer to "which fields hold Templates" is
+ * unavailable here — and a `when:`, an `until:` and a `core.map` entry are
+ * Templates that sit outside `with:` anyway. `renamePath` returns anything
+ * without a matching hole unchanged, so visiting a scalar that is not a Template
+ * costs a parse and changes nothing.
+ *
+ * Keys are not visited. A mapping key is a name in its own right — a field's, a
+ * variable's — and never a Template; `renameKeyIn` is what edits one.
+ */
+export function rewriteTemplates(
+  document: WorkflowDocument,
+  root: Path,
+  rewrite: (source: string) => string,
+) {
+  const visit = (node: unknown) => {
+    const seq = asSeq(node)
+    if (seq) {
+      for (const item of seq.items) visit(item)
+      return
+    }
+    if (tagOf(node) === MAP) {
+      for (const pair of (node as { items?: unknown[] }).items ?? []) {
+        visit((pair as { value?: unknown }).value)
+      }
+      return
+    }
+    const scalar = asScalar(node)
+    if (!scalar || typeof scalar.value !== 'string') return
+    const next = rewrite(scalar.value)
+    // Written back only where it changed, so a scalar the user quoted a
+    // particular way is not re-stamped by an edit that did nothing to it.
+    if (next !== scalar.value) scalar.value = next
+  }
+  visit(document.ast.getIn(root, true))
+}
+
+/**
+ * Rewrite the string value of every pair under one key, anywhere below `root`.
+ *
+ * What a Block's slug needs: `use:` is a name in the document rather than a
+ * Reference in a Template — `block.` is not an expression root (ADR-0014) — so
+ * there is nothing to parse and the pair's value is edited directly.
+ *
+ * Keyed rather than structural because a command runs against a document that
+ * does not project, so "every call site" cannot be asked of the model. A `use:`
+ * appears only on a Step and on a Trigger, and a Trigger's names a Component, so
+ * a rewrite that only fires on the exact old spelling cannot reach one.
+ */
+export function rewriteValuesOfKey(
+  document: WorkflowDocument,
+  root: Path,
+  key: string,
+  rewrite: (value: string) => string,
+) {
+  const visit = (node: unknown) => {
+    const seq = asSeq(node)
+    if (seq) {
+      for (const item of seq.items) visit(item)
+      return
+    }
+    if (tagOf(node) !== MAP) return
+    for (const pair of (node as { items?: unknown[] }).items ?? []) {
+      const value = (pair as { value?: unknown }).value
+      const scalar = keyOf(pair as Pair) === key ? asScalar(value) : undefined
+      if (scalar && typeof scalar.value === 'string') {
+        const next = rewrite(scalar.value)
+        if (next !== scalar.value) scalar.value = next
+      } else {
+        visit(value)
+      }
+    }
+  }
+  visit(document.ast.getIn(root, true))
+}
+
+/**
+ * Rename a key in the mapping at `parent`, in place.
+ *
+ * The key itself moves, so the value node, its comments and the pair's position
+ * all stay exactly where they were — which is what a rename means, and what
+ * removing the pair and adding another would not do: the value would be
+ * re-serialised and the pair would land wherever `order` put it, several lines
+ * from where the user is looking.
+ *
+ * A mapping without the key is left alone rather than refused. A call site that
+ * never filled a parameter in has no pair to rename, and a rename that threw
+ * there would refuse the whole edit because one caller left a field blank.
+ *
+ * **A mapping that already holds `to` is refused.** Renaming onto it would put
+ * two pairs under one key, which yaml resolves last-wins while every reader here
+ * takes the first — the same trap `setScalarIn`'s neighbours guard, and one that
+ * survives into the file because the document still validates.
+ */
+export function renameKeyIn(document: WorkflowDocument, parent: Path, from: string, to: string) {
+  const pairs = pairsAt(document, parent)
+  if (!pairs) return
+  const pair = pairs.find((one) => keyOf(one) === from)
+  if (!pair) return
+  if (pairs.some((one) => keyOf(one) === to)) {
+    throw new Error(`A "${to}" is already set here`)
+  }
+  const key = asScalar(pair.key)
+  // A plain string key rather than a Scalar is what yaml's own `setIn` produces,
+  // so both spellings have to be writable or a rename lands on some call sites
+  // and not others (`keyOf` reads both for the same reason).
+  if (key) key.value = to
+  else (pair as { key: unknown }).key = to
+}
+
 /** Splice a pair into the mapping at `parent`, where `order` says it belongs. */
 function createKey(
   document: WorkflowDocument,
