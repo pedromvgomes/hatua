@@ -2,6 +2,7 @@ import type { WorkflowDocument } from '@hatua/document'
 import { regionsOf } from '@hatua/model'
 import type { Step } from '@hatua/schema'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { sequence } from './command'
 import { createEditingStore, type EditingSnapshot } from './editing'
 import type {
   Cursor,
@@ -804,6 +805,33 @@ describe('undo and redo', () => {
 
     store.undo()
     expect(ready(store).text).toBe(SOURCE)
+  })
+
+  /*
+   * What the canvas's selection bar applies when it removes a Segment. Left as
+   * separate commands, the first undo puts half a selection back — a document
+   * state nothing on screen explains, and the reason `sequence` exists.
+   */
+  it('undoes a sequence of removals as one change, not one per member', async () => {
+    const { store } = await open()
+    store.apply(
+      sequence(
+        'Remove 2 Steps',
+        removeStep({ board: null, id: 's1' }),
+        removeStep({ board: null, id: 's2' }),
+      ),
+    )
+    // Both gone, so the assertions below are about one undo of two removals
+    // rather than one undo of one.
+    expect(ready(store).text).not.toContain('id: s1')
+    expect(ready(store).text).not.toContain('id: s2')
+    expect(ready(store).undoLabel).toBe('Remove 2 Steps')
+
+    store.undo()
+    // Both back, and the stack empty: two entries would leave one removal
+    // standing and something still to undo.
+    expect(ready(store).text).toBe(SOURCE)
+    expect(ready(store).undoLabel).toBeNull()
   })
 
   it('names what it would undo, so a control can label itself', async () => {

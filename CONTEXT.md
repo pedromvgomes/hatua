@@ -57,6 +57,27 @@ computed against: a **Step** sees only what its own Board offers, plus the **Run
 the one thing every Board shares. **Canvas Mode** draws one at a time.
 _Avoid_: canvas, graph, sheet, scope
 
+**Segment**:
+A contiguous stretch of sibling **Steps** in one region of one **Board** — what the canvas selects
+when more than one **Step** is picked, and what extraction turns into a **Block** (ADR-0018).
+Contiguity and one region are not a check applied afterwards: a Segment is the only shape the
+gesture can build, so there is no selection an action taking one has to refuse. A Segment of one is
+a Segment, because a single container together with its whole body is the flattening case a
+**Block** exists for.
+It is a *structural* noun and not a piece of chrome: a Segment is a fact about where Steps sit, so
+the same three Steps are the same Segment whether or not anyone has highlighted them. What is
+highlighted is a **Selection**, which holds one.
+**Not a *run*.** `run.` is a namespace root, the **Run Context** is the scope every **Board**
+shares, and a `run` **Link** on the flow map is the gap *between* two Steps — the near-opposite of a
+Segment, drawn on the same surface. A **Workflow Execution** refuses the word for the same reason.
+_Avoid_: run, span, slice, range, stretch, sequence
+
+**Selection**:
+Which **Steps** on the **Board** on screen are picked out, always a **Segment** and never a loose
+set. Chrome, like the viewport and which **Board** is open (ADR-0016, ADR-0017): it names Steps, it
+is held per **Board**, and it never reaches the **Workflow Definition**.
+_Avoid_: highlight, focus, active steps, marked
+
 **Component**:
 A step *type*, addressed by a verb whose root says who declares it — `core.fork` is Hatua's,
 `component.email.send` is a **Host**'s, `block.archive_entry` is this document's. A **Step** is an

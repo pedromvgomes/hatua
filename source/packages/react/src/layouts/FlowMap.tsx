@@ -15,7 +15,13 @@ import {
   type RegionRef,
   regionKey,
   regionsOf,
+  type Segment,
   type StepRef,
+  segmentBetween,
+  segmentHolds,
+  segmentOf,
+  segmentSteps,
+  siblingFrom,
   stepKey,
   TRY_VERB,
 } from '@hatua/model'
@@ -25,12 +31,15 @@ import {
   type EditingState,
   type ManifestState,
   moveStep,
+  removeStep,
+  sequence,
   type ValidationState,
 } from '@hatua/services'
 import {
   type ComponentPropsWithRef,
   type Dispatch,
   type FocusEvent as ReactFocusEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type SetStateAction,
@@ -53,6 +62,7 @@ import { NodeCard } from '../units/NodeCard'
 import { RegionBand } from '../units/RegionBand'
 import { RegionNest } from '../units/RegionNest'
 import { RootNode } from '../units/RootNode'
+import { SegmentBar } from '../units/SegmentBar'
 import { COMPONENT_MIME, type ComponentDrag, decodeComponent } from './dragging'
 import styles from './FlowMap.module.css'
 import css from './FlowMap.module.css?inline'
@@ -122,9 +132,9 @@ import {
  * There is no scroll container. The clipped box is fixed and `.surface` carries
  * a pan and a zoom (ADR-0016): a trackpad pans, ⌘/Ctrl + wheel and a pinch zoom
  * about the pointer, space and the middle button pan from anywhere, and a plain
- * drag on empty canvas does nothing at all — that gesture is reserved for the
- * marquee this canvas will want, and taking it for panning means retraining
- * people later.
+ * drag on empty canvas does nothing at all — panning already has two homes that
+ * cost nothing, and nothing else claims that drag either: a marquee selects by
+ * geometry, which cannot build a Segment (ADR-0020).
  *
  * The viewport is held here and offered as two props rather than three. Every
  * other piece of chrome on this region is a controlled trio because a second
@@ -147,11 +157,18 @@ export interface FlowMapProps extends Omit<ComponentPropsWithRef<'section'>, 'on
   /** Fired when a call is opened, or another tab is brought forward. */
   onBoardChange?: (board: BoardId) => void
   /**
-   * Which Step is selected, as a `StepRef` and never a bare id.
+   * What is selected, as a **Segment** and never a bare id.
    *
-   * Ids are Board-local, so two Blocks may each hold a Step called `ret`
-   * (ADR-0013) and a bare `ret` selects both. Selection now spans this region,
-   * `<StepList>` and the step editor, which is when that stops being latent.
+   * A Segment names one Board and the Steps on it, because ids are Board-local:
+   * two Blocks may each hold a Step called `ret` (ADR-0013) and a bare `ret`
+   * selects both. Selection spans this region, `<StepList>` and the step
+   * editor, which is when that stops being latent.
+   *
+   * **Always contiguous siblings in one region, and by construction** — no
+   * gesture here builds anything else, so nothing downstream has to ask whether
+   * a selection is one (ADR-0020). A Segment handed in naming Steps that are
+   * not siblings is resolved against the Board being drawn rather than honoured
+   * verbatim, the same way `collapsed` is filtered down to it.
    *
    * `undefined` means uncontrolled; `null` is a value and means nothing is
    * selected. Resolved with an explicit `!== undefined` rather than `??`, for
@@ -159,16 +176,18 @@ export interface FlowMapProps extends Omit<ComponentPropsWithRef<'section'>, 'on
    * is indistinguishable from one that never had an opinion, and the canvas
    * falls back to whatever it last selected itself.
    */
-  selected?: StepRef | null
-  defaultSelected?: StepRef
+  selected?: Segment | null
+  defaultSelected?: Segment
   /**
-   * Fired when a Step is selected, and never with nothing.
+   * Fired when the selection changes, with `undefined` when it is cleared.
    *
-   * The canvas has no gesture that clears a selection — a press on empty canvas
-   * pans, and a press on a card selects it — so this reports a Step or does not
-   * fire. Clearing is the caller's, by passing `selected={null}`.
+   * `Escape` is the gesture that clears one, so a caller holding the selection
+   * has to hear about it — and removing the selected Steps through the action
+   * bar leaves a caller that never heard holding the ids of Steps that are
+   * gone. `<StepList>` has always reported this; the two regions say the same
+   * thing (ADR-0020).
    */
-  onSelect?: (ref: StepRef) => void
+  onSelect?: (segment: Segment | undefined) => void
   /**
    * Which containers are drawn collapsed, and a way to hear about it.
    *
@@ -297,7 +316,17 @@ export function FlowMap({
    * to fall back to when one is closed (ADR-0017).
    */
   const [ownOpen, setOwnOpen] = useState<readonly BoardId[]>([null])
-  const [ownSelected, setOwnSelected] = useState<StepRef | undefined>(defaultSelected)
+  const [ownSelected, setOwnSelected] = useState<Segment | undefined>(defaultSelected)
+  /*
+   * The end of the selection that does not move.
+   *
+   * Shift-click and `Shift`+`↑`/`↓` both extend from here, so one keystroke
+   * grows a Segment and shrinks it from the other end rather than needing a
+   * second modifier to undo an over-extension. Held here and offered as no
+   * prop: it is the state of a gesture in progress, not what is selected, and
+   * the Segment already says that.
+   */
+  const anchor = useRef<StepRef | null>(null)
   const [ownCollapsed, setOwnCollapsed] = useState<readonly StepRef[]>(defaultCollapsed ?? [])
   const [ownFoldedRegions, setOwnFoldedRegions] = useState<readonly RegionRef[]>(
     defaultCollapsedRegions ?? [],
@@ -459,9 +488,37 @@ export function FlowMap({
     if (wanted === block) openBoard(null)
   }
 
+  const commitSelection = (next: Segment | undefined) => {
+    setOwnSelected(next)
+    onSelect?.(next)
+  }
+
+  /*
+   * A plain click: one Step, and the anchor moves to it.
+   *
+   * Also what a shift-click into a *different* sibling list does. There is no
+   * click on a card that leaves the user holding nothing or that silently does
+   * nothing — the property ADR-0020 rests on.
+   */
   const select = (ref: StepRef) => {
-    setOwnSelected(ref)
-    onSelect?.(ref)
+    anchor.current = ref
+    commitSelection(segmentOf(ref))
+  }
+
+  /**
+   * Extend the selection from the anchor to `ref`.
+   *
+   * Falls back to selecting `ref` alone wherever a Segment cannot reach it:
+   * with no anchor yet, with an anchor on another Board, or with the two in
+   * different regions. `segmentBetween` is the only thing that decides, so the
+   * canvas cannot produce a selection extraction would refuse.
+   */
+  const extendTo = (ref: StepRef, drawn: Board) => {
+    const from = anchor.current
+    const reach =
+      from && from.board === ref.board ? segmentBetween(drawn, from.id, ref.id) : undefined
+    if (!reach) return select(ref)
+    commitSelection(reach)
   }
 
   const toggle = (ref: StepRef) => {
@@ -573,12 +630,102 @@ export function FlowMap({
   const dragIn = () => setCarrying(true)
   const dragOut = () => setCarrying(false)
 
+  /*
+   * The Steps the selection actually names on the Board being drawn.
+   *
+   * Resolved against the document rather than trusted: a Segment is held across
+   * edits, so a Step it names may have been removed since, and a caller may
+   * hand one in that reaches Steps which are not siblings.
+   */
+  const selectedSteps =
+    definition && selection ? segmentSteps(definition, selection) : EMPTY_SELECTION
+
+  /*
+   * Take the selected Steps out, as one undoable change.
+   *
+   * Order does not matter: `removeStep` locates by id rather than by index, so
+   * removing one does not move the next out from under the command. `sequence`
+   * makes the lot one entry on the undo stack, all-or-nothing — a partial
+   * removal would leave a Segment half gone with nothing on screen saying why.
+   */
+  const removeSelection = () => {
+    if (!selection || selectedSteps.length === 0) return
+    const board = selection.board
+    store?.apply(
+      sequence(
+        `Remove ${selectedSteps.length} ${selectedSteps.length === 1 ? 'Step' : 'Steps'}`,
+        ...selectedSteps.map((step) => removeStep({ board, id: step.id })),
+      ),
+    )
+    // Nothing is left to select, and a caller holding the Segment would
+    // otherwise be holding the ids of Steps that are gone.
+    anchor.current = null
+    commitSelection(undefined)
+  }
+
+  /*
+   * `Shift`+`↑`/`↓` extends, `Escape` clears.
+   *
+   * On the region rather than on a card: a keydown bubbles up from the focused
+   * card's name button, and `units/` draws what it is handed rather than
+   * deciding what selection means.
+   *
+   * Bare arrows are deliberately not claimed. They are ambiguous on a
+   * two-dimensional map, `Tab` already walks the cards in document order, and
+   * Hatua is a guest in someone's page — the same reason the space-pan handler
+   * fires only while the canvas is hovered or holds focus.
+   */
+  const onKeys = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.defaultPrevented || typesText(event.target)) return
+
+    if (event.key === 'Escape') {
+      if (!selection) return
+      event.preventDefault()
+      anchor.current = null
+      commitSelection(undefined)
+      return
+    }
+
+    if (!event.shiftKey || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return
+    if (!board || !selection || selection.board !== board.id) return
+
+    const first = selectedSteps.at(0)
+    const last = selectedSteps.at(-1)
+    if (!first || !last) return
+    // A caller may hand a Segment in without this region ever having set an
+    // anchor, so the leading Step stands in for one.
+    const from = anchor.current?.board === board.id ? anchor.current.id : first.id
+    /*
+     * The head is the end the anchor is NOT on, and it is the only thing that
+     * moves. Picking an end by the direction of the key instead would make
+     * `Shift`+`↑` walk off the top of a Segment that was grown downwards rather
+     * than shrinking it — one keystroke has to be able to undo the last.
+     */
+    const head = from === first.id ? last.id : first.id
+    const next = siblingFrom(board, head, event.key === 'ArrowDown' ? 1 : -1)
+    if (!next) return
+    const reach = segmentBetween(board, from, next)
+    if (!reach) return
+    event.preventDefault()
+    commitSelection(reach)
+  }
+
   return (
     <>
       <style href="hatua-flow-map" precedence="hatua">
         {css}
       </style>
-      <section aria-label="Flow map" className={cx(styles.flowMap, className)} {...rest}>
+      <section
+        aria-label="Flow map"
+        className={cx(styles.flowMap, className)}
+        {...rest}
+        onKeyDown={(event) => {
+          // A Host's own handler runs first and may claim the key; `onKeys`
+          // reads `defaultPrevented` and stands down when it has.
+          rest.onKeyDown?.(event)
+          onKeys(event)
+        }}
+      >
         {state.status === 'unconfigured' ? (
           <p className={styles.note}>
             No workflow is wired up. Hatua has no storage of its own — a Host supplies it as{' '}
@@ -623,9 +770,11 @@ export function FlowMap({
             redraws={redraws}
             dragging={dragging}
             carrying={carrying}
-            onSelect={select}
+            onSelect={(ref, extend) => (extend ? extendTo(ref, board) : select(ref))}
             onToggle={toggle}
             onToggleRegion={toggleRegion}
+            selectedCount={selectedSteps.length}
+            onRemoveSelection={removeSelection}
             tabs={tabs}
             onOpenBoard={openBoard}
             onCloseBoard={closeBoard}
@@ -659,6 +808,8 @@ function Canvas({
   onSelect,
   onToggle,
   onToggleRegion,
+  selectedCount,
+  onRemoveSelection,
   tabs,
   onOpenBoard,
   onCloseBoard,
@@ -675,16 +826,19 @@ function Canvas({
   view: Viewport | null
   onView: Dispatch<SetStateAction<Viewport | null>>
   manifests: ReadonlyMap<string, Manifest>
-  selection: StepRef | undefined
+  selection: Segment | undefined
   folded: readonly StepRef[]
   foldedRegions: readonly RegionRef[]
   problems: ReadonlyMap<string, Diagnostic[]>
   redraws: number
   dragging: string | null
   carrying: boolean
-  onSelect: (ref: StepRef) => void
+  onSelect: (ref: StepRef, extend: boolean) => void
   onToggle: (ref: StepRef) => void
   onToggleRegion: (ref: RegionRef) => void
+  /** How many Steps the selection resolves to on this Board; `0` draws no bar. */
+  selectedCount: number
+  onRemoveSelection: () => void
   tabs: readonly BoardTab[]
   onOpenBoard: (board: BoardId) => void
   onCloseBoard: (block: string) => void
@@ -888,12 +1042,12 @@ function Canvas({
                 rect={placement}
                 manifest={manifests.get(step.use)}
                 connections={connections}
-                selected={selection !== undefined && stepKey(selection) === key}
+                selected={segmentHolds(selection, placement.ref)}
                 dragging={dragging === placement.ref.id}
                 expanded={!collapsed.has(placement.ref.id)}
                 opens={opens && blockOf(definition, opens) ? opens : undefined}
                 problems={problems.get(key)}
-                onSelect={() => onSelect(placement.ref)}
+                onSelect={(extend) => onSelect(placement.ref, extend)}
                 onToggle={() => onToggle(placement.ref)}
                 onOpen={() => opens && onOpenBoard(opens)}
                 onDragStart={() => onDragStart(step.id)}
@@ -903,6 +1057,8 @@ function Canvas({
           })}
         </ul>
       </div>
+
+      {selectedCount > 0 ? <SegmentBar count={selectedCount} onRemove={onRemoveSelection} /> : null}
 
       <CanvasControls
         scale={canvas.at.scale}
@@ -925,6 +1081,9 @@ const MIDDLE_BUTTON = 1
 const UNPLACED: Viewport = { x: 0, y: 0, scale: 1 }
 const NO_BOX = { width: 0, height: 0 }
 
+/** No Steps, as one array, so an empty selection is not a new value each render. */
+const EMPTY_SELECTION: readonly Step[] = []
+
 /**
  * Whether the key belongs to whatever has focus rather than to the canvas.
  *
@@ -935,6 +1094,18 @@ const NO_BOX = { width: 0, height: 0 }
 const takesSpace = (target: EventTarget | null): boolean =>
   target instanceof HTMLElement &&
   (target.isContentEditable || /^(?:input|textarea|select|button|a)$/i.test(target.tagName))
+
+/**
+ * Whether the key belongs to something the user is typing into.
+ *
+ * Narrower than `takesSpace`, and the two are not one predicate: a `<button>`
+ * consumes space and consumes neither `Escape` nor an arrow, and every card's
+ * name is a button — so the selection keys guarded by `takesSpace` would be
+ * dead on precisely the element that has focus while a Step is selected.
+ */
+const typesText = (target: EventTarget | null): boolean =>
+  target instanceof HTMLElement &&
+  (target.isContentEditable || /^(?:input|textarea|select)$/i.test(target.tagName))
 
 /**
  * The pan and the zoom, and every gesture that moves them (ADR-0016).
@@ -948,8 +1119,9 @@ const takesSpace = (target: EventTarget | null): boolean =>
  * A card is moved with HTML5 drag-and-drop, which starts from a plain
  * pointer-down on a `<NodeCard>`. So panning claims neither: it answers to
  * space and to the middle button, and a plain drag on empty canvas does
- * nothing. That is not an omission — it is the gesture marquee selection will
- * want, and a canvas that pans on it would have to be retrained later.
+ * nothing. Nothing claims that drag: a marquee is refused because it selects by
+ * geometry, which cannot help crossing a Band edge or skipping a card, and a
+ * selection is a Segment by construction (ADR-0020).
  *
  * ## It is placed before it is painted
  *

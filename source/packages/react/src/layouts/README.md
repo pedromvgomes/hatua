@@ -243,12 +243,55 @@ Two surfaces showing two different Boards at once is the same defect as the map
 and the list disagreeing about a region — one screen, two answers to "what am I
 looking at".
 
-**Selection and collapse are named by a `StepRef`, not a bare id.** Step ids are
+**Selection and collapse name a Board, never a bare id.** Step ids are
 Board-local, so two Blocks may each hold a Step called `ret`; a bare id selects
-both and folds both. That was latent while nothing could reach a Block's Board
-and stops being latent here. `layout`'s `collapsed` option still takes bare ids,
-because a Board is already its argument — `<FlowMap>` filters the set down to the
-Board on screen, and that is the only place the two spellings meet.
+both and folds both. `collapsed` is `StepRef`s for that reason, and `layout`'s
+own `collapsed` option still takes bare ids because a Board is already its
+argument — `<FlowMap>` filters the set down to the Board on screen, and that is
+the only place the two spellings meet.
+
+### A selection is a Segment
+
+`selected` is a **Segment** — one Board and the Steps on it, contiguous siblings
+in one region (ADR-0020). Both regions take the same type, because a selection is
+one thing across the canvas, `<StepList>` and the step editor, and two spellings
+of it would be two answers to "what is selected".
+
+**It is a Segment by construction.** The canvas's gestures cannot build anything
+else: a plain click selects one Step and sets the anchor, and shift-click extends
+from the anchor *within the sibling list they share*. A shift-click into another
+region does what a plain click does and becomes the new anchor, so no gesture
+leaves the user holding nothing and none silently does less than it looked like
+it did. Extraction consumes a Segment and refuses anything else (ADR-0018), so
+building only Segments is what saves every consumer from re-asking whether a
+selection is extractable.
+
+`Shift`+`↑`/`↓` is the same operation from the keyboard — the anchor stays, the
+head moves, so one keystroke grows a Segment and shrinks it from the other end.
+`Escape` clears, which is why `onSelect` reports `undefined` on both regions.
+Bare arrows are not claimed: they are ambiguous on a two-dimensional map, `Tab`
+already walks the cards in document order, and taking them inside a Host's page
+is what the space-pan handler already goes out of its way not to do. There is no
+⌘-click and no marquee — a marquee selects by geometry, which cannot help
+crossing a Band edge, and it has no keyboard equivalent at all.
+
+**`<StepList>` highlights a Segment and offers no gesture that builds one.** A
+list is not where a stretch of Steps is chosen, and a second way to build one
+would be a second answer again. Clicking a row selects that row alone.
+
+Contiguity is *derived*, never stored: a Segment is `{ board, steps }` and not a
+start index and a length, because a selection is held across edits and an index
+range means a Step added above it silently changes what is selected — the
+argument `RegionRef` already makes about `branchIndex`. `segmentSteps` resolves
+one against the document on every render, so a Step removed underneath simply
+drops out.
+
+The actions over it are `units/SegmentBar`, floating at the lower start of the
+canvas opposite `CanvasControls`. It appears for a Segment of one, because a
+Segment of one is a Segment — and because the canvas otherwise has no way to
+remove a Step at all. Remove is one `sequence()` over `removeStep`, which makes
+it one entry on the undo stack: two entries would let one undo put half a
+selection back.
 
 ### The canvas is how a workflow is built
 

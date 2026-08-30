@@ -6,7 +6,10 @@ import {
   nameOf,
   type Region,
   regionsOf,
+  type Segment,
   type StepRef,
+  segmentHolds,
+  segmentOf,
   stepKey,
   summaryOf,
 } from '@hatua/model'
@@ -93,7 +96,7 @@ export interface StepListProps extends Omit<ComponentPropsWithRef<'section'>, 'o
    * Step leaves behind. A caller holding the selection across a remount has to
    * hear that, or it keeps handing back the id of a Step that is gone.
    */
-  onSelect?: (ref: StepRef | undefined) => void
+  onSelect?: (segment: Segment | undefined) => void
   /**
    * Fired when an insert point is chosen. Optional — this region knows where a
    * Step would go and nothing at all about which Component to put there, so it
@@ -109,14 +112,20 @@ export interface StepListProps extends Omit<ComponentPropsWithRef<'section'>, 'o
    */
   board?: BoardId
   /**
-   * Which Step is selected, as a `StepRef` and never a bare id: ids are
-   * Board-local, so two Blocks may each hold a Step called `ret` and a bare
-   * `ret` highlights a row on both Boards.
+   * What is selected, as a **Segment** and never a bare id: ids are Board-local,
+   * so two Blocks may each hold a Step called `ret` and a bare `ret` highlights
+   * a row on both Boards.
    *
-   * Controlled when given, seeded by `defaultSelected` when not. Selection is
-   * one thing across this region, the canvas and the step editor, and only one
-   * of the three is remounted by the tab strip — so the region that holds it
-   * has to be able to say what the others show.
+   * A Segment because selection is one thing across this region, the canvas and
+   * the step editor (ADR-0020), and the canvas is where more than one Step is
+   * picked. **This region highlights a Segment and offers no gesture that
+   * builds one** — a list is not where a stretch of Steps is chosen, and a
+   * second way to build one would be a second answer to what a selection is.
+   * Clicking a row selects that row alone, as it always has.
+   *
+   * Controlled when given, seeded by `defaultSelected` when not. Only one of
+   * the three surfaces is remounted by the tab strip, so the region that holds
+   * it has to be able to say what the others show.
    *
    * `undefined` means uncontrolled; `null` is a value and means nothing is
    * selected. Two spellings because one value cannot carry both meanings, and
@@ -124,8 +133,8 @@ export interface StepListProps extends Omit<ComponentPropsWithRef<'section'>, 'o
    * handing that straight back would otherwise be saying "nobody said" and get
    * the row this region last highlighted itself.
    */
-  selected?: StepRef | null
-  defaultSelected?: StepRef
+  selected?: Segment | null
+  defaultSelected?: Segment
   /**
    * Which containers start collapsed, and a way to hear about it.
    *
@@ -184,7 +193,7 @@ export function StepList({
 }: StepListProps) {
   const store = useEditingStore()
   const validation = useValidationStore()
-  const [ownSelected, setOwnSelected] = useState<StepRef | undefined>(defaultSelected)
+  const [ownSelected, setOwnSelected] = useState<Segment | undefined>(defaultSelected)
   const [ownCollapsed, setOwnCollapsed] = useState<readonly StepRef[]>(defaultCollapsed ?? [])
   const [dragging, setDragging] = useState<string | null>(null)
 
@@ -232,12 +241,12 @@ export function StepList({
   const problems = checks.ready ? checks.byStep : NO_PROBLEMS
 
   const select = (id: string) => {
-    const ref = refOf(id)
+    const picked = segmentOf(refOf(id))
     // The internal state is kept in step even while controlled, so a caller that
     // stops passing `selected` does not snap back to whatever was highlighted
     // when it started.
-    setOwnSelected(ref)
-    onSelect?.(ref)
+    setOwnSelected(picked)
+    onSelect?.(picked)
   }
 
   const toggle = (id: string) => {
@@ -251,7 +260,11 @@ export function StepList({
 
   const remove = (id: string) => {
     store?.apply(removeStep(refOf(id)))
-    if (!selection || stepKey(selection) !== stepKey(refOf(id))) return
+    if (!segmentHolds(selection, refOf(id))) return
+    // The whole selection goes, not only the row that went: a Segment with one
+    // of its Steps taken out of the middle is no longer contiguous, and the one
+    // shape a selection has is the shape this region must not be the first to
+    // break (ADR-0020).
     setOwnSelected(undefined)
     // Told, not just forgotten locally. <Build> holds this across the unmount
     // the tab strip forces, so a selection cleared only in here comes back on
@@ -406,7 +419,7 @@ interface SequenceProps {
   scope: string
   /** The insert point at index 0 of this list; every other one is derived from it. */
   at: Omit<InsertPoint, 'index'> & { index: number }
-  selection: StepRef | undefined
+  selection: Segment | undefined
   /** Diagnostics per `stepKey`; a Step with none is absent. */
   problems: ReadonlyMap<string, Diagnostic[]>
   /** The ids collapsed on THIS Board. A Board is already `at.board`. */
@@ -486,7 +499,7 @@ function Sequence({ steps, scope, at, ...handlers }: SequenceProps) {
               <Row
                 step={step}
                 problems={problems.get(stepKey({ board: at.board ?? null, id: step.id }))}
-                selected={selection?.board === (at.board ?? null) && selection?.id === step.id}
+                selected={segmentHolds(selection, { board: at.board ?? null, id: step.id })}
                 expanded={open}
                 dragging={dragging === step.id}
                 onSelect={handlers.onSelect}

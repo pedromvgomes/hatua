@@ -203,7 +203,7 @@ export const Insertable: Story = {
 
 export const Selected: Story = {
   parameters: wired(serving(DEEP)),
-  args: { defaultSelected: { board: null, id: 's3' } },
+  args: { defaultSelected: { board: null, steps: ['s3'] } },
 }
 
 /**

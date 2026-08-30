@@ -371,9 +371,12 @@ happens to be drawn at.
 | Drag on empty canvas | **nothing** |
 | Drag on a card | moves the Step |
 
-A plain drag on empty canvas is left doing nothing on purpose. It is the gesture **marquee selection**
-belongs to, and panning has two homes that cost nothing — space and the middle button — while a
-trackpad pans with no gesture at all. Zoom is about the **pointer**, because zooming to inspect
+A plain drag on empty canvas is left doing nothing on purpose, and nothing claims it: panning has two
+homes that cost nothing — space and the middle button — while a trackpad pans with no gesture at all,
+and **marquee selection is refused** (ADR-0020). A marquee selects by *geometry*, which cannot help
+crossing a **Band** edge or skipping a card, so it could not build the one shape a selection has; it
+also has no keyboard equivalent, and the catalogue's click path exists precisely because drag has
+none. Zoom is about the **pointer**, because zooming to inspect
 something means zooming to where you are looking.
 
 **10% to 400%, continuous.** `+`, `−`, the wheel and a pinch multiply the current scale and land
@@ -995,8 +998,19 @@ relationship between them.
 
 ## Selection
 
-`selectedStepId` and `onSelect` as **props**, with the composition root holding the state, exactly as
-`<StepList>` does today.
+`selected` and `onSelect` as **props**, with the composition root holding the state, exactly as
+`<StepList>` does.
+
+What they carry is a **Segment** — one **Board** and the **Steps** on it, contiguous siblings in one
+region — and never a bare id, because ids are Board-local and two **Blocks** may each hold a Step
+called `ret`. It is a Segment *by construction*: a plain click selects one and sets the anchor,
+shift-click extends within the sibling list the two share, and a shift-click into another region does
+what a plain click does. `Shift`+`↑`/`↓` is the keyboard equivalent and `Escape` clears, which is why
+`onSelect` reports `undefined`. Extraction consumes a Segment and refuses anything else (ADR-0018),
+so a canvas that can only build Segments is one where no action has to refuse what the user selected.
+
+The actions over it float at the lower start of the canvas, opposite the zoom toolbar, and appear for
+a Segment of one — which is a Segment, and is also the only way to remove a Step from the canvas.
 
 No selection context. A second mechanism for one piece of chrome state is how the parts stop being
 independently mountable, and every region must mount alone — `layouts/regions.test.tsx` renders each

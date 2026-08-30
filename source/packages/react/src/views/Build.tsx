@@ -1,4 +1,4 @@
-import { type BoardId, boardKey, type StepRef } from '@hatua/model'
+import { type BoardId, boardKey, type Segment, type StepRef } from '@hatua/model'
 import { addStep, type InsertPoint, rootStepCount } from '@hatua/services'
 import { type ComponentPropsWithRef, useState } from 'react'
 import { Components } from '../layouts/Components'
@@ -77,14 +77,14 @@ export function Build({ className, ...rest }: BuildProps) {
   const [tab, setTab] = useState('components')
   const [pending, setPending] = useState<InsertPoint | null>(null)
   /*
-   * The selected Step on each Board, keyed by Board.
+   * What is selected on each Board, keyed by Board.
    *
-   * One per Board rather than one shared: a `StepRef` names the Board it is on,
+   * One per Board rather than one shared: a `Segment` names the Board it is on,
    * so a selection is meaningless on any other, and going through a doorway and
-   * coming back finds the Step that was left selected rather than nothing
+   * coming back finds the Steps that were left selected rather than nothing
    * (ADR-0017).
    */
-  const [selectedOn, setSelectedOn] = useState<Readonly<Record<string, StepRef>>>({})
+  const [selectedOn, setSelectedOn] = useState<Readonly<Record<string, Segment>>>({})
   const [collapsed, setCollapsed] = useState<readonly StepRef[]>([])
   /*
    * Which Board is on screen, and the reason it is up here rather than inside
@@ -245,7 +245,18 @@ export function Build({ className, ...rest }: BuildProps) {
               // it is saying "nothing is selected on this Board" rather than
               // "nobody has an opinion" — and the two are different props.
               selected={selected ?? null}
-              onSelect={(ref) => setSelectedOn((was) => ({ ...was, [boardKey(board)]: ref }))}
+              onSelect={(segment) =>
+                setSelectedOn((was) => {
+                  // Cleared, and dropped rather than stored as an empty entry:
+                  // `selected` below reads a missing key as `null`, which is
+                  // the one spelling for "nothing is selected on this Board".
+                  if (!segment) {
+                    const { [boardKey(board)]: _cleared, ...rest } = was
+                    return rest
+                  }
+                  return { ...was, [boardKey(board)]: segment }
+                })
+              }
               collapsed={collapsed}
               onCollapseChange={setCollapsed}
             />
