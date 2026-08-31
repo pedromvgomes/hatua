@@ -555,17 +555,17 @@ steps:
     wired()
     await select()
 
-    expect(screen.queryByRole('region', { name: 'Data' })).toBeNull()
-    fireEvent.click(editor().getByRole('button', { name: 'Show data' }))
-    expect(screen.getByRole('region', { name: 'Data' })).toBeDefined()
+    expect(screen.queryByRole('region', { name: 'References' })).toBeNull()
+    fireEvent.click(editor().getByRole('button', { name: 'References' }))
+    expect(screen.getByRole('region', { name: 'References' })).toBeDefined()
   })
 
   it('marks the fields reading the leaf the panel is pointing at', async () => {
     wired()
     const to = await select()
-    fireEvent.click(editor().getByRole('button', { name: 'Show data' }))
+    fireEvent.click(editor().getByRole('button', { name: 'References' }))
 
-    const panel = within(screen.getByRole('region', { name: 'Data' }))
+    const panel = within(screen.getByRole('region', { name: 'References' }))
     const leaf = await panel.findByRole('button', { name: /var\.digest_to/ })
 
     const marked = (field: HTMLElement) => field.closest('[data-highlighted]') !== null
@@ -586,25 +586,25 @@ steps:
   it('drops the highlight when the panel is closed', async () => {
     wired()
     await select()
-    fireEvent.click(editor().getByRole('button', { name: 'Show data' }))
+    fireEvent.click(editor().getByRole('button', { name: 'References' }))
 
-    const panel = within(screen.getByRole('region', { name: 'Data' }))
+    const panel = within(screen.getByRole('region', { name: 'References' }))
     fireEvent.mouseEnter(await panel.findByRole('button', { name: /var\.digest_to/ }))
     await waitFor(() =>
       expect(editor().getByLabelText('To').closest('[data-highlighted]')).not.toBeNull(),
     )
 
-    fireEvent.click(editor().getByRole('button', { name: 'Hide data' }))
-    expect(screen.queryByRole('region', { name: 'Data' })).toBeNull()
+    fireEvent.click(editor().getByRole('button', { name: 'References' }))
+    expect(screen.queryByRole('region', { name: 'References' })).toBeNull()
     expect(editor().getByLabelText('To').closest('[data-highlighted]')).toBeNull()
   })
 
   it('hands the panel the same selection the editor has', async () => {
     wired()
     await select()
-    fireEvent.click(editor().getByRole('button', { name: 'Show data' }))
+    fireEvent.click(editor().getByRole('button', { name: 'References' }))
 
-    const panel = within(screen.getByRole('region', { name: 'Data' }))
+    const panel = within(screen.getByRole('region', { name: 'References' }))
     expect(await panel.findByText('What Send the digest can read')).toBeDefined()
   })
 })

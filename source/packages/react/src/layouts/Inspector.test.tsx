@@ -405,11 +405,11 @@ describe('the relationship with the Data panel beside it', () => {
   it('offers the panel only when somebody is listening for it', async () => {
     const { unmount } = mount(host(), on('s1'))
     expect(await screen.findByDisplayValue('INBOX')).toBeDefined()
-    expect(screen.queryByRole('button', { name: /data/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'References' })).toBeNull()
     unmount()
 
     mount(host(), { ...on('s1'), onExpandedChange: () => {} })
-    expect(await screen.findByRole('button', { name: 'Show data' })).toBeDefined()
+    expect(await screen.findByRole('button', { name: 'References' })).toBeDefined()
   })
 })
 

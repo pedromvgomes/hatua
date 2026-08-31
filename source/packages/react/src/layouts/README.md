@@ -9,7 +9,7 @@ across the top, then three columns that are all on screen at once.
 
 ```
 +-------------------------------------------------------------+  TopBar, 56px
-| TabbedPanel      | FlowMap            | (Data) | Inspector   |
+| TabbedPanel      | FlowMap            | (Refs) | Inspector   |
 | 304px            | 1fr                | 304px  | 404px       |
 | Components       | the canvas         | what   | the editor  |
 | Workflow, (Flow) |                    | it can |             |
@@ -129,7 +129,7 @@ because neither needs a catalogue.
 | `Inspector` | The step editor: the selected Step's name and its fields. |
 | `Components` | The Component Manifests a Host serves, as cards. Components only — a Trigger is not a Step, and adding one is the Workflow tab's job. |
 | `Workflow` | Everything scoped to a **Board** rather than to a Step: the name and slug, the Board's root, the variables. |
-| `Data` | The reference tree the step editor expands into. Read-only: drag out of it, and a variable is *edited* in the Workflow tab. Not a tab. |
+| `Data` | The reference tree the step editor expands into, announced as **References**. Read-only: drag out of it, and a variable is *edited* in the Workflow tab. Not a tab. |
 
 `Fields` is not a region and is never exported: it is the form for one Component
 Manifest's fields, over one set of values. A Trigger's fields and a Step's are

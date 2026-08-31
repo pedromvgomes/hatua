@@ -189,7 +189,10 @@ export function Data({ className, selected, board = null, onHighlight, ...rest }
       <style href="hatua-data" precedence="hatua">
         {css}
       </style>
-      <section aria-label="Data" className={cx(styles.data, className)} {...rest}>
+      {/* Named for what it holds, which is the word the control that opens it
+          uses and the word the picker's tab uses. A landmark and the button
+          that reveals it must not answer to two different names. */}
+      <section aria-label="References" className={cx(styles.data, className)} {...rest}>
         <div className={styles.head}>
           <p className={styles.title}>
             {step ? `What ${nameOf(step)} can read` : 'What is in scope'}

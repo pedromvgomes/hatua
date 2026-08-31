@@ -1013,6 +1013,11 @@ the failure is said rather than swallowed.
 step editor owns the control that asks for it and the composition root places both regions; neither
 mounts the other, which is what keeps each one mountable alone.
 
+**The control and the landmark both say References** — the word the glossary defines and the picker's
+own tab already carries, because every row in either is a Reference. One label in both states, with
+`aria-pressed` saying which one it is in: a button that swaps its verb *and* reports pressed announces
+the state twice. *Data* is the region's file name and reaches no screen.
+
 This is what answers the original handoff's real weakness — that the reference tree sat in the left
 panel while the fields it fills sit on the far right, a full canvas apart, with no visible
 relationship between them.
