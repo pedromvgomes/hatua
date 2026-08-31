@@ -142,10 +142,16 @@ import {
  *
  * The viewport is held here and offered as two props rather than three. Every
  * other piece of chrome on this region is a controlled trio because a second
- * reader appeared for it; nothing reads a viewport. `defaultViewport` and
+ * reader appeared for it; nothing reads a viewport. `defaultViewports` and
  * `onViewportChange` are enough for a Host to put somebody back where they
  * were, and not enough for a caller to drive the canvas into a state it cannot
  * get itself out of.
+ *
+ * Both halves are **per Board**, because a viewport is. Coordinates are
+ * Board-local (ADR-0017), so the pan a Host records while a Block's tab is open
+ * means nothing on the root — and a contract that reported every Board's while
+ * accepting only one told a Host to write down something it could never give
+ * back correctly.
  */
 export interface FlowMapProps extends Omit<ComponentPropsWithRef<'section'>, 'onSelect'> {
   /** Which Board the canvas opens on. `null` is the root Board. */
@@ -240,19 +246,33 @@ export interface FlowMapProps extends Omit<ComponentPropsWithRef<'section'>, 'on
    */
   onDropComponent?: (component: ComponentDrag, at: InsertPoint) => void
   /**
-   * Where the canvas opens, read once when it first draws a Board.
+   * Where the canvas opens on each Board, read once when it first draws one.
    *
-   * Uncontrolled and deliberately without a `viewport` twin: a controlled
+   * Keyed by Board — `null` is the root — because coordinates are Board-local
+   * and a pan carried across Boards lands in empty space. A Board with no entry
+   * is fitted to its content, which is what an unopened Board should do.
+   *
+   * A `Map` rather than an object, so the root Board is `null` rather than some
+   * agreed spelling of it that a Host would have to know and Hatua would have to
+   * keep: `boardKey` is this region's own business.
+   *
+   * Uncontrolled and deliberately without a `viewports` twin: a controlled
    * viewport lets a caller pin the canvas somewhere the gestures cannot undo,
    * and observation on its own would be half a feature — a Host could record
-   * where somebody was looking and never put them back.
-   *
-   * Opening a Block's Board ignores it and re-centres, because coordinates are
-   * Board-local and carrying a pan across Boards lands in empty space.
+   * where somebody was looking and never put them back. Read once, so a Host
+   * rebuilding the Map every render costs nothing.
    */
-  defaultViewport?: Viewport
-  /** Fired whenever the canvas is panned, zoomed or fitted. */
-  onViewportChange?: (view: Viewport) => void
+  defaultViewports?: ReadonlyMap<BoardId, Viewport>
+  /**
+   * Fired whenever the canvas is panned, zoomed or fitted, with the Board it
+   * happened on.
+   *
+   * The Board is not optional context: a Host persisting these writes one entry
+   * per Board and hands the lot back as `defaultViewports`. Without it the last
+   * report wins whatever Board it came from, and a Block's pan is restored as
+   * the root's.
+   */
+  onViewportChange?: (view: Viewport, board: BoardId) => void
 }
 
 /** "The Host wired nothing" is not a phase of the load, so it is not the store's to report. */
@@ -300,7 +320,7 @@ export function FlowMap({
   onCollapsedRegionsChange,
   onInsert,
   onDropComponent,
-  defaultViewport,
+  defaultViewports,
   onViewportChange,
   className,
   ...rest
@@ -608,14 +628,22 @@ export function FlowMap({
    * that does not exist until the canvas has rendered once, so the canvas
    * measures one and fills this in.
    *
-   * `defaultViewport` is read here and nowhere else. Read once means the
+   * `defaultViewports` is read here and nowhere else. Read once means the
    * `useState` initialiser: consuming it during a render is consuming it in a
    * pass React may throw away, and under a Host's `StrictMode` — which is every
    * Host in development — it is the discarded pass that reads it.
+   *
+   * Every entry is put through `usable`, not just the one the canvas opens on:
+   * a Host persists these somewhere Hatua does not own, and a `scale` of `0`
+   * translates the surface by `Infinitypx` whichever Board it was stored under.
    */
   const [views, setViews] = useState<Readonly<Record<string, Viewport>>>(() => {
-    const held = usable(defaultViewport)
-    return held ? { [boardKey(defaultBoardId)]: held } : {}
+    const seeded: Record<string, Viewport> = {}
+    for (const [board, view] of defaultViewports ?? []) {
+      const held = usable(view)
+      if (held) seeded[boardKey(board)] = held
+    }
+    return seeded
   })
 
   /*
@@ -672,8 +700,8 @@ export function FlowMap({
     tell.current = onViewportChange
   })
   useEffect(() => {
-    if (view) tell.current?.(view)
-  }, [view])
+    if (view) tell.current?.(view, wanted)
+  }, [view, wanted])
 
   // Held while the drag is over the canvas and dropped the moment it leaves, so
   // a drag that wanders off and ends elsewhere does not leave every gap lit.
