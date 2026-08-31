@@ -201,9 +201,26 @@ export function Inspector({
    */
   const contract = useMemo(() => {
     if (!definition || !step) return undefined
+
+    // `?? NOTHING` and never `?.params` alone. A Block declared through the
+    // catalogue's New block is written `{id, name, steps: []}` with no `params:`
+    // key at all, so an undefined here is the ordinary state of a Block that
+    // takes nothing — and read as "this is not a contract step" it falls
+    // through to a sentence saying nothing declares a verb the document
+    // declares perfectly well.
     const called = blockIdOf(step.use)
-    if (called !== null) return blockOf(definition, called)?.params
-    if (step.use === RETURN_VERB && board !== null) return blockOf(definition, board)?.outputs
+    if (called !== null) {
+      const block = blockOf(definition, called)
+      // A call naming a Block that is gone is not a contract either: BLOCK_UNKNOWN
+      // says so, and inventing an empty one would draw a form for nothing.
+      return block ? (block.params ?? NOTHING) : undefined
+    }
+
+    if (step.use === RETURN_VERB && board !== null) {
+      const block = blockOf(definition, board)
+      return block ? (block.outputs ?? NOTHING) : undefined
+    }
+
     return undefined
   }, [definition, step, board])
 
@@ -422,6 +439,8 @@ export function Inspector({
 }
 
 const NO_CONNECTIONS: readonly Connection[] = []
+/** A contract that declares nothing, told apart from a Step that has no contract. */
+const NOTHING: readonly Declaration[] = []
 
 /**
  * The arguments a Board's contract declares, as Templates.
@@ -450,6 +469,13 @@ function Contract({
   highlighted: ReadonlySet<string>
   onChange: (key: string, value: string) => void
 }) {
+  if (declarations.length === 0) {
+    // Said rather than drawn as an empty space: a Board that declares nothing
+    // is a legitimate state and must not read as one this panel failed to
+    // draw.
+    return <p className={styles.note}>This step takes nothing.</p>
+  }
+
   return (
     <div className={styles.contract}>
       {declarations.map((declaration) => (

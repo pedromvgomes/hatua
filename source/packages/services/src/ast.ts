@@ -338,6 +338,27 @@ export function mapIn(
   const path = [...parent, key]
   const existing = document.ast.getIn(path, true)
   if (tagOf(existing) === MAP) return path
+
+  /*
+   * `with:` with nothing under it is an EMPTY mapping, not a half-typed one.
+   *
+   * YAML resolves a dangling key to a null scalar rather than to an absent one,
+   * and it is what a user is left with after deleting the last field by hand.
+   * Refused, every subsequent edit to that Step is a command that throws — which
+   * `EditingStore.apply` turns into a silent no-op, so the form appears to drop
+   * every value the user types with nothing anywhere saying why.
+   *
+   * Written over rather than created beside, so the key keeps its place and the
+   * comment above it.
+   */
+  if (asScalar(existing)?.value === null) {
+    // Through `createNode`, so what lands is the document's own mapping node.
+    // A plain `{}` is set as a JS value the pair holds opaquely, and the next
+    // command to look for pairs under it finds none.
+    document.ast.setIn(path, document.ast.createNode({}))
+    return path
+  }
+
   if (existing !== undefined) throw new Error(`"${key}" is not a mapping`)
 
   createKey(document, parent, key, order, {})

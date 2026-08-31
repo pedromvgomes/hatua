@@ -439,6 +439,31 @@ describe('the arguments a Board’s contract declares', () => {
     expect(source.writes.at(-1)).toContain('urgent: "{{ var.rush }}"')
   })
 
+  /*
+   * `addBlock` writes `{id, name, steps: []}` and no `params:` key, so an
+   * undefined here is the ordinary state of a Block that takes nothing — and
+   * read as "this is not a contract step" the editor says nothing declares a
+   * verb the document declares perfectly well.
+   */
+  it('says a call to a Block that takes nothing takes nothing', async () => {
+    const HOLLOW = `id: wf
+name: n
+version: 1
+status: draft
+steps:
+  - id: call
+    use: block.hollow
+    name: "Do the thing"
+blocks:
+  - id: hollow
+    name: "Nothing declared yet"
+    steps: []
+`
+    mount(host(HOLLOW), on('call'))
+    expect(await screen.findByText('This step takes nothing.')).toBeDefined()
+    expect(screen.queryByText(/Nothing declares this step type/)).toBeNull()
+  })
+
   it('draws a return’s values from the Board it sits on', async () => {
     mount(host(WITH_BLOCKS), { selected: { board: 'archive', steps: ['b2'] } })
     expect(await screen.findByLabelText('Where it went')).toBeDefined()

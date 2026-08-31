@@ -103,15 +103,22 @@ export function Data({ className, selected, board = null, onHighlight, ...rest }
   const store = useEditingStore()
   const manifests = useManifestStore()
   /*
-   * What the live region last said, and a counter beside it.
+   * What the live region says.
    *
    * A live region announces a CHANGE, so copying the same token twice writes an
    * identical string and the second copy is silent — which is exactly when a
-   * user is most likely to wonder whether the click landed. The counter is
-   * never rendered; it only makes the state new.
+   * user wonders whether the click landed. The repeat gets a trailing
+   * no-break space: the text differs, so it is announced, and nothing on screen
+   * moves.
+   *
+   * The element itself must never be replaced. A live region generally has to
+   * EXIST before its content changes for the change to be announced at all, so
+   * a `key` that changed per copy would re-insert the node already holding its
+   * message and announce nothing — including the first time.
    */
-  const [copied, setCopied] = useState<{ message: string; nth: number }>({ message: '', nth: 0 })
-  const say = (message: string) => setCopied((was) => ({ message, nth: was.nth + 1 }))
+  const [copied, setCopied] = useState('')
+  const say = (message: string) =>
+    setCopied((was) => (was.trimEnd() === message ? `${message}\u00a0` : message))
 
   // The one side effect: tell each store somebody is reading. Both are
   // idempotent, so every region that mounts may call them and only the first
@@ -140,7 +147,15 @@ export function Data({ className, selected, board = null, onHighlight, ...rest }
   const served = useMemo(() => manifestsIn(entries), [entries])
   const context = useMemo(() => contextKeysIn(entries), [entries])
 
-  const on: BoardId = selected?.board ?? board
+  /*
+   * `null` is a Board — the root one — and not an absent answer, so `??` would
+   * read a Segment selected at the root as "nobody said" and fall through to
+   * the prop. A Host whose canvas is parked on a Block while the selection is
+   * at the root would then be shown the Block's scope beside a step editor
+   * showing the root Step's fields: two columns disagreeing about what is
+   * selected.
+   */
+  const on: BoardId = selected ? selected.board : board
   const step = useMemo(() => {
     if (!definition || !selected || selected.steps.length !== 1) return undefined
     const only = selected.steps[0]
@@ -183,12 +198,8 @@ export function Data({ className, selected, board = null, onHighlight, ...rest }
               conditionally it announces nothing much of the time: a live region
               generally has to EXIST before its content changes for the change
               to be announced. */}
-          <p
-            key={copied.nth}
-            className={cx(styles.said, !copied.message && styles.silent)}
-            role="status"
-          >
-            {copied.message}
+          <p className={cx(styles.said, !copied && styles.silent)} role="status">
+            {copied}
           </p>
         </div>
 
