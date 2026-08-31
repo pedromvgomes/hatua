@@ -27,10 +27,10 @@ import css from './Fields.module.css?inline'
  * Steps or the editing store.
  *
  * That is what makes "edit anything the same way" a rendering decision rather
- * than a document one. The Workflow tab mounts this today because it is the
- * only surface that exists; the step editor mounts the same component when it
- * lands, and clicking the canvas's start node reaches it without `triggers[]`
- * moving anywhere.
+ * than a document one. The Workflow tab mounts it over a Trigger and the step
+ * editor over a Step, writing back to `triggers[…].with` and `steps[…].with`
+ * respectively, and clicking the canvas's start node reaches the form without
+ * `triggers[]` moving anywhere.
  *
  * ## Templates
  *
@@ -60,6 +60,15 @@ export interface FieldsProps extends Omit<ComponentPropsWithRef<'div'>, 'onChang
    * completion offers nothing, and the text stays typeable.
    */
   scope?: readonly ScopeEntry[]
+  /**
+   * Field keys to mark as reading whatever is being pointed at elsewhere.
+   *
+   * The Data panel is where a leaf is pointed at, and this is the other half of
+   * the relationship: without it a reference tree and the fields it fills are
+   * two lists with nothing on screen tying them together. Empty is the ordinary
+   * case, and a form nobody is pointing at draws no mark at all.
+   */
+  highlighted?: ReadonlySet<string>
   onChange: (key: string, value: string | number | boolean) => void
   /**
    * Bind one of the Host's Connections to a workflow-local name and point the
@@ -76,6 +85,7 @@ export function Fields({
   values,
   connections,
   scope = NO_SCOPE,
+  highlighted,
   onChange,
   onDeclareConnection,
   className,
@@ -105,6 +115,7 @@ export function Fields({
             value={values[field.k]}
             connections={connections}
             scope={scope}
+            highlighted={highlighted?.has(field.k) ?? false}
             established={established}
             onChange={(next) => onChange(field.k, next)}
             onDeclareConnection={
@@ -267,6 +278,7 @@ function FieldRow({
   value,
   connections,
   scope,
+  highlighted,
   established,
   onChange,
   onDeclareConnection,
@@ -275,6 +287,8 @@ function FieldRow({
   value: unknown
   connections: readonly Connection[]
   scope: readonly ScopeEntry[]
+  /** Whether this field's Template reads whatever is being pointed at. */
+  highlighted: boolean
   established: PickerState
   onChange: (next: string | number | boolean) => void
   onDeclareConnection?: (id: string, ref: string) => void
@@ -385,7 +399,7 @@ function FieldRow({
   )
 
   return (
-    <div className={styles.field}>
+    <div className={styles.field} data-highlighted={highlighted ? 'true' : undefined}>
       {labelable ? (
         <label className={styles.label} htmlFor={id}>
           {label}

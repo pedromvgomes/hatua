@@ -9,14 +9,20 @@ across the top, then three columns that are all on screen at once.
 
 ```
 +-------------------------------------------------------------+  TopBar, 56px
-| TabbedPanel      | FlowMap                    | Inspector    |
-| 304px            | 1fr                        | 404px        |
-| Components       | the canvas                 | the editor   |
-| Workflow, (Flow) |                            |              |
+| TabbedPanel      | FlowMap            | (Data) | Inspector   |
+| 304px            | 1fr                | 304px  | 404px       |
+| Components       | the canvas         | what   | the editor  |
+| Workflow, (Flow) |                    | it can |             |
+|                  |                    | read   |             |
 +-------------------------------------------------------------+
                      min-width 1240px; below that the screen
                      scrolls sideways rather than collapsing
 ```
+
+The Data column has no width until the editor is expanded into it, so the canvas
+keeps the room the rest of the time. That is why `Build`'s grid places its areas
+by line rather than by name: `grid-template-areas` cannot name a column that is
+sometimes absent.
 
 Each is exported individually from `@hatua/react`, and each mounts alone. That
 is the whole point of the tier: `views/Build` is a convenience, and a Host that
@@ -85,7 +91,7 @@ See `theme/HatuaProvider.tsx`.
 ## Where a region's data comes from
 
 Not from props. `Components` takes no manifests, `Workflow` takes no document,
-`Inspector` will take no Step, and
+`Inspector` takes no Step — only which one is *selected* — and
 that is forced rather than chosen: `apps/playground/src/host.tsx` mounts each
 region bare and `regions.test.tsx` renders every one of them with nothing above
 it, so a required data prop would break both. Everything a region reads arrives
@@ -93,7 +99,8 @@ through `<HatuaProvider>` — the Host's ports go in, and the stores that read
 them come out.
 
 **Chrome is not data, and does come in.** `TabbedPanel` takes `tabId`, `FlowMap`
-takes `boardId`, `StepList` and `Workflow` take a `board`. None of it is in the
+takes `boardId`, `StepList` and `Workflow` take a `board`, and `Inspector` and
+`Data` take the `selected` Segment and the leaf being pointed at. None of it is in the
 Workflow Definition and the editing store has no opinion on any of it — which is
 exactly why it can be lifted into a caller without reaching the document. Every
 one of them is optional and falls back to its own answer, so a region still
@@ -119,21 +126,22 @@ because neither needs a catalogue.
 | `TopBar` | The toolbar. |
 | `StepList` | The tree as a dense, ordered list. A region a Host may mount; not in `Build`'s tab set. |
 | `FlowMap` | The canvas: one Board's tree as a map of cards and the regions around them, filling the middle column. Not a tab. |
-| `Inspector` | The step editor. |
+| `Inspector` | The step editor: the selected Step's name and its fields. |
 | `Components` | The Component Manifests a Host serves, as cards. Components only — a Trigger is not a Step, and adding one is the Workflow tab's job. |
 | `Workflow` | Everything scoped to a **Board** rather than to a Step: the name and slug, the Board's root, the variables. |
-| `Data` | The reference tree the step editor expands into. Not a tab. |
+| `Data` | The reference tree the step editor expands into. Read-only: drag out of it, and a variable is *edited* in the Workflow tab. Not a tab. |
 
 `Fields` is not a region and is never exported: it is the form for one Component
 Manifest's fields, over one set of values. A Trigger's fields and a Step's are
 the same shape declared by the same schema, differing only in which key of the
-document they are written back to — so `Workflow` mounts it today and the step
-editor mounts the same component when it lands.
+document they are written back to — so `Workflow` and `Inspector` mount the
+same component and write to `triggers[…].with` and `steps[…].with` respectively.
 
 Every mappable field kind in it gets `<TemplateInput>` from `compounds/`. What
 this tier contributes is the two things that widget cannot work out for itself:
-what the field may read — `boardScope` here, `scopeFor` in the step editor —
-and what its value has to produce.
+what the field may read — `boardScope` in the Workflow tab, `scopeFor` in the
+step editor, because only a position in the tree says which Steps are guaranteed
+to have run — and what its value has to produce.
 
 That is the point worth keeping: **which surface edits a thing is a rendering
 decision, not a document one.** Clicking the canvas's derived start node can

@@ -2,6 +2,7 @@ import { type BoardId, boardKey, type Segment, type StepRef } from '@hatua/model
 import { addStep, type InsertPoint, rootStepCount } from '@hatua/services'
 import { type ComponentPropsWithRef, useState } from 'react'
 import { Components } from '../layouts/Components'
+import { Data } from '../layouts/Data'
 import { FlowMap } from '../layouts/FlowMap'
 import { Inspector } from '../layouts/Inspector'
 import { TabbedPanel } from '../layouts/TabbedPanel'
@@ -16,7 +17,8 @@ export type BuildProps = ComponentPropsWithRef<'div'>
 
 /**
  * The designer screen: the toolbar across the top, then three columns — the
- * tabbed side panel, the canvas, and the step editor.
+ * tabbed side panel, the canvas, and the step editor — and a fourth the editor
+ * expands leftward into, which has no width until it is asked for.
  *
  * **The canvas is how a workflow is built.** It has a column of its own and is
  * always on screen: every card, every `+` between two cards, and the doorway
@@ -102,6 +104,16 @@ export function Build({ className, ...rest }: BuildProps) {
    * a diff in the Host's repository for nothing.
    */
   const [board, setBoard] = useState<BoardId>(null)
+  /*
+   * Whether the Data panel stands open, and which leaf it is pointing at.
+   *
+   * Both are chrome and both are shared by two regions, which is the same
+   * reason selection is up here: the panel reports a leaf and the step editor
+   * marks the fields reading it, and neither can hold an answer the other has
+   * to see.
+   */
+  const [data, setData] = useState(false)
+  const [highlight, setHighlight] = useState<string | null>(null)
   const selected = selectedOn[boardKey(board)]
 
   /**
@@ -261,8 +273,29 @@ export function Build({ className, ...rest }: BuildProps) {
               onCollapseChange={setCollapsed}
             />
           </div>
+          {/*
+            The Data panel is the step editor's left extension, not a tab. Its
+            column exists only while it is open, so the canvas gets the room
+            back when it is not — and both regions are placed here rather than
+            one mounting the other, which is what keeps either mountable alone.
+          */}
+          {data ? (
+            <div className={styles.data}>
+              <Data selected={selected ?? null} board={board} onHighlight={setHighlight} />
+            </div>
+          ) : null}
           <div className={styles.aside}>
-            <Inspector />
+            <Inspector
+              selected={selected ?? null}
+              highlight={highlight}
+              expanded={data}
+              onExpandedChange={(open) => {
+                setData(open)
+                // A highlight outlives the panel that produced it otherwise,
+                // and marks fields for a leaf nobody can see any more.
+                if (!open) setHighlight(null)
+              }}
+            />
           </div>
         </div>
       </div>

@@ -205,6 +205,13 @@ export const BLOCK_KEY_ORDER = ['id', 'name', 'params', 'outputs', 'vars', 'step
 export const TRIGGER_KEY_ORDER = ['id', 'use', 'name', 'with']
 
 /**
+ * The same, for a Step. The structural keys come last because they hold the
+ * rest of the tree: a `with:` created after `branches:` puts one line of
+ * configuration below the fifty lines of Steps it configures.
+ */
+export const STEP_KEY_ORDER = ['id', 'use', 'name', 'with', 'branches', 'steps', 'handler']
+
+/**
  * The key order `workflow-definition.schema.yaml` documents.
  *
  * A key the document does not have yet is created among the keys it does rather
@@ -305,6 +312,35 @@ export function listIn(
   if (existing !== undefined) throw new Error(`"${key}" is not a list`)
 
   createKey(document, parent, key, order, [])
+  return path
+}
+
+/**
+ * The path of a mapping inside the mapping at `parent`, creating an empty one
+ * in its documented position when the mapping has no such key.
+ *
+ * `listIn` for a `with:` rather than a `steps:`. A Step added from the
+ * catalogue carries no `with:` at all — nothing has been filled in yet — so the
+ * first field edited on it is the one that creates the key, and it lands under
+ * `use:` rather than below the fifty lines of Steps a container holds.
+ *
+ * A key holding something other than a mapping throws rather than being
+ * replaced, on `listIn`'s reasoning: `with: tomorrow` is a half-typed document
+ * and not an absent one, and overwriting it discards text the user is in the
+ * middle of.
+ */
+export function mapIn(
+  document: WorkflowDocument,
+  parent: Path,
+  key: string,
+  order: readonly string[],
+): Path {
+  const path = [...parent, key]
+  const existing = document.ast.getIn(path, true)
+  if (tagOf(existing) === MAP) return path
+  if (existing !== undefined) throw new Error(`"${key}" is not a mapping`)
+
+  createKey(document, parent, key, order, {})
   return path
 }
 

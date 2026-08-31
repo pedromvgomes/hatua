@@ -1,0 +1,121 @@
+@layer hatua {
+  .source {
+    margin-block-end: 8px;
+  }
+
+  .blurb {
+    margin: 6px 0 0;
+    font-size: 0.75rem;
+    line-height: 1.45;
+    color: var(--hatua-text-secondary);
+  }
+
+  .group + .group {
+    margin-block-start: 10px;
+  }
+
+  .groupHead {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    margin: 0 0 4px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--hatua-text-muted);
+  }
+
+  .groupPath {
+    font-family: var(--hatua-font-mono);
+    font-size: 0.6875rem;
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--hatua-text-muted);
+  }
+
+  .rows {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    inline-size: 100%;
+    height: 30px;
+    padding: 0 8px 0 14px;
+    appearance: none;
+    border: 0;
+    background: transparent;
+    border-radius: var(--hatua-radius-sm);
+    text-align: start;
+    cursor: grab;
+  }
+
+  /* The type marking: a rail, drawn as a pseudo-element with its own geometry.
+     An inset box-shadow would follow the row's border-radius and bow into a
+     bracket instead of standing straight. */
+  .row::before {
+    content: "";
+    position: absolute;
+    inset-block: 5px;
+    inset-inline-start: 5px;
+    inline-size: 2px;
+    border-radius: 1px;
+    background: var(--hatua-border-subtle);
+  }
+
+  .row[data-fits="true"]::before {
+    background: var(--hatua-status-ok);
+  }
+
+  .row:hover,
+  .row:focus-visible {
+    background: var(--hatua-accent-wash);
+    outline: none;
+  }
+
+  .path {
+    font-family: var(--hatua-font-mono);
+    font-size: 0.75rem;
+    color: var(--hatua-text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .type {
+    flex: none;
+    font-size: 0.6875rem;
+    letter-spacing: 0.04em;
+    color: var(--hatua-text-muted);
+  }
+
+  /*
+   * A leaf the thing being edited already reads.
+   *
+   * A word rather than a dot: a mark carrying meaning has to be in the
+   * accessible name too, and a decorative dot beside a mono path is one more
+   * thing to explain in a legend nobody reads.
+   */
+  .used {
+    flex: none;
+    padding: 0 5px;
+    border-radius: var(--hatua-radius-sm);
+    background: var(--hatua-accent-wash);
+    font-size: 0.6875rem;
+    color: var(--hatua-text-secondary);
+  }
+
+  .empty {
+    margin: 0;
+    padding: 8px 2px;
+    font-size: 0.75rem;
+    color: var(--hatua-text-secondary);
+  }
+}
