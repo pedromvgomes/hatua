@@ -849,7 +849,54 @@ describe('a Board is what the canvas draws one of', () => {
     fireEvent.click(canvas().getByRole('button', { name: 'Open Archive one' }))
 
     // Placed again, rather than restored to a pan made before it was closed.
-    expect(onViewportChange).toHaveBeenLastCalledWith(placed)
+    expect(onViewportChange).toHaveBeenLastCalledWith(placed, 'alpha')
+  })
+
+  /*
+   * A viewport is per Board, so reporting one without saying which is telling a
+   * Host to write down something it cannot give back: the last report wins
+   * whatever Board it came from, and a Block's pan is restored as the root's.
+   */
+  it('names the Board every viewport belongs to', async () => {
+    const onViewportChange = vi.fn()
+    mount(SOURCE, { onViewportChange })
+    await canvas().findByText('Archive one')
+
+    // The root places itself first, and says so.
+    expect(onViewportChange.mock.calls.every(([, board]) => board === null)).toBe(true)
+
+    fireEvent.click(canvas().getByRole('button', { name: 'Open Archive one' }))
+    fireEvent.wheel(surface(), { deltaX: 120, deltaY: 80, deltaMode: 0 })
+
+    const [view, board] = onViewportChange.mock.lastCall ?? []
+    expect(board).toBe('alpha')
+    // And it is the Block's own pan, not the root's, that was reported with it.
+    const root = onViewportChange.mock.calls.find(([, on]) => on === null)?.[0]
+    expect(view).not.toEqual(root)
+  })
+
+  /**
+   * Seeded per Board, so a Host that persisted one entry per Board hands the
+   * whole lot back and each tab opens where it was left.
+   */
+  it('opens each Board where its own entry said', async () => {
+    mount(SOURCE, {
+      defaultViewports: new Map([
+        [null, { x: 40, y: -60, scale: 1.5 }],
+        ['alpha', { x: -10, y: 20, scale: 2 }],
+      ]),
+    })
+    await canvas().findByText('Archive one')
+
+    fireEvent.click(canvas().getByRole('button', { name: 'Open Archive one' }))
+    await canvas().findByText('Alpha returns')
+
+    // The transformed box is the one holding the cards, which is how the
+    // panning suite finds it too.
+    const panned = () => canvas().getByRole('list', { name: 'Steps' }).parentElement as HTMLElement
+
+    // The Block's own entry, and not the root's, and not a fit.
+    await waitFor(() => expect(panned().style.transform).toBe('translate(-10px, 20px) scale(2)'))
   })
 
   /**
@@ -1092,16 +1139,22 @@ describe('FlowMap, panning and zooming', () => {
 
   it('opens where the caller said, and says where it went', async () => {
     const onViewportChange = vi.fn()
-    mount(SOURCE, { defaultViewport: { x: 40, y: -60, scale: 1.5 }, onViewportChange })
+    mount(SOURCE, {
+      defaultViewports: new Map([[null, { x: 40, y: -60, scale: 1.5 }]]),
+      onViewportChange,
+    })
     await canvas().findByText('Fetch mail')
 
     expect(surfaceOf().style.transform).toBe('translate(40px, -60px) scale(1.5)')
-    expect(onViewportChange).toHaveBeenCalledWith({ x: 40, y: -60, scale: 1.5 })
+    expect(onViewportChange).toHaveBeenCalledWith({ x: 40, y: -60, scale: 1.5 }, null)
   })
 
   it('zooms from the toolbar and reports every move', async () => {
     const onViewportChange = vi.fn()
-    mount(SOURCE, { defaultViewport: { x: 0, y: 0, scale: 1 }, onViewportChange })
+    mount(SOURCE, {
+      defaultViewports: new Map([[null, { x: 0, y: 0, scale: 1 }]]),
+      onViewportChange,
+    })
     await canvas().findByText('Fetch mail')
 
     fireEvent.click(canvas().getByRole('button', { name: 'Zoom in' }))
@@ -1114,7 +1167,7 @@ describe('FlowMap, panning and zooming', () => {
     fireEvent.click(canvas().getByRole('button', { name: /^Zoom level/ }))
     fireEvent.click(canvas().getByRole('button', { name: '200%' }))
     expect(surfaceOf().style.transform).toContain('scale(2)')
-    expect(onViewportChange).toHaveBeenLastCalledWith(expect.objectContaining({ scale: 2 }))
+    expect(onViewportChange).toHaveBeenLastCalledWith(expect.objectContaining({ scale: 2 }), null)
   })
 
   /*
@@ -1193,7 +1246,7 @@ describe('FlowMap, panning and zooming', () => {
   })
 
   it('leaves a viewport the caller supplied alone, however the canvas measures', async () => {
-    mount(SOURCE, { defaultViewport: { x: 40, y: -60, scale: 1 } })
+    mount(SOURCE, { defaultViewports: new Map([[null, { x: 40, y: -60, scale: 1 }]]) })
     await canvas().findByText('Fetch mail')
 
     const region = screen.getByRole('region', { name: 'Flow map' })
@@ -1211,7 +1264,7 @@ describe('FlowMap, panning and zooming', () => {
   })
 
   it('pans until a focused card is on screen, which no scroll container is left to do', async () => {
-    mount(SOURCE, { defaultViewport: { x: 0, y: 0, scale: 1 } })
+    mount(SOURCE, { defaultViewports: new Map([[null, { x: 0, y: 0, scale: 1 }]]) })
     const card = await canvas().findByText('Fetch mail')
 
     const region = screen.getByRole('region', { name: 'Flow map' })
@@ -1286,7 +1339,7 @@ describe('FlowMap, panning and zooming', () => {
   })
 
   it('does not pan for its own chrome, which sits inside the margin and never moves', async () => {
-    mount(SOURCE, { defaultViewport: { x: 0, y: 0, scale: 1 } })
+    mount(SOURCE, { defaultViewports: new Map([[null, { x: 0, y: 0, scale: 1 }]]) })
     await canvas().findByText('Fetch mail')
 
     const region = screen.getByRole('region', { name: 'Flow map' })
@@ -1304,7 +1357,7 @@ describe('FlowMap, panning and zooming', () => {
   })
 
   it('hands focus to the canvas after a pointer press, because the canvas pans on space', async () => {
-    mount(SOURCE, { defaultViewport: { x: 0, y: 0, scale: 1 } })
+    mount(SOURCE, { defaultViewports: new Map([[null, { x: 0, y: 0, scale: 1 }]]) })
     await canvas().findByText('Fetch mail')
 
     const frame = screen.getByRole('region', { name: 'Flow map' }).firstElementChild
@@ -1318,7 +1371,7 @@ describe('FlowMap, panning and zooming', () => {
   })
 
   it('leaves focus where a keyboard put it, which is the only thing saying where the user is', async () => {
-    mount(SOURCE, { defaultViewport: { x: 0, y: 0, scale: 1 } })
+    mount(SOURCE, { defaultViewports: new Map([[null, { x: 0, y: 0, scale: 1 }]]) })
     await canvas().findByText('Fetch mail')
 
     const zoomIn = canvas().getByRole('button', { name: 'Zoom in' })
@@ -1343,7 +1396,7 @@ describe('FlowMap, panning and zooming', () => {
     render(
       <HatuaProvider ports={{ workflows: serving(SOURCE) }} workflowId="wf_map">
         <Probe onStore={(one) => (store = one)} />
-        <FlowMap defaultViewport={{ x: 40, y: -60, scale: 1.5 }} />
+        <FlowMap defaultViewports={new Map([[null, { x: 40, y: -60, scale: 1.5 }]])} />
       </HatuaProvider>,
     )
     await canvas().findByText('Fetch mail')
@@ -1376,14 +1429,14 @@ describe('FlowMap, panning and zooming', () => {
     expect(canvas().queryByRole('button', { name: /Insert a Step/ })).toBeNull()
   })
 
-  it('reads defaultViewport once even where React renders twice', async () => {
+  it('reads defaultViewports once even where React renders twice', async () => {
     // Every Host in development mounts under StrictMode, which double-invokes
     // the component body and keeps the second result. A default consumed in a
     // render is a default consumed in the pass React throws away.
     render(
       <StrictMode>
         <HatuaProvider ports={{ workflows: serving(SOURCE) }} workflowId="wf_map">
-          <FlowMap defaultViewport={{ x: 40, y: -60, scale: 1.5 }} />
+          <FlowMap defaultViewports={new Map([[null, { x: 40, y: -60, scale: 1.5 }]])} />
         </HatuaProvider>
       </StrictMode>,
     )
@@ -1393,7 +1446,7 @@ describe('FlowMap, panning and zooming', () => {
   })
 
   it('consumes every space keydown while a pan is held, not only the first', async () => {
-    mount(SOURCE, { defaultViewport: { x: 0, y: 0, scale: 1 } })
+    mount(SOURCE, { defaultViewports: new Map([[null, { x: 0, y: 0, scale: 1 }]]) })
     await canvas().findByText('Fetch mail')
 
     const frame = screen.getByRole('region', { name: 'Flow map' }).firstElementChild as HTMLElement
@@ -1418,7 +1471,7 @@ describe('FlowMap, panning and zooming', () => {
   })
 
   it('re-centres when a Block’s Board is opened, because the coordinates are Board-local', async () => {
-    mount(SOURCE, { defaultViewport: { x: 40, y: -60, scale: 1.5 } })
+    mount(SOURCE, { defaultViewports: new Map([[null, { x: 40, y: -60, scale: 1.5 }]]) })
     await canvas().findByText('Archive one')
     expect(surfaceOf().style.transform).toBe('translate(40px, -60px) scale(1.5)')
 

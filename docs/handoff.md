@@ -397,9 +397,15 @@ zoom back in.
 **Where somebody is looking is chrome**, one level out from the node positions ADR-0001 keeps out of
 the document: a viewport in the file is a diff in the Host's repository every time anyone scrolls. It
 is not a controlled prop either. `<FlowMap>` holds it and offers **two** props and not three —
-`defaultViewport`, read once on mount, and `onViewportChange`, an observer. That is enough for a Host
+`defaultViewports`, read once on mount, and `onViewportChange`, an observer. That is enough for a Host
 to put somebody back where they were and not enough for a caller to drive the canvas into a state it
-cannot get itself out of. Opening a Block's Board resets it, because coordinates are Board-local.
+cannot get itself out of.
+
+Both halves are **per Board**, keyed by **Board** with `null` for the root, because coordinates are
+Board-local: a pan carried across Boards lands in empty space. A contract that reported every Board's
+viewport while accepting only one told a Host to write down something it could never give back — the
+last report won whatever Board it came from, so a **Block**'s pan came back as the root's. A Board
+with no entry is fitted to its content, which is what an unopened one should do.
 
 **Anything that takes focus pans the view to it.** That is not an enhancement: a scroll container
 brought a focused child into view for free, a transform inside a clipped box has nothing to scroll,
