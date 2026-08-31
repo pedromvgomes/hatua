@@ -1006,8 +1006,12 @@ describe('a Board is what the canvas draws one of', () => {
     mount()
     await canvas().findByText('Fetch mail')
 
+    // A predicate rather than a regex built from the argument: the legend is
+    // matched by substring, which is what the callers below mean, and it avoids
+    // treating a caller's word as a pattern.
     const frameOf = (word: string) =>
-      canvas().getByRole('button', { name: new RegExp(word) }).parentElement as HTMLElement
+      canvas().getByRole('button', { name: (name) => name.includes(word) })
+        .parentElement as HTMLElement
 
     expect(frameOf('attempt').className).not.toContain('dashed')
     expect(frameOf('on failure').className).toContain('dashed')
