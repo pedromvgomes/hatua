@@ -501,6 +501,63 @@ describe('what it says about a Step it cannot draw a form for', () => {
   })
 })
 
+/*
+ * "This expression expects text, but this produces object" says nothing about
+ * WHICH of a Step's Templates is wrong. Three of them collected above the form
+ * are three sentences a reader cannot act on.
+ */
+describe('where a diagnostic is drawn', () => {
+  const MISMATCHED = `id: wf
+name: n
+version: 1
+status: draft
+triggers:
+  - id: t1
+    use: component.schedule.cron
+steps:
+  - id: s1
+    use: component.email.fetch
+  - id: s2
+    use: component.email.send
+    with:
+      to: "{{ steps.s1 }}"
+      subject: "{{ steps.s1 }}"
+`
+
+  /** Everything the row holding this control says. */
+  const marked = (field: HTMLElement) => field.closest('[data-field]')?.textContent ?? ''
+
+  it('puts each message under the field it names', async () => {
+    mount(host(MISMATCHED), on('s2'))
+
+    const to = await screen.findByLabelText('To')
+    await waitFor(() => expect(marked(to)).toMatch(/expects text/))
+    // And on the other one too — both are wrong, and each says so where it is.
+    expect(marked(screen.getByLabelText('Subject'))).toMatch(/expects text/)
+    // Never both on one field.
+    expect(marked(to).match(/expects text/g)).toHaveLength(1)
+  })
+
+  it('leaves a field the checker is happy with unmarked', async () => {
+    const ONE_BAD = MISMATCHED.replace('subject: "{{ steps.s1 }}"', 'subject: "Nightly"')
+    mount(host(ONE_BAD), on('s2'))
+
+    await waitFor(() => expect(marked(screen.getByLabelText('To'))).toMatch(/expects text/))
+    expect(marked(screen.getByLabelText('Subject'))).not.toMatch(/expects text/)
+  })
+
+  /*
+   * A diagnostic about the Step itself names no field and has nowhere else to
+   * go, so it keeps its place above the form.
+   */
+  it('keeps what names no field above the form', async () => {
+    // COMPONENT_UNKNOWN is about the Step, not about any field of it.
+    mount(host(MISMATCHED), on('s2'), [CATALOGUE[0] as Manifest])
+    const said = await screen.findByText(/Nothing declares "component.email.send"/)
+    expect(said.closest('[data-field]')).toBeNull()
+  })
+})
+
 describe('the name field', () => {
   /*
    * A visible label and an accessible name that disagree fail WCAG 2.5.3:

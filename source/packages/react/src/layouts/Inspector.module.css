@@ -95,8 +95,13 @@
     overflow-wrap: anywhere;
   }
 
+  /* What the checker says about the Step ITSELF. Anything naming a field is
+     drawn under that field's control instead, because a run of sentences all
+     beginning "This expression expects…" names nothing a reader can act on. */
   .problems {
     margin: 0;
+    padding: 0;
+    list-style: none;
     font-size: 0.75rem;
     line-height: 1.45;
     color: var(--hatua-status-error);
