@@ -1704,6 +1704,30 @@ describe('the selection action bar', () => {
     expect(reason && document.getElementById(reason)?.textContent).toMatch(/Return/)
   })
 
+  /*
+   * `selected` is a prop, so a Host may hand over a Segment naming siblings with
+   * a Step between them — which `extractBlock` refuses, because extracting it
+   * would put the later Step before the one it skipped.
+   *
+   * `apply` restores the document and returns when a command throws, so the
+   * refusal reaches this region as silence. Acting on that silence would clear a
+   * selection still on screen and open a tab for a Block that was never
+   * declared: the action would look like it worked and lose the author's work.
+   */
+  it('keeps the selection and opens no Board when the command refuses', async () => {
+    const onSelect = vi.fn()
+    mount(SOURCE, { selected: { board: null, steps: ['fetch', 'first'] }, onSelect })
+    await canvas().findByText('Fetch mail')
+
+    fireEvent.click(within(bar() as HTMLElement).getByRole('button', { name: /Make a block/ }))
+
+    // No Board was declared, so the strip that appears with one is still absent.
+    expect(canvas().queryByRole('navigation', { name: 'Boards' })).toBeNull()
+    // And the selection was not cleared out from under the author.
+    expect(onSelect).not.toHaveBeenCalled()
+    expect(screen.getByText('2 steps selected')).toBeTruthy()
+  })
+
   it('does nothing when the refused control is pressed', async () => {
     mount()
     await canvas().findByText('Fetch mail')

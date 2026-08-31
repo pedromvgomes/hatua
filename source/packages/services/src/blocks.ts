@@ -461,12 +461,27 @@ export function extractBlock(segment: Segment, block: NewBlock = {}): EditComman
       const taken = [...found.values()]
       const [first, ...rest] = taken
       if (!first) throw new Error('Nothing to extract')
-      // Contiguous siblings by construction (ADR-0020), and checked anyway
-      // because a Segment can be handed in by a caller rather than built by the
-      // canvas: splicing Steps out of two different lists would reorder
-      // execution, which is the one thing this gesture must not do.
+
+      /*
+       * Contiguous siblings by construction (ADR-0020), and checked anyway
+       * because a Segment reaches here from a caller rather than only from the
+       * canvas: `selected` is a prop a Host may set to anything, and a Segment
+       * held across an edit is reconciled by id, so a Step inserted between its
+       * members leaves a gap that `segmentSteps` cannot see.
+       *
+       * BOTH halves, because either one alone reorders execution — the one
+       * thing this gesture must not do. Two different lists is the obvious
+       * case; a gap is the quiet one. Extracting `s2` and `s4` out of
+       * `s1 s2 s3 s4` leaves `s1`, the call, `s3` — and `s4` now runs BEFORE
+       * `s3` rather than after it, in a document that still projects and still
+       * validates, from a gesture that promises to change only where Steps are
+       * written.
+       */
       if (rest.some((one) => !samePath(one.listPath, first.listPath))) {
         throw new Error('The selected Steps are not siblings')
+      }
+      if (rest.some((one, at) => one.index !== first.index + at + 1)) {
+        throw new Error('The selected Steps are not next to each other')
       }
 
       // A return moved onto the new Board binds to ITS outputs and ends a Block
@@ -509,7 +524,16 @@ export function extractBlock(segment: Segment, block: NewBlock = {}): EditComman
 
 type StepEntry = Record<string, unknown>
 
-/** Whether a Step, or anything nested inside it, is a `core.return`. */
+/**
+ * Whether a Step, or anything nested inside it, is a `core.return`.
+ *
+ * The AST-walking half of `segmentReturns`, which is the same question asked of
+ * the typed tree. Two of them because a command runs against a document that
+ * does not project (ADR-0001), so the model's answer is unavailable here — and
+ * they agree only while `stepEntriesIn` and `regionsOf` enumerate the same
+ * regions. A region kind added to one and not the other leaves the canvas
+ * offering an action this refuses.
+ */
 const holdsReturn = (step: StepEntry): boolean => {
   for (const { step: one } of stepEntriesIn([step], [])) {
     if (one.use === RETURN_VERB) return true

@@ -734,6 +734,35 @@ steps:
     ).toThrow(/siblings/)
   })
 
+  /*
+   * The quiet half of the same rule. Siblings with a gap between them reorder
+   * execution exactly as two lists do, and the result still projects and still
+   * validates — so nothing downstream would report it.
+   */
+  it('refuses siblings with a Step between them', () => {
+    const flat = `id: wf
+name: W
+version: 1
+status: draft
+steps:
+  - { id: s1, use: component.email.send }
+  - { id: s2, use: component.email.send }
+  - { id: s3, use: component.email.send }
+  - { id: s4, use: component.email.send }
+`
+    // Extracted, `s2` and `s4` would leave `s1`, the call, `s3` — putting `s4`
+    // before `s3` rather than after it.
+    expect(() =>
+      apply(flat, extractBlock({ board: null, steps: ['s2', 's4'] }, { id: 'block_1' })),
+    ).toThrow(/next to each other/)
+
+    // The contiguous run through the same Steps is still allowed.
+    const out = projected(
+      apply(flat, extractBlock({ board: null, steps: ['s2', 's3'] }, { id: 'block_1' })),
+    )
+    expect(out.steps.map((step) => step.id)).toEqual(['s1', 's5', 's4'])
+  })
+
   it('extracts from inside a Block’s Board as readily as from the root', () => {
     const nested = `id: wf
 name: W
