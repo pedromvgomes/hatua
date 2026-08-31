@@ -129,7 +129,7 @@ scenarios:
           use: core.fork
           branches:
             - { label: Always, steps: [] }
-            - { label: Never, when: "{{ triggers.x }}", steps: [] }
+            - { label: Never, when: "{{ true }}", steps: [] }
     expect:
       - { code: BRANCH_UNREACHABLE_AFTER, blocks: publish, stepId: s1 }
 
@@ -273,7 +273,7 @@ scenarios:
               use: core.fork
               branches:
                 - label: A
-                  when: "true"
+                  when: "{{ true }}"
                   steps: [{ id: ret, use: core.return, with: { url: "x" } }]
                 - label: B
                   steps: [{ id: other, use: component.email.send, with: { to: "x" } }]
@@ -310,6 +310,9 @@ scenarios:
       status: draft
       blocks:
         - id: archive
+          params:
+            - { k: a, label: A, t: boolean }
+            - { k: b, label: B, t: boolean }
           outputs: [{ k: url, label: URL, t: text }]
           steps:
             - id: fork
@@ -329,6 +332,7 @@ scenarios:
       status: draft
       blocks:
         - id: archive
+          params: [{ k: a, label: A, t: boolean }]
           outputs: [{ k: url, label: URL, t: text }]
           steps:
             - id: fork

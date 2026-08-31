@@ -1,5 +1,5 @@
 import { type Diagnostic, indexManifests, validateDefinition } from '@hatua/model'
-import { manifestsIn } from '@hatua/schema'
+import { contextKeysIn, manifestsIn } from '@hatua/schema'
 import type { EditingStore } from './editing'
 import type { ManifestStore } from './manifests'
 import type { Store } from './store'
@@ -113,6 +113,10 @@ export function createValidationStore(
       // indexing it would file it under `undefined` and make every Step whose
       // verb is missing resolve to it.
       indexManifests(manifestsIn(catalogue.manifests)),
+      // The Run Context separately, because it is scope rather than a verb:
+      // `run.*` is on every Board, and a checker that was not given the keys
+      // would report every one of them as naming nothing.
+      contextKeysIn(catalogue.manifests),
     )
     return { ...validity, ready: true }
   }
