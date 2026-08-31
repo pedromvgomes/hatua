@@ -1,6 +1,7 @@
 import type { Slot, ValueType } from '@hatua/expressions'
 import type { Manifest, Step, Variable, WorkflowDefinition } from '@hatua/schema'
 import { isMappable, type MAPPABLE_FIELD_KINDS } from '@hatua/schema'
+import { blockIdOf, blockOf, callSlots, RETURN_VERB, returnSlots } from './blocks'
 import { type BoardId, own, variableOn } from './tree'
 
 /**
@@ -226,4 +227,48 @@ export function mapEntries(value: unknown): MapEntry[] {
       typeof (entry as MapEntry).value === 'string' &&
       typeof (entry as MapEntry).type === 'string',
   )
+}
+
+/**
+ * The Slots a Step's `with:` map resolves into, whichever kind of Step it is.
+ *
+ * One entry point, so a caller never has to know that a call, a `core.return`
+ * and a `core.set_var` are the three verbs a Component Manifest cannot
+ * describe: what each of their fields must produce is declared elsewhere in the
+ * document — in a Block's `params`, in a Block's `outputs`, in the Board's
+ * `vars` — and a caller that only asked `slotsFor` would check nothing at a
+ * call site at all. `sdk/go`'s `SlotsForStep` is the same dispatch.
+ *
+ * Empty where the document does not say: a call naming a Block that is not
+ * declared, a return on the root Board, a `core.set_var` naming no variable.
+ * Each of those has its own diagnostic, and resolving a Template against a
+ * contract nothing declares would report a second problem about the first one.
+ *
+ * A branch's `when:` and a `core.repeat`'s `until:` are NOT here. They are
+ * structural keys beside `steps:` rather than fields under `with:`, which is
+ * exactly what lets them be boolean — `whenSlot` and `repeatSlot` are theirs.
+ */
+export function slotsForStep(
+  doc: WorkflowDefinition,
+  board: BoardId,
+  step: Step,
+  manifest: Manifest | undefined,
+): Slot[] {
+  const called = blockIdOf(step.use)
+  if (called !== null) {
+    const block = blockOf(doc, called)
+    return block ? callSlots(step, block) : []
+  }
+
+  if (step.use === RETURN_VERB && board !== null) {
+    const block = blockOf(doc, board)
+    return block ? returnSlots(step, block) : []
+  }
+
+  if (step.use === SET_VAR_VERB) {
+    const slot = setVarSlot(doc, board, step)
+    return slot ? [slot] : []
+  }
+
+  return manifest ? slotsFor(step, manifest) : []
 }
