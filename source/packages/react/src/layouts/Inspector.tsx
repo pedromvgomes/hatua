@@ -1,15 +1,25 @@
 import { referencePath, referencesIn, tryParseTemplate } from '@hatua/expressions'
 import {
   type BoardId,
+  blockIdOf,
+  blockOf,
   boardOf,
   type Diagnostic,
   nameOf,
+  RETURN_VERB,
   type ScopeEntry,
   type Segment,
   scopeFor,
   slotsForStep,
+  stepKey,
 } from '@hatua/model'
-import { type Connection, contextKeysIn, type ManifestEntry, manifestsIn } from '@hatua/schema'
+import {
+  type Connection,
+  contextKeysIn,
+  type Declaration,
+  type ManifestEntry,
+  manifestsIn,
+} from '@hatua/schema'
 import {
   declareConnection,
   type EditingState,
@@ -21,6 +31,7 @@ import {
   type ValidationState,
 } from '@hatua/services'
 import { type ComponentPropsWithRef, useEffect, useId, useMemo, useSyncExternalStore } from 'react'
+import { TemplateInput } from '../compounds/TemplateInput'
 import { Button } from '../primitives/Button'
 import { cx } from '../primitives/classNames'
 import { useEditingStore, useManifestStore, useValidationStore } from '../theme/HatuaProvider'
@@ -178,6 +189,25 @@ export function Inspector({
   const manifest = step ? served.find((entry) => entry.use === step.use) : undefined
 
   /**
+   * The arguments a Step takes when something other than a Component Manifest
+   * declares them.
+   *
+   * A **Board's root is its contract** (CONTEXT.md), so a call takes the Block's
+   * parameters and a `core.return` supplies that Board's outputs — declared in
+   * the document rather than by a manifest, which is why `manifest` is
+   * `undefined` for both and why "nothing declares this step type" would be
+   * false about either. `slotsForStep` already types them the same way for the
+   * checker and for the panel beside this.
+   */
+  const contract = useMemo(() => {
+    if (!definition || !step) return undefined
+    const called = blockIdOf(step.use)
+    if (called !== null) return blockOf(definition, called)?.params
+    if (step.use === RETURN_VERB && board !== null) return blockOf(definition, board)?.outputs
+    return undefined
+  }, [definition, step, board])
+
+  /**
    * What a Template in this form may read.
    *
    * `scopeFor` and not `boardScope`: a Step has a position in the tree, and
@@ -194,7 +224,15 @@ export function Inspector({
   // Absent, not empty. "Not checked yet" and "checked and fine" must not look
   // the same: every Step is an unknown component until the manifests land, so
   // painting `byStep` before `ready` would mark a perfectly good Step on load.
-  const problems = (checks.ready ? checks.byStep : NO_PROBLEMS).get(step?.id ?? '') ?? []
+  /*
+   * Keyed by `stepKey`, never by the bare id. Ids are Board-local, so a
+   * diagnostic about a Step inside a Block is filed under `<board>/<id>` — and
+   * a bare-id lookup finds nothing for every Step on every Board but the root,
+   * which is a card the canvas marks and this panel draws clean.
+   */
+  const problems =
+    (checks.ready ? checks.byStep : NO_PROBLEMS).get(step ? stepKey({ board, id: step.id }) : '') ??
+    []
 
   /**
    * Which fields read the path the Data panel is pointing at.
@@ -279,10 +317,17 @@ export function Inspector({
             <p className={styles.note}>Select a step to fill it in.</p>
           ) : null}
 
-          {definition && selected && selected.steps.length > 1 ? (
+          {/*
+            Anything but exactly one, which is a Segment of several and also the
+            empty one a Host may hand in. Settings belong to one Step either
+            way, and a body with nothing in it and no sentence is the state a
+            region must never be left in.
+          */}
+          {definition && selected && selected.steps.length !== 1 ? (
             <p className={styles.note}>
-              {selected.steps.length} steps are selected. Settings belong to one step, so pick a
-              single one to fill it in.
+              {selected.steps.length > 1
+                ? `${selected.steps.length} steps are selected. Settings belong to one step, so pick a single one to fill it in.`
+                : 'Select a step to fill it in.'}
             </p>
           ) : null}
 
@@ -298,7 +343,11 @@ export function Inspector({
                 </label>
                 <CommittedInput
                   id={nameId}
-                  label={`Name of ${nameOf(step)}`}
+                  // The same word the visible <label> carries, so the
+                  // accessible name and the text on screen agree: voice
+                  // control acts on what a user can read, and "Name of Send
+                  // mail" is not on the screen anywhere.
+                  label="Name"
                   value={step.name ?? ''}
                   placeholder={manifest?.name ?? step.use}
                   onCommit={(next) => store?.apply(setStepName(ref, next))}
@@ -324,7 +373,15 @@ export function Inspector({
                 </p>
               ) : null}
 
-              {manifest ? (
+              {contract ? (
+                <Contract
+                  declarations={contract}
+                  values={(step.with ?? {}) as Record<string, unknown>}
+                  scope={scope}
+                  highlighted={reading}
+                  onChange={(key, next) => store?.apply(setStepField(ref, key, next))}
+                />
+              ) : manifest ? (
                 <Fields
                   manifest={manifest}
                   values={(step.with ?? {}) as Record<string, unknown>}
@@ -345,11 +402,12 @@ export function Inspector({
                   }
                 />
               ) : (
-                // Only when the checker has not already said it. Without a
-                // catalogue wired there is no checker at all, and the Step
-                // would otherwise be a name box with no account of why it has
-                // nothing else on it.
-                !problems.some((problem) => problem.code === 'COMPONENT_UNKNOWN') && (
+                // Only when the checker has not already said something. It
+                // names the verb, or the Block a call cannot find, better than
+                // this can — and without a catalogue wired there is no checker
+                // at all, which is when a Step would otherwise be a name box
+                // with no account of why it has nothing else on it.
+                problems.length === 0 && (
                   <p className={styles.note}>
                     Nothing declares this step type, so it has no settings.
                   </p>
@@ -364,6 +422,84 @@ export function Inspector({
 }
 
 const NO_CONNECTIONS: readonly Connection[] = []
+
+/**
+ * The arguments a Board's contract declares, as Templates.
+ *
+ * Not `<Fields>`, because a `Declaration` is not a `Field`: it carries the type
+ * the argument must produce rather than a widget kind, and a call's argument is
+ * always a Template — `{{ … }}` reading the call site's scope, whatever the
+ * declared type is. A synthesised manifest would have to pick a field kind per
+ * type, and `FIELD_KIND_TYPES` has no mappable kind that produces a boolean or
+ * a datetime, so half of them would be checked against the wrong thing.
+ *
+ * Every declaration is drawn, filled in or not: one nobody has answered is
+ * reported as missing by its own rule, and hiding the row leaves nothing on
+ * screen to act on.
+ */
+function Contract({
+  declarations,
+  values,
+  scope,
+  highlighted,
+  onChange,
+}: {
+  declarations: readonly Declaration[]
+  values: Record<string, unknown>
+  scope: readonly ScopeEntry[]
+  highlighted: ReadonlySet<string>
+  onChange: (key: string, value: string) => void
+}) {
+  return (
+    <div className={styles.contract}>
+      {declarations.map((declaration) => (
+        <Argument
+          key={declaration.k}
+          declaration={declaration}
+          value={values[declaration.k]}
+          scope={scope}
+          highlighted={highlighted.has(declaration.k)}
+          onChange={(next) => onChange(declaration.k, next)}
+        />
+      ))}
+    </div>
+  )
+}
+
+function Argument({
+  declaration,
+  value,
+  scope,
+  highlighted,
+  onChange,
+}: {
+  declaration: Declaration
+  value: unknown
+  scope: readonly ScopeEntry[]
+  highlighted: boolean
+  onChange: (next: string) => void
+}) {
+  const id = useId()
+  return (
+    <div className={styles.field} data-highlighted={highlighted ? 'true' : undefined}>
+      <label className={styles.label} htmlFor={id}>
+        {declaration.label}
+      </label>
+      <TemplateInput
+        id={id}
+        label={declaration.label}
+        value={typeof value === 'string' ? value : ''}
+        scope={scope}
+        expectedType={declaration.t}
+        onCommit={onChange}
+      />
+      {/* The declared type, because nothing else on the row says what the
+          argument has to produce — the rail marks whether it does, and a mark
+          with no statement of the target is a verdict without a question. */}
+      <p className={styles.meta}>{declaration.t}</p>
+    </div>
+  )
+}
 
 /**
  * The field keys whose Template reads `path`.

@@ -63,6 +63,42 @@
     overflow-wrap: anywhere;
   }
 
+  .contract {
+    display: grid;
+    gap: 10px;
+  }
+
+  /* The same row shape `Fields` draws, and the same mark, because a Board's
+     contract and a Component's fields are the same thing to fill in. */
+  .field {
+    display: grid;
+    gap: 4px;
+  }
+
+  .field[data-highlighted="true"] {
+    padding-inline-start: 8px;
+    margin-inline-start: -10px;
+    box-shadow: inset 2px 0 0 var(--hatua-accent);
+  }
+
+  .contract {
+    display: grid;
+    gap: 10px;
+  }
+
+  /* The same row shape `Fields` draws, and the same mark, because a Board's
+     contract and a Component's fields are the same thing to fill in. */
+  .field {
+    display: grid;
+    gap: 4px;
+  }
+
+  .field[data-highlighted="true"] {
+    padding-inline-start: 8px;
+    margin-inline-start: -10px;
+    box-shadow: inset 2px 0 0 var(--hatua-accent);
+  }
+
   .note {
     margin: 0;
     font-size: 0.75rem;

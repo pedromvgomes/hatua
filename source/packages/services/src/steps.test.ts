@@ -530,6 +530,20 @@ steps:
     expect(doc.toString()).toContain('with: tomorrow')
   })
 
+  /*
+   * A key already holding a mapping or a list is a half-typed document rather
+   * than an absent one — and writing a scalar over it discards everything
+   * underneath, in a file Hatua does not own. Reachable when a manifest
+   * declares a key as text while the document holds a collection under it.
+   */
+  it('refuses a key that already holds a collection, rather than replacing it', () => {
+    const doc = parse(
+      'id: wf\nname: n\nversion: 1\nstatus: draft\nsteps:\n  - id: s1\n    use: a\n    with:\n      rows:\n        - one\n        - two\n',
+    )
+    expect(() => setStepField({ board: null, id: 's1' }, 'rows', 'x').apply(doc)).toThrow()
+    expect(doc.toString()).toContain('- one')
+  })
+
   it('edits a Step in a document that does not project', () => {
     const half = parse('name: half written\nsteps:\n  - id: s1\n    use: a\n')
     expect(half.validate().success).toBe(false)

@@ -19,7 +19,6 @@ import {
   type Path,
   readAt,
   STEP_KEY_ORDER,
-  setScalar,
   setScalarIn,
   stepEntriesIn,
 } from './ast'
@@ -148,6 +147,9 @@ export function nextStepId(document: WorkflowDocument, board: BoardId | undefine
     if (!taken.has(id)) return id
   }
 }
+
+/** A `with:` map's keys are the manifest's to order, so nothing here reorders them. */
+const NO_KEY_ORDER: readonly string[] = []
 
 const samePath = (a: Path, b: Path) => a.length === b.length && a.every((part, i) => part === b[i])
 
@@ -283,11 +285,20 @@ export function setStepField(
       if (!found) throw new Error(`No Step with id "${ref.id}"`)
 
       // `with:` is created in its documented place, so it lands under `use:`
-      // rather than below the regions a container carries. The field's own key
-      // is appended inside it: the order of a `with:` map is the manifest's
-      // field order, and a command is handed one key and never the list.
+      // rather than below the regions a container carries.
       const withPath = mapIn(document, [...found.listPath, found.index], 'with', STEP_KEY_ORDER)
-      setScalar(document, [...withPath, key], value)
+
+      // No key order inside it, so a created key is appended: the order of a
+      // `with:` map is the manifest's field order, and a command is handed one
+      // key and never the list.
+      //
+      // `setScalarIn` rather than `setScalar`, for its refusal. A key already
+      // holding a mapping or a list is a half-typed document rather than an
+      // absent one, and `setScalar` replaces the whole node — discarding
+      // everything under it, in a file Hatua does not own. Refusing is a no-op
+      // with nothing on the undo stack, which is what every command here does
+      // when it cannot write what it was given.
+      setScalarIn(document, withPath, key, NO_KEY_ORDER, value)
     },
   }
 }
