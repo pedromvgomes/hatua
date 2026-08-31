@@ -15,15 +15,26 @@ import type { FunctionSpec } from '#generated/builtins.js'
 import type { Expression, TemplateNode } from './ast.js'
 import { type Diagnostic, diagnostic } from './errors.js'
 import { tryParseTemplate } from './parse.js'
-import type { FunctionRegistry } from './resolve.js'
 import { canOrder, elementOf, match, type ScopeEntry, type TypeNode } from './types.js'
 import type { ValueType } from './value.js'
+
+/**
+ * Everything design-time checking needs of a function: what it declares.
+ *
+ * Wider than `FunctionRegistry`, which pairs each declaration with the
+ * implementation that runs it. Checking never calls one — it reads the spec for
+ * arity and argument types and nothing else — so requiring the pair would force
+ * a checker to carry every implementation in the bundle to answer a question
+ * none of them is asked. A `FunctionRegistry` satisfies this, so a runner that
+ * already has one passes it unchanged.
+ */
+export type FunctionDeclarations = ReadonlyMap<string, { readonly spec: FunctionSpec }>
 
 export interface CheckContext {
   /** What this step may address. Sibling branches are deliberately absent. */
   readonly scope: readonly ScopeEntry[]
   /** Hatua's functions merged with the Host's. */
-  readonly functions: FunctionRegistry
+  readonly functions: FunctionDeclarations
 }
 
 /**

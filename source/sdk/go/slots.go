@@ -292,24 +292,31 @@ func collectUpstream(steps []Step, id string, ancestors []Step) []Step {
 			return append(append([]Step{}, ancestors...), earlier...)
 		}
 
-		above := append(append([]Step{}, ancestors...), earlier...)
-		// The handler is the one region the try itself is in scope for.
-		inHandler := append(append([]Step{}, above...), step)
-		outside := inHandler
-		if step.Use == TryVerb {
-			outside = above
-		}
+		// What is visible inside a region is everything above this step, and
+		// building it copies all of it. A step with no region has nowhere to
+		// descend, so doing that for one costs a copy per step and turns a flat
+		// list of n steps into n²/2 copies — per call, and a whole-document
+		// pass asks once per step.
+		if len(step.Branches) > 0 || len(step.Steps) > 0 || len(step.Handler) > 0 {
+			above := append(append([]Step{}, ancestors...), earlier...)
+			// The handler is the one region the try itself is in scope for.
+			inHandler := append(append([]Step{}, above...), step)
+			outside := inHandler
+			if step.Use == TryVerb {
+				outside = above
+			}
 
-		for _, branch := range step.Branches {
-			if found := collectUpstream(branch.Steps, id, outside); found != nil {
+			for _, branch := range step.Branches {
+				if found := collectUpstream(branch.Steps, id, outside); found != nil {
+					return found
+				}
+			}
+			if found := collectUpstream(step.Steps, id, outside); found != nil {
 				return found
 			}
-		}
-		if found := collectUpstream(step.Steps, id, outside); found != nil {
-			return found
-		}
-		if found := collectUpstream(step.Handler, id, inHandler); found != nil {
-			return found
+			if found := collectUpstream(step.Handler, id, inHandler); found != nil {
+				return found
+			}
 		}
 
 		if !binds(step) {

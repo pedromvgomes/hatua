@@ -467,7 +467,8 @@ scenarios:
           with: { list: "{{ steps.gone.messages }}" }
           steps:
             - { id: s1, use: component.email.send, with: { to: "me@dane.dev" } }
-    expect: []
+    expect:
+      - { code: EXPR_UNKNOWN_REFERENCE, blocks: publish, stepId: each, fieldKey: list }
 
   - name: a loop with no list at all reports the missing field and nothing about its type
     definition:

@@ -20,17 +20,21 @@ import {
   segmentBetween,
   segmentHolds,
   segmentOf,
+  segmentReturns,
   segmentSteps,
   siblingFrom,
   stepKey,
   TRY_VERB,
+  troubledBlocks,
 } from '@hatua/model'
 import type { Manifest, ManifestEntry, Step, WorkflowDefinition } from '@hatua/schema'
 import { manifestsIn } from '@hatua/schema'
 import {
   type EditingState,
+  extractBlock,
   type ManifestState,
   moveStep,
+  nextBlockId,
   removeStep,
   sequence,
   type ValidationState,
@@ -138,10 +142,16 @@ import {
  *
  * The viewport is held here and offered as two props rather than three. Every
  * other piece of chrome on this region is a controlled trio because a second
- * reader appeared for it; nothing reads a viewport. `defaultViewport` and
+ * reader appeared for it; nothing reads a viewport. `defaultViewports` and
  * `onViewportChange` are enough for a Host to put somebody back where they
  * were, and not enough for a caller to drive the canvas into a state it cannot
  * get itself out of.
+ *
+ * Both halves are **per Board**, because a viewport is. Coordinates are
+ * Board-local (ADR-0017), so the pan a Host records while a Block's tab is open
+ * means nothing on the root — and a contract that reported every Board's while
+ * accepting only one told a Host to write down something it could never give
+ * back correctly.
  */
 export interface FlowMapProps extends Omit<ComponentPropsWithRef<'section'>, 'onSelect'> {
   /** Which Board the canvas opens on. `null` is the root Board. */
@@ -236,19 +246,33 @@ export interface FlowMapProps extends Omit<ComponentPropsWithRef<'section'>, 'on
    */
   onDropComponent?: (component: ComponentDrag, at: InsertPoint) => void
   /**
-   * Where the canvas opens, read once when it first draws a Board.
+   * Where the canvas opens on each Board, read once when it first draws one.
    *
-   * Uncontrolled and deliberately without a `viewport` twin: a controlled
+   * Keyed by Board — `null` is the root — because coordinates are Board-local
+   * and a pan carried across Boards lands in empty space. A Board with no entry
+   * is fitted to its content, which is what an unopened Board should do.
+   *
+   * A `Map` rather than an object, so the root Board is `null` rather than some
+   * agreed spelling of it that a Host would have to know and Hatua would have to
+   * keep: `boardKey` is this region's own business.
+   *
+   * Uncontrolled and deliberately without a `viewports` twin: a controlled
    * viewport lets a caller pin the canvas somewhere the gestures cannot undo,
    * and observation on its own would be half a feature — a Host could record
-   * where somebody was looking and never put them back.
-   *
-   * Opening a Block's Board ignores it and re-centres, because coordinates are
-   * Board-local and carrying a pan across Boards lands in empty space.
+   * where somebody was looking and never put them back. Read once, so a Host
+   * rebuilding the Map every render costs nothing.
    */
-  defaultViewport?: Viewport
-  /** Fired whenever the canvas is panned, zoomed or fitted. */
-  onViewportChange?: (view: Viewport) => void
+  defaultViewports?: ReadonlyMap<BoardId, Viewport>
+  /**
+   * Fired whenever the canvas is panned, zoomed or fitted, with the Board it
+   * happened on.
+   *
+   * The Board is not optional context: a Host persisting these writes one entry
+   * per Board and hands the lot back as `defaultViewports`. Without it the last
+   * report wins whatever Board it came from, and a Block's pan is restored as
+   * the root's.
+   */
+  onViewportChange?: (view: Viewport, board: BoardId) => void
 }
 
 /** "The Host wired nothing" is not a phase of the load, so it is not the store's to report. */
@@ -262,6 +286,8 @@ const OPENING = { status: 'opening' } as const
 // a fresh object each call.
 const subscribeToNothing = () => () => {}
 const NO_PROBLEMS: ReadonlyMap<string, Diagnostic[]> = new Map()
+/** The same, for the Blocks a call may report as unable to run. */
+const NO_TROUBLE: ReadonlySet<string> = new Set()
 const UNCHECKED: ValidationState = {
   byStep: NO_PROBLEMS,
   byTrigger: NO_PROBLEMS,
@@ -294,7 +320,7 @@ export function FlowMap({
   onCollapsedRegionsChange,
   onInsert,
   onDropComponent,
-  defaultViewport,
+  defaultViewports,
   onViewportChange,
   className,
   ...rest
@@ -392,6 +418,22 @@ export function FlowMap({
   const problems = checks.ready ? checks.byStep : NO_PROBLEMS
 
   const definition = state.status === 'ready' ? (state.workflow.definition ?? null) : null
+
+  /*
+   * The Blocks that will not run, so a call can say so rather than looking
+   * fine. Derived here and never a diagnostic: the problem is already reported
+   * on the Board that holds it, and a second one per call site would count one
+   * fault once per doorway (`troubledBlocks`).
+   *
+   * Held to the same "absent, not empty" rule as `problems`, and for the same
+   * reason: before the manifests land every Step is an unknown component, so
+   * every Block would be troubled on every load.
+   */
+  const troubled = useMemo(
+    () => (checks.ready && definition ? troubledBlocks(definition, checks.all) : NO_TROUBLE),
+    [checks.ready, checks.all, definition],
+  )
+
   const wanted = boardId !== undefined ? boardId : ownBoard
   // Resolved against the document every render rather than held. A Block the
   // user deletes in Text Mode while its Board is open would otherwise leave this
@@ -586,14 +628,22 @@ export function FlowMap({
    * that does not exist until the canvas has rendered once, so the canvas
    * measures one and fills this in.
    *
-   * `defaultViewport` is read here and nowhere else. Read once means the
+   * `defaultViewports` is read here and nowhere else. Read once means the
    * `useState` initialiser: consuming it during a render is consuming it in a
    * pass React may throw away, and under a Host's `StrictMode` — which is every
    * Host in development — it is the discarded pass that reads it.
+   *
+   * Every entry is put through `usable`, not just the one the canvas opens on:
+   * a Host persists these somewhere Hatua does not own, and a `scale` of `0`
+   * translates the surface by `Infinitypx` whichever Board it was stored under.
    */
   const [views, setViews] = useState<Readonly<Record<string, Viewport>>>(() => {
-    const held = usable(defaultViewport)
-    return held ? { [boardKey(defaultBoardId)]: held } : {}
+    const seeded: Record<string, Viewport> = {}
+    for (const [board, view] of defaultViewports ?? []) {
+      const held = usable(view)
+      if (held) seeded[boardKey(board)] = held
+    }
+    return seeded
   })
 
   /*
@@ -650,8 +700,8 @@ export function FlowMap({
     tell.current = onViewportChange
   })
   useEffect(() => {
-    if (view) tell.current?.(view)
-  }, [view])
+    if (view) tell.current?.(view, wanted)
+  }, [view, wanted])
 
   // Held while the drag is over the canvas and dropped the moment it leaves, so
   // a drag that wanders off and ends elsewhere does not leave every gap lit.
@@ -697,6 +747,55 @@ export function FlowMap({
     // otherwise be holding the ids of Steps that are gone.
     anchor.current = null
     commitSelection(undefined)
+  }
+
+  /**
+   * Move the selected Steps onto a new Block's Board, and leave a call behind.
+   *
+   * The Block's tab opens and the canvas follows it (ADR-0017), which is the
+   * call `Components`' New block already makes — and it matters more here,
+   * because the new Board is where the author's work is: nothing rewrote the
+   * Templates the Segment carried, so the References that used to reach out of
+   * it now name nothing and say so there (ADR-0018).
+   *
+   * The id is minted here rather than left to the command, for the reason
+   * `Components` gives: the tab that opens next has to be named, and a command
+   * reports nothing back. Read at click time, because the document may have
+   * moved since this last drew.
+   */
+  const extractSelection = () => {
+    const held = store?.getSnapshot()
+    if (!store || held?.status !== 'ready' || !selection || selectedSteps.length === 0) return
+    const id = nextBlockId(held.workflow.document)
+
+    // Built from what the Segment RESOLVES to on this Board, never from the ids
+    // it names. A held Segment may name a Step removed since, and `selected` is
+    // a prop a Host may set to anything at all — both are shapes `extractBlock`
+    // refuses, and both would otherwise reach it as a command that cannot run.
+    // The bar counts the same answer, so this is what the user was shown.
+    store.apply(
+      extractBlock({ board: selection.board, steps: selectedSteps.map((s) => s.id) }, { id }),
+    )
+
+    /*
+     * `EditingStore.apply` restores the document and returns when a command
+     * throws (ADR-0019), so a refusal arrives here as silence. Following one
+     * would clear a selection the author still has on screen and open a tab for
+     * a Block that was never declared — which reads as the action having worked
+     * and then lost their work.
+     *
+     * The minted id is the test: it was free before, so a Block now holding it
+     * is the one this just wrote. Asked of the document rather than the
+     * projection, because a Board whose file does not project still gained one.
+     */
+    const now = store.getSnapshot()
+    if (now.status !== 'ready' || nextBlockId(now.workflow.document) === id) return
+
+    // The Steps are on another Board now, so a Segment naming them here names
+    // nothing — and the call that replaced them is not what was selected.
+    anchor.current = null
+    commitSelection(undefined)
+    openBoard(id)
   }
 
   /*
@@ -803,6 +902,7 @@ export function FlowMap({
             folded={folded}
             foldedRegions={foldedRegions}
             problems={problems}
+            troubled={troubled}
             redraws={redraws}
             dragging={dragging}
             carrying={carrying}
@@ -811,6 +911,8 @@ export function FlowMap({
             onToggleRegion={toggleRegion}
             selectedCount={selectedSteps.length}
             onRemoveSelection={removeSelection}
+            onExtractSelection={extractSelection}
+            selectionReturns={segmentReturns(selectedSteps)}
             tabs={tabs}
             onOpenBoard={openBoard}
             onCloseBoard={closeBoard}
@@ -838,6 +940,7 @@ function Canvas({
   folded,
   foldedRegions,
   problems,
+  troubled,
   redraws,
   dragging,
   carrying,
@@ -846,6 +949,8 @@ function Canvas({
   onToggleRegion,
   selectedCount,
   onRemoveSelection,
+  onExtractSelection,
+  selectionReturns,
   tabs,
   onOpenBoard,
   onCloseBoard,
@@ -866,6 +971,8 @@ function Canvas({
   folded: readonly StepRef[]
   foldedRegions: readonly RegionRef[]
   problems: ReadonlyMap<string, Diagnostic[]>
+  /** The Blocks that will not run, so a call into one can say so. */
+  troubled: ReadonlySet<string>
   redraws: number
   dragging: string | null
   carrying: boolean
@@ -875,6 +982,9 @@ function Canvas({
   /** How many Steps the selection resolves to on this Board; `0` draws no bar. */
   selectedCount: number
   onRemoveSelection: () => void
+  onExtractSelection: () => void
+  /** Whether the selection holds a Return, which extraction refuses (ADR-0018). */
+  selectionReturns: boolean
   tabs: readonly BoardTab[]
   onOpenBoard: (board: BoardId) => void
   onCloseBoard: (block: string) => void
@@ -1099,6 +1209,7 @@ function Canvas({
                 expanded={!collapsed.has(placement.ref.id)}
                 opens={opens && blockOf(definition, opens) ? opens : undefined}
                 problems={problems.get(key)}
+                callsBrokenBlock={opens !== null && troubled.has(opens)}
                 onSelect={(extend) => onSelect(placement.ref, extend)}
                 onToggle={() => onToggle(placement.ref)}
                 onOpen={() => opens && onOpenBoard(opens)}
@@ -1110,7 +1221,14 @@ function Canvas({
         </ul>
       </div>
 
-      {selectedCount > 0 ? <SegmentBar count={selectedCount} onRemove={onRemoveSelection} /> : null}
+      {selectedCount > 0 ? (
+        <SegmentBar
+          count={selectedCount}
+          onExtract={onExtractSelection}
+          holdsReturn={selectionReturns}
+          onRemove={onRemoveSelection}
+        />
+      ) : null}
 
       <CanvasControls
         scale={canvas.at.scale}
