@@ -720,7 +720,30 @@ export function FlowMap({
     const held = store?.getSnapshot()
     if (!store || held?.status !== 'ready' || !selection || selectedSteps.length === 0) return
     const id = nextBlockId(held.workflow.document)
-    store.apply(extractBlock(selection, { id }))
+
+    // Built from what the Segment RESOLVES to on this Board, never from the ids
+    // it names. A held Segment may name a Step removed since, and `selected` is
+    // a prop a Host may set to anything at all — both are shapes `extractBlock`
+    // refuses, and both would otherwise reach it as a command that cannot run.
+    // The bar counts the same answer, so this is what the user was shown.
+    store.apply(
+      extractBlock({ board: selection.board, steps: selectedSteps.map((s) => s.id) }, { id }),
+    )
+
+    /*
+     * `EditingStore.apply` restores the document and returns when a command
+     * throws (ADR-0019), so a refusal arrives here as silence. Following one
+     * would clear a selection the author still has on screen and open a tab for
+     * a Block that was never declared — which reads as the action having worked
+     * and then lost their work.
+     *
+     * The minted id is the test: it was free before, so a Block now holding it
+     * is the one this just wrote. Asked of the document rather than the
+     * projection, because a Board whose file does not project still gained one.
+     */
+    const now = store.getSnapshot()
+    if (now.status !== 'ready' || nextBlockId(now.workflow.document) === id) return
+
     // The Steps are on another Board now, so a Segment naming them here names
     // nothing — and the call that replaced them is not what was selected.
     anchor.current = null

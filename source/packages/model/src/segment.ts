@@ -150,7 +150,14 @@ export function siblingFrom(board: Board, id: string, step: 1 | -1): string | un
  * Takes the Steps a Segment resolves to rather than the Segment, so a caller
  * that has already asked `segmentSteps` — which is every caller, because the
  * count beside the action comes from the same answer — does not resolve twice.
- * The command and the control that offers it read one rule.
+ *
+ * **`extractBlock` cannot call this, and asks the same question its own way.**
+ * A command runs against a document that does not project (ADR-0001), so it has
+ * no `Step[]` to hand over and walks the YAML AST instead. The two agree because
+ * `regionsOf` here and `stepEntriesIn` there enumerate the same regions — a
+ * Branch's steps, a body, a handler — which is a coupling neither file states on
+ * its own. A region kind added to one and not the other makes the canvas offer
+ * an enabled action on the one selection the command refuses.
  */
 export const segmentReturns = (steps: readonly Step[]): boolean =>
   [...walkSteps(steps)].some((step) => step.use === RETURN_VERB)
