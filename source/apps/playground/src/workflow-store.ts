@@ -143,8 +143,35 @@ blocks:
 `
 
 interface Stored {
+  /**
+   * Which seed this history grew from.
+   *
+   * localStorage outlives the source tree, so a history kept across a change to
+   * `SEED` is a document written against a catalogue that has since moved on —
+   * verbs nothing declares, and every card reporting `COMPONENT_UNKNOWN` with no
+   * fields to edit. That reads as a broken build rather than as stale data,
+   * which is the worst way for a development harness to fail.
+   *
+   * Derived from the seed text so nothing has to be bumped by hand: change the
+   * seed and every browser holding the old one starts again from the new one.
+   */
+  seed: string
   versions: { version: number; status: VersionSummary['status']; updatedAt: string; yaml: string }[]
   claim?: { token: string; expiresAt: string }
+}
+
+/**
+ * A short, stable fingerprint of the seed. FNV-1a — this identifies a
+ * development fixture, so it has to be cheap and deterministic and nothing
+ * more.
+ */
+const fingerprint = (text: string): string => {
+  let hash = 0x811c9dc5
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return (hash >>> 0).toString(36)
 }
 
 /** How long a claim survives without renewal. Short, so the expiry is watchable. */
@@ -176,6 +203,8 @@ export function createLocalWorkflowStore(options: LocalWorkflowStoreOptions = {}
 
   const keyFor = (workflowId: string) => `${namespace}:${workflowId}`
 
+  const stamp = fingerprint(seed)
+
   /**
    * What is stored, or an empty history when nothing is.
    *
@@ -189,17 +218,21 @@ export function createLocalWorkflowStore(options: LocalWorkflowStoreOptions = {}
     const raw = localStorage.getItem(keyFor(workflowId))
     if (raw) {
       try {
-        return JSON.parse(raw) as Stored
+        const held = JSON.parse(raw) as Stored
+        // A history from another seed is discarded rather than migrated: it was
+        // written against a catalogue this page no longer serves, and there is
+        // nothing here worth the machinery of moving it forward.
+        if (held.seed === stamp) return held
       } catch {
         // A corrupt entry is the Host's problem, and starting over is a better
         // answer than an editor that will not open.
       }
     }
-    return { versions: [] }
+    return { seed: stamp, versions: [] }
   }
 
   const write = (workflowId: string, stored: Stored) =>
-    localStorage.setItem(keyFor(workflowId), JSON.stringify(stored))
+    localStorage.setItem(keyFor(workflowId), JSON.stringify({ ...stored, seed: stamp }))
 
   const wait = () => (delayMs ? new Promise((resolve) => setTimeout(resolve, delayMs)) : null)
 
