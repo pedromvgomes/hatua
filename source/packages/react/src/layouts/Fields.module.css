@@ -40,6 +40,19 @@
     color: var(--hatua-status-error);
   }
 
+  /* Under the control it is about, and never collected above the form: three
+     sentences that all begin "This expression expects…" name nothing a reader
+     can act on. */
+  .problems {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 0.75rem;
+    line-height: 1.45;
+    color: var(--hatua-status-error);
+    text-wrap: pretty;
+  }
+
   .hint {
     margin: 0;
     font-size: 0.75rem;

@@ -52,7 +52,7 @@ import { cx } from '../primitives/classNames'
 import { Select } from '../primitives/Select'
 import { useEditingStore, useManifestStore, useValidationStore } from '../theme/HatuaProvider'
 import { RemoveButton } from '../units/RemoveButton'
-import { CommittedInput, Fields } from './Fields'
+import { CommittedInput, Fields, splitByField } from './Fields'
 import styles from './Workflow.module.css'
 import css from './Workflow.module.css?inline'
 
@@ -503,8 +503,13 @@ function RowCard({
    * Outside the fold and not inside it: a folded row that hid its own
    * diagnostic would let somebody tidy a problem off their screen, and the
    * fold is for managing height rather than for silencing the checker.
+   *
+   * Given the fold's state, because a row whose body is on screen has somewhere
+   * better to put a diagnostic that names a field — under the control it is
+   * about — and a folded one has not. The invariant is what the row SAYS, not
+   * where it says it.
    */
-  note?: ReactNode
+  note?: ReactNode | ((open: boolean) => ReactNode)
   removeLabel: string
   onRemove: () => void
   children?: ReactNode
@@ -556,7 +561,7 @@ function RowCard({
             need it, and a bin in a second column takes 32px off every one. */}
         <RemoveButton label={removeLabel} onClick={onRemove} />
       </div>
-      {note}
+      {typeof note === 'function' ? note(open) : note}
       {open ? (
         <div id={bodyId} className={styles.cardBody}>
           {name}
@@ -900,6 +905,13 @@ function TriggerCard({
   onDeclareConnection: (triggerId: string, key: string, name: string, ref: string) => void
 }) {
   const values = (trigger.with ?? {}) as Record<string, unknown>
+  /*
+   * A diagnostic that names a field is drawn under that field's control, and
+   * only what is about the Trigger itself sits above the form. Collected, a run
+   * of sentences all beginning "This expression expects…" names nothing a
+   * reader can act on.
+   */
+  const { byField, aboutTheSubject: aboutTheTrigger } = splitByField(problems)
 
   return (
     <RowCard
@@ -929,11 +941,20 @@ function TriggerCard({
           reader for it every time would make the builder unusable. ADR-0009
           draws the same line — this blocks Publish, never editing.
         */
-        problems?.length ? (
-          <p className={styles.problems} role="status">
-            {problems.map((problem) => problem.message).join(' ')}
-          </p>
-        ) : null
+        (open: boolean) => {
+          /*
+           * Open, the form below carries every diagnostic that names a field,
+           * under the control it is about. Folded there is no form, so the row
+           * says all of them here rather than letting the fold tidy a problem
+           * off the screen.
+           */
+          const shown = open ? aboutTheTrigger : problems
+          return shown?.length ? (
+            <p className={styles.problems} role="status">
+              {shown.map((problem) => problem.message).join(' ')}
+            </p>
+          ) : null
+        }
       }
     >
       {/* The verb and the id, mono, because both are what a Template writes:
@@ -948,6 +969,7 @@ function TriggerCard({
           values={values}
           connections={connections}
           scope={scope}
+          problems={byField}
           onChange={(key, next) => onField(trigger.id, key, next)}
           onDeclareConnection={(key, name, ref) => onDeclareConnection(trigger.id, key, name, ref)}
         />
@@ -955,7 +977,7 @@ function TriggerCard({
         // Only when the checker has not already said it. Without a catalogue
         // wired there is no checker at all, and the card would otherwise be a
         // name box with no account of why it has nothing else on it.
-        !problems?.some((problem) => problem.code === 'COMPONENT_UNKNOWN') && (
+        !aboutTheTrigger.some((problem) => problem.code === 'COMPONENT_UNKNOWN') && (
           <p className={styles.empty}>Nothing declares this trigger type, so it has no settings.</p>
         )
       )}

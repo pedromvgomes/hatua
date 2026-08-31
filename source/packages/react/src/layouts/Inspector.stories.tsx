@@ -63,6 +63,13 @@ steps:
       retries: 2
       importance: high
       secret_key: "abc123"
+  - id: s_bad
+    use: component.email.send
+    name: "Two fields the checker refuses"
+    with:
+      to: "{{ steps.s1 }}"
+      subject: "{{ steps.s1 }}"
+      retries: 2
   - id: s3
     use: component.unknown.verb
     name: "Something the catalogue lost"
@@ -246,6 +253,18 @@ export const NothingSelected: Story = { parameters: wired(serving(SOURCE)) }
  */
 export const SeveralSelected: Story = {
   args: { selected: { board: null, steps: ['s1', 's2'] } },
+  parameters: wired(serving(SOURCE)),
+}
+
+/**
+ * Two Templates the checker refuses, on one Step.
+ *
+ * Each message sits under the control it names. Collected above the form they
+ * are two sentences both beginning "This expression expects…", and neither says
+ * which field to go and fix.
+ */
+export const FieldsTheCheckerRefuses: Story = {
+  args: { selected: { board: null, steps: ['s_bad'] } },
   parameters: wired(serving(SOURCE)),
 }
 

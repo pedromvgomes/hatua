@@ -35,7 +35,7 @@ import { TemplateInput } from '../compounds/TemplateInput'
 import { Button } from '../primitives/Button'
 import { cx } from '../primitives/classNames'
 import { useEditingStore, useManifestStore, useValidationStore } from '../theme/HatuaProvider'
-import { CommittedInput, Fields } from './Fields'
+import { CommittedInput, Fields, splitByField } from './Fields'
 import styles from './Inspector.module.css'
 import css from './Inspector.module.css?inline'
 
@@ -268,6 +268,23 @@ export function Inspector({
     [definition, step, board, manifest, highlight],
   )
 
+  /**
+   * The checker's diagnostics, split by whether they name a field.
+   *
+   * One that does belongs under that field's control — it is the only thing on
+   * screen saying which of a Step's Templates is wrong, and "This expression
+   * expects text, but this produces object" says nothing at all when three of
+   * them are collected above the form. One that does not is about the Step
+   * itself, and has nowhere else to go.
+   *
+   * A `map` field's Slot is named `<field>.<entry>`, and the row on screen is
+   * the field, so the key is everything before the first dot.
+   */
+  const { byField, aboutTheSubject: aboutTheStep } = useMemo(
+    () => splitByField(problems),
+    [problems],
+  )
+
   const ref = step ? { board, id: step.id } : null
 
   return (
@@ -377,7 +394,7 @@ export function Inspector({
                 </p>
               </div>
 
-              {problems.length > 0 ? (
+              {aboutTheStep.length > 0 ? (
                 /*
                   `role="status"` rather than `alert`: an unfilled field is the
                   normal state of a Step someone just added, and interrupting a
@@ -386,7 +403,7 @@ export function Inspector({
                   never editing.
                 */
                 <p className={styles.problems} role="status">
-                  {problems.map((problem) => problem.message).join(' ')}
+                  {aboutTheStep.map((problem) => problem.message).join(' ')}
                 </p>
               ) : null}
 
@@ -396,6 +413,7 @@ export function Inspector({
                   values={(step.with ?? {}) as Record<string, unknown>}
                   scope={scope}
                   highlighted={reading}
+                  problems={byField}
                   onChange={(key, next) => store?.apply(setStepField(ref, key, next))}
                 />
               ) : manifest ? (
@@ -405,6 +423,7 @@ export function Inspector({
                   connections={definition.connections ?? NO_CONNECTIONS}
                   scope={scope}
                   highlighted={reading}
+                  problems={byField}
                   onChange={(key, next) => store?.apply(setStepField(ref, key, next))}
                   onDeclareConnection={(key, id, handle) =>
                     // One undoable change: binding the handle and pointing the
@@ -461,12 +480,14 @@ function Contract({
   values,
   scope,
   highlighted,
+  problems,
   onChange,
 }: {
   declarations: readonly Declaration[]
   values: Record<string, unknown>
   scope: readonly ScopeEntry[]
   highlighted: ReadonlySet<string>
+  problems: ReadonlyMap<string, readonly Diagnostic[]>
   onChange: (key: string, value: string) => void
 }) {
   if (declarations.length === 0) {
@@ -485,6 +506,7 @@ function Contract({
           value={values[declaration.k]}
           scope={scope}
           highlighted={highlighted.has(declaration.k)}
+          problems={problems.get(declaration.k)}
           onChange={(next) => onChange(declaration.k, next)}
         />
       ))}
@@ -497,17 +519,23 @@ function Argument({
   value,
   scope,
   highlighted,
+  problems,
   onChange,
 }: {
   declaration: Declaration
   value: unknown
   scope: readonly ScopeEntry[]
   highlighted: boolean
+  problems: readonly Diagnostic[] | undefined
   onChange: (next: string) => void
 }) {
   const id = useId()
   return (
-    <div className={styles.field} data-highlighted={highlighted ? 'true' : undefined}>
+    <div
+      className={styles.field}
+      data-field={declaration.k}
+      data-highlighted={highlighted ? 'true' : undefined}
+    >
       <label className={styles.label} htmlFor={id}>
         {declaration.label}
       </label>
@@ -523,6 +551,13 @@ function Argument({
           argument has to produce — the rail marks whether it does, and a mark
           with no statement of the target is a verdict without a question. */}
       <p className={styles.meta}>{declaration.t}</p>
+      {problems?.length ? (
+        <ul className={styles.problems} role="status">
+          {problems.map((problem) => (
+            <li key={`${problem.code}:${problem.message}`}>{problem.message}</li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   )
 }

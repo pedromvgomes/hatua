@@ -1,4 +1,5 @@
 import {
+  type Diagnostic,
   FIELD_KIND_TYPES,
   fieldVisible,
   type MappableFieldKind,
@@ -69,6 +70,15 @@ export interface FieldsProps extends Omit<ComponentPropsWithRef<'div'>, 'onChang
    * case, and a form nobody is pointing at draws no mark at all.
    */
   highlighted?: ReadonlySet<string>
+  /**
+   * What the checker says about each field, keyed by `FieldSpec.k`.
+   *
+   * Per field rather than as one paragraph over the form, because that is the
+   * only thing that says WHICH field is wrong. A Step with three Templates in
+   * it reports three sentences that all begin "This expression expects…", and
+   * collected above the form they name nothing a reader can act on.
+   */
+  problems?: ReadonlyMap<string, readonly Diagnostic[]>
   onChange: (key: string, value: string | number | boolean) => void
   /**
    * Bind one of the Host's Connections to a workflow-local name and point the
@@ -86,6 +96,7 @@ export function Fields({
   connections,
   scope = NO_SCOPE,
   highlighted,
+  problems,
   onChange,
   onDeclareConnection,
   className,
@@ -116,6 +127,7 @@ export function Fields({
             connections={connections}
             scope={scope}
             highlighted={highlighted?.has(field.k) ?? false}
+            problems={problems?.get(field.k)}
             established={established}
             onChange={(next) => onChange(field.k, next)}
             onDeclareConnection={
@@ -279,6 +291,7 @@ function FieldRow({
   connections,
   scope,
   highlighted,
+  problems,
   established,
   onChange,
   onDeclareConnection,
@@ -289,6 +302,7 @@ function FieldRow({
   scope: readonly ScopeEntry[]
   /** Whether this field's Template reads whatever is being pointed at. */
   highlighted: boolean
+  problems: readonly Diagnostic[] | undefined
   established: PickerState
   onChange: (next: string | number | boolean) => void
   onDeclareConnection?: (id: string, ref: string) => void
@@ -399,7 +413,11 @@ function FieldRow({
   )
 
   return (
-    <div className={styles.field} data-highlighted={highlighted ? 'true' : undefined}>
+    <div
+      className={styles.field}
+      data-field={field.k}
+      data-highlighted={highlighted ? 'true' : undefined}
+    >
       {labelable ? (
         <label className={styles.label} htmlFor={id}>
           {label}
@@ -411,6 +429,7 @@ function FieldRow({
       )}
       {control ?? <UneditableField field={field} value={text} labelledBy={labelId} />}
       {field.hint ? <p className={styles.hint}>{field.hint}</p> : null}
+      <FieldProblems problems={problems} />
     </div>
   )
 }
@@ -444,6 +463,56 @@ function UneditableField({
       {field.kind === 'map' ? 'Entries are edited where the step is.' : null}
     </div>
   )
+}
+
+/**
+ * What the checker says about one field, under the control it is about.
+ *
+ * `role="status"` rather than `alert`: an unfinished field is the normal state
+ * of a Step someone just added, and interrupting a screen reader on every
+ * keystroke would make the builder unusable. ADR-0009 draws the same line —
+ * this blocks Publish, never editing.
+ */
+function FieldProblems({ problems }: { problems: readonly Diagnostic[] | undefined }) {
+  if (!problems || problems.length === 0) return null
+  return (
+    <ul className={styles.problems} role="status">
+      {problems.map((problem) => (
+        <li key={`${problem.code}:${problem.message}`}>{problem.message}</li>
+      ))}
+    </ul>
+  )
+}
+
+/**
+ * The diagnostics that name a field, and the ones that do not.
+ *
+ * Here rather than beside either caller, because both ask the same question of
+ * the same shape: what belongs under a control, and what is about the Step or
+ * the Trigger itself and has nowhere else to go.
+ *
+ * A Slot for a `map` entry is named `<field>.<entry>` and the row on screen is
+ * the field, so the key is everything before the first dot.
+ */
+export function splitByField(problems: readonly Diagnostic[] | undefined): {
+  byField: ReadonlyMap<string, readonly Diagnostic[]>
+  aboutTheSubject: readonly Diagnostic[]
+} {
+  const byField = new Map<string, Diagnostic[]>()
+  const aboutTheSubject: Diagnostic[] = []
+
+  for (const problem of problems ?? []) {
+    if (!problem.fieldKey) {
+      aboutTheSubject.push(problem)
+      continue
+    }
+    const key = problem.fieldKey.split('.')[0] ?? problem.fieldKey
+    const held = byField.get(key)
+    if (held) held.push(problem)
+    else byField.set(key, [problem])
+  }
+
+  return { byField, aboutTheSubject }
 }
 
 const NO_SCOPE: readonly ScopeEntry[] = []
