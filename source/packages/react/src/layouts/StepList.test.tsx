@@ -257,7 +257,7 @@ describe('StepList', () => {
     fireEvent.click(
       await screen.findByRole('button', { name: 'Add the first Step to the workflow' }),
     )
-    expect(onInsert).toHaveBeenCalledWith({ index: 0 })
+    expect(onInsert).toHaveBeenCalledWith({ board: null, index: 0 })
   })
 })
 
@@ -268,7 +268,7 @@ describe('selection and collapse — chrome, not the document', () => {
     mount(source, { onSelect })
 
     fireEvent.click(await screen.findByRole('button', { name: /^Fetch mail/ }))
-    expect(onSelect).toHaveBeenCalledWith('s1')
+    expect(onSelect).toHaveBeenCalledWith({ board: null, steps: ['s1'] })
     // Selection is chrome. Were it in the document it would autosave, and a
     // hand-edited file would gain a key about what some session highlighted.
     expect(source.writes).toHaveLength(0)
@@ -337,7 +337,7 @@ describe('edits go through the store as commands', () => {
     await screen.findByText('Fetch mail')
 
     fireEvent.click(screen.getByText('Fetch mail'))
-    expect(onSelect).toHaveBeenLastCalledWith('s1')
+    expect(onSelect).toHaveBeenLastCalledWith({ board: null, steps: ['s1'] })
 
     fireEvent.click(screen.getByRole('button', { name: 'Remove Fetch mail' }))
     expect(onSelect).toHaveBeenLastCalledWith(undefined)
@@ -365,7 +365,7 @@ describe('edits go through the store as commands', () => {
     fireEvent.click(
       screen.getByRole('button', { name: 'Insert a Step at the start of the workflow' }),
     )
-    expect(onInsert).toHaveBeenCalledWith({ index: 0 })
+    expect(onInsert).toHaveBeenCalledWith({ board: null, index: 0 })
   })
 
   it('renders no insert control at all without a handler for it', async () => {
@@ -697,16 +697,16 @@ describe('a core.try draws two regions', () => {
    * the word comes from the verb — "loop" over the Steps a try is protecting
    * would name the wrong control flow.
    */
-  it('labels the body `try` and the handler `on failure`, rather than calling either a loop', async () => {
+  it('labels the body `attempt` and the handler `on failure`, rather than calling either a loop', async () => {
     mount(host(TRIED))
     await screen.findByText('Publish the digest')
 
     const card = rowFor('Publish the digest')
     const chips = [...card.querySelectorAll('span')]
       .map((one) => one.textContent)
-      .filter((text) => text === 'try' || text === 'on failure' || text === 'loop')
+      .filter((text) => text === 'attempt' || text === 'on failure' || text === 'loop')
 
-    expect(chips).toEqual(['try', 'on failure'])
+    expect(chips).toEqual(['attempt', 'on failure'])
   })
 
   it('draws a Step from each region, so neither is a region nothing renders', async () => {

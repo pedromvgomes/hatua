@@ -1,4 +1,8 @@
+import type { WorkflowDocument } from '@hatua/document'
+import { regionsOf } from '@hatua/model'
+import type { Step } from '@hatua/schema'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { sequence } from './command'
 import { createEditingStore, type EditingSnapshot } from './editing'
 import type {
   Cursor,
@@ -413,6 +417,110 @@ describe('a command that cannot be applied', () => {
   })
 })
 
+/**
+ * The invariant under every command there is, and every command written later.
+ *
+ * Inheriting a document that does not project is a state this store is built to
+ * hold — ADR-0001 makes the text the source of truth, and `a document that does
+ * not project` above covers it. MANUFACTURING one is a different thing: every
+ * surface in the product reads `definition`, so a command that breaks the
+ * projection empties the canvas, the side panel and the step editor at once and
+ * leaves the user nothing to click on to undo it.
+ */
+describe('a command may not break the projection', () => {
+  const open = async (yaml?: string) => {
+    const host = recorder(yaml ? { yaml } : {})
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+    return { host, store }
+  }
+
+  /** Writes a key the schema's `identifier` refuses, exactly as a name box would. */
+  const writeKey = (key: string) => ({
+    label: 'Rename',
+    apply(document: WorkflowDocument) {
+      document.ast.setIn(['vars', 0, 'key'], key)
+    },
+  })
+
+  const WITH_VAR = `id: wf_morning\nname: n\nversion: 1\nstatus: draft\nvars:\n  - key: digest_to\n    t: text\n    value: ""\nsteps: []\n`
+
+  it('refuses the edit and leaves the text as it was', async () => {
+    const { store, host } = await open(WITH_VAR)
+    const before = ready(store).text
+    expect(ready(store).definition).not.toBeNull()
+
+    store.apply(writeKey('Variable 1'))
+
+    expect(ready(store).text).toBe(before)
+    expect(ready(store).definition).not.toBeNull()
+    // Nothing reached the undo stack, so there is nothing to undo back out of.
+    expect(ready(store).undoLabel).toBeNull()
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(host.writes).toEqual([])
+  })
+
+  /*
+   * The snapshot publishes `workflow.document` BY REFERENCE, and a refused
+   * command has already mutated that object. Restoring the store's own handle
+   * is not enough: until the next successful command, a reader holding the
+   * snapshot is holding the tree the store threw away — and `views/Build` reads
+   * exactly that to work out where a Component appends.
+   */
+  it('publishes the restored document, not the one the refused command mutated', async () => {
+    const { store } = await open(WITH_VAR)
+
+    store.apply(writeKey('Variable 1'))
+
+    const held = ready(store).document
+    expect(held.toString()).toBe(ready(store).text)
+    expect(held.validate().success).toBe(true)
+  })
+
+  it('does the same for a command that throws, which restores by the same path', async () => {
+    const { store } = await open(WITH_VAR)
+
+    store.apply({
+      label: 'Half an edit',
+      apply(document: WorkflowDocument) {
+        document.ast.setIn(['vars', 0, 'key'], 'part_way')
+        throw new Error('gave up')
+      },
+    })
+
+    const held = ready(store).document
+    expect(held.toString()).toBe(ready(store).text)
+    expect(held.toString()).not.toContain('part_way')
+  })
+
+  it('lets the same command through when the name is one the schema holds', async () => {
+    const { store } = await open(WITH_VAR)
+    store.apply(writeKey('digest_cc'))
+
+    expect(ready(store).text).toContain('key: digest_cc')
+    expect(ready(store).definition).not.toBeNull()
+  })
+
+  /*
+   * Only a document that projected is protected. One that did not is the user's
+   * file being wrong, and refusing every edit to it would leave nothing able to
+   * fix it — which is the opposite of what ADR-0001 asks for.
+   */
+  it('does not judge a document that did not project to begin with', async () => {
+    const HALF =
+      'id: wf\nname: n\nversion: 1\nstatus: draft\nsteps:\n  - use: component.email.send\n'
+    const { store } = await open(HALF)
+    expect(ready(store).definition).toBeNull()
+    const before = ready(store).text
+
+    store.apply(setWorkflowName('Renamed'))
+
+    expect(ready(store).text).not.toBe(before)
+    expect(ready(store).text).toContain('Renamed')
+  })
+})
+
 describe('commands', () => {
   const open = async () => {
     const host = recorder()
@@ -429,6 +537,61 @@ describe('commands', () => {
     const steps = ready(store).definition?.steps ?? []
     expect(steps.map((step) => step.id)).toEqual(['s1', 's6', 's2', 's4'])
     expect(steps[1]?.use).toBe('component.email.send')
+  })
+
+  /*
+   * A container added from the catalogue can be filled in.
+   *
+   * `regionsOf` yields a region only where the document carries the key, and the
+   * map draws only the regions it is yielded — so a `core.try` written as `id`
+   * and `use` alone has no band, no `+` inside it and no way in. It is a card
+   * that can never become a try. The keys are what make it reachable, and they
+   * are written when the Step is.
+   */
+  it('gives a core.try its two regions, so there is somewhere to put a Step', async () => {
+    const { store } = await open()
+    store.apply(addStep({ use: 'core.try', name: 'Guarded' }, { index: 0 }))
+
+    const added = ready(store).definition?.steps[0]
+    expect(added?.use).toBe('core.try')
+    expect(added?.steps).toEqual([])
+    expect(added?.handler).toEqual([])
+    expect([...regionsOf(added as Step)].map((region) => region.keyword)).toEqual([
+      'attempt',
+      'on failure',
+    ])
+  })
+
+  it('gives a loop its body, and gives an ordinary Component no regions at all', async () => {
+    const { store } = await open()
+    store.apply(addStep({ use: 'core.for_each' }, { index: 0 }))
+    store.apply(addStep({ use: 'component.email.send' }, { index: 0 }))
+
+    const [plain, loop] = ready(store).definition?.steps ?? []
+    expect(loop?.steps).toEqual([])
+    expect(loop?.handler).toBeUndefined()
+    // A `steps:` on a Step that nests nothing is a region the map would draw
+    // and no runner would enter.
+    expect(plain?.steps).toBeUndefined()
+    expect([...regionsOf(plain as Step)]).toEqual([])
+  })
+
+  /*
+   * A Branch is not an empty list: it carries a label and a condition, so a
+   * Fork born with `branches: []` is the same unfillable card a `core.try` with
+   * no keys is. Two of them, because CONTEXT.md defines a Fork as holding two
+   * or more — and a condition fork, because `when: ''` is a condition still to
+   * write while its absence on the last Branch is the fallback.
+   */
+  it('gives a core.fork two Branches, so a Fork is something a Step can go into', async () => {
+    const { store } = await open()
+    store.apply(addStep({ use: 'core.fork', name: 'Which way' }, { index: 0 }))
+
+    const added = ready(store).definition?.steps[0]
+    expect(added?.branches?.map((branch) => branch.label)).toEqual(['Condition', 'Otherwise'])
+    expect(added?.branches?.map((branch) => branch.when)).toEqual(['', undefined])
+    for (const branch of added?.branches ?? []) expect(branch.steps).toEqual([])
+    expect([...regionsOf(added as Step)].map((region) => region.keyword)).toEqual(['if', 'else'])
   })
 
   it('appends when the index is past the end', async () => {
@@ -642,6 +805,33 @@ describe('undo and redo', () => {
 
     store.undo()
     expect(ready(store).text).toBe(SOURCE)
+  })
+
+  /*
+   * What the canvas's selection bar applies when it removes a Segment. Left as
+   * separate commands, the first undo puts half a selection back — a document
+   * state nothing on screen explains, and the reason `sequence` exists.
+   */
+  it('undoes a sequence of removals as one change, not one per member', async () => {
+    const { store } = await open()
+    store.apply(
+      sequence(
+        'Remove 2 Steps',
+        removeStep({ board: null, id: 's1' }),
+        removeStep({ board: null, id: 's2' }),
+      ),
+    )
+    // Both gone, so the assertions below are about one undo of two removals
+    // rather than one undo of one.
+    expect(ready(store).text).not.toContain('id: s1')
+    expect(ready(store).text).not.toContain('id: s2')
+    expect(ready(store).undoLabel).toBe('Remove 2 Steps')
+
+    store.undo()
+    // Both back, and the stack empty: two entries would leave one removal
+    // standing and something still to undo.
+    expect(ready(store).text).toBe(SOURCE)
+    expect(ready(store).undoLabel).toBeNull()
   })
 
   it('names what it would undo, so a control can label itself', async () => {

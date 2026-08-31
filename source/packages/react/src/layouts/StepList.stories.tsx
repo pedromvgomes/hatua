@@ -181,7 +181,7 @@ export const Flat: Story = { parameters: wired(serving(SIMPLE)) }
  * any Branch carries `when`, because the schema has no mode field.
  *
  * The try is the one Step here with TWO child regions, and the chips say which
- * is which: `try` over the protected body and `on failure` over the handler.
+ * is which: `attempt` over the protected body and `on failure` over the handler.
  * `steps:` holds a loop's children and a try's body alike, so the word comes
  * from the verb — reading "loop" over the Steps a try is protecting would name
  * the wrong control flow.
@@ -197,13 +197,13 @@ export const Insertable: Story = {
   parameters: wired(serving(DEEP)),
   args: {
     onInsert: (at) => console.info('insert at', at),
-    onSelect: (id) => console.info('selected', id),
+    onSelect: (ref) => console.info('selected', ref),
   },
 }
 
 export const Selected: Story = {
   parameters: wired(serving(DEEP)),
-  args: { defaultSelectedId: 's3' },
+  args: { defaultSelected: { board: null, steps: ['s3'] } },
 }
 
 /**
@@ -255,7 +255,7 @@ export const SavingHalted: Story = {
       },
     }),
   ),
-  args: { onSelect: (id) => console.info('selected', id) },
+  args: { onSelect: (ref) => console.info('selected', ref) },
 }
 
 /** No WorkflowStore at all — a wiring mistake, told apart from an empty workflow. */

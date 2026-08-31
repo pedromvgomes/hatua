@@ -87,7 +87,7 @@ components:
     use: core.fork
     name: Branch
     group: Built-in
-    icon: /icons/zap.svg
+    icon: /icons/branch.svg
     blurb: Take one path or several, on a condition.
     fields: []
     outputs: []
@@ -95,7 +95,7 @@ components:
     use: core.return
     name: Return
     group: Built-in
-    icon: /icons/zap.svg
+    icon: /icons/return.svg
     blurb: Publish a block's declared outputs and end it.
     # Its fields are the enclosing block's `outputs:`, which no manifest can
     # declare — the mirror of core.map, whose outputs no manifest can declare
@@ -107,7 +107,7 @@ components:
     use: core.for_each
     name: For each
     group: Built-in
-    icon: /icons/zap.svg
+    icon: /icons/repeat.svg
     blurb: Repeat the steps inside it once per item.
     fields:
       # `list`, and the name is load-bearing: `item` means "one element of
@@ -129,10 +129,13 @@ components:
         t: item
   - kind: component
     use: core.try
-    name: Try
+    name: Attempt
     group: Built-in
-    icon: /icons/zap.svg
-    blurb: Run steps, and fall back to a handler if they fail.
+    icon: /icons/shield.svg
+    # Everything a manifest names reaches an end user's screen, so neither the
+    # name nor the blurb spends a word only somebody who has written code knows:
+    # not "try", and not "handler".
+    blurb: Run these steps, and do something else if they fail.
     # Wrapping one step is retry; wrapping a region is fallback, so one verb
     # serves both. Its two regions are `steps:` and `handler:`, which are
     # positions in the document rather than fields — so they are not here.

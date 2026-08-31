@@ -106,6 +106,37 @@ steps:
           connection: mailbox
           to: me@example.com
           subject: "{{ steps.s4.item.filename }}"
+  - id: s6
+    # A call is a doorway into another Board, never a body drawn here
+    # (ADR-0013). The card carries Open, and the canvas keeps a tab per Board.
+    use: block.archive_entry
+    name: "File the thread away"
+    with:
+      thread: "{{ triggers.overnight.message.subject }}"
+
+blocks:
+  - id: archive_entry
+    name: "Archive an entry"
+    # A Block reads only what it declares, plus the Run Context — never the
+    # workflow's Triggers or variables. That contract is what lets it be called
+    # from anywhere while scope stays an exact walk.
+    params:
+      - { k: thread, label: "Thread", t: text }
+    outputs:
+      - { k: url, label: "Where it went", t: text }
+    steps:
+      - id: store
+        use: component.email.send
+        name: "Send it to the archive"
+        with:
+          connection: mailbox
+          to: archive@example.com
+          subject: "{{ params.thread }}"
+      - id: done
+        use: core.return
+        name: "Publish where it went"
+        with:
+          url: "https://archive.example.com/{{ params.thread }}"
 `
 
 interface Stored {

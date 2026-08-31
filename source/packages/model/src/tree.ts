@@ -49,6 +49,41 @@ export interface StepRef {
   readonly id: string
 }
 
+/** A position among a list of sibling Steps, named in domain terms rather than YAML paths. */
+export interface InsertPoint {
+  /**
+   * Which Board the position is on: a Block's id, or absent for the root.
+   *
+   * Every path below is rooted here rather than at `['steps']`. That single
+   * parameter is what makes an edit on a Block's Board the same command as an
+   * edit on the root's — which is the property the extract-into-a-block gesture
+   * needs, and what keeps a Block built on the canvas and one hand-written in
+   * Text Mode the same document.
+   */
+  board?: BoardId
+  /**
+   * The container Step whose children receive it. Absent for the Board's
+   * root sequence.
+   */
+  parentId?: string
+  /**
+   * Which of a `core.fork`'s branches, by index. Absent for a `core.for_each`'s
+   * own nested `steps`, and absent at the root.
+   */
+  branchIndex?: number
+  /**
+   * Which of a `core.try`'s two regions. Absent means the body under `steps:`,
+   * which is the same key a loop's children sit under.
+   *
+   * A named region rather than a second index, because the two are not a list:
+   * a try has exactly one body and exactly one handler, and an index would let
+   * a caller ask for the third one.
+   */
+  region?: 'handler'
+  /** Position among the siblings. The list's length appends. */
+  index: number
+}
+
 /**
  * Every Board in the document, root first.
  *
@@ -67,6 +102,40 @@ export function boardOf(doc: WorkflowDefinition, id: BoardId): Board | undefined
   return undefined
 }
 
+/**
+ * The verb that protects a region and falls back to a handler.
+ *
+ * The one container with two child regions: a body under `steps:` and a handler
+ * under `handler:`. Wrapping one Step is retry, wrapping a region is fallback,
+ * so one verb serves both (ADR-0013).
+ *
+ * Its retry policy — how many attempts, how long to wait — sits in `with:` as
+ * ordinary manifest fields, and deliberately NOT in a structural key. `until`
+ * had to leave `with:` because `FIELD_KIND_TYPES` has no mappable boolean, so a
+ * condition there would have type-checked as text. An attempt count is a number
+ * and `number` IS a mappable field kind, so the argument that moved `until` does
+ * not reach here at all — following it anyway would be copying a conclusion
+ * without its reason, and would cost a structural key, a diagnostic and a form
+ * control that the manifest already gives for nothing.
+ *
+ * It sits beside the region vocabulary rather than beside the other verbs
+ * because the only question anything asks it is which word goes over a region:
+ * `steps:` is one key holding a loop's children and a try's protected body
+ * alike, and this is what tells them apart.
+ */
+export const TRY_VERB = 'core.try'
+
+/**
+ * The verb that repeats its children until a condition holds.
+ *
+ * It sits beside `TRY_VERB` and the region vocabulary because the only question
+ * anything asks it here is whether a region always runs: a `core.repeat` tests
+ * its `until` AFTER the body, so the body runs at least once, while a
+ * `core.for_each`'s list may be empty and its body may never run. `steps:` is
+ * one key holding both, so the verb is what tells them apart.
+ */
+export const REPEAT_VERB = 'core.repeat'
+
 /** Which of a container's child regions a step list is. */
 export type RegionKind = 'branch' | 'body' | 'handler'
 
@@ -80,6 +149,37 @@ export type RegionKind = 'branch' | 'body' | 'handler'
 export interface Region {
   readonly kind: RegionKind
   readonly steps: readonly Step[]
+  /**
+   * The word that goes over this region — `if` / `else if` / `else` / `and`
+   * over a Branch, `attempt` or `loop` over a body, `on failure` over a
+   * handler.
+   *
+   * Here rather than at each surface, because two surfaces draw every region:
+   * `<StepList>` puts it in a chip over the region and the canvas puts it in
+   * the band above it, and a word each works out for itself is a word they can
+   * disagree about. `kind` says which region this is and this says what it is
+   * called, so a reader gains both by construction.
+   *
+   * The verb decides the word and never whether the region exists. A `handler:`
+   * on a `core.fork` is meaningless and no runner reads it, but `walkSteps`
+   * still yields the Steps inside it, so a surface refusing to draw it makes
+   * those Steps unreachable rather than absent.
+   */
+  readonly keyword: string
+  /**
+   * Whether this region runs every time its Step does.
+   *
+   * A Branch does not — its `when` is answered at run time. A `core.try`'s body
+   * does, because it always starts; its handler does not, because it needs a
+   * failure. A `core.repeat`'s body does, because `until` is tested after it; a
+   * `core.for_each`'s does not, because the list may be empty.
+   *
+   * That is the same line `alwaysReturns` in validity.ts draws to decide whether
+   * a region discharges a Block's obligation to return — one question, "is this
+   * region guaranteed to run at all", asked here of geometry and there of
+   * validity. Two readings of it are two answers waiting to disagree.
+   */
+  readonly always: boolean
   /** The Branch this region is. Absent on a body and on a handler. */
   readonly branch?: Branch
 }
@@ -94,14 +194,68 @@ export interface Region {
  * construction rather than by remembering to ask for it.
  *
  * The region is named rather than yielded as a bare list because a reader that
- * draws differently per region — branches side by side, a try's two regions
- * stacked under their own labels — still has to get its regions from here.
+ * says something different about each — the word over it, whether it always
+ * runs — still has to get its regions from here.
  */
 export function* regionsOf(step: Step): Generator<Region> {
-  for (const branch of step.branches ?? []) yield { kind: 'branch', branch, steps: branch.steps }
-  if (step.steps) yield { kind: 'body', steps: step.steps }
-  if (step.handler) yield { kind: 'handler', steps: step.handler }
+  const branches = step.branches ?? []
+  for (const [index, branch] of branches.entries()) {
+    yield {
+      kind: 'branch',
+      keyword: branchKeyword(branches, index),
+      always: false,
+      branch,
+      steps: branch.steps,
+    }
+  }
+  if (step.steps) {
+    yield {
+      kind: 'body',
+      keyword: bodyKeyword(step),
+      always: step.use === TRY_VERB || step.use === REPEAT_VERB,
+      steps: step.steps,
+    }
+  }
+  if (step.handler) {
+    yield { kind: 'handler', keyword: 'on failure', always: false, steps: step.handler }
+  }
 }
+
+/**
+ * `if` / `else if` / `else` for a condition fork, `and` for a parallel one.
+ *
+ * Read from the branches rather than from a mode field, because the schema has
+ * no mode field: `when` is "absent on the fallback branch of a condition fork —
+ * order matters there, first match wins, and the last branch may be
+ * unconditional". A fork where no branch carries `when` is the parallel one.
+ *
+ * Presence and not truthiness. The distinction the schema draws is absent
+ * versus present, so a branch whose condition is still empty is a branch with a
+ * condition on it — one nobody has written yet. Read as falsy, a Fork born
+ * carrying `when: ''` on its first branch renders `and` / `and` and calls
+ * itself parallel, which is the one thing it is not.
+ */
+function branchKeyword(branches: readonly Branch[], index: number): string {
+  if (!branches.some((branch) => branch.when !== undefined)) return 'and'
+  if (branches[index]?.when !== undefined) return index === 0 ? 'if' : 'else if'
+  return 'else'
+}
+
+/**
+ * `attempt` over a `core.try`'s protected region, `loop` over everything else's.
+ *
+ * `steps:` is one key holding two different ideas, so the word comes from the
+ * verb rather than from the key. Reading "loop" over the Steps a try is
+ * protecting would name the wrong control flow.
+ *
+ * `attempt` and not `try`, which is the word only somebody who has written code
+ * knows. Everything here reaches an end user's screen inside somebody else's
+ * product (`.agents/rules/rendered-copy-is-written-for-the-hosts-users.md`), and
+ * `on failure` beside it is already plain — half a pair in plain English and
+ * half in a keyword reads as neither. The verb stays `core.try`: that is an
+ * identifier somebody types in Text Mode, not a sentence anybody reads.
+ */
+const bodyKeyword = (step: Step): string => (step.use === TRY_VERB ? 'attempt' : 'loop')
 
 /**
  * Whether a Step owns child regions at all.
@@ -112,6 +266,46 @@ export function* regionsOf(step: Step): Generator<Region> {
  * decides how tall a card is or whether it collapses.
  */
 export const isContainer = (step: Step): boolean => !regionsOf(step).next().done
+
+/**
+ * What a Step is called on screen: its name, falling back to its id.
+ *
+ * An id is the one thing a Step always has, and it is what a user typed if they
+ * hand-wrote the file. Here rather than at each surface because the list, the
+ * canvas and every sentence a screen reader hears have to name one Step one
+ * way — two spellings is a card and a row that look like two Steps.
+ */
+export const nameOf = (step: Step): string => step.name || step.id
+
+/**
+ * What makes a Step structural, in words: `core.fork · 2 branches`,
+ * `core.try · 1 step · handler`.
+ *
+ * Enumerated off `regionsOf` rather than off the three step keys, so a region
+ * added to the walk shows up in the summary by construction. A summary read off
+ * `steps:` alone says `core.try` on a try carrying only a handler — a card with
+ * a chevron and an `on failure` region under it, describing itself as a leaf.
+ *
+ * A leaf's summary is its verb and nothing else, which is why the canvas shows
+ * this only on the cards `isContainer` makes taller: `LAYOUT.nodeHeight` is "a
+ * card with a name and nothing else", so a leaf card has nowhere to put a row.
+ * One predicate decides the height and the content, and they cannot come apart.
+ */
+export function summaryOf(step: Step): string {
+  const regions = [...regionsOf(step)]
+  const parts = [step.use]
+
+  const branches = regions.filter((region) => region.kind === 'branch').length
+  if (branches > 0) parts.push(`${branches} ${branches === 1 ? 'branch' : 'branches'}`)
+
+  for (const region of regions) {
+    if (region.kind === 'branch') continue
+    if (region.kind === 'handler') parts.push('handler')
+    else parts.push(`${region.steps.length} ${region.steps.length === 1 ? 'step' : 'steps'}`)
+  }
+
+  return parts.join(' · ')
+}
 
 /**
  * Depth-first walk of every step in one tree, parents before children.
@@ -151,6 +345,60 @@ export function* walkDocument(doc: WorkflowDefinition): Generator<StepRef & { st
  * because the schema holds every id to an identifier, which cannot contain one.
  */
 export const stepKey = ({ board, id }: StepRef): string => (board === null ? id : `${board}/${id}`)
+
+/**
+ * One Board as a string, for a reader that holds something per Board.
+ *
+ * Prefixed rather than the bare id, because the root Board is `null` and a
+ * Block whose id is the empty string would key the same — so the two would
+ * share whatever is held, and opening that Block would find the root's.
+ *
+ * Minted here for the reason `stepKey` is: a viewport keyed one way and a
+ * selection keyed another are two maps that disagree about which Board is which.
+ */
+export const boardKey = (id: BoardId): string => (id === null ? 'board:root' : `board:${id}`)
+
+/**
+ * One child region, and the Step it hangs under.
+ *
+ * A `StepRef` widened by which of that Step's regions this is, because a
+ * `core.try` owns two and a Fork owns *n* — so a Step alone does not name one.
+ * The shape composes with what a `Band` already carries, so the canvas can name
+ * the region it is drawing without a second enumeration.
+ *
+ * Named by `kind` rather than by an ordinal into `regionsOf`, because anything
+ * held against a region — which one is folded shut — outlives the edits made
+ * while it is held. A body and a handler have a `kind` that names them
+ * outright, so neither takes a number and neither can move: adding a Branch to
+ * a Fork that also carries a `handler:` would have shifted an ordinal.
+ *
+ * **A Branch is not stable, and cannot be.** `branchIndex` is an ordinal into
+ * `branches:`, so inserting a Branch before it moves the fold onto its
+ * neighbour. There is nothing better to use: a Branch carries no id, and the
+ * schema refuses its `label` for identity because that is free text a user
+ * renames. Naming a Branch by *where it is* is the whole of what is available,
+ * and the narrower spelling buys the other two regions and not this one.
+ */
+export interface RegionRef {
+  readonly board: BoardId
+  /** The container Step that owns the region. */
+  readonly id: string
+  readonly kind: RegionKind
+  /** Which of the owner's Branches this is. Absent on a body and on a handler. */
+  readonly branchIndex?: number
+}
+
+/**
+ * One string naming one region, for the places that need a flat key — a `Set`, a
+ * React key, a `data-` attribute.
+ *
+ * Minted beside `stepKey` and for the same reason: hand-rolled spellings are
+ * chances to pick a different separator, and two readers disagreeing about the
+ * spelling is a region folded under a key nothing looks up. `#` and `:` are safe
+ * because the schema holds every id to an identifier, which contains neither.
+ */
+export const regionKey = ({ board, id, kind, branchIndex }: RegionRef): string =>
+  `${stepKey({ board, id })}#${kind}${branchIndex === undefined ? '' : `:${branchIndex}`}`
 
 /** A Step by Board and id. Both halves are needed: ids are Board-local. */
 export function findStep(doc: WorkflowDefinition, ref: StepRef): Step | undefined {

@@ -318,42 +318,87 @@ func CyclicBlocks(doc Definition) []string {
 		order = append(order, block.ID)
 	}
 
+	// Tarjan's strongly connected components, and not the path-slice walk this
+	// question invites. A depth-first walk that marks "everything from where this
+	// id reappears" is right about the cycle it is standing on and blind to every
+	// cycle that closes through a node it has already finished: with b1 -> b2,
+	// b2 -> b3, b4, b3 -> b1 and b4 -> b3, it proves b1 -> b2 -> b3 -> b1,
+	// finishes b3, then meets b3 again from b4 as a FINISHED node — so b4 is
+	// never marked, though b4 -> b3 -> b1 -> b2 -> b4 is as much a cycle.
+	//
+	// An SCC is the shape of the question: two Blocks are in one component when
+	// each reaches the other, which is what taking part in a cycle means. A Block
+	// that merely reaches one is a component of its own and stays unmarked.
 	cyclic := map[string]bool{}
-	visiting := map[string]bool{}
-	done := map[string]bool{}
+	index := map[string]int{}
+	low := map[string]int{}
+	onStack := map[string]bool{}
+	stack := []string{}
+	counter := 0
 
-	var visit func(string, []string)
-	visit = func(id string, path []string) {
-		if visiting[id] {
-			// Everything from where this id first appears is on the cycle; what
-			// came before merely leads to it and is not itself recursive.
-			for i, member := range path {
-				if member == id {
-					for _, onCycle := range path[i:] {
-						cyclic[onCycle] = true
-					}
+	var visit func(string)
+	visit = func(id string) {
+		index[id] = counter
+		low[id] = counter
+		counter++
+		stack = append(stack, id)
+		onStack[id] = true
+
+		for _, next := range edges[id] {
+			// A call to a block nothing declares is not an edge: BLOCK_UNKNOWN
+			// reports it, and following it would invent a node with no calls.
+			if _, declared := edges[next]; !declared {
+				continue
+			}
+			if _, seen := index[next]; !seen {
+				visit(next)
+				if low[next] < low[id] {
+					low[id] = low[next]
+				}
+			} else if onStack[next] {
+				if index[next] < low[id] {
+					low[id] = index[next]
+				}
+			}
+		}
+
+		if low[id] != index[id] {
+			return
+		}
+
+		component := []string{}
+		for {
+			member := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			delete(onStack, member)
+			component = append(component, member)
+			if member == id {
+				break
+			}
+		}
+
+		// A component of one is a cycle only when the Block calls itself: every
+		// other single Block reaches a cycle at most, and is not on one.
+		callsItself := false
+		if len(component) == 1 {
+			for _, next := range edges[id] {
+				if next == id {
+					callsItself = true
 					break
 				}
 			}
-			return
 		}
-		if done[id] {
-			return
+		if len(component) > 1 || callsItself {
+			for _, one := range component {
+				cyclic[one] = true
+			}
 		}
-		if _, declared := edges[id]; !declared {
-			return
-		}
-
-		visiting[id] = true
-		for _, next := range edges[id] {
-			visit(next, append(append([]string{}, path...), id))
-		}
-		visiting[id] = false
-		done[id] = true
 	}
 
 	for _, id := range order {
-		visit(id, nil)
+		if _, seen := index[id]; !seen {
+			visit(id)
+		}
 	}
 
 	// Declaration order, so both languages report the same document the same way.

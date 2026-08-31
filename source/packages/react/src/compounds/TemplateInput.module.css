@@ -18,7 +18,7 @@
      * middle rather than at the top of whatever `min-block-size` leaves over.
      */
     align-content: center;
-    min-block-size: 40px;
+    min-block-size: var(--hatua-control-height);
     /*
      * Roomier on the leading edge than a plain text field needs, because the
      * first thing in one of these is often a chip rather than a letter.

@@ -74,6 +74,69 @@ steps:
     use: component.email.fetch
 `
 
+/**
+ * A workflow with a Block in it, so the same three sections can be looked at on
+ * both Boards. `hollow` declares nothing and keeps nothing, which is the state a
+ * Block is in the moment it is created.
+ */
+const WITH_BLOCKS = `id: wf_morning
+name: "Morning inbox triage"
+version: 4
+status: draft
+
+triggers:
+  - id: t1
+    use: component.schedule.cron
+    name: "Every morning"
+
+vars:
+  - key: digest_to
+    t: text
+    value: "ops@example.com"
+
+steps:
+  - id: s1
+    use: block.archive_entry
+    with:
+      thread: "{{ triggers.t1.subject }}"
+
+blocks:
+  - id: archive_entry
+    name: "Archive an entry"
+    params:
+      - { k: thread, label: "Thread", t: text }
+      - { k: urgent, label: "Urgent", t: boolean }
+    outputs:
+      - { k: url, label: "Where it went", t: text }
+    vars:
+      - key: attempts
+        t: number
+        value: 0
+    steps: []
+  - id: hollow
+    name: "Nothing declared yet"
+    steps: []
+  - id: busy
+    name: "Reconcile an invoice"
+    params:
+      - { k: invoice_id, label: "Invoice", t: text }
+      - { k: raised_at, label: "Raised on", t: datetime }
+      - { k: amount, label: "Amount", t: number }
+      - { k: line_items, label: "Line items", t: list }
+      - { k: dry_run, label: "Dry run only", t: boolean }
+    outputs:
+      - { k: matched, label: "Matched", t: boolean }
+      - { k: note, label: "What happened", t: text }
+    vars:
+      - key: attempts
+        t: number
+        value: 0
+      - key: last_error
+        t: text
+        value: ""
+    steps: []
+`
+
 const BARE = `id: wf_new
 name: "Untitled workflow"
 version: 1
@@ -315,3 +378,49 @@ export const UndescribedConnections: Story = {
 
 /** No WorkflowStore at all — a wiring mistake, told apart from an empty workflow. */
 export const Unconfigured: Story = {}
+
+/**
+ * A Block's Board: the same three sections, addressed at the Block.
+ *
+ * Identity is the Block's name and slug, the middle section is its **Contract**
+ * rather than the Triggers — a Board's root IS its contract (CONTEXT.md) — and
+ * the variables are the Block's own, rebuilt on every invocation and invisible
+ * outside it.
+ */
+export const OnABlockBoard: Story = {
+  args: { board: 'archive_entry' },
+  parameters: wired(serving(WITH_BLOCKS)),
+}
+
+/**
+ * A Block that takes nothing and publishes nothing. Neither is a fault and
+ * neither may read as one, the same line the bare workflow above draws.
+ */
+export const BlockWithNothingDeclared: Story = {
+  args: { board: 'hollow' },
+  parameters: wired(serving(WITH_BLOCKS)),
+}
+
+/**
+ * A Board naming a Block the document does not declare — what a Block removed
+ * in Text Mode leaves a caller holding. "The root Board" and "a Board that is
+ * not there" are different screens, so this is not the root's.
+ */
+export const BoardThatIsNotThere: Story = {
+  args: { board: 'deleted' },
+  parameters: wired(serving(WITH_BLOCKS)),
+}
+
+/**
+ * A contract with enough in it to be worth folding.
+ *
+ * Five parameters, two outputs and two variables is a page of boxes with every
+ * row open, which is what every row folding is for: folded, each is one line
+ * carrying its name, its key and its type, and the whole Block reads without
+ * scrolling. Open by default all the same — folding is a user managing clutter,
+ * not a state a tab should open in.
+ */
+export const ABlockWithPlentyDeclared: Story = {
+  args: { board: 'busy' },
+  parameters: wired(serving(WITH_BLOCKS)),
+}

@@ -1,0 +1,168 @@
+@layer hatua {
+  /*
+    A drawn edge. Quiet enough not to compete with the cards inside it, and
+    visible enough that where the region stops is on screen — an extent nobody
+    can see is an extent that says nothing, and the `+` inside it then belongs
+    to no list.
+  */
+  .band {
+    position: absolute;
+    box-sizing: border-box;
+    border: 1px solid var(--hatua-border-strong);
+    border-radius: var(--hatua-radius-lg);
+    background: color-mix(in oklab, var(--hatua-surface-card) 55%, transparent);
+    /*
+      Folding and unfolding tween, because a box changing size with no motion
+      reads as a different map rather than the same one. It is on what `boxOf`
+      writes, so the map animates with no animation code. An SVG path's `d` does
+      not transition, so the connectors cannot follow and fade in over the same
+      window instead of pointing at boxes still on their way.
+    */
+    transition:
+      left 140ms ease,
+      top 140ms ease,
+      width 140ms ease,
+      height 140ms ease;
+    pointer-events: none;
+  }
+
+  /*
+    Decoration, unlike a toast's countdown bar, which is the only thing saying
+    how long is left. Freezing this loses nothing.
+  */
+  @media (prefers-reduced-motion: reduce) {
+    .band {
+      transition: none;
+    }
+  }
+
+  /*
+    Above the frame's top edge and flush with its left. `bottom: 100%` rather
+    than a negative offset, so the word rides the edge wherever the frame is and
+    whatever the type metrics turn out to be.
+
+    The word is also the control that folds the column, so the one mark naming
+    this region is the one thing that acts on it. The frame takes no pointer —
+    a click anywhere inside it belongs to whatever card is there — so this is
+    the only part of a Band that does.
+  */
+  .legend {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    border: 0;
+    border-radius: var(--hatua-radius-sm);
+    background: none;
+    padding: 0 4px 4px 0;
+    /* A <button> does not inherit the page's face, so without this the legend
+       draws in the UA's own — which is a Branch's label in a font no Host
+       chose, and a word that shifts by a pixel or two depending on whether its
+       column happens to be foldable. */
+    font: inherit;
+    max-inline-size: 100%;
+    white-space: nowrap;
+    cursor: pointer;
+    pointer-events: auto;
+  }
+
+  /* An empty column has nothing to fold, so its word is a word and takes no
+     pointer. A control that does nothing is worse than no control. */
+  .still {
+    cursor: default;
+    pointer-events: none;
+  }
+
+  .legend:focus-visible {
+    outline: 2px solid var(--hatua-focus-ring);
+    outline-offset: 2px;
+  }
+
+  .blank {
+    visibility: hidden;
+  }
+
+  .chevron {
+    display: grid;
+    flex: none;
+    place-items: center;
+    color: var(--hatua-text-muted);
+    rotate: 0deg;
+    transition: rotate 140ms ease;
+  }
+
+  /* Pointing at the column it is holding shut, over the same window the box
+     takes to fold. */
+  .shut {
+    rotate: -90deg;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .chevron {
+      transition: none;
+    }
+  }
+
+  /*
+    A folded box says how many Steps it is holding back. A box that says nothing
+    is indistinguishable from an empty one, and the two mean opposite things —
+    an empty one is somewhere to add a Step, a folded one is Steps out of sight.
+  */
+  .folded {
+    display: grid;
+    margin: 0;
+    place-items: center;
+    block-size: 100%;
+    color: var(--hatua-text-muted);
+    font-size: 12px;
+  }
+
+  .keyword {
+    flex: none;
+    color: var(--hatua-text-secondary);
+    font-size: 11px;
+    font-family: var(--hatua-font-mono);
+    line-height: 1.5;
+    letter-spacing: 0.02em;
+  }
+
+  .text {
+    overflow: hidden;
+    color: var(--hatua-text-secondary);
+    font-size: 12px;
+    text-overflow: ellipsis;
+  }
+
+  .when {
+    overflow: hidden;
+    color: var(--hatua-text-muted);
+    font-size: 11px;
+    font-family: var(--hatua-font-mono);
+    text-overflow: ellipsis;
+  }
+
+  /* A handler runs because something failed, so its frame says so before its
+     word is read. */
+  .handler {
+    border-color: color-mix(in oklab, var(--hatua-status-error) 45%, transparent);
+    background: color-mix(in oklab, var(--hatua-status-error-wash) 70%, transparent);
+  }
+
+  .handler .keyword {
+    color: var(--hatua-status-error);
+  }
+
+  /*
+    Whether this column runs is a question the document answers at run time — a
+    solid edge would say it always does. Dashed already means *placeholder* here
+    (the `+` is a dashed circle, an empty region a dashed box), and it survives
+    that collision only beside a solid sibling, which is why the canvas withholds
+    it from a lone loop body (ADR-0015).
+  */
+  .dashed {
+    border-style: dashed;
+  }
+}

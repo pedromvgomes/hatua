@@ -1,0 +1,37 @@
+@layer hatua {
+  /*
+    Quieter than the Bands it holds: it says where a container reaches, and the
+    regions inside it are what a reader is actually looking at. Behind the card
+    that owns it, which is what makes the card read as the lid rather than as
+    something sitting on top of a box.
+  */
+  .nest {
+    box-sizing: border-box;
+    border: 1px solid var(--hatua-border-strong);
+    border-radius: var(--hatua-radius-lg);
+    background: color-mix(in oklab, var(--hatua-surface-card) 28%, transparent);
+    pointer-events: none;
+    /*
+      Folding and unfolding tween, because a box changing size with no motion
+      reads as a different map rather than the same one. It is on what `boxOf`
+      writes, so the map animates with no animation code. An SVG path's `d` does
+      not transition, so the connectors cannot follow and fade in over the same
+      window instead of pointing at boxes still on their way.
+    */
+    transition:
+      left 140ms ease,
+      top 140ms ease,
+      width 140ms ease,
+      height 140ms ease;
+  }
+
+  /*
+    Decoration, unlike a toast's countdown bar, which is the only thing saying
+    how long is left. Freezing this loses nothing.
+  */
+  @media (prefers-reduced-motion: reduce) {
+    .nest {
+      transition: none;
+    }
+  }
+}

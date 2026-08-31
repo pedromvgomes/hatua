@@ -14,8 +14,8 @@ import { SEED } from './workflow-store'
  * This is the layer the conformance corpus cannot reach. The corpus supplies its
  * own manifests per scenario, so a rename in `conformance/manifest/catalogue.yaml`
  * — a field key, an output's type — leaves every scenario green while the first
- * screen a person sees fills with markers. That is exactly what happened to the
- * loop below: it was written against a field key the catalogue no longer has.
+ * screen a person sees fills with markers. The loop below is what stands between
+ * a catalogue rename and a seed nobody notices has stopped matching it.
  *
  * Two assertions rather than one. "Nothing is reported" catches the rename;
  * "`item` resolves to the element the source declared" catches the quieter

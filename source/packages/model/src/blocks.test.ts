@@ -1,7 +1,7 @@
 import { validate } from '@hatua/expressions'
 import type { Manifest, WorkflowDefinition } from '@hatua/schema'
 import { describe, expect, it } from 'vitest'
-import { callSlots, cyclicBlocks, returnSlots } from './blocks'
+import { callSitesOf, callSlots, contractSummary, cyclicBlocks, returnSlots } from './blocks'
 import { indexManifests } from './connections'
 import { blockOutputType, boardScope, scopeFor } from './scope'
 import { boards, stepKey, walkDocument } from './tree'
@@ -234,6 +234,33 @@ describe('recursion', () => {
     expect([...cyclicBlocks(indirect)].sort()).toEqual(['middle', 'tail'])
   })
 
+  /*
+   * A Block reaching the cycle through one already walked is still on it.
+   *
+   * `b4 → b3 → b1 → b2 → b4` is a cycle, and the depth-first walk finishes `b3`
+   * while proving `b1 → b2 → b3 → b1`. Skipping a finished node then hides
+   * every cycle that only closes through it, so a recursive Block is published
+   * with no BLOCK_RECURSION against it — the design-time answer ADR-0013 asks
+   * for, missing exactly where a runner would not survive it.
+   */
+  it('finds a cycle that closes through a block already walked', () => {
+    const shared = doc({
+      blocks: [
+        { id: 'b1', steps: [{ id: 'a', use: 'block.b2' }] },
+        {
+          id: 'b2',
+          steps: [
+            { id: 'b', use: 'block.b3' },
+            { id: 'c', use: 'block.b4' },
+          ],
+        },
+        { id: 'b3', steps: [{ id: 'd', use: 'block.b1' }] },
+        { id: 'b4', steps: [{ id: 'e', use: 'block.b3' }] },
+      ],
+    })
+    expect([...cyclicBlocks(shared)].sort()).toEqual(['b1', 'b2', 'b3', 'b4'])
+  })
+
   /* A call nested inside a fork or a loop still reaches. */
   it('finds a cycle through a call buried in a branch', () => {
     const nested = doc({
@@ -416,14 +443,25 @@ describe('every path returns', () => {
     expect(returned([{ id: 'ret', use: 'core.return', with: { url: 'x' } }])).toBe(true)
   })
 
-  it('accepts a fork whose every branch returns', () => {
+  /*
+   * A condition fork, and it says so: exactly one branch runs, so the question
+   * is whether every one of them returns. Which fork this is comes from the
+   * branches — a fork where NO branch carries `when` is the parallel one — so a
+   * fixture that omits `when` is asking a different question from the one its
+   * name states.
+   */
+  it('accepts a condition fork whose every branch returns', () => {
     expect(
       returned([
         {
           id: 'fork',
           use: 'core.fork',
           branches: [
-            { label: 'A', steps: [{ id: 'r1', use: 'core.return', with: { url: 'x' } }] },
+            {
+              label: 'A',
+              when: '{{ params.a }}',
+              steps: [{ id: 'r1', use: 'core.return', with: { url: 'x' } }],
+            },
             { label: 'B', steps: [{ id: 'r2', use: 'core.return', with: { url: 'y' } }] },
           ],
         },
@@ -460,6 +498,62 @@ describe('every path returns', () => {
     ).toBe(false)
   })
 
+  /*
+   * A parallel fork is the opposite quantifier from a condition one, for the
+   * opposite reason: every branch runs, so ONE that always returns ends the
+   * Block. Asking `every` here — which is what a fork read without its mode
+   * gets — refuses publish to a Block that does return on every path.
+   */
+  it('accepts a parallel fork where one branch returns', () => {
+    expect(
+      returned([
+        {
+          id: 'fork',
+          use: 'core.fork',
+          branches: [
+            {
+              label: 'Archive it',
+              steps: [{ id: 'r1', use: 'core.return', with: { url: 'x' } }],
+            },
+            { label: 'Notify', steps: [{ id: 's1', use: 'component.email.send' }] },
+          ],
+        },
+      ]),
+    ).toBe(true)
+  })
+
+  it('calls a Step after one unreachable, which is the same claim said twice', () => {
+    const after = withBody([
+      {
+        id: 'fork',
+        use: 'core.fork',
+        branches: [
+          { label: 'Archive it', steps: [{ id: 'r1', use: 'core.return', with: { url: 'x' } }] },
+          { label: 'Notify', steps: [{ id: 's1', use: 'component.email.send' }] },
+        ],
+      },
+      { id: 'later', use: 'component.email.send' },
+    ])
+    expect(
+      validateDefinition(after, CATALOGUE).all.filter((d) => d.code === 'STEP_AFTER_RETURN'),
+    ).toHaveLength(1)
+  })
+
+  it('still refuses a parallel fork where no branch returns', () => {
+    expect(
+      returned([
+        {
+          id: 'fork',
+          use: 'core.fork',
+          branches: [
+            { label: 'Archive it', steps: [{ id: 's1', use: 'component.email.send' }] },
+            { label: 'Notify', steps: [{ id: 's2', use: 'component.email.send' }] },
+          ],
+        },
+      ]),
+    ).toBe(false)
+  })
+
   it('does not call a Step after such a fork unreachable', () => {
     const after = withBody([
       {
@@ -484,11 +578,14 @@ describe('every path returns', () => {
   })
 
   /*
-   * `when: ""` is schema-legal, and `malformedContainers` reads a falsy `when`
-   * as the unconditional fallback. Reading it as a condition here would refuse
-   * publish to a Block that does return on every path.
+   * `when: ""` is schema-legal, and the distinction the schema draws is absent
+   * versus present: a branch carrying an empty condition carries one nobody has
+   * written yet, so it is not the fallback. `malformedContainers` and
+   * `branchKeyword` read it the same way — one rule calling it the fallback
+   * while another calls it a condition is how a Fork ends up exhaustive on one
+   * screen and not on the next.
    */
-  it('reads an empty `when` on the last branch as the fallback, as the fork rule does', () => {
+  it('reads an empty `when` on the last branch as a condition, as the fork rule does', () => {
     expect(
       returned([
         {
@@ -508,17 +605,43 @@ describe('every path returns', () => {
           ],
         },
       ]),
-    ).toBe(true)
+    ).toBe(false)
   })
 
-  it('refuses a fork where one branch does not', () => {
+  it('reads a missing `when` on the last branch as the fallback', () => {
     expect(
       returned([
         {
           id: 'fork',
           use: 'core.fork',
           branches: [
-            { label: 'A', steps: [{ id: 'r1', use: 'core.return', with: { url: 'x' } }] },
+            {
+              label: 'A',
+              when: '{{ params.a }}',
+              steps: [{ id: 'r1', use: 'core.return', with: { url: 'x' } }],
+            },
+            {
+              label: 'B',
+              steps: [{ id: 'r2', use: 'core.return', with: { url: 'y' } }],
+            },
+          ],
+        },
+      ]),
+    ).toBe(true)
+  })
+
+  it('refuses a condition fork where one branch does not', () => {
+    expect(
+      returned([
+        {
+          id: 'fork',
+          use: 'core.fork',
+          branches: [
+            {
+              label: 'A',
+              when: '{{ params.a }}',
+              steps: [{ id: 'r1', use: 'core.return', with: { url: 'x' } }],
+            },
             { label: 'B', steps: [] },
           ],
         },
@@ -619,5 +742,65 @@ describe('a block that declares one output twice', () => {
     }
 
     expect(blockOutputType(block)).toEqual({ type: 'object', members: { out: { type: 'text' } } })
+  })
+})
+
+describe('who calls a block', () => {
+  it('finds every call site on every board, not just the root', () => {
+    // A count taken off the root alone tells a user deleting a block that one
+    // step calls it while another block calls it too.
+    expect(callSitesOf(ARCHIVE, 'archive_entry')).toEqual([
+      { board: null, id: 'audit_1' },
+      { board: null, id: 'audit_2' },
+      { board: 'notify_and_archive', id: 'kept' },
+    ])
+  })
+
+  it('finds a call nested inside a container', () => {
+    // A call inside a Fork branch is a call. Read off the top level alone, the
+    // sites hardest to find again are the ones that go unreported.
+    const nested = doc({
+      blocks: [{ id: 'inner', steps: [] }],
+      steps: [
+        {
+          id: 'fork',
+          use: 'core.fork',
+          branches: [
+            { label: 'A', when: '{{ true }}', steps: [{ id: 'deep', use: 'block.inner' }] },
+          ],
+        },
+      ],
+    })
+
+    expect(callSitesOf(nested, 'inner')).toEqual([{ board: null, id: 'deep' }])
+  })
+
+  it('answers nothing for a block nobody calls', () => {
+    expect(callSitesOf(ARCHIVE, 'notify_and_archive')).toHaveLength(1)
+    expect(callSitesOf(ARCHIVE, 'nobody_calls_this')).toEqual([])
+  })
+})
+
+describe('the contract in a line', () => {
+  it('counts what a block takes and what it publishes, singular and plural', () => {
+    expect(contractSummary(ARCHIVE.blocks?.[0])).toBe('1 param · 1 output')
+    expect(contractSummary({ id: 'x', steps: [] })).toBe('0 params · 0 outputs')
+    expect(
+      contractSummary({
+        id: 'x',
+        steps: [],
+        params: [
+          { k: 'a', label: 'A', t: 'text' },
+          { k: 'b', label: 'B', t: 'text' },
+        ],
+      }),
+    ).toBe('2 params · 0 outputs')
+  })
+
+  it('reads an absent block as a contract of nothing rather than as an empty line', () => {
+    // A Board resolved against a document that no longer declares it still
+    // draws a node, and a summary that vanishes reads as a Board with no
+    // contract instead of one that is not there.
+    expect(contractSummary(undefined)).toBe('0 params · 0 outputs')
   })
 })

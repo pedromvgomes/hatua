@@ -1,0 +1,130 @@
+@layer hatua {
+  /*
+    Floating at the lower right of whatever holds the canvas, which therefore
+    has to be a positioned box.
+
+    Logical insets, unlike everything the map draws: `boxOf` is physical because
+    flow-map coordinates are, and mirroring them under an RTL Host would draw a
+    Fork's first Branch last. A toolbar is not on the map. It belongs at the end
+    of the reading direction and moves with it.
+  */
+  .controls {
+    position: absolute;
+    inset-block-end: 16px;
+    inset-inline-end: 16px;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px;
+    border: 1px solid var(--hatua-border-subtle);
+    border-radius: var(--hatua-radius-md);
+    background: var(--hatua-surface-card);
+    box-shadow: 0 4px 14px var(--hatua-shadow-color);
+  }
+
+  .step,
+  .level {
+    display: grid;
+    place-items: center;
+    min-inline-size: 26px;
+    block-size: 26px;
+    padding: 0 6px;
+    border: 0;
+    border-radius: var(--hatua-radius-sm);
+    background: transparent;
+    color: var(--hatua-text-secondary);
+    font: inherit;
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .level {
+    /* Tabular figures: the label is the one thing here whose width changes as
+       you use it, and a toolbar that shifts sideways while you hold `+` down is
+       a target that moves out from under the pointer. */
+    min-inline-size: 46px;
+    font-variant-numeric: tabular-nums;
+    font-size: 12px;
+  }
+
+  .step:hover:not(:disabled),
+  .level:hover,
+  .item:hover {
+    background: var(--hatua-surface-sunken);
+    color: var(--hatua-text-primary);
+  }
+
+  .step:focus-visible,
+  .level:focus-visible,
+  .item:focus-visible {
+    outline: 2px solid var(--hatua-focus-ring);
+    outline-offset: -1px;
+  }
+
+  /* The end of the range. It stays on screen and stops taking a pointer, which
+     is the difference between "there is nowhere further" and "this is gone". */
+  .step:disabled {
+    color: var(--hatua-text-muted);
+    opacity: 0.4;
+    cursor: default;
+  }
+
+  .divide {
+    inline-size: 1px;
+    block-size: 16px;
+    margin-inline: 2px;
+    background: var(--hatua-border-subtle);
+  }
+
+  /*
+    The click-away, over the whole page rather than the canvas: the pointer that
+    dismisses this may land anywhere, and a backdrop the size of the canvas
+    leaves every click outside it opening something else with the menu still up.
+  */
+  .away {
+    position: fixed;
+    inset: 0;
+  }
+
+  /*
+    Opening upwards, because the toolbar sits against the bottom edge: downwards
+    is off the canvas at every window height.
+  */
+  .list {
+    position: absolute;
+    inset-block-end: calc(100% + 6px);
+    inset-inline-end: 0;
+    min-inline-size: 84px;
+    margin: 0;
+    padding: 3px;
+    border: 1px solid var(--hatua-border-subtle);
+    border-radius: var(--hatua-radius-md);
+    background: var(--hatua-surface-raised);
+    box-shadow: 0 10px 30px var(--hatua-shadow-color);
+    list-style: none;
+  }
+
+  .item {
+    inline-size: 100%;
+    padding: 5px 8px;
+    border: 0;
+    border-radius: var(--hatua-radius-sm);
+    background: transparent;
+    color: var(--hatua-text-secondary);
+    font: inherit;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    text-align: end;
+    cursor: pointer;
+  }
+
+  /* The canvas is already at this level, so choosing it changes nothing. Said
+     rather than hidden: an item that vanishes at one scale is a menu whose
+     shape moves. */
+  .here {
+    color: var(--hatua-text-accent);
+    font-weight: 600;
+  }
+}

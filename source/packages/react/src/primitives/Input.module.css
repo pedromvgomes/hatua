@@ -1,7 +1,7 @@
 @layer hatua {
   .input {
     width: 100%;
-    height: 34px;
+    height: var(--hatua-control-height);
     padding: 0 10px;
     border: 1px solid var(--hatua-border-subtle);
     border-radius: var(--hatua-radius-md);

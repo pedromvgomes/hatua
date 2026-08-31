@@ -258,3 +258,131 @@ describe('no stylesheet (ADR-0003)', () => {
     },
   )
 })
+
+/**
+ * One height for every control a value is typed or chosen in.
+ *
+ * `<Input>`, `<Select>` and the Template input are stacked in one card all over
+ * the side panel — a variable is a name box, a type picker and a value box, one
+ * under the other — and three files each writing their own number is three
+ * numbers that drift. Nothing in the panel survives that: every card in the
+ * Workflow tab shows the three heights side by side, one under the next.
+ *
+ * jsdom has no layout engine, so nothing in the suite can measure a rendered
+ * box. What is checkable is the property that makes the numbers agree: each
+ * control's own rule takes its height from the token and writes no number.
+ */
+describe('the controls are one height', () => {
+  const HEIGHT = '--hatua-control-height'
+
+  /** The rule that sizes the box, per file that draws one. */
+  const CONTROLS = [
+    { path: 'src/primitives/Input.module.css', rule: 'input' },
+    { path: 'src/primitives/Select.module.css', rule: 'select' },
+    { path: 'src/compounds/TemplateInput.module.css', rule: 'box' },
+  ]
+
+  /**
+   * The declarations of one class's rule, and nothing nested under it.
+   *
+   * Scoped to the rule rather than searched over the file, because a stylesheet
+   * is full of heights that are not the control's: a chevron is 12px, the ⚡
+   * button inside the Template input is 32px, and `.tall` is 76px because a
+   * `kind: textarea` field asks for a taller box on purpose. Only the box's own
+   * rule is this rule's business.
+   */
+  const ruleFor = (text: string, cls: string): string | null => {
+    // Found by scanning lines rather than by building a pattern out of `cls`:
+    // a class name is not a regex, and treating one as a pattern is how a `.`
+    // in a selector quietly matches something else.
+    const opener = `.${cls}`
+    const at = text.split('\n').reduce<number>((found, line, index, lines) => {
+      if (found !== -1) return found
+      if (line.trim().replace(/\s+/g, ' ').replace(' {', '{') !== `${opener}{`) return found
+      return lines.slice(0, index).reduce((n, one) => n + one.length + 1, 0)
+    }, -1)
+    if (at === -1) return null
+    const open = text.indexOf('{', at)
+    let depth = 0
+    for (let i = open; i < text.length; i++) {
+      if (text[i] === '{') depth++
+      else if (text[i] === '}' && --depth === 0) return text.slice(open + 1, i)
+    }
+    return null
+  }
+
+  it('defines the height once, in the file that owns the vocabulary', () => {
+    const base = sources.find((f) => f.path === BASE)?.text ?? ''
+    expect(definitionsIn(base).has(HEIGHT)).toBe(true)
+  })
+
+  it.each(CONTROLS)(
+    'sizes .$rule in $path from the token, and writes no number',
+    ({ path, rule }) => {
+      const text = cssFiles.find((f) => f.path === path)?.text
+      expect(text, `${path} is not in the scan`).toBeDefined()
+
+      const declarations = ruleFor(text ?? '', rule)
+      expect(declarations, `.${rule} is not in ${path}`).not.toBeNull()
+
+      const heights = [
+        ...(declarations ?? '').matchAll(/(?:min-)?(?:block-size|height)\s*:\s*([^;]+);/g),
+      ].map((match) => (match[1] as string).trim())
+      expect(heights).not.toEqual([])
+      for (const value of heights) expect(value).toBe(`var(${HEIGHT})`)
+    },
+  )
+})
+
+/**
+ * Every class a component reaches for exists in the stylesheet beside it.
+ *
+ * `styles.invalid` where the CSS defines no `.invalid` is not an error anywhere:
+ * the import resolves, the lookup is `undefined`, and `cx` drops it — so the
+ * element renders with every other class it asked for and the state is simply
+ * not drawn. A card carrying a diagnostic then looks exactly like a healthy one,
+ * which is the shape this missed: `<StepList>` gave an invalid row an edge and
+ * `<NodeCard>` asked for one that was never written.
+ *
+ * Read off the authored files for the reason the token rules are: CSS Modules
+ * rewrites class names and nothing else, so source and bundle answer this the
+ * same way and the check needs no build.
+ */
+describe('a class a component asks for is a class its stylesheet has', () => {
+  /**
+   * `styles.foo` and `styles["foo"]`, which are the two spellings in this repo.
+   *
+   * A component that computed a class name would defeat this, and none does —
+   * the point of the rule is that the set is knowable by reading.
+   */
+  const classesUsedIn = (text: string): string[] => [
+    ...new Set(
+      [...text.matchAll(/\bstyles(?:\.(\w+)|\[['"](\w+)['"]\])/g)].map(
+        (match) => (match[1] ?? match[2]) as string,
+      ),
+    ),
+  ]
+
+  /** A selector this file defines, including one only reached through `composes`. */
+  const classesDefinedIn = (text: string): Set<string> =>
+    new Set([...text.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)].map((match) => match[1] as string))
+
+  const pairs = componentFiles
+    .filter((file) => /\.tsx$/.test(file.path) && /from '\.\/[\w.]+\.module\.css'/.test(file.text))
+    .map((file) => ({
+      component: file.path,
+      sheet: file.path.replace(/\.tsx$/, '.module.css'),
+      text: file.text,
+    }))
+    .filter((pair) => cssFiles.some((f) => f.path === pair.sheet))
+
+  it('finds the components to check, so an empty scan cannot pass', () => {
+    expect(pairs.length).toBeGreaterThan(10)
+  })
+
+  it.each(pairs)('$component uses only classes $sheet defines', ({ sheet, text }) => {
+    const defined = classesDefinedIn(cssFiles.find((f) => f.path === sheet)?.text ?? '')
+    const missing = classesUsedIn(text).filter((name) => !defined.has(name))
+    expect(missing, `${sheet} defines no rule for these`).toEqual([])
+  })
+})

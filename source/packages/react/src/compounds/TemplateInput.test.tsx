@@ -668,3 +668,45 @@ describe('double-clicking a hole', () => {
     expect(onCommit).toHaveBeenCalledWith('{{ steps.s2.count }} {{ var.digest_to }}')
   })
 })
+
+/**
+ * The mark at a chip's leading edge says where the value comes from, and every
+ * kind `boardScope` emits needs one of its own.
+ *
+ * A kind with no case falls through to the Run Context's mark, which is not a
+ * neutral default: it claims the value is ambient and around the whole run.
+ * `params.` is the case that makes this reachable — it only appears on a Block's
+ * Board, so it stayed theoretical until one could be opened.
+ */
+describe('the mark on a chip', () => {
+  const MARKED: ScopeEntry[] = [
+    { path: 'run.tenant', kind: 'context', label: 'Tenant', type: { type: 'text' } },
+    { path: 'params.thread', kind: 'param', label: 'Thread', type: { type: 'text' } },
+    { path: 'triggers.t1', kind: 'trigger', label: 'Every morning', type: { type: 'text' } },
+    { path: 'var.digest_to', kind: 'var', label: 'digest_to', type: { type: 'text' } },
+    { path: 'steps.s2', kind: 'step', label: 'Fetch emails', type: { type: 'text' } },
+  ]
+
+  /** What each chip in the mirror is drawn with, in the order they appear. */
+  const marksIn = (container: HTMLElement) =>
+    [...container.querySelectorAll('svg')]
+      .filter((svg) => svg.getAttribute('viewBox') === '0 0 12 12')
+      .map((svg) =>
+        [...svg.children].map((shape) => shape.getAttribute('d') ?? shape.tagName).join('|'),
+      )
+
+  it('draws a different one for every kind, so none borrows another’s meaning', () => {
+    const { container } = render(
+      <TemplateInput
+        label="To"
+        value="{{ run.tenant }} {{ params.thread }} {{ triggers.t1 }} {{ var.digest_to }} {{ steps.s2 }}"
+        scope={MARKED}
+        onCommit={() => {}}
+      />,
+    )
+
+    const marks = marksIn(container)
+    expect(marks).toHaveLength(5)
+    expect(new Set(marks).size).toBe(5)
+  })
+})

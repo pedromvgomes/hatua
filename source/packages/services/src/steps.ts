@@ -1,7 +1,17 @@
 import type { WorkflowDocument } from '@hatua/document'
-import type { BoardId, StepRef } from '@hatua/model'
+import { type BoardId, bornRegionsOf, type InsertPoint, type StepRef } from '@hatua/model'
+
+/**
+ * Re-exported because a Host writes against @hatua/services and never installs
+ * @hatua/model. It is defined there because it is a position in the tree rather
+ * than a service: @hatua/layout emits one per gap on the map, and a package that
+ * had to reach past the model for it would be reaching past the layer that owns
+ * the vocabulary.
+ */
+export type { InsertPoint } from '@hatua/model'
+
 import type { Step } from '@hatua/schema'
-import { asObject, detachNode, insertNode, type Path, readAt } from './ast'
+import { asObject, detachNode, insertNode, type Path, readAt, stepEntriesIn } from './ast'
 import type { EditCommand } from './command'
 
 /**
@@ -22,41 +32,6 @@ import type { EditCommand } from './command'
  * everything below needs an `InsertPoint` and a walk of the tree, and nothing
  * beside it does.
  */
-
-/** A position among a list of sibling Steps, named in domain terms rather than YAML paths. */
-export interface InsertPoint {
-  /**
-   * Which Board the position is on: a Block's id, or absent for the root.
-   *
-   * Every path below is rooted here rather than at `['steps']`. That single
-   * parameter is what makes an edit on a Block's Board the same command as an
-   * edit on the root's — which is the property the extract-into-a-block gesture
-   * needs, and what keeps a Block built on the canvas and one hand-written in
-   * Text Mode the same document.
-   */
-  board?: BoardId
-  /**
-   * The container Step whose children receive it. Absent for the Board's
-   * root sequence.
-   */
-  parentId?: string
-  /**
-   * Which of a `core.fork`'s branches, by index. Absent for a `core.for_each`'s
-   * own nested `steps`, and absent at the root.
-   */
-  branchIndex?: number
-  /**
-   * Which of a `core.try`'s two regions. Absent means the body under `steps:`,
-   * which is the same key a loop's children sit under.
-   *
-   * A named region rather than a second index, because the two are not a list:
-   * a try has exactly one body and exactly one handler, and an index would let
-   * a caller ask for the third one.
-   */
-  region?: 'handler'
-  /** Position among the siblings. The list's length appends. */
-  index: number
-}
 
 /** Enough to write a Step; everything else is the Inspector's to fill in later. */
 export interface NewStep {
@@ -84,34 +59,6 @@ interface Located {
  * Step deleted its neighbour instead. Skip in place; the index must stay the
  * index the document has.
  */
-function* walk(
-  steps: unknown,
-  base: Path,
-): Generator<{ step: Record<string, unknown>; listPath: Path; index: number }> {
-  const list = Array.isArray(steps) ? steps : []
-  for (let index = 0; index < list.length; index++) {
-    const entry = list[index]
-    if (!entry || typeof entry !== 'object') continue
-    const step = entry as Record<string, unknown>
-    yield { step, listPath: base, index }
-
-    const branches = Array.isArray(step.branches) ? step.branches : []
-    for (let b = 0; b < branches.length; b++) {
-      const branch = branches[b]
-      if (branch && typeof branch === 'object') {
-        yield* walk((branch as Record<string, unknown>).steps, [
-          ...base,
-          index,
-          'branches',
-          b,
-          'steps',
-        ])
-      }
-    }
-    if (step.steps) yield* walk(step.steps, [...base, index, 'steps'])
-    if (step.handler) yield* walk(step.handler, [...base, index, 'handler'])
-  }
-}
 
 /**
  * The YAML path of a Board's root sequence.
@@ -136,7 +83,7 @@ export function boardPath(document: WorkflowDocument, board: BoardId | undefined
 
 function locate(document: WorkflowDocument, ref: StepRef): Located | undefined {
   const root = boardPath(document, ref.board)
-  for (const found of walk(readAt(document, root), root)) {
+  for (const found of stepEntriesIn(readAt(document, root), root)) {
     if (found.step.id === ref.id) return { listPath: found.listPath, index: found.index }
   }
   return undefined
@@ -175,7 +122,7 @@ function mintId(document: WorkflowDocument, board: BoardId | undefined): string 
   // Ids are Board-local, so only this Board's are taken. Minting against the
   // whole document would make a block's first step `s7` because the root has
   // six, which is a name nobody chose about a tree nobody is looking at.
-  for (const { step } of walk(readAt(document, root), root)) {
+  for (const { step } of stepEntriesIn(readAt(document, root), root)) {
     if (typeof step.id === 'string') taken.add(step.id)
   }
   for (let n = 1; ; n++) {
@@ -205,6 +152,13 @@ export function addStep(step: NewStep, at: InsertPoint): EditCommand {
       // and a person reads the diff.
       const value: Record<string, unknown> = { id, use: step.use }
       if (step.name) value.name = step.name
+
+      // A container is born with its regions. They come last so the structural
+      // keys sit under the descriptive ones, and empty so the Step is
+      // unfinished in the document exactly as it is on screen — an empty region
+      // is a frame with an insert point in it, which is the only way a Step ever
+      // gets inside a container that was just added.
+      for (const [key, list] of Object.entries(bornRegionsOf(step.use))) value[key] = list
 
       insertNode(document, listPath, at.index, document.ast.createNode(value))
     },
@@ -288,14 +242,28 @@ export function moveStep(ref: StepRef, to: InsertPoint): EditCommand {
 
 /**
  * How many Steps the root sequence holds, whether or not the document is a
- * valid Workflow Definition.
+ * valid Workflow Definition, and whether or not the Board is still there.
  *
  * `definition?.steps.length ?? 0` cannot tell "no Steps" from "does not
  * project", and a caller appending at that index would prepend instead. This
  * reads the same loose projection every command reads.
+ *
+ * **A Board that is gone holds no Steps.** `boardPath` throws for one, which is
+ * right for a command — an edit aimed at a Board that is not there must refuse
+ * rather than land somewhere else — and wrong for a reader: this one is called
+ * inside a click handler, synchronously, with nothing to catch it, and "how
+ * many Steps" has a perfectly good answer for a Board nobody can find. The
+ * append that follows is then a command against a missing Board, which is a
+ * no-op with an undo entry rather than an exception out of an event handler.
  */
 export const rootStepCount = (document: WorkflowDocument, board?: BoardId): number => {
-  const steps = readAt(document, boardPath(document, board))
+  let path: Path
+  try {
+    path = boardPath(document, board)
+  } catch {
+    return 0
+  }
+  const steps = readAt(document, path)
   return Array.isArray(steps) ? steps.length : 0
 }
 

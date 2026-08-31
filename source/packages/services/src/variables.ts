@@ -1,7 +1,9 @@
 import type { WorkflowDocument } from '@hatua/document'
+import { renamePath } from '@hatua/expressions'
 import type { BoardId } from '@hatua/model'
 import {
   BLOCK_KEY_ORDER,
+  boardTemplateRoots,
   detachNode,
   entriesOf,
   insertNode,
@@ -9,10 +11,12 @@ import {
   listIn,
   type Path,
   readAt,
+  rewriteTemplates,
   setScalar,
 } from './ast'
 import { blockPath } from './blocks'
 import type { EditCommand } from './command'
+import { requireUsableName } from './names'
 
 /**
  * The commands that address a workflow variable.
@@ -47,6 +51,9 @@ import type { EditCommand } from './command'
  * edits produce the same document twice.
  */
 /** Where a Board's variables live: the document's own list, or a Block's. */
+/** The root every variable Reference begins with (ADR-0014). */
+const VAR_ROOT = 'var.'
+
 function varsPath(document: WorkflowDocument, board: BoardId): Path {
   return board === null ? ['vars'] : [...blockPath(document, board), 'vars']
 }
@@ -89,6 +96,7 @@ export function addVariable(key?: string, board: BoardId = null): EditCommand {
   return {
     label: 'Add a variable',
     apply(document) {
+      if (key !== undefined) requireUsableName(key)
       const listPath = ensureVars(document, board)
       const list = readAt(document, listPath)
       const index = Array.isArray(list) ? list.length : 0
@@ -133,11 +141,19 @@ export function removeVariable(key: string, board: BoardId = null): EditCommand 
  * The consequence is a state the model already has, already detects and already
  * surfaces. This adds no failure mode; it declines to invent a repair for one
  * that is visible. See `docs/handoff.md`, which settles it.
+ *
+ * **A key the schema cannot hold is refused, not written.** `Variable 1` is not
+ * an `identifier`, so writing it stops the whole document projecting — and every
+ * surface reads the projection, so one committed keystroke empties the canvas,
+ * the panel and the step editor at once.
  */
 export function renameVariable(from: string, to: string, board: BoardId = null): EditCommand {
   return {
     label: `Rename ${from}`,
     apply(document) {
+      // Before anything is located, so a refused name is refused for the reason
+      // it is refused rather than for a missing row.
+      requireUsableName(to)
       const listPath = varsPath(document, board)
       const index = locateVariable(document, board, from)
 
@@ -153,6 +169,14 @@ export function renameVariable(from: string, to: string, board: BoardId = null):
       }
 
       setScalar(document, [...listPath, index, 'key'], to)
+
+      // After the rename, so a refused one leaves every Template alone: the
+      // checks above throw before a character of the user's file has moved.
+      for (const root of boardTemplateRoots(document, board)) {
+        rewriteTemplates(document, root, (source) =>
+          renamePath(source, `${VAR_ROOT}${from}`, `${VAR_ROOT}${to}`),
+        )
+      }
     },
   }
 }

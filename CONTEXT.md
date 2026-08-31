@@ -31,9 +31,12 @@ _Avoid_: node type, block, plugin, component spec
 
 **Canvas Mode**:
 Editing a **Workflow Definition** graphically — adding, moving and configuring **Steps** on the flow
-map, and mapping outputs to inputs. There is nothing to connect: reachability is nesting, so the
-canvas has no exit handles and draws no edge a user can attach. Connectors are chrome. One **Board**
-is drawn at a time; a **Block** call is a doorway into another, never its body expanded in place.
+map, and mapping outputs to inputs. There is nothing to *connect*: reachability is nesting, so the
+canvas has no connect affordance, no exit handles and no endpoint a user can attach anything to. It
+does draw a line between one **Step** and the next, which is a different claim — the line is chrome
+that says "then", carries no data, and is derived from the tree like every other position on the map.
+One **Board** is drawn at a time; a **Block** call is a doorway into another, never its body expanded
+in place.
 _Avoid_: visual mode, graph editor, builder, drawing connections
 
 **Text Mode**:
@@ -53,6 +56,27 @@ whose root is the **Triggers**, or a **Block**'s, whose root is its declared con
 computed against: a **Step** sees only what its own Board offers, plus the **Run Context**, which is
 the one thing every Board shares. **Canvas Mode** draws one at a time.
 _Avoid_: canvas, graph, sheet, scope
+
+**Segment**:
+A contiguous stretch of sibling **Steps** in one region of one **Board** — what the canvas selects
+when more than one **Step** is picked, and what extraction turns into a **Block** (ADR-0018).
+Contiguity and one region are not a check applied afterwards: a Segment is the only shape the
+gesture can build, so there is no selection an action taking one has to refuse. A Segment of one is
+a Segment, because a single container together with its whole body is the flattening case a
+**Block** exists for.
+It is a *structural* noun and not a piece of chrome: a Segment is a fact about where Steps sit, so
+the same three Steps are the same Segment whether or not anyone has highlighted them. What is
+highlighted is a **Selection**, which holds one.
+**Not a *run*.** `run.` is a namespace root, the **Run Context** is the scope every **Board**
+shares, and a `run` **Link** on the flow map is the gap *between* two Steps — the near-opposite of a
+Segment, drawn on the same surface. A **Workflow Execution** refuses the word for the same reason.
+_Avoid_: run, span, slice, range, stretch, sequence
+
+**Selection**:
+Which **Steps** on the **Board** on screen are picked out, always a **Segment** and never a loose
+set. Chrome, like the viewport and which **Board** is open (ADR-0016, ADR-0017): it names Steps, it
+is held per **Board**, and it never reaches the **Workflow Definition**.
+_Avoid_: highlight, focus, active steps, marked
 
 **Component**:
 A step *type*, addressed by a verb whose root says who declares it — `core.fork` is Hatua's,
@@ -102,6 +126,18 @@ expression**, and it comes from one of three places: the **Component Manifest**'
 declaration in the document (a **Block**'s `params`/`outputs`, a **Variable**'s `t`), or the
 language — a **Branch**'s `when` and a **Repeat**'s `until` are boolean because a condition is.
 _Avoid_: binding, target, assignment, field value
+
+**Contract**:
+What something declares it takes and what it publishes — each side a list of declarations, and each
+declaration a key, a friendly label and a declared type. A **Block**'s is its `params` and
+`outputs`; a **Component**'s is declared by its **Component Manifest**; the root **Board**'s is its
+**Triggers**, whose declared outputs are the workflow's parameters. A **Board**'s root *is* its
+contract, which is why one screen edits the **Triggers** at the root and a **Block**'s `params` and
+`outputs` inside one — they are the same slot.
+It is what lets a **Block** be reached from many call sites while scope stays an exact walk: a Block
+reads only what it declares and publishes only what it declares, so there is nothing to work out
+from the paths that arrive.
+_Avoid_: signature, interface, schema, API
 
 **Variable**:
 Named mutable state declared under a **Board**'s `vars:` and read anywhere on it as `{{var.<key>}}`,
@@ -192,6 +228,33 @@ never by a bare id, which two **Blocks** may share. The map is laid out one **Bo
 one input that is not a function of the document, and the reason the totals describe the map that is
 actually on screen rather than one with folded regions counted into it.
 
+Cards are not all of it. A **Link** is one gap — where the flow leaves one thing and arrives at the
+next, and where a Step goes if one is added there; a **Band** is one child region's extent; a **Nest**
+is one container **Step**'s regions taken together; a **Join** is where a **Step**'s sibling regions
+come back together. All four are computed here, because the canvas draws what it is handed and works
+nothing out for itself. That is what makes the rule checkable rather than merely stated: a region with
+nothing in it has no card to infer a box from, so a canvas without a Band would have had to invent
+one.
+
+A **Band** and a **Nest** are two extents and not one. A `core.try` owns two regions, so it has two
+Bands — the protected body and the handler — and one Nest around both. Only the body is protected, so
+a single extent would have to claim either too much or too little. A container with one region still
+has both: the same shape at every arity is what makes a **Fork** stop being a special case, and a
+Step's **Join** falls inside its Nest because where its regions converge is that Step's business.
+_Avoid_: Nest as a verb for what ADR-0013 calls nesting — the extent is the noun; container frame;
+group; scope, which is what a **Step** can read
+
+**Sibling regions** are drawn as columns and converge on a **Join** — a **Fork**'s **Branches**, and a
+**Try**'s body and handler alike. They are siblings in the same sense the scope rule already uses:
+neither can read the other, and the flow leaves the **Step** through one of them. What differs between
+a **Fork** and a **Try** is *what decides which region runs* — a **Branch**'s `when`, evaluated before
+anything ran, against a failure, which is only knowable part-way through — and that is a difference in
+what the regions are called, not in what shape they are.
+
+There is **one Link per gap in every step list**, which is one more than the list is long — the same
+count `<StepList>` draws between its rows. That is what makes the canvas a surface a workflow can be
+built on rather than a picture of one.
+
 Positions are the builder's and nobody else's. A **Host** runner never lays anything out, so this is
 the one cross-cutting rule in the repo implemented once rather than in both languages.
 _Avoid_: auto-layout as a mere feature name — it is a constraint, not a convenience; node position
@@ -253,8 +316,15 @@ and **Derived Layout** in this same file. Resolution: there are no connections t
 is expressed by containers — `core.fork`, `core.for_each`, `core.repeat`, `core.try` — and a **Step**
 runs because of where it nests. Reuse is a **Block**, not an edge into a shared node.
 
+That refuses a connection as a *thing in the model*, and ADR-0013 refuses an edge a user can attach
+anything to. Neither refuses a plain **line** between two cards, and the canvas draws one: at
+`LAYOUT.verticalGap` of 96px, two cards that follow each other read as two unrelated things, and the
+line is what says "then". It is chrome the geometry places, it holds nothing, and there is no endpoint
+on it for a pointer to grab. Where the flow does something a column cannot say — a **Fork**'s
+alternatives, and where they converge — a **Band** and a **Join** say it.
+
 **"Block" the domain term vs the React presentational layer** — a layer of presentational units
-(NodeCard, StepRow, Connector) shared the word with **Block**, which is the *Flow tab* / `FlowMap`
+(NodeCard, Connectors, RegionBand) shared the word with **Block**, which is the *Flow tab* / `FlowMap`
 collision again: one word, two meanings, in one repo. Resolution: the domain term wins. That layer is
 `packages/react/src/units/`, and a presentational unit is never called a block.
 See [ADR-0013](docs/adr/0013-control-flow-nests.md), which also corrects ADR-0001's reason for the
