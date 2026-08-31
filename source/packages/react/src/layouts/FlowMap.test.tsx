@@ -1784,3 +1784,69 @@ describe('the selection action bar', () => {
     expect(bar()).toBeNull()
   })
 })
+
+/**
+ * A call is a doorway (ADR-0013), and a doorway says nothing about what is
+ * behind it — so a Board holding a clean-looking call could be a Board that
+ * cannot run, with nothing on screen suggesting anyone walk through.
+ */
+describe('a call into a Block that will not run', () => {
+  const CATALOGUE: Manifest[] = [
+    {
+      kind: 'component',
+      use: 'component.email.send',
+      name: 'Send email',
+      fields: [{ k: 'to', label: 'To', kind: 'text' }],
+      outputs: [],
+    },
+  ]
+
+  /** The root calls `broken`, whose only Step reads a variable nobody declared. */
+  const BROKEN = `id: wf_map
+name: "Has a broken block"
+version: 1
+status: draft
+steps:
+  - { id: call, use: block.broken, name: "Go through" }
+  - { id: fine, use: component.email.send, name: "Stays fine", with: { to: "a@b.c" } }
+blocks:
+  - id: broken
+    name: "Broken block"
+    steps:
+      - { id: inside, use: component.email.send, name: "Inside", with: { to: "{{ var.nope }}" } }
+`
+
+  const withCatalogue = (yaml: string) =>
+    render(
+      <HatuaProvider
+        ports={{ workflows: serving(yaml), manifests: { loadManifests: async () => CATALOGUE } }}
+        workflowId="wf_map"
+      >
+        <FlowMap />
+      </HatuaProvider>,
+    )
+
+  const cardOf = (name: string) => canvas().getByText(name).closest('[draggable]') as HTMLElement
+
+  it('marks the call, though nothing is wrong with the call itself', async () => {
+    withCatalogue(BROKEN)
+    await canvas().findByText('Go through')
+
+    await waitFor(() =>
+      expect(cardOf('Go through').getAttribute('title')).toMatch(/problems inside it/),
+    )
+    // The Step beside it is untouched: this is about what a call reaches, not
+    // about the Board being unwell.
+    expect(cardOf('Stays fine').getAttribute('title')).toBeNull()
+  })
+
+  it('says nothing when the Block it calls is fine', async () => {
+    const sound = BROKEN.replace('{{ var.nope }}', 'someone@example.com')
+    withCatalogue(sound)
+    await canvas().findByText('Go through')
+
+    // Waited for, so this is "checked and clean" rather than "not checked yet".
+    await waitFor(() => expect(cardOf('Stays fine')).toBeTruthy())
+    expect(cardOf('Go through').getAttribute('title')).toBeNull()
+  })
+})
