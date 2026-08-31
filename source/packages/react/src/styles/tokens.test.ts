@@ -292,7 +292,15 @@ describe('the controls are one height', () => {
    * rule is this rule's business.
    */
   const ruleFor = (text: string, cls: string): string | null => {
-    const at = text.search(new RegExp(`^\\s*\\.${cls}\\s*\\{`, 'm'))
+    // Found by scanning lines rather than by building a pattern out of `cls`:
+    // a class name is not a regex, and treating one as a pattern is how a `.`
+    // in a selector quietly matches something else.
+    const opener = `.${cls}`
+    const at = text.split('\n').reduce<number>((found, line, index, lines) => {
+      if (found !== -1) return found
+      if (line.trim().replace(/\s+/g, ' ').replace(' {', '{') !== `${opener}{`) return found
+      return lines.slice(0, index).reduce((n, one) => n + one.length + 1, 0)
+    }, -1)
     if (at === -1) return null
     const open = text.indexOf('{', at)
     let depth = 0
