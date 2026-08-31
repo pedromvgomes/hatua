@@ -25,6 +25,7 @@ import {
   siblingFrom,
   stepKey,
   TRY_VERB,
+  troubledBlocks,
 } from '@hatua/model'
 import type { Manifest, ManifestEntry, Step, WorkflowDefinition } from '@hatua/schema'
 import { manifestsIn } from '@hatua/schema'
@@ -265,6 +266,8 @@ const OPENING = { status: 'opening' } as const
 // a fresh object each call.
 const subscribeToNothing = () => () => {}
 const NO_PROBLEMS: ReadonlyMap<string, Diagnostic[]> = new Map()
+/** The same, for the Blocks a call may report as unable to run. */
+const NO_TROUBLE: ReadonlySet<string> = new Set()
 const UNCHECKED: ValidationState = {
   byStep: NO_PROBLEMS,
   byTrigger: NO_PROBLEMS,
@@ -395,6 +398,22 @@ export function FlowMap({
   const problems = checks.ready ? checks.byStep : NO_PROBLEMS
 
   const definition = state.status === 'ready' ? (state.workflow.definition ?? null) : null
+
+  /*
+   * The Blocks that will not run, so a call can say so rather than looking
+   * fine. Derived here and never a diagnostic: the problem is already reported
+   * on the Board that holds it, and a second one per call site would count one
+   * fault once per doorway (`troubledBlocks`).
+   *
+   * Held to the same "absent, not empty" rule as `problems`, and for the same
+   * reason: before the manifests land every Step is an unknown component, so
+   * every Block would be troubled on every load.
+   */
+  const troubled = useMemo(
+    () => (checks.ready && definition ? troubledBlocks(definition, checks.all) : NO_TROUBLE),
+    [checks.ready, checks.all, definition],
+  )
+
   const wanted = boardId !== undefined ? boardId : ownBoard
   // Resolved against the document every render rather than held. A Block the
   // user deletes in Text Mode while its Board is open would otherwise leave this
@@ -855,6 +874,7 @@ export function FlowMap({
             folded={folded}
             foldedRegions={foldedRegions}
             problems={problems}
+            troubled={troubled}
             redraws={redraws}
             dragging={dragging}
             carrying={carrying}
@@ -892,6 +912,7 @@ function Canvas({
   folded,
   foldedRegions,
   problems,
+  troubled,
   redraws,
   dragging,
   carrying,
@@ -922,6 +943,8 @@ function Canvas({
   folded: readonly StepRef[]
   foldedRegions: readonly RegionRef[]
   problems: ReadonlyMap<string, Diagnostic[]>
+  /** The Blocks that will not run, so a call into one can say so. */
+  troubled: ReadonlySet<string>
   redraws: number
   dragging: string | null
   carrying: boolean
@@ -1158,6 +1181,7 @@ function Canvas({
                 expanded={!collapsed.has(placement.ref.id)}
                 opens={opens && blockOf(definition, opens) ? opens : undefined}
                 problems={problems.get(key)}
+                callsBrokenBlock={opens !== null && troubled.has(opens)}
                 onSelect={(extend) => onSelect(placement.ref, extend)}
                 onToggle={() => onToggle(placement.ref)}
                 onOpen={() => opens && onOpenBoard(opens)}

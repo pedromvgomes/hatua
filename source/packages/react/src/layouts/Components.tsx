@@ -3,6 +3,7 @@ import {
   callSitesOf,
   contractSummary,
   type Diagnostic,
+  troubledBlocks,
   walkSteps,
 } from '@hatua/model'
 import type { Block, Manifest, ManifestEntry, WorkflowDefinition } from '@hatua/schema'
@@ -205,6 +206,22 @@ export function Components({
   // land, so painting `byBlock` before `ready` marks every Block on every load.
   const problems = checks.ready ? checks.byBlock : NO_PROBLEMS
 
+  /*
+   * The Blocks that will not run, which is a wider question than `byBlock`
+   * answers: that map holds what is wrong with a Block *itself* — a path
+   * without a return, a cycle, a repeated key — and a Block whose Steps are
+   * broken has none of those. So a Block with a Reference naming nothing on its
+   * Board drew a clean card here, exactly as its call sites did.
+   *
+   * Absent, not empty, for the reason `problems` is: before the manifests land
+   * every Step is an unknown component, so every Block would be marked on every
+   * load (`troubledBlocks`).
+   */
+  const troubled = useMemo(
+    () => (checks.ready && definition ? troubledBlocks(definition, checks.all) : NO_TROUBLE),
+    [checks.ready, checks.all, definition],
+  )
+
   const matched = groups.reduce((n, group) => n + group.manifests.length, 0) + (blocks?.length ?? 0)
 
   /**
@@ -371,6 +388,7 @@ export function Components({
                       key={block.id}
                       block={block}
                       problems={problems.get(block.id)}
+                      troubled={troubled.has(block.id)}
                       onSelect={onSelect}
                       onOpen={onBoardOpen && (() => onBoardOpen(block.id))}
                       onRemove={() => remove(block)}
@@ -478,18 +496,37 @@ function Card({
 function BlockRow({
   block,
   problems,
+  troubled,
   onSelect,
   onOpen,
   onRemove,
 }: {
   block: Block
   problems?: Diagnostic[]
+  /**
+   * Whether this Block will not run — a problem on its Board, or on the Board
+   * of something it calls.
+   *
+   * A boolean rather than a `Diagnostic`, because there is none to hand over:
+   * the problem is reported where it lives, and a second one here would report
+   * it twice (`troubledBlocks`).
+   */
+  troubled?: boolean
   onSelect?: (component: ComponentDrag) => void
   /** Absent when the caller holds no Board, which is when there is nowhere to go. */
   onOpen?: () => void
   onRemove: () => void
 }) {
   const name = block.name || block.id
+  /*
+   * What is wrong with this Block, whether it is wrong about the Block itself
+   * or on the Board behind it. Both belong on the card for the same reason: a
+   * Block that cannot run should not look finished.
+   */
+  const reasons = [
+    ...(problems ?? []).map((problem) => problem.message),
+    ...(troubled && !problems?.length ? [TROUBLED_BLOCK] : []),
+  ]
 
   return (
     <li className={styles.row}>
@@ -529,9 +566,9 @@ function BlockRow({
         `role="status"` rather than `alert`: the same line ADR-0009 draws — this
         blocks Publish, never editing.
       */}
-      {problems?.length ? (
+      {reasons.length > 0 ? (
         <p className={styles.problems} role="status">
-          {problems.map((problem) => problem.message).join(' ')}
+          {reasons.join(' ')}
         </p>
       ) : null}
     </li>
@@ -618,6 +655,8 @@ const LOADING = { status: 'loading' } as const
 const OPENING = { status: 'opening' } as const
 const NONE: ManifestEntry[] = []
 const NO_PROBLEMS: ReadonlyMap<string, Diagnostic[]> = new Map()
+/** The same, for the Blocks a card may report as unable to run. */
+const NO_TROUBLE: ReadonlySet<string> = new Set()
 const UNCHECKED: ValidationState = {
   byStep: NO_PROBLEMS,
   byTrigger: NO_PROBLEMS,
@@ -756,3 +795,12 @@ function costLine({ steps, calls }: Cost): string {
   }
   return parts.join(' ')
 }
+
+/**
+ * What a Block's card says when its own Board, or one it reaches, will not run.
+ *
+ * Drawn only when the Block has nothing wrong with it *here*: a Block already
+ * carrying "a path through it can finish without returning" does not need a
+ * second, vaguer sentence beside it saying something is wrong.
+ */
+const TROUBLED_BLOCK = 'This block has problems on its own board.'

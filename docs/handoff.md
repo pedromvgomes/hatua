@@ -1027,6 +1027,13 @@ already makes, and here the new Board is also where the author's work is.
 A Segment holding a **Return** is refused: moved, it would end the Block it landed on. The control
 stays and is announced as disabled with the reason, rather than vanishing as the selection grows.
 
+**A call says when what it opens will not run.** A call is a doorway and a doorway shows nothing of
+what is behind it, so a Board holding a clean-looking call could be one that cannot run — the
+invisibility a Reference naming nothing had, one level of nesting up. `troubledBlocks` answers which
+Blocks are affected, transitively, and the call card, the **Step** list's row and the catalogue's
+entry all draw it. It is **derived and never a diagnostic**: the problem is already reported on the
+Board that holds it, and raising a second one per call site would count one fault once per doorway.
+
 No selection context. A second mechanism for one piece of chrome state is how the parts stop being
 independently mountable, and every region must mount alone — `layouts/regions.test.tsx` renders each
 one bare, and `apps/playground/src/host.tsx` mounts them bare.
