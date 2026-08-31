@@ -1,5 +1,6 @@
 import type { Step, WorkflowDefinition } from '@hatua/schema'
-import { type Board, type BoardId, boardOf, regionsOf, type StepRef } from './tree'
+import { RETURN_VERB } from './blocks'
+import { type Board, type BoardId, boardOf, regionsOf, type StepRef, walkSteps } from './tree'
 
 /**
  * A contiguous stretch of sibling **Steps** in one region of one **Board**.
@@ -134,3 +135,22 @@ export function siblingFrom(board: Board, id: string, step: 1 | -1): string | un
   const found = siblingsOf(board, id)
   return found?.steps[found.index + step]?.id
 }
+
+/**
+ * Whether a Segment holds a `core.return`, anywhere inside it.
+ *
+ * What extraction refuses (ADR-0018). Moved onto a new Board, a return binds to
+ * the *new* Block's `outputs:` and ends a Block the author did not mean it to
+ * end — behaviour the move silently changes, with nothing malformed for a rule
+ * to report. So the gesture is not offered rather than repaired.
+ *
+ * Nested and not only the Segment's own Steps: a return inside a Fork branch
+ * inside the Segment moves with it and binds exactly the same way.
+ *
+ * Takes the Steps a Segment resolves to rather than the Segment, so a caller
+ * that has already asked `segmentSteps` — which is every caller, because the
+ * count beside the action comes from the same answer — does not resolve twice.
+ * The command and the control that offers it read one rule.
+ */
+export const segmentReturns = (steps: readonly Step[]): boolean =>
+  [...walkSteps(steps)].some((step) => step.use === RETURN_VERB)

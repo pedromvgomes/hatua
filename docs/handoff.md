@@ -1016,6 +1016,17 @@ so a canvas that can only build Segments is one where no action has to refuse wh
 The actions over it float at the lower start of the canvas, opposite the zoom toolbar, and appear for
 a Segment of one — which is a Segment, and is also the only way to remove a Step from the canvas.
 
+**Make a block** moves the Segment onto a new **Block**'s **Board** and leaves a call where it was.
+It writes no contract and rewrites no **Template** (ADR-0018): the Block declares nothing, every
+Template travels as the author wrote it, and what the Segment used to read from around it now names
+nothing — which the Board says, because a **Reference** naming nothing is `EXPR_UNKNOWN_REFERENCE`
+on the card that holds it. What moved together still resolves, because ids are Board-local and a
+Segment moves as a set. The Block's id is minted and its tab opens, the call the New block button
+already makes, and here the new Board is also where the author's work is.
+
+A Segment holding a **Return** is refused: moved, it would end the Block it landed on. The control
+stays and is announced as disabled with the reason, rather than vanishing as the selection grows.
+
 No selection context. A second mechanism for one piece of chrome state is how the parts stop being
 independently mountable, and every region must mount alone — `layouts/regions.test.tsx` renders each
 one bare, and `apps/playground/src/host.tsx` mounts them bare.

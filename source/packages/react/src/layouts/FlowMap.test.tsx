@@ -1638,11 +1638,88 @@ describe('the selection action bar', () => {
     expect(screen.getByText('3 steps selected')).toBeTruthy()
   })
 
-  it('reserves extraction’s place rather than drawing a control with nothing behind it', async () => {
+  /*
+   * Extraction moves the Steps and leaves a call, and the canvas follows the
+   * author into the Board it just made (ADR-0017, ADR-0018).
+   */
+  it('moves the selection onto a new Board and follows it there', async () => {
     mount()
     await canvas().findByText('Fetch mail')
+
     fireEvent.click(cardOf('Fetch mail'))
-    expect(within(bar() as HTMLElement).queryByRole('button', { name: /block/i })).toBeNull()
+    fireEvent.click(cardOf('How urgent?'), { shiftKey: true })
+    fireEvent.click(within(bar() as HTMLElement).getByRole('button', { name: /Make a block/ }))
+
+    // Followed: the Steps are still on screen because the Board they moved to
+    // is the one being drawn.
+    await waitFor(() => expect(within(tabs()).getAllByRole('button').length).toBeGreaterThan(1))
+    expect(canvas().getByText('Fetch mail')).toBeTruthy()
+    // Nothing is selected any more: what was selected is on another Board.
+    expect(bar()).toBeNull()
+  })
+
+  it('leaves a call behind on the Board the Steps came from', async () => {
+    mount()
+    await canvas().findByText('Fetch mail')
+
+    fireEvent.click(cardOf('Fetch mail'))
+    fireEvent.click(cardOf('How urgent?'), { shiftKey: true })
+    fireEvent.click(within(bar() as HTMLElement).getByRole('button', { name: /Make a block/ }))
+    await waitFor(() => expect(within(tabs()).getAllByRole('button').length).toBeGreaterThan(1))
+
+    const [root] = within(tabs()).getAllByRole('button')
+    if (!root) throw new Error('the canvas lost its root tab')
+    fireEvent.click(root)
+
+    await waitFor(() => expect(canvas().queryByText('Fetch mail')).toBeNull())
+    expect(canvas().queryByText('How urgent?')).toBeNull()
+    // The Steps that stayed are untouched, and a call sits where the others were.
+    expect(canvas().getByText('Archive one')).toBeTruthy()
+    expect(canvas().getByText('block.block_1')).toBeTruthy()
+  })
+
+  /*
+   * A Return ends the Block it is on. Moved onto a new one it would end THAT,
+   * which changes what the workflow does with nothing malformed to report — so
+   * the control is refused rather than removed, and says why (ADR-0018).
+   */
+  it('refuses a selection holding a Return, and keeps the control to say so', async () => {
+    mount()
+    await canvas().findByText('Fetch mail')
+
+    const [open] = canvas().getAllByRole('button', { name: /^Open / })
+    if (!open) throw new Error('the fixture lost its call sites')
+    fireEvent.click(open)
+    await canvas().findByText('Alpha returns')
+
+    fireEvent.click(cardOf('Alpha returns'))
+    const action = within(bar() as HTMLElement).getByRole('button', { name: /Make a block/ })
+
+    // Present, so extending a selection over a Return does not make a control
+    // vanish with nothing said.
+    expect(action.getAttribute('aria-disabled')).toBe('true')
+    // `aria-disabled` and not `disabled`, so it can be reached to hear why.
+    expect(action.hasAttribute('disabled')).toBe(false)
+    const reason = action.getAttribute('aria-describedby')
+    expect(reason && document.getElementById(reason)?.textContent).toMatch(/Return/)
+  })
+
+  it('does nothing when the refused control is pressed', async () => {
+    mount()
+    await canvas().findByText('Fetch mail')
+
+    const [open] = canvas().getAllByRole('button', { name: /^Open / })
+    if (!open) throw new Error('the fixture lost its call sites')
+    fireEvent.click(open)
+    await canvas().findByText('Alpha returns')
+
+    fireEvent.click(cardOf('Alpha returns'))
+    const before = within(tabs()).getAllByRole('button').length
+    fireEvent.click(within(bar() as HTMLElement).getByRole('button', { name: /Make a block/ }))
+
+    // No Board was declared, and the selection is still the author's to change.
+    expect(within(tabs()).getAllByRole('button')).toHaveLength(before)
+    expect(screen.getByText('1 step selected')).toBeTruthy()
   })
 
   it('removes every Step in the selection, and clears', async () => {

@@ -20,6 +20,7 @@ import {
   segmentBetween,
   segmentHolds,
   segmentOf,
+  segmentReturns,
   segmentSteps,
   siblingFrom,
   stepKey,
@@ -29,8 +30,10 @@ import type { Manifest, ManifestEntry, Step, WorkflowDefinition } from '@hatua/s
 import { manifestsIn } from '@hatua/schema'
 import {
   type EditingState,
+  extractBlock,
   type ManifestState,
   moveStep,
+  nextBlockId,
   removeStep,
   sequence,
   type ValidationState,
@@ -699,6 +702,32 @@ export function FlowMap({
     commitSelection(undefined)
   }
 
+  /**
+   * Move the selected Steps onto a new Block's Board, and leave a call behind.
+   *
+   * The Block's tab opens and the canvas follows it (ADR-0017), which is the
+   * call `Components`' New block already makes — and it matters more here,
+   * because the new Board is where the author's work is: nothing rewrote the
+   * Templates the Segment carried, so the References that used to reach out of
+   * it now name nothing and say so there (ADR-0018).
+   *
+   * The id is minted here rather than left to the command, for the reason
+   * `Components` gives: the tab that opens next has to be named, and a command
+   * reports nothing back. Read at click time, because the document may have
+   * moved since this last drew.
+   */
+  const extractSelection = () => {
+    const held = store?.getSnapshot()
+    if (!store || held?.status !== 'ready' || !selection || selectedSteps.length === 0) return
+    const id = nextBlockId(held.workflow.document)
+    store.apply(extractBlock(selection, { id }))
+    // The Steps are on another Board now, so a Segment naming them here names
+    // nothing — and the call that replaced them is not what was selected.
+    anchor.current = null
+    commitSelection(undefined)
+    openBoard(id)
+  }
+
   /*
    * `Shift`+`↑`/`↓` extends, `Escape` clears.
    *
@@ -811,6 +840,8 @@ export function FlowMap({
             onToggleRegion={toggleRegion}
             selectedCount={selectedSteps.length}
             onRemoveSelection={removeSelection}
+            onExtractSelection={extractSelection}
+            selectionReturns={segmentReturns(selectedSteps)}
             tabs={tabs}
             onOpenBoard={openBoard}
             onCloseBoard={closeBoard}
@@ -846,6 +877,8 @@ function Canvas({
   onToggleRegion,
   selectedCount,
   onRemoveSelection,
+  onExtractSelection,
+  selectionReturns,
   tabs,
   onOpenBoard,
   onCloseBoard,
@@ -875,6 +908,9 @@ function Canvas({
   /** How many Steps the selection resolves to on this Board; `0` draws no bar. */
   selectedCount: number
   onRemoveSelection: () => void
+  onExtractSelection: () => void
+  /** Whether the selection holds a Return, which extraction refuses (ADR-0018). */
+  selectionReturns: boolean
   tabs: readonly BoardTab[]
   onOpenBoard: (board: BoardId) => void
   onCloseBoard: (block: string) => void
@@ -1110,7 +1146,14 @@ function Canvas({
         </ul>
       </div>
 
-      {selectedCount > 0 ? <SegmentBar count={selectedCount} onRemove={onRemoveSelection} /> : null}
+      {selectedCount > 0 ? (
+        <SegmentBar
+          count={selectedCount}
+          onExtract={onExtractSelection}
+          holdsReturn={selectionReturns}
+          onRemove={onRemoveSelection}
+        />
+      ) : null}
 
       <CanvasControls
         scale={canvas.at.scale}
