@@ -66,6 +66,36 @@ steps:
         use: component.email.send
 `
 
+/** A workflow with a Block, a call into it, and a Step on its Board. */
+const WITH_BLOCKS = `id: wf_morning
+name: "Morning inbox triage"
+version: 4
+status: draft
+
+steps:
+  - id: call
+    use: block.archive
+    name: "Archive it"
+    with:
+      thread: "{{ triggers.t1.subject }}"
+
+blocks:
+  - id: archive
+    name: "Archive an entry"
+    params:
+      - { k: thread, label: "Thread", t: text }
+      - { k: urgent, label: "Urgent", t: boolean }
+    outputs:
+      - { k: url, label: "Where it went", t: text }
+    steps:
+      - id: b1
+        use: component.email.send
+      - id: b2
+        use: core.return
+        with:
+          url: "{{ steps.b1.link }}"
+`
+
 const CATALOGUE: Manifest[] = [
   {
     kind: 'trigger',
@@ -380,5 +410,82 @@ describe('the relationship with the Data panel beside it', () => {
 
     mount(host(), { ...on('s1'), onExpandedChange: () => {} })
     expect(await screen.findByRole('button', { name: 'Show data' })).toBeDefined()
+  })
+})
+
+/**
+ * A Board's root is its contract, so the arguments a call takes and the values
+ * a return supplies are declared by the document rather than by a Component
+ * Manifest — and `manifest` is undefined for both.
+ */
+describe('the arguments a Board’s contract declares', () => {
+  it('draws a call’s parameters, filled in or not', async () => {
+    mount(host(WITH_BLOCKS), on('call'))
+
+    expect(await screen.findByDisplayValue('{{ triggers.t1.subject }}')).toBeDefined()
+    // Declared and unanswered. Hiding the row leaves nothing on screen to act
+    // on for a parameter its own rule reports as missing.
+    expect(screen.getByLabelText('Urgent')).toBeDefined()
+    expect(screen.queryByText(/Nothing declares this step type/)).toBeNull()
+  })
+
+  it('writes a call’s argument into its `with:`', async () => {
+    const source = host(WITH_BLOCKS)
+    mount(source, on('call'))
+
+    type(await screen.findByLabelText('Urgent'), '{{ var.rush }}')
+
+    await waitFor(() => expect(source.writes.length).toBeGreaterThan(0), AUTOSAVED)
+    expect(source.writes.at(-1)).toContain('urgent: "{{ var.rush }}"')
+  })
+
+  it('draws a return’s values from the Board it sits on', async () => {
+    mount(host(WITH_BLOCKS), { selected: { board: 'archive', steps: ['b2'] } })
+    expect(await screen.findByLabelText('Where it went')).toBeDefined()
+  })
+})
+
+describe('what it says about a Step it cannot draw a form for', () => {
+  /*
+   * Diagnostics are filed under `stepKey`, which is `<board>/<id>` off the root
+   * Board. Looked up by the bare id they are found for the root and for nowhere
+   * else — so a card the canvas marks draws clean here, on every Board but one.
+   */
+  it('shows a Step’s problems on a Block’s Board, not only at the root', async () => {
+    const REQUIRED: Manifest[] = [
+      {
+        kind: 'component',
+        use: 'component.email.send',
+        name: 'Send mail',
+        fields: [{ k: 'to', label: 'To', kind: 'text', req: true }],
+        outputs: [],
+      },
+    ]
+    mount(host(WITH_BLOCKS), { selected: { board: 'archive', steps: ['b1'] } }, REQUIRED)
+
+    expect(await screen.findByText(/To is required/)).toBeDefined()
+  })
+
+  /*
+   * <Build> never produces one, but the region is public API and a body with
+   * nothing in it and no sentence is a state no region may be left in.
+   */
+  it('says something for a Segment holding no Steps at all', async () => {
+    mount(host(), { selected: { board: null, steps: [] } })
+    expect(await screen.findByText('Select a step to fill it in.')).toBeDefined()
+  })
+})
+
+describe('the name field', () => {
+  /*
+   * A visible label and an accessible name that disagree fail WCAG 2.5.3:
+   * voice control acts on the words a user can read, and an aria-label the
+   * screen does not carry is not one of them.
+   */
+  it('answers to the word printed beside it', async () => {
+    mount(host(), on('s1'))
+    const box = await screen.findByDisplayValue('Fetch the mail')
+    expect(box.getAttribute('aria-label')).toBe('Name')
+    expect(screen.getByLabelText('Name')).toBe(box)
   })
 })

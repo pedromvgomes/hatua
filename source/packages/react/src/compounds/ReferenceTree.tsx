@@ -1,6 +1,6 @@
 import type { ValueType } from '@hatua/expressions'
 import type { ScopeEntry } from '@hatua/model'
-import { type ReactNode, useMemo, useState } from 'react'
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { Select } from '../primitives/Select'
 import { flatten, type RefNode, referenceTree } from './candidates'
 import { dragPayload, fits } from './insertion'
@@ -147,33 +147,14 @@ function Rows({
   return (
     <ul className={styles.rows}>
       {nodes.map((node) => (
-        <li key={node.path}>
-          <button
-            type="button"
-            className={styles.row}
-            data-fits={fits(node.type, expected) ? 'true' : undefined}
-            data-referenced={referenced?.has(node.path) ? 'true' : undefined}
-            draggable
-            onDragStart={(event) => {
-              for (const [mime, data] of dragPayload(node.path)) {
-                event.dataTransfer.setData(mime, data)
-              }
-              event.dataTransfer.effectAllowed = 'copy'
-            }}
-            // Focus as well as hover, because drag has no keyboard equivalent
-            // and the highlight is the only thing tying a row to the fields
-            // that read it.
-            onMouseEnter={() => onHighlight?.(node.path)}
-            onMouseLeave={() => onHighlight?.(null)}
-            onFocus={() => onHighlight?.(node.path)}
-            onBlur={() => onHighlight?.(null)}
-            onClick={() => onChoose(node.path)}
-          >
-            <span className={styles.path}>{node.path}</span>
-            {referenced?.has(node.path) ? <span className={styles.used}>used</span> : null}
-            <span className={styles.type}>{node.type}</span>
-          </button>
-        </li>
+        <Row
+          key={node.path}
+          node={node}
+          expected={expected}
+          referenced={referenced?.has(node.path) ?? false}
+          onChoose={onChoose}
+          onHighlight={onHighlight}
+        />
       ))}
     </ul>
   )
@@ -211,5 +192,82 @@ export function Source({
       </Select>
       <p className={styles.blurb}>{blurb}</p>
     </div>
+  )
+}
+
+function Row({
+  node,
+  expected,
+  referenced,
+  onChoose,
+  onHighlight,
+}: {
+  node: RefNode
+  expected: ValueType | undefined
+  referenced: boolean
+  onChoose: (path: string) => void
+  onHighlight?: (path: string | null) => void
+}) {
+  const pointed = useRef(false)
+
+  /*
+   * Say the row was left when React removes it.
+   *
+   * `onMouseLeave` and `onBlur` do not fire for a node that unmounts, and this
+   * list is rebuilt whenever scope changes — an undo that removes the Step a
+   * leaf came from, or another region's edit. Without this the step editor goes
+   * on marking fields for a leaf that is no longer on screen until the user
+   * happens to point at another one.
+   *
+   * Through a ref rather than a dependency, so a caller passing a fresh
+   * function each render does not make this fire while the row is still
+   * pointed at.
+   */
+  const report = useRef(onHighlight)
+  report.current = onHighlight
+  useEffect(
+    () => () => {
+      if (pointed.current) report.current?.(null)
+    },
+    [],
+  )
+
+  const enter = () => {
+    pointed.current = true
+    onHighlight?.(node.path)
+  }
+  const leave = () => {
+    pointed.current = false
+    onHighlight?.(null)
+  }
+
+  return (
+    <li>
+      <button
+        type="button"
+        className={styles.row}
+        data-fits={fits(node.type, expected) ? 'true' : undefined}
+        data-referenced={referenced ? 'true' : undefined}
+        draggable
+        onDragStart={(event) => {
+          for (const [mime, data] of dragPayload(node.path)) {
+            event.dataTransfer.setData(mime, data)
+          }
+          event.dataTransfer.effectAllowed = 'copy'
+        }}
+        // Focus as well as hover, because drag has no keyboard equivalent and
+        // the highlight is the only thing tying a row to the fields that read
+        // it.
+        onMouseEnter={enter}
+        onMouseLeave={leave}
+        onFocus={enter}
+        onBlur={leave}
+        onClick={() => onChoose(node.path)}
+      >
+        <span className={styles.path}>{node.path}</span>
+        {referenced ? <span className={styles.used}>used</span> : null}
+        <span className={styles.type}>{node.type}</span>
+      </button>
+    </li>
   )
 }

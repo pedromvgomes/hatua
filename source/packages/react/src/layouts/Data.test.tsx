@@ -201,6 +201,15 @@ describe('what is in scope', () => {
    * A Segment of several has no single scope — a later Step reads more than an
    * earlier one — so what every Step in it can read is the honest answer.
    */
+  /*
+   * Read as "nothing is selected" this contradicts the step editor beside it,
+   * which says the Step is not in the workflow.
+   */
+  it('says a selected Step is gone rather than that nothing is selected', async () => {
+    mount({ selected: { board: null, steps: ['vanished'] } })
+    expect(await screen.findByText(/That step is not in this workflow/)).toBeDefined()
+  })
+
   it('shows the Board’s scope for a Segment of several, and says why', async () => {
     mount({ selected: { board: null, steps: ['s1', 's2'] } })
     expect(await screen.findByText(/Several steps are selected/)).toBeDefined()
@@ -262,6 +271,82 @@ describe('the marks it draws and the events it sends', () => {
     // wrapped Template for any other editor on the page.
     expect(written.get('application/x-hatua-reference')).toBe('var.digest_to')
     expect(written.get('text/plain')).toBe('{{ var.digest_to }}')
+  })
+
+  /*
+   * An insecure origin has no `navigator.clipboard` at all. Reached through
+   * `?.` the whole chain short-circuits — the rejection handler included — so
+   * the click does nothing and says nothing, which is the control that reads as
+   * a fault.
+   */
+  it('says so when there is no clipboard to write to', async () => {
+    vi.stubGlobal('navigator', { ...navigator, clipboard: undefined })
+
+    mount({ selected: { board: null, steps: ['s2'] } })
+    fireEvent.click(await screen.findByRole('button', { name: /var\.digest_to/ }))
+
+    expect(await screen.findByText(/could not be copied/)).toBeDefined()
+    vi.unstubAllGlobals()
+  })
+
+  /*
+   * A live region announces a CHANGE, so the same message written twice is
+   * silent the second time — exactly when a user wonders whether the click
+   * landed.
+   */
+  it('announces a second copy of the same token', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
+
+    mount({ selected: { board: null, steps: ['s2'] } })
+    const row = await screen.findByRole('button', { name: /var\.digest_to/ })
+
+    fireEvent.click(row)
+    const first = await screen.findByText('Copied {{ var.digest_to }}')
+    fireEvent.click(row)
+    await waitFor(() => expect(screen.getByText('Copied {{ var.digest_to }}')).not.toBe(first))
+
+    vi.unstubAllGlobals()
+  })
+
+  /*
+   * `onMouseLeave` does not fire for a row React removes, so a scope that
+   * changes under a pointed-at leaf would leave the step editor marking fields
+   * for one nobody can see.
+   */
+  it('reports the leaf was left when the row itself goes away', async () => {
+    const pointed: (string | null)[] = []
+    const { rerender } = render(
+      <HatuaProvider
+        ports={{ workflows: host(), manifests: serving(CATALOGUE) }}
+        workflowId="wf_morning"
+      >
+        <Data
+          selected={{ board: null, steps: ['s2'] }}
+          onHighlight={(path) => pointed.push(path)}
+        />
+      </HatuaProvider>,
+    )
+
+    // The list and its `[]` projection both match; the first is the list.
+    const [leaf] = await screen.findAllByRole('button', { name: /^steps\.s1\.messages/ })
+    fireEvent.mouseEnter(leaf as HTMLElement)
+    expect(pointed).toEqual(['steps.s1.messages'])
+
+    // s1 is not upstream of itself, so selecting it takes that row away.
+    rerender(
+      <HatuaProvider
+        ports={{ workflows: host(), manifests: serving(CATALOGUE) }}
+        workflowId="wf_morning"
+      >
+        <Data
+          selected={{ board: null, steps: ['s1'] }}
+          onHighlight={(path) => pointed.push(path)}
+        />
+      </HatuaProvider>,
+    )
+
+    await waitFor(() => expect(pointed.at(-1)).toBeNull())
   })
 
   it('copies the token on click, because drag has no keyboard equivalent', async () => {

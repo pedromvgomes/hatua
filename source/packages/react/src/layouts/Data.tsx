@@ -102,7 +102,16 @@ const readCatalogueLoading = (): CatalogueState => CATALOGUE_LOADING
 export function Data({ className, selected, board = null, onHighlight, ...rest }: DataProps) {
   const store = useEditingStore()
   const manifests = useManifestStore()
-  const [copied, setCopied] = useState('')
+  /*
+   * What the live region last said, and a counter beside it.
+   *
+   * A live region announces a CHANGE, so copying the same token twice writes an
+   * identical string and the second copy is silent — which is exactly when a
+   * user is most likely to wonder whether the click landed. The counter is
+   * never rendered; it only makes the state new.
+   */
+  const [copied, setCopied] = useState<{ message: string; nth: number }>({ message: '', nth: 0 })
+  const say = (message: string) => setCopied((was) => ({ message, nth: was.nth + 1 }))
 
   // The one side effect: tell each store somebody is reading. Both are
   // idempotent, so every region that mounts may call them and only the first
@@ -174,8 +183,12 @@ export function Data({ className, selected, board = null, onHighlight, ...rest }
               conditionally it announces nothing much of the time: a live region
               generally has to EXIST before its content changes for the change
               to be announced. */}
-          <p className={cx(styles.said, !copied && styles.silent)} role="status">
-            {copied}
+          <p
+            key={copied.nth}
+            className={cx(styles.said, !copied.message && styles.silent)}
+            role="status"
+          >
+            {copied.message}
           </p>
         </div>
 
@@ -204,20 +217,14 @@ export function Data({ className, selected, board = null, onHighlight, ...rest }
             </p>
           ) : null}
 
-          {definition && !step ? (
-            <p className={styles.note}>
-              {selected && selected.steps.length > 1
-                ? 'Several steps are selected. This is what every one of them can read; pick a single step to see its own.'
-                : 'Nothing is selected, so this is what any step here can read before anything has run.'}
-            </p>
-          ) : null}
+          {definition && !step ? <p className={styles.note}>{scopeBlurb(selected)}</p> : null}
 
           {definition ? (
             <ReferenceTree
               scope={scope}
               referenced={referenced}
               empty="There is nothing to read here yet."
-              onChoose={(path) => copy(path, setCopied)}
+              onChoose={(path) => copy(path, say)}
               onHighlight={onHighlight}
             />
           ) : null}
@@ -225,6 +232,24 @@ export function Data({ className, selected, board = null, onHighlight, ...rest }
       </section>
     </>
   )
+}
+
+/**
+ * Which question the rows below are answering, when they are not one Step's.
+ *
+ * Three different situations reach the Board's scope, and one sentence for all
+ * three says the wrong thing about two of them. A Step that is gone is the one
+ * worth telling apart: read as "nothing is selected" it contradicts the step
+ * editor beside this, which says the Step is not in the workflow.
+ */
+const scopeBlurb = (selected: Segment | null | undefined): string => {
+  if (!selected || selected.steps.length === 0) {
+    return 'Nothing is selected, so this is what any step here can read before anything has run.'
+  }
+  if (selected.steps.length > 1) {
+    return 'Several steps are selected. This is what every one of them can read; pick a single step to see its own.'
+  }
+  return 'That step is not in this workflow. This is what any step here can read.'
 }
 
 /**
@@ -241,10 +266,22 @@ export function Data({ className, selected, board = null, onHighlight, ...rest }
  */
 function copy(path: string, said: (message: string) => void) {
   const token = `{{ ${path} }}`
+  const refused = 'That could not be copied. Drag it into a field instead.'
+
+  // Checked rather than reached through `?.`, which short-circuits the whole
+  // chain — the `.catch` included. On an insecure origin there is no
+  // `navigator.clipboard` at all, so the optional call would leave the click
+  // doing nothing and saying nothing, which is the control that reads as a
+  // fault.
+  if (!navigator.clipboard) {
+    said(refused)
+    return
+  }
+
   navigator.clipboard
-    ?.writeText(token)
+    .writeText(token)
     .then(() => said(`Copied ${token}`))
-    .catch(() => said('That could not be copied. Drag it into a field instead.'))
+    .catch(() => said(refused))
 }
 
 /** Every Reference path a set of Slots reads. */
