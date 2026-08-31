@@ -544,6 +544,31 @@ steps:
     expect(doc.toString()).toContain('- one')
   })
 
+  /*
+   * A dangling `with:` is an empty mapping, not a half-typed one — it is what
+   * deleting the last field by hand leaves. Refused, every later edit to that
+   * Step is a no-op and the form appears to drop what the user types.
+   */
+  it('fills in a `with:` the document left dangling', () => {
+    const doc = parse(
+      'id: wf\nname: n\nversion: 1\nstatus: draft\nsteps:\n  - id: s1\n    use: a\n    with:\n',
+    )
+    setStepField({ board: null, id: 's1' }, 'to', 'x').apply(doc)
+    expect(doc.toString()).toContain('to: x')
+    expect(doc.validate().success).toBe(true)
+  })
+
+  it('keeps the comment above a `with:` it fills in', () => {
+    const doc = parse(
+      'id: wf\nname: n\nversion: 1\nstatus: draft\nsteps:\n  - id: s1\n    use: a\n    # what it sends\n    with:\n',
+    )
+    setStepField({ board: null, id: 's1' }, 'to', 'x').apply(doc)
+
+    const text = doc.toString()
+    expect(text).toContain('# what it sends')
+    expect(text.indexOf('# what it sends')).toBeLessThan(text.indexOf('with:'))
+  })
+
   it('edits a Step in a document that does not project', () => {
     const half = parse('name: half written\nsteps:\n  - id: s1\n    use: a\n')
     expect(half.validate().success).toBe(false)

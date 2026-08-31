@@ -191,6 +191,17 @@ describe('what is in scope', () => {
     expect(rows().some((row) => row.includes('var.digest_to'))).toBe(false)
   })
 
+  /*
+   * `null` is the root Board, not an absent answer. Read as "nobody said", a
+   * selection at the root falls through to the `board` prop — and the panel
+   * shows a Block's scope beside a step editor showing the root Step's fields.
+   */
+  it('follows a Segment selected at the root, over the Board it was told about', async () => {
+    mount({ selected: { board: null, steps: ['s2'] }, board: 'archive' })
+    await waitFor(() => expect(rows().some((row) => row.includes('steps.s1.messages'))).toBe(true))
+    expect(rows().some((row) => row.includes('params.thread'))).toBe(false)
+  })
+
   it('falls back to the Board it is told about when nothing is selected', async () => {
     mount({ board: 'archive' })
     await waitFor(() => expect(rows().some((row) => row.includes('var.attempts'))).toBe(true))
@@ -301,10 +312,17 @@ describe('the marks it draws and the events it sends', () => {
     mount({ selected: { board: null, steps: ['s2'] } })
     const row = await screen.findByRole('button', { name: /var\.digest_to/ })
 
+    const said = screen.getByRole('status')
     fireEvent.click(row)
-    const first = await screen.findByText('Copied {{ var.digest_to }}')
+    await waitFor(() => expect(said.textContent).toBe('Copied {{ var.digest_to }}'))
+
     fireEvent.click(row)
-    await waitFor(() => expect(screen.getByText('Copied {{ var.digest_to }}')).not.toBe(first))
+    // The text has to CHANGE for a live region to announce it, and the element
+    // has to stay: a node re-inserted with its message already in it announces
+    // nothing.
+    await waitFor(() => expect(said.textContent).not.toBe('Copied {{ var.digest_to }}'))
+    expect(said.textContent?.trimEnd()).toBe('Copied {{ var.digest_to }}')
+    expect(screen.getByRole('status')).toBe(said)
 
     vi.unstubAllGlobals()
   })
