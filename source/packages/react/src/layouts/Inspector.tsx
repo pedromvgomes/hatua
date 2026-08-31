@@ -70,7 +70,7 @@ import css from './Inspector.module.css?inline'
  *
  * ## The Data panel beside it
  *
- * The editor expands leftward into `<Data>`, which is a sibling region rather
+ * The editor expands leftward into the reference tree, a sibling region rather
  * than something mounted from here — the composition root places it, the same
  * way it places everything else. What this owns is the control that asks for
  * it, and the `highlight` that comes back: a leaf pointed at over there marks
@@ -296,13 +296,23 @@ export function Inspector({
         <div className={styles.head}>
           <p className={styles.title}>{step ? nameOf(step) : 'Nothing selected'}</p>
           {onExpandedChange ? (
+            /*
+              One label in both states, because `aria-pressed` is what says
+              which one it is in. Swapping the verb as well announces "Hide
+              references, pressed" — the state told twice.
+
+              **References**, the word CONTEXT.md defines and the picker's own
+              tab already carries. Every row over there is a Reference and so is
+              every row here; a second noun for one thing is the duplication
+              this repo refuses everywhere else.
+            */
             <Button
               size="sm"
               variant="ghost"
               aria-pressed={expanded}
               onClick={() => onExpandedChange(!expanded)}
             >
-              {expanded ? 'Hide data' : 'Show data'}
+              References
             </Button>
           ) : null}
         </div>
