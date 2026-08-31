@@ -1,7 +1,7 @@
-import type { ContextKey } from '@hatua/schema'
+import type { ContextKey, WorkflowDefinition } from '@hatua/schema'
 import { describe, expect, it } from 'vitest'
 import { DOC, MANIFESTS } from './fixtures'
-import { boardScope, scopeFor, upstreamOf } from './scope'
+import { boardScope, newScopeMemo, scopeFor, upstreamOf } from './scope'
 import { walkSteps } from './tree'
 
 describe('tree traversal', () => {
@@ -126,5 +126,65 @@ describe('boardScope', () => {
     const positioned = scopeFor(DOC, { board: null, id: 's5' }, MANIFESTS, CONTEXT)
     expect(positioned.slice(0, unpositioned.length)).toEqual(unpositioned)
     expect(positioned.slice(unpositioned.length).every((entry) => entry.kind === 'step')).toBe(true)
+  })
+})
+
+/**
+ * A scope is *positional*, so a pass that checks every Template asks for one per
+ * Step — and each answer names every Step upstream of it. That makes the pass
+ * quadratic in the size of what it produces, which is inherent and fine.
+ *
+ * What is not fine is the walk that finds the upstream costing a copy of
+ * everything above it *per Step it passes*, whether or not that Step has a
+ * region to descend into. That makes one call quadratic on a flat list and the
+ * pass cubic, and `validateDefinition` runs on every keystroke.
+ *
+ * A ratio rather than a millisecond budget, for the reason the layout suite
+ * gives: absolute timings differ by an order of magnitude between a laptop and
+ * a loaded CI box, and what is protected here is the SHAPE of the growth.
+ */
+describe('the cost of scoping a whole Board', () => {
+  const flat = (n: number): WorkflowDefinition =>
+    ({
+      id: 'wf',
+      name: 'W',
+      version: 1,
+      status: 'draft',
+      steps: Array.from({ length: n }, (_, i) => ({
+        id: `s${i}`,
+        use: 'component.email.send',
+        with: { to: '{{ steps.s0.id }}' },
+      })),
+    }) as unknown as WorkflowDefinition
+
+  /**
+   * The fastest of several runs. A single sample measures this machine's
+   * scheduler as much as this function: every interruption makes a run slower
+   * and none makes one faster, so the minimum is the least polluted sample.
+   */
+  const timed = (n: number): number => {
+    const doc = flat(n)
+    let best = Number.POSITIVE_INFINITY
+    for (let run = 0; run < 5; run++) {
+      const memo = newScopeMemo()
+      const started = performance.now()
+      for (const step of doc.steps) scopeFor(doc, { board: null, id: step.id }, [], [], memo)
+      best = Math.min(best, performance.now() - started)
+    }
+    return best
+  }
+
+  it('grows about as fast as the square of the Board, rather than its cube', () => {
+    // Warmed before either is measured, so neither pays for a compilation the
+    // other gets for free.
+    timed(150)
+
+    const small = timed(150)
+    const large = timed(600)
+
+    // Four times the Steps. Quadratic predicts about 16x, cubic about 64x; the
+    // bound sits between them so noise cannot fail it and the cubic walk cannot
+    // pass it.
+    expect(large / Math.max(small, 0.1)).toBeLessThan(32)
   })
 })
