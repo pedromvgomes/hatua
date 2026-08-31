@@ -1,22 +1,25 @@
 import type { FunctionSpec, ValueType } from '@hatua/expressions'
 import { CORE_NAMESPACES } from '@hatua/expressions'
 import type { ScopeEntry } from '@hatua/model'
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { Button } from '../primitives/Button'
 import { cx } from '../primitives/classNames'
 import { Input } from '../primitives/Input'
 import { type Anchor, place } from '../primitives/placement'
-import { Select } from '../primitives/Select'
-import {
-  type Candidate,
-  FUNCTION_CANDIDATES,
-  flatten,
-  type RefNode,
-  referenceTree,
-} from './candidates'
+import { type Candidate, FUNCTION_CANDIDATES } from './candidates'
 import styles from './ExpressionPicker.module.css'
 import css from './ExpressionPicker.module.css?inline'
-import { dragPayload, fits } from './insertion'
+import { fits } from './insertion'
+import { ReferenceTree, Source } from './ReferenceTree'
+import rowStyles from './ReferenceTree.module.css'
+/*
+ * The row and source styles both tabs draw, defined once beside the component
+ * that owns them. The *Function* tab reaches for them because a function and a
+ * value are the same kind of choice on screen — a second copy here would be two
+ * answers to what a row looks like, and they would drift the first time one is
+ * touched.
+ */
+import rowCss from './ReferenceTree.module.css?inline'
 
 /**
  * The browsable half: a 392px panel with two tabs.
@@ -66,6 +69,12 @@ export function ExpressionPicker({
       <style href="hatua-expression-picker" precedence="hatua">
         {css}
       </style>
+      {/* The Function tab draws <ReferenceTree>'s rows without mounting it, so
+          the panel brings that stylesheet with it. React 19 dedupes by href,
+          so mounting the tree as well paints nothing twice. */}
+      <style href="hatua-reference-tree" precedence="hatua">
+        {rowCss}
+      </style>
       {/* A click-away backdrop, and deliberately not an interactive element:
           Escape is the keyboard route out, and giving this a role would put a
           stop in the tab order for nothing. */}
@@ -112,7 +121,12 @@ export function ExpressionPicker({
               onInsert={(text) => onChoose(text)}
             />
           ) : tab === 'reference' ? (
-            <ReferenceTab scope={scope} expected={expected} onChoose={onChoose} />
+            <ReferenceTree
+              scope={scope}
+              expected={expected}
+              empty="There is nothing to read here yet."
+              onChoose={onChoose}
+            />
           ) : (
             <FunctionTab expected={expected} onPick={setInserting} />
           )}
@@ -146,142 +160,7 @@ const PANEL = 392
 /** The head, the tab strip and the panel's own padding, none of which scrolls. */
 const HEAD = 72
 
-/**
- * Both tabs open with the same control in the same place — a source `<select>`,
- * then a sentence describing the selection, then rows. A Step and a namespace
- * are the same kind of choice.
- *
- * A `<select>` rather than chips because five namespaces fit on one line and
- * thirty Steps do not.
- */
-function Source({
-  label,
-  value,
-  options,
-  blurb,
-  onChange,
-}: {
-  label: string
-  value: string
-  options: readonly { value: string; label: string }[]
-  blurb: string
-  onChange: (next: string) => void
-}) {
-  return (
-    <div className={styles.source}>
-      <Select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}>
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </Select>
-      <p className={styles.blurb}>{blurb}</p>
-    </div>
-  )
-}
-
 const ALL = '*'
-
-function ReferenceTab({
-  scope,
-  expected,
-  onChoose,
-}: {
-  scope: readonly ScopeEntry[]
-  expected: ValueType | undefined
-  onChoose: (path: string) => void
-}) {
-  const [source, setSource] = useState(ALL)
-  const tree = useMemo(() => referenceTree(scope), [scope])
-
-  const options = [
-    { value: ALL, label: 'Everything in scope' },
-    ...tree.map((node) => ({ value: node.path, label: node.label })),
-  ]
-
-  const shown = source === ALL ? tree : tree.filter((node) => node.path === source)
-
-  if (tree.length === 0) {
-    return <p className={styles.empty}>There is nothing to read here yet.</p>
-  }
-
-  return (
-    <>
-      <Source
-        label="What to read from"
-        value={source}
-        options={options}
-        blurb={
-          source === ALL
-            ? 'Everything this field can read, grouped by where it comes from.'
-            : (shown[0]?.label ?? '')
-        }
-        onChange={setSource}
-      />
-      {shown.map((group) => (
-        <section key={group.path} className={styles.group}>
-          {/* Group headers only under *Everything*: with one source chosen the
-              select above already says which. */}
-          {source === ALL ? (
-            <h4 className={styles.groupHead}>
-              {group.label}
-              <code className={styles.groupPath}>{group.path}</code>
-            </h4>
-          ) : null}
-          <Rows nodes={leaves(group)} expected={expected} onChoose={onChoose} />
-        </section>
-      ))}
-    </>
-  )
-}
-
-/**
- * What a group offers.
- *
- * A grouping prefix — `run`, `triggers`, `var` — is not itself addressable, so
- * it contributes its children and not itself. Everything else contributes its
- * whole subtree, because a Reference may name a branch as readily as a leaf:
- * `{{ steps.s2.messages }}` is the list, and `{{ steps.s2.messages[].subject }}` is a value
- * per element.
- */
-const leaves = (group: RefNode): RefNode[] =>
-  group.type === 'unknown' && group.children ? flatten(group.children) : flatten([group])
-
-function Rows({
-  nodes,
-  expected,
-  onChoose,
-}: {
-  nodes: readonly RefNode[]
-  expected: ValueType | undefined
-  onChoose: (path: string) => void
-}) {
-  return (
-    <ul className={styles.rows}>
-      {nodes.map((node) => (
-        <li key={node.path}>
-          <button
-            type="button"
-            className={styles.row}
-            data-fits={fits(node.type, expected) ? 'true' : undefined}
-            draggable
-            onDragStart={(event) => {
-              for (const [mime, data] of dragPayload(node.path)) {
-                event.dataTransfer.setData(mime, data)
-              }
-              event.dataTransfer.effectAllowed = 'copy'
-            }}
-            onClick={() => onChoose(node.path)}
-          >
-            <span className={styles.path}>{node.path}</span>
-            <span className={styles.type}>{node.type}</span>
-          </button>
-        </li>
-      ))}
-    </ul>
-  )
-}
 
 function FunctionTab({
   expected,
@@ -318,17 +197,17 @@ function FunctionTab({
         }
         onChange={setSource}
       />
-      <ul className={styles.rows}>
+      <ul className={rowStyles.rows}>
         {shown.map((candidate) => (
           <li key={candidate.id}>
             <button
               type="button"
-              className={styles.row}
+              className={rowStyles.row}
               data-fits={fits(candidate.type, expected) ? 'true' : undefined}
               onClick={() => candidate.spec && onPick(candidate.spec)}
             >
-              <span className={styles.path}>{candidate.label}</span>
-              <span className={styles.type}>{candidate.type}</span>
+              <span className={rowStyles.path}>{candidate.label}</span>
+              <span className={rowStyles.type}>{candidate.type}</span>
             </button>
           </li>
         ))}
@@ -382,14 +261,14 @@ function Inserter({
         <Button size="sm" variant="ghost" onClick={onBack}>
           Back
         </Button>
-        <p className={styles.blurb}>{spec.summary}</p>
+        <p className={rowStyles.blurb}>{spec.summary}</p>
       </div>
 
       {spec.params.map((param) => (
         <div key={param.name} className={styles.param}>
           <div className={styles.paramHead}>
             <span className={styles.paramName}>{param.name}</span>
-            <span className={styles.type}>{param.type}</span>
+            <span className={rowStyles.type}>{param.type}</span>
             {param.optional ? <span className={styles.optional}>optional</span> : null}
           </div>
           {/* The parameter's own sentence, which is the reason ParamSpec carries

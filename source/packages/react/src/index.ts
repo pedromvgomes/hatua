@@ -6,6 +6,15 @@
  * @hatua/react for the type of the thing it is being asked to write would be a
  * seam that exists only in our directory layout.
  */
+/**
+ * The vocabulary a region's props are written in.
+ *
+ * Re-exported for the reason the ports are: a Host holds the selection and the
+ * Board on screen — `<StepList>`, `<FlowMap>`, `<Inspector>` and `<Data>` all
+ * take them — and making it install @hatua/model to name the type of a thing it
+ * is being handed would be a seam that exists only in our directory layout.
+ */
+export type { BoardId, Segment, StepRef } from '@hatua/model'
 export type {
   ContextKey,
   Field,
