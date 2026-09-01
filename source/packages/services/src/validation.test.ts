@@ -1,7 +1,7 @@
 import type { Manifest } from '@hatua/schema'
 import { describe, expect, it, vi } from 'vitest'
 import { type ConnectionStore, createConnectionStore } from './connections'
-import { createEditingStore, type EditingStore } from './editing'
+import { createEditingStore, type EditingStore, PublishBlocked } from './editing'
 import { createManifestStore, type ManifestStore } from './manifests'
 import type { ConnectionSource, DraftSession, EditToken, Lease, WorkflowStore } from './ports'
 import { removeStep } from './steps'
@@ -654,7 +654,7 @@ describe('a gate waiting on a Host that never answers', () => {
    * So giving up and reporting what IS known is ADR-0022's narrowing, reached by
    * clock instead of by a port's answer.
    */
-  it('gives up after its deadline and answers with what is known', async () => {
+  it('refuses when its deadline runs out, rather than reporting a clean workflow', async () => {
     vi.useFakeTimers()
     try {
       const editing = createEditingStore(workflowPort(MISSING), 'wf')
@@ -664,18 +664,47 @@ describe('a gate waiting on a Host that never answers', () => {
       validation.load()
       await vi.advanceTimersByTimeAsync(0)
 
-      let answered: readonly unknown[] | null = null
-      void publishBlockers(validation, catalogue, { deadlineMs: 50 }).then((found) => {
-        answered = found
-      })
+      let refusal: unknown = null
+      const asked = publishBlockers(validation, catalogue, { deadlineMs: 50 }).catch(
+        (cause: unknown) => {
+          refusal = cause
+        },
+      )
 
       await vi.advanceTimersByTimeAsync(10)
-      expect(answered).toBeNull()
+      expect(refusal).toBeNull()
 
       await vi.advanceTimersByTimeAsync(100)
-      // Nothing could be checked, so nothing is reported — and the press is
-      // answered rather than left hanging.
-      expect(answered).toEqual([])
+      await asked
+      // Nothing could be checked, and an empty list would say the opposite to
+      // the only caller there is.
+      expect(refusal).toBeInstanceOf(PublishBlocked)
+      expect((refusal as PublishBlocked).message).toMatch(/could not be checked/)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('answers with what is known when the catalogue arrived and only the Connections did not', async () => {
+    // The narrowing this file does elsewhere: a question nobody can ever answer
+    // is proceeded past, and the two codes that need a type go unreported.
+    vi.useFakeTimers()
+    try {
+      const source: ConnectionSource = { listConnections: () => new Promise(() => {}) as never }
+      const stores = wired(MISSING, CATALOGUE, createConnectionStore(source))
+      stores.validation.load()
+      await vi.advanceTimersByTimeAsync(0)
+
+      let answered: readonly unknown[] | null = null
+      const asked = publishBlockers(stores.validation, stores.catalogue, { deadlineMs: 50 }).then(
+        (found) => {
+          answered = found
+        },
+      )
+
+      await vi.advanceTimersByTimeAsync(100)
+      await asked
+      expect(answered).toHaveLength(2)
     } finally {
       vi.useRealTimers()
     }

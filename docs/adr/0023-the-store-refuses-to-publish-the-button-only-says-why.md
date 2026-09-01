@@ -67,11 +67,21 @@ gate may wait" — so the gate is `async` and the waiting is its business rather
 **The wait is bounded, and only this half of it is.** "It will reply" is true of a Host that replies;
 one whose manifest fetch hangs leaves the catalogue loading for the life of the page, and a gate
 waiting on that never answers — so the press is never heard back from and every control that a press
-disables stays disabled. Giving up after a deadline and reporting what IS known is the same narrowing
-ADR-0022 describes, reached by clock rather than by a port's answer, and it costs nothing to reach:
-no claim is spent and the port is never called while the gate waits. Waiting on `port.publish` is
-different in kind — the write is in the Host's hands, and no local timer can un-make it — so that
-wait stays unbounded.
+disables stays disabled. Giving up costs nothing: no claim is spent and the port is never called while
+the gate waits. Waiting on `port.publish` is different in kind — the write is in the Host's hands, and
+no local timer can un-make it — so that wait stays unbounded.
+
+**A deadline that runs out with nothing checked refuses; it does not narrow.** Whether the catalogue
+arrived is what says the rules ran: a wait that expires with only the Connections outstanding leaves
+exactly the two codes `undescribed` leaves, and narrows. A wait that expires with no catalogue leaves
+a list that ran nothing, and that is the one that must not be mistaken for a clean workflow. The
+difference is what kind of silence it is. `undescribed` is a question nobody
+can ever answer, so proceeding is the only alternative to never publishing at all. A wait that ran out
+is a question that has not been answered *yet* — and an unchecked workflow's diagnostic list is empty,
+which is indistinguishable from a clean one at the only call site there is. So the gate rejects, the
+press is answered, and asking again is the way through. A Host that is merely slow is the reachable
+case rather than the exotic one: the catalogue fetch starts when the bar mounts, so a cold endpoint
+and a user who presses **Publish** inside the window is all it takes.
 
 The two `proceeds` follow [ADR-0022](0022-validation-may-be-told-what-only-the-host-knows.md): an
 absent answer **narrows** the check and never withholds it. The alternative is that a Host which

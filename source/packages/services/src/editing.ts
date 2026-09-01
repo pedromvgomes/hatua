@@ -1056,7 +1056,16 @@ export function createEditingStore(
        * lands does what it was asked to do. A halt with nothing outstanding is
        * not this release's problem and does not stop it.
        */
-      if (pending && halted()) throw reasonFor(save)
+      if (pending && halted()) {
+        // The Host's reason, and what to do about it. Rejecting with the raw
+        // save error says why the write failed and nothing about the fact that
+        // the workflow is still open, or that resuming the save is the way out —
+        // which leaves a user pressing Release again and getting the same
+        // sentence.
+        throw new Error(
+          `${reasonFor(save).message} Your last change is not saved yet, so this workflow is still open — try saving again, or discard the draft.`,
+        )
+      }
 
       /*
        * Which token to hand back: this session's, as it stands now.
