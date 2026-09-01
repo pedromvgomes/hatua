@@ -1366,6 +1366,28 @@ describe('a token rotated while an ending is in flight', () => {
   })
 })
 
+describe('a renewal that answers with less than a full lease', () => {
+  /*
+   * Nothing read the renewal's token before, so a Host answering with the expiry
+   * alone was correct and may still be. Taking `undefined` from it ends a
+   * session whose lease the Host considers perfectly good.
+   */
+  it('keeps the token it holds when the Host sends none back', async () => {
+    const host = recorder({ lease: leaseFor(0.05) })
+    host.port.renewLease = async () => ({ expiresAt: leaseFor(30).expiresAt }) as unknown as Lease
+
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+    await vi.advanceTimersByTimeAsync(2000)
+
+    expect(ready(store).claimed).toBe(true)
+    store.apply(removeStep({ board: null, id: 's1' }))
+    await vi.advanceTimersByTimeAsync(200)
+    expect(host.writes).toHaveLength(1)
+  })
+})
+
 describe('the lease', () => {
   it('renews at the halfway mark, so one lost renewal still leaves time to retry', async () => {
     const host = recorder({ lease: leaseFor(30) })
@@ -2068,6 +2090,43 @@ describe('resuming a halted save', () => {
     const after = renewals
     await vi.advanceTimersByTimeAsync(16 * 60_000)
     expect(renewals).toBe(after + 1)
+  })
+
+  /*
+   * A halt from a refused WRITE leaves the lease healthy and its renewal armed.
+   * Cancelling that on the way to asking early takes a working renewal down with
+   * a transient refusal: before the press the lease renews itself at the
+   * half-way mark, and after it the claim simply lapses.
+   */
+  it('leaves the armed renewal alone when the early ask is refused', async () => {
+    let refuseRenewal = false
+    let renewals = 0
+    const host = recorder()
+    host.port.saveDraft = async () => {
+      throw new Error('The workflow service is unreachable.')
+    }
+    host.port.renewLease = async () => {
+      renewals++
+      if (refuseRenewal) throw new Error('Not now.')
+      return leaseFor(30)
+    }
+
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+    store.apply(removeStep({ board: null, id: 's1' }))
+    await vi.advanceTimersByTimeAsync(200)
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
+
+    // The early ask fails too — but the timer armed at open is still pending.
+    refuseRenewal = true
+    store.resumeSaving()
+    await vi.advanceTimersByTimeAsync(0)
+    const asked = renewals
+
+    refuseRenewal = false
+    await vi.advanceTimersByTimeAsync(16 * 60_000)
+    expect(renewals).toBeGreaterThan(asked)
   })
 
   it('halts again, rather than spinning, when the Host says no twice', async () => {
