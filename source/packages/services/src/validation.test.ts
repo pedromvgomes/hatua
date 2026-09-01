@@ -593,13 +593,13 @@ describe('what blocks a publish', () => {
   })
 
   /*
-   * The case that would otherwise hang Publish for ever. `ready` is false both
-   * while the manifests are arriving and permanently after they fail to, so a
-   * gate waiting on `ready` alone never answers for a Host whose manifest
-   * endpoint is down — and a Publish that never answers is worse than one that
-   * publishes unchecked.
+   * A catalogue that failed ran no rules, and an empty list says the opposite to
+   * the only caller there is. It is not the narrowing ADR-0022 describes: that
+   * is for a Host which wired no catalogue at all — correctly — and which has no
+   * validation store to ask. One that wired a catalogue and cannot serve it is
+   * broken, and saying so lets the press be repeated.
    */
-  it('answers rather than waiting when the catalogue failed', async () => {
+  it('refuses when the catalogue failed, rather than reporting a clean workflow', async () => {
     const editing = createEditingStore(workflowPort(MISSING), 'wf')
     const catalogue = createManifestStore({
       loadManifests: async () => {
@@ -610,7 +610,7 @@ describe('what blocks a publish', () => {
     validation.load()
     await settle()
 
-    await expect(publishBlockers(validation, catalogue)).resolves.toEqual([])
+    await expect(publishBlockers(validation, catalogue)).rejects.toBeInstanceOf(PublishBlocked)
   })
 
   it('answers rather than waiting when nobody can describe the Connections', async () => {

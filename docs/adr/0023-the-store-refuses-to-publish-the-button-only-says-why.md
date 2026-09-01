@@ -56,8 +56,9 @@ port is what stops the floor from being unwirable.
 | State | Publish |
 | --- | --- |
 | `definition` is null | **refused** |
-| catalogue still arriving (`ready: false`) | **waits** |
-| `connections: 'pending'` | **waits** |
+| catalogue still arriving | **waits**, then refuses if it never arrives |
+| catalogue **failed** | **refused** |
+| `connections: 'pending'` | **waits**, then proceeds with two codes unchecked |
 | `connections: 'undescribed'` | **proceeds**, two codes unchecked |
 | no `ValidationStore` at all | **proceeds**, floor only |
 
@@ -71,11 +72,19 @@ disables stays disabled. Giving up costs nothing: no claim is spent and the port
 the gate waits. Waiting on `port.publish` is different in kind — the write is in the Host's hands, and
 no local timer can un-make it — so that wait stays unbounded.
 
-**A deadline that runs out with nothing checked refuses; it does not narrow.** Whether the catalogue
-arrived is what says the rules ran: a wait that expires with only the Connections outstanding leaves
-exactly the two codes `undescribed` leaves, and narrows. A wait that expires with no catalogue leaves
-a list that ran nothing, and that is the one that must not be mistaken for a clean workflow. The
-difference is what kind of silence it is. `undescribed` is a question nobody
+**Whether the rules RAN is the question, and `ready` is what answers it.** A catalogue that arrived
+leaves a real list, and one still missing a Connection's type leaves exactly the two codes
+`undescribed` leaves — so that narrows. A catalogue that never arrived, whether because the wait ran
+out or because the fetch failed outright, leaves a list that ran nothing, and an empty list is
+indistinguishable from a clean workflow at the only call site there is. Both refuse, and for one
+reason rather than two: a slow Host and a broken one leave the same silence, and neither is the
+silence ADR-0022 is about.
+
+**That silence is different from having no catalogue at all.** A Host which wires no `ManifestSource`
+is correctly configured; it has no `ValidationStore`, the gate is never consulted, and `publish()` is
+left with its floor — the last row of the table. A Host which wires one and cannot serve it is not
+that Host, and treating the two alike is what let a manifest endpoint returning 500 publish a workflow
+against which nothing had been checked. `undescribed` is a question nobody
 can ever answer, so proceeding is the only alternative to never publishing at all. A wait that ran out
 is a question that has not been answered *yet* — and an unchecked workflow's diagnostic list is empty,
 which is indistinguishable from a clean one at the only call site there is. So the gate rejects, the

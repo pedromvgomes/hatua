@@ -1612,6 +1612,31 @@ describe('ending the session', () => {
     expect(ready(store).claimed).toBe(false)
   })
 
+  /*
+   * A halt is raised by a refused RENEWAL too, and that fires on a timer — so a
+   * write that succeeded inside the same round trip as a refused renewal was
+   * reported as lost, refusing a release whose Draft is on the Host intact and
+   * leaving Discard as the only way out of it.
+   */
+  it('releases when the write landed, even though a renewal was refused alongside it', async () => {
+    const host = recorder({ lease: leaseFor(0.05) })
+    host.port.renewLease = async () => {
+      throw new Error('Your lease on this workflow expired.')
+    }
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+
+    store.apply(removeStep({ board: null, id: 's1' }))
+    // The write goes out and lands; the renewal is refused meanwhile.
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(host.writes).toHaveLength(1)
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
+
+    await store.release()
+    expect(host.released).toBe(1)
+  })
+
   it('does not write before discarding, because the Draft is being thrown away', async () => {
     // The only possible effect would be to lose a race with the delete.
     const { host, store } = await open()
@@ -2177,6 +2202,47 @@ describe('resuming a halted save', () => {
     refuseRenewal = false
     await vi.advanceTimersByTimeAsync(16 * 60_000)
     expect(renewals).toBeGreaterThan(asked)
+  })
+
+  /*
+   * A halt from a refused write leaves the lease timer armed, so a press and the
+   * timer can both be in the air — and only the later answer is applied. Held on
+   * the request that was asked for, the resume dies with the one that loses: a
+   * healthy lease, a dirty document, and autosave refused for ever by a halt
+   * nothing goes on to clear.
+   */
+  it('clears the halt on whichever renewal answers, not only the one it asked', async () => {
+    const answers: ((lease: Lease) => void)[] = []
+    let refuseWrite = true
+    const host = recorder({ lease: leaseFor(30) })
+    host.port.renewLease = () =>
+      new Promise<Lease>((resolve) => {
+        answers.push(resolve)
+      })
+    host.port.saveDraft = async () => {
+      if (refuseWrite) throw new Error('The workflow service is unreachable.')
+    }
+
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+    store.apply(removeStep({ board: null, id: 's1' }))
+    await vi.advanceTimersByTimeAsync(200)
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
+
+    // The press asks first; the armed timer asks second and therefore wins.
+    store.resumeSaving()
+    await settle()
+    await vi.advanceTimersByTimeAsync(16 * 60_000)
+    expect(answers.length).toBeGreaterThan(1)
+
+    refuseWrite = false
+    answers[0]?.(leaseFor(30))
+    await settle()
+    answers[answers.length - 1]?.(leaseFor(30))
+    await vi.advanceTimersByTimeAsync(200)
+
+    expect(ready(store).save).not.toMatchObject({ state: 'halted' })
   })
 
   it('halts again, rather than spinning, when the Host says no twice', async () => {
