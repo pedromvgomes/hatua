@@ -1,7 +1,15 @@
 import { parseWorkflow } from '@hatua/document'
 import type { Step } from '@hatua/schema'
 import { describe, expect, it } from 'vitest'
-import { addStep, moveStep, removeStep, rootStepCount, stepIn } from './steps'
+import {
+  addStep,
+  moveStep,
+  removeStep,
+  rootStepCount,
+  setStepField,
+  setStepName,
+  stepIn,
+} from './steps'
 
 /**
  * The commands and the two readers, against a document directly.
@@ -428,5 +436,170 @@ describe('a comment stays with the Step it describes', () => {
     const text = doc.toString()
     expect(text.indexOf('# about s2')).toBeLessThan(text.indexOf('id: s2'))
     expect(text.indexOf('# about s1')).toBeLessThan(text.indexOf('id: s1'))
+  })
+})
+
+describe('setStepField', () => {
+  const CONFIGURED = `id: wf
+name: n
+version: 1
+status: draft
+steps:
+  - id: s1
+    use: component.email.send
+    with:
+      # who it goes to
+      to: "ops@example.com"
+      subject: 'Nightly'
+`
+
+  it('writes a value under the key the manifest declares', () => {
+    const doc = parse(CONFIGURED)
+    setStepField({ board: null, id: 's1' }, 'subject', 'Morning').apply(doc)
+    expect(doc.toString()).toContain("subject: 'Morning'")
+  })
+
+  it('keeps the comment, the key order and the quoting around what it wrote', () => {
+    const doc = parse(CONFIGURED)
+    setStepField({ board: null, id: 's1' }, 'to', 'team@example.com').apply(doc)
+
+    const text = doc.toString()
+    expect(text).toContain('# who it goes to')
+    expect(text).toContain('to: "team@example.com"')
+    expect(text.indexOf('to:')).toBeLessThan(text.indexOf('subject:'))
+  })
+
+  /*
+   * A Step added from the catalogue carries no `with:` at all, so the first
+   * field edited on it is the one that creates the key. Appended, it lands
+   * below the regions a container holds — which on a Board of fifty Steps is
+   * fifty lines from the `use:` it configures.
+   */
+  it('creates `with:` under `use:` rather than after the regions a container holds', () => {
+    const doc = parse(
+      'id: wf\nname: n\nversion: 1\nstatus: draft\nsteps:\n  - id: s1\n    use: core.for_each\n    steps:\n      - id: s2\n        use: a\n',
+    )
+    setStepField({ board: null, id: 's1' }, 'list', '{{ triggers.t1.rows }}').apply(doc)
+
+    // Sliced from the Step, because the root `steps:` sits above all of this
+    // and an index into the whole document would compare against that one.
+    const step = doc.toString().slice(doc.toString().indexOf('- id: s1'))
+    expect(step.indexOf('use: core.for_each')).toBeLessThan(step.indexOf('with:'))
+    expect(step.indexOf('with:')).toBeLessThan(step.indexOf('steps:'))
+    expect(doc.validate().success).toBe(true)
+  })
+
+  it('writes a number as a number and a boolean as a boolean', () => {
+    const doc = parse(CONFIGURED)
+    setStepField({ board: null, id: 's1' }, 'retries', 3).apply(doc)
+    setStepField({ board: null, id: 's1' }, 'urgent', true).apply(doc)
+
+    const text = doc.toString()
+    expect(text).toContain('retries: 3')
+    expect(text).toContain('urgent: true')
+  })
+
+  it('reaches a Step nested inside a region, and one on a Block’s Board', () => {
+    const doc = parse(
+      'id: wf\nname: n\nversion: 1\nstatus: draft\nsteps:\n  - id: s1\n    use: core.for_each\n    steps:\n      - id: s2\n        use: a\nblocks:\n  - id: b\n    steps:\n      - id: s2\n        use: a\n',
+    )
+    setStepField({ board: null, id: 's2' }, 'k', 'root').apply(doc)
+    setStepField({ board: 'b', id: 's2' }, 'k', 'block').apply(doc)
+
+    const text = doc.toString()
+    expect(text).toContain('k: root')
+    expect(text).toContain('k: block')
+  })
+
+  it('refuses a Step that is not there, so the store records nothing', () => {
+    const doc = parse(CONFIGURED)
+    expect(() => setStepField({ board: null, id: 'gone' }, 'to', 'x').apply(doc)).toThrow()
+    expect(doc.toString()).toBe(CONFIGURED)
+  })
+
+  /*
+   * `with: tomorrow` is a half-typed document, not an absent one. Overwriting
+   * it would discard text the user is in the middle of — and a command that
+   * refuses is a no-op with nothing on the undo stack.
+   */
+  it('refuses a `with:` holding something that is not a mapping', () => {
+    const doc = parse(
+      'id: wf\nname: n\nversion: 1\nstatus: draft\nsteps:\n  - id: s1\n    use: a\n    with: tomorrow\n',
+    )
+    expect(() => setStepField({ board: null, id: 's1' }, 'to', 'x').apply(doc)).toThrow()
+    expect(doc.toString()).toContain('with: tomorrow')
+  })
+
+  /*
+   * A key already holding a mapping or a list is a half-typed document rather
+   * than an absent one — and writing a scalar over it discards everything
+   * underneath, in a file Hatua does not own. Reachable when a manifest
+   * declares a key as text while the document holds a collection under it.
+   */
+  it('refuses a key that already holds a collection, rather than replacing it', () => {
+    const doc = parse(
+      'id: wf\nname: n\nversion: 1\nstatus: draft\nsteps:\n  - id: s1\n    use: a\n    with:\n      rows:\n        - one\n        - two\n',
+    )
+    expect(() => setStepField({ board: null, id: 's1' }, 'rows', 'x').apply(doc)).toThrow()
+    expect(doc.toString()).toContain('- one')
+  })
+
+  /*
+   * A dangling `with:` is an empty mapping, not a half-typed one — it is what
+   * deleting the last field by hand leaves. Refused, every later edit to that
+   * Step is a no-op and the form appears to drop what the user types.
+   */
+  it('fills in a `with:` the document left dangling', () => {
+    const doc = parse(
+      'id: wf\nname: n\nversion: 1\nstatus: draft\nsteps:\n  - id: s1\n    use: a\n    with:\n',
+    )
+    setStepField({ board: null, id: 's1' }, 'to', 'x').apply(doc)
+    expect(doc.toString()).toContain('to: x')
+    expect(doc.validate().success).toBe(true)
+  })
+
+  it('keeps the comment above a `with:` it fills in', () => {
+    const doc = parse(
+      'id: wf\nname: n\nversion: 1\nstatus: draft\nsteps:\n  - id: s1\n    use: a\n    # what it sends\n    with:\n',
+    )
+    setStepField({ board: null, id: 's1' }, 'to', 'x').apply(doc)
+
+    const text = doc.toString()
+    expect(text).toContain('# what it sends')
+    expect(text.indexOf('# what it sends')).toBeLessThan(text.indexOf('with:'))
+  })
+
+  it('edits a Step in a document that does not project', () => {
+    const half = parse('name: half written\nsteps:\n  - id: s1\n    use: a\n')
+    expect(half.validate().success).toBe(false)
+    setStepField({ board: null, id: 's1' }, 'to', 'x').apply(half)
+    expect(half.toString()).toContain('to: x')
+  })
+})
+
+describe('setStepName', () => {
+  it('creates `name:` between `use:` and `with:`', () => {
+    const doc = parse(
+      'id: wf\nname: n\nversion: 1\nstatus: draft\nsteps:\n  - id: s1\n    use: a\n    with:\n      to: x\n',
+    )
+    setStepName({ board: null, id: 's1' }, 'Send the digest').apply(doc)
+
+    const text = doc.toString()
+    expect(text.indexOf('use: a')).toBeLessThan(text.indexOf('name: Send the digest'))
+    expect(text.indexOf('name: Send the digest')).toBeLessThan(text.indexOf('with:'))
+  })
+
+  it('keeps the quoting the user wrote a name in', () => {
+    const doc = parse(
+      'id: wf\nname: n\nversion: 1\nstatus: draft\nsteps:\n  - id: s1\n    use: a\n    name: "Old"\n',
+    )
+    setStepName({ board: null, id: 's1' }, 'New').apply(doc)
+    expect(doc.toString()).toContain('name: "New"')
+  })
+
+  it('refuses a Step that is not there', () => {
+    const doc = parse(VALID)
+    expect(() => setStepName({ board: null, id: 'gone' }, 'x').apply(doc)).toThrow()
+    expect(doc.toString()).toBe(VALID)
   })
 })

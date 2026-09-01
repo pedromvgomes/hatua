@@ -9,6 +9,20 @@
     gap: 4px;
   }
 
+  /*
+   * A field reading whatever the Data panel is being pointed at.
+   *
+   * A rail down the start edge rather than a wash behind the row: the controls
+   * inside carry their own backgrounds and their own focus rings, and a tint
+   * under them fights both. Drawn with padding rather than a border so nothing
+   * shifts when the highlight comes and goes.
+   */
+  .field[data-highlighted="true"] {
+    padding-inline-start: 8px;
+    margin-inline-start: -10px;
+    box-shadow: inset 2px 0 0 var(--hatua-accent);
+  }
+
   .label {
     display: flex;
     align-items: baseline;
@@ -24,6 +38,19 @@
      — and the checker says it again in words when the field is left empty. */
   .required {
     color: var(--hatua-status-error);
+  }
+
+  /* Under the control it is about, and never collected above the form: three
+     sentences that all begin "This expression expects…" name nothing a reader
+     can act on. */
+  .problems {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 0.75rem;
+    line-height: 1.45;
+    color: var(--hatua-status-error);
+    text-wrap: pretty;
   }
 
   .hint {

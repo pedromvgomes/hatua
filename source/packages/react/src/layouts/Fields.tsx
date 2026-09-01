@@ -1,4 +1,5 @@
 import {
+  type Diagnostic,
   FIELD_KIND_TYPES,
   fieldVisible,
   type MappableFieldKind,
@@ -27,10 +28,10 @@ import css from './Fields.module.css?inline'
  * Steps or the editing store.
  *
  * That is what makes "edit anything the same way" a rendering decision rather
- * than a document one. The Workflow tab mounts this today because it is the
- * only surface that exists; the step editor mounts the same component when it
- * lands, and clicking the canvas's start node reaches it without `triggers[]`
- * moving anywhere.
+ * than a document one. The Workflow tab mounts it over a Trigger and the step
+ * editor over a Step, writing back to `triggers[…].with` and `steps[…].with`
+ * respectively, and clicking the canvas's start node reaches the form without
+ * `triggers[]` moving anywhere.
  *
  * ## Templates
  *
@@ -60,6 +61,24 @@ export interface FieldsProps extends Omit<ComponentPropsWithRef<'div'>, 'onChang
    * completion offers nothing, and the text stays typeable.
    */
   scope?: readonly ScopeEntry[]
+  /**
+   * Field keys to mark as reading whatever is being pointed at elsewhere.
+   *
+   * The Data panel is where a leaf is pointed at, and this is the other half of
+   * the relationship: without it a reference tree and the fields it fills are
+   * two lists with nothing on screen tying them together. Empty is the ordinary
+   * case, and a form nobody is pointing at draws no mark at all.
+   */
+  highlighted?: ReadonlySet<string>
+  /**
+   * What the checker says about each field, keyed by `FieldSpec.k`.
+   *
+   * Per field rather than as one paragraph over the form, because that is the
+   * only thing that says WHICH field is wrong. A Step with three Templates in
+   * it reports three sentences that all begin "This expression expects…", and
+   * collected above the form they name nothing a reader can act on.
+   */
+  problems?: ReadonlyMap<string, readonly Diagnostic[]>
   onChange: (key: string, value: string | number | boolean) => void
   /**
    * Bind one of the Host's Connections to a workflow-local name and point the
@@ -76,6 +95,8 @@ export function Fields({
   values,
   connections,
   scope = NO_SCOPE,
+  highlighted,
+  problems,
   onChange,
   onDeclareConnection,
   className,
@@ -105,6 +126,8 @@ export function Fields({
             value={values[field.k]}
             connections={connections}
             scope={scope}
+            highlighted={highlighted?.has(field.k) ?? false}
+            problems={problems?.get(field.k)}
             established={established}
             onChange={(next) => onChange(field.k, next)}
             onDeclareConnection={
@@ -267,6 +290,8 @@ function FieldRow({
   value,
   connections,
   scope,
+  highlighted,
+  problems,
   established,
   onChange,
   onDeclareConnection,
@@ -275,6 +300,9 @@ function FieldRow({
   value: unknown
   connections: readonly Connection[]
   scope: readonly ScopeEntry[]
+  /** Whether this field's Template reads whatever is being pointed at. */
+  highlighted: boolean
+  problems: readonly Diagnostic[] | undefined
   established: PickerState
   onChange: (next: string | number | boolean) => void
   onDeclareConnection?: (id: string, ref: string) => void
@@ -385,7 +413,11 @@ function FieldRow({
   )
 
   return (
-    <div className={styles.field}>
+    <div
+      className={styles.field}
+      data-field={field.k}
+      data-highlighted={highlighted ? 'true' : undefined}
+    >
       {labelable ? (
         <label className={styles.label} htmlFor={id}>
           {label}
@@ -397,6 +429,7 @@ function FieldRow({
       )}
       {control ?? <UneditableField field={field} value={text} labelledBy={labelId} />}
       {field.hint ? <p className={styles.hint}>{field.hint}</p> : null}
+      <FieldProblems problems={problems} />
     </div>
   )
 }
@@ -430,6 +463,56 @@ function UneditableField({
       {field.kind === 'map' ? 'Entries are edited where the step is.' : null}
     </div>
   )
+}
+
+/**
+ * What the checker says about one field, under the control it is about.
+ *
+ * `role="status"` rather than `alert`: an unfinished field is the normal state
+ * of a Step someone just added, and interrupting a screen reader on every
+ * keystroke would make the builder unusable. ADR-0009 draws the same line —
+ * this blocks Publish, never editing.
+ */
+function FieldProblems({ problems }: { problems: readonly Diagnostic[] | undefined }) {
+  if (!problems || problems.length === 0) return null
+  return (
+    <ul className={styles.problems} role="status">
+      {problems.map((problem) => (
+        <li key={`${problem.code}:${problem.message}`}>{problem.message}</li>
+      ))}
+    </ul>
+  )
+}
+
+/**
+ * The diagnostics that name a field, and the ones that do not.
+ *
+ * Here rather than beside either caller, because both ask the same question of
+ * the same shape: what belongs under a control, and what is about the Step or
+ * the Trigger itself and has nowhere else to go.
+ *
+ * A Slot for a `map` entry is named `<field>.<entry>` and the row on screen is
+ * the field, so the key is everything before the first dot.
+ */
+export function splitByField(problems: readonly Diagnostic[] | undefined): {
+  byField: ReadonlyMap<string, readonly Diagnostic[]>
+  aboutTheSubject: readonly Diagnostic[]
+} {
+  const byField = new Map<string, Diagnostic[]>()
+  const aboutTheSubject: Diagnostic[] = []
+
+  for (const problem of problems ?? []) {
+    if (!problem.fieldKey) {
+      aboutTheSubject.push(problem)
+      continue
+    }
+    const key = problem.fieldKey.split('.')[0] ?? problem.fieldKey
+    const held = byField.get(key)
+    if (held) held.push(problem)
+    else byField.set(key, [problem])
+  }
+
+  return { byField, aboutTheSubject }
 }
 
 const NO_SCOPE: readonly ScopeEntry[] = []

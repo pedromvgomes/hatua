@@ -205,6 +205,13 @@ export const BLOCK_KEY_ORDER = ['id', 'name', 'params', 'outputs', 'vars', 'step
 export const TRIGGER_KEY_ORDER = ['id', 'use', 'name', 'with']
 
 /**
+ * The same, for a Step. The structural keys come last because they hold the
+ * rest of the tree: a `with:` created after `branches:` puts one line of
+ * configuration below the fifty lines of Steps it configures.
+ */
+export const STEP_KEY_ORDER = ['id', 'use', 'name', 'with', 'branches', 'steps', 'handler']
+
+/**
  * The key order `workflow-definition.schema.yaml` documents.
  *
  * A key the document does not have yet is created among the keys it does rather
@@ -305,6 +312,56 @@ export function listIn(
   if (existing !== undefined) throw new Error(`"${key}" is not a list`)
 
   createKey(document, parent, key, order, [])
+  return path
+}
+
+/**
+ * The path of a mapping inside the mapping at `parent`, creating an empty one
+ * in its documented position when the mapping has no such key.
+ *
+ * `listIn` for a `with:` rather than a `steps:`. A Step added from the
+ * catalogue carries no `with:` at all — nothing has been filled in yet — so the
+ * first field edited on it is the one that creates the key, and it lands under
+ * `use:` rather than below the fifty lines of Steps a container holds.
+ *
+ * A key holding something other than a mapping throws rather than being
+ * replaced, on `listIn`'s reasoning: `with: tomorrow` is a half-typed document
+ * and not an absent one, and overwriting it discards text the user is in the
+ * middle of.
+ */
+export function mapIn(
+  document: WorkflowDocument,
+  parent: Path,
+  key: string,
+  order: readonly string[],
+): Path {
+  const path = [...parent, key]
+  const existing = document.ast.getIn(path, true)
+  if (tagOf(existing) === MAP) return path
+
+  /*
+   * `with:` with nothing under it is an EMPTY mapping, not a half-typed one.
+   *
+   * YAML resolves a dangling key to a null scalar rather than to an absent one,
+   * and it is what a user is left with after deleting the last field by hand.
+   * Refused, every subsequent edit to that Step is a command that throws — which
+   * `EditingStore.apply` turns into a silent no-op, so the form appears to drop
+   * every value the user types with nothing anywhere saying why.
+   *
+   * Written over rather than created beside, so the key keeps its place and the
+   * comment above it.
+   */
+  if (asScalar(existing)?.value === null) {
+    // Through `createNode`, so what lands is the document's own mapping node.
+    // A plain `{}` is set as a JS value the pair holds opaquely, and the next
+    // command to look for pairs under it finds none.
+    document.ast.setIn(path, document.ast.createNode({}))
+    return path
+  }
+
+  if (existing !== undefined) throw new Error(`"${key}" is not a mapping`)
+
+  createKey(document, parent, key, order, {})
   return path
 }
 

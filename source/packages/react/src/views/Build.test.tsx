@@ -467,3 +467,144 @@ describe('Build wires the Components tab to the canvas', () => {
     await waitFor(() => expect(rowNames().at(-1)).toBe('Send email'))
   })
 })
+
+/**
+ * The other introduction <Build> makes: the step editor and the Data panel
+ * beside it.
+ *
+ * Neither region mounts the other. The composition root places both, holds
+ * whether the panel is open, and carries the leaf it reports back to the editor
+ * — which is the only thing on screen relating a Reference to the fields that
+ * read it.
+ */
+describe('Build wires the step editor to the Data panel', () => {
+  const token = 'tok_panel' as EditToken
+  const lease: Lease = { token, expiresAt: '2099-01-01T00:00:00.000Z' }
+
+  const CATALOGUE: Manifest[] = [
+    {
+      kind: 'component',
+      use: 'component.email.send',
+      name: 'Send email',
+      fields: [
+        { k: 'to', label: 'To', kind: 'text' },
+        { k: 'subject', label: 'Subject', kind: 'text' },
+      ],
+      outputs: [],
+    },
+  ]
+
+  const SOURCE = `id: wf
+name: n
+version: 1
+status: draft
+vars:
+  - key: digest_to
+    t: text
+    value: "ops@example.com"
+steps:
+  - id: s1
+    use: component.email.send
+    name: "Send the digest"
+    with:
+      to: "{{ var.digest_to }}"
+      subject: "Nightly"
+`
+
+  const wired = () => {
+    const workflows: WorkflowStore = {
+      async openDraft(): Promise<DraftSession> {
+        return { token, lease, yaml: SOURCE, resumed: false }
+      },
+      async saveDraft() {},
+      async renewLease() {
+        return lease
+      },
+      async publish() {
+        return { version: 2, publishedAt: '2026-01-01T00:00:00.000Z' }
+      },
+      async releaseDraft() {},
+      async discardDraft() {},
+      async listVersions() {
+        return { items: [] }
+      },
+      async loadVersion() {
+        return SOURCE
+      },
+    }
+
+    render(
+      <HatuaProvider
+        ports={{ workflows, manifests: { loadManifests: async () => CATALOGUE } }}
+        workflowId="wf"
+      >
+        <Build />
+      </HatuaProvider>,
+    )
+  }
+
+  const map = () => within(screen.getByRole('region', { name: 'Flow map' }))
+  const editor = () => within(screen.getByRole('complementary', { name: 'Inspector' }))
+
+  const select = async () => {
+    fireEvent.click(await map().findByText('Send the digest'))
+    return await editor().findByLabelText('To')
+  }
+
+  it('does not mount the panel until the editor asks for it', async () => {
+    wired()
+    await select()
+
+    expect(screen.queryByRole('region', { name: 'References' })).toBeNull()
+    fireEvent.click(editor().getByRole('button', { name: 'References' }))
+    expect(screen.getByRole('region', { name: 'References' })).toBeDefined()
+  })
+
+  it('marks the fields reading the leaf the panel is pointing at', async () => {
+    wired()
+    const to = await select()
+    fireEvent.click(editor().getByRole('button', { name: 'References' }))
+
+    const panel = within(screen.getByRole('region', { name: 'References' }))
+    const leaf = await panel.findByRole('button', { name: /var\.digest_to/ })
+
+    const marked = (field: HTMLElement) => field.closest('[data-highlighted]') !== null
+    expect(marked(to)).toBe(false)
+
+    fireEvent.mouseEnter(leaf)
+    await waitFor(() => expect(marked(editor().getByLabelText('To'))).toBe(true))
+    expect(marked(editor().getByLabelText('Subject'))).toBe(false)
+
+    fireEvent.mouseLeave(leaf)
+    await waitFor(() => expect(marked(editor().getByLabelText('To'))).toBe(false))
+  })
+
+  /*
+   * A highlight outlives the panel that produced it otherwise, and marks fields
+   * for a leaf nobody can see any more.
+   */
+  it('drops the highlight when the panel is closed', async () => {
+    wired()
+    await select()
+    fireEvent.click(editor().getByRole('button', { name: 'References' }))
+
+    const panel = within(screen.getByRole('region', { name: 'References' }))
+    fireEvent.mouseEnter(await panel.findByRole('button', { name: /var\.digest_to/ }))
+    await waitFor(() =>
+      expect(editor().getByLabelText('To').closest('[data-highlighted]')).not.toBeNull(),
+    )
+
+    fireEvent.click(editor().getByRole('button', { name: 'References' }))
+    expect(screen.queryByRole('region', { name: 'References' })).toBeNull()
+    expect(editor().getByLabelText('To').closest('[data-highlighted]')).toBeNull()
+  })
+
+  it('hands the panel the same selection the editor has', async () => {
+    wired()
+    await select()
+    fireEvent.click(editor().getByRole('button', { name: 'References' }))
+
+    const panel = within(screen.getByRole('region', { name: 'References' }))
+    expect(await panel.findByText('What Send the digest can read')).toBeDefined()
+  })
+})
