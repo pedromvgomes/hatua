@@ -1,4 +1,5 @@
 import { parseWorkflow, type WorkflowDocument } from '@hatua/document'
+import type { Diagnostic } from '@hatua/model'
 import type { WorkflowDefinition } from '@hatua/schema'
 import type { EditCommand } from './command'
 import type { EditToken, Lease, PublishedVersion, WorkflowStore } from './ports'
@@ -54,6 +55,43 @@ export type SaveState =
   /** Autosave stopped. The document is intact and still editable. */
   | { state: 'halted'; error: Error }
 
+/**
+ * What stops a **Publish**, asked at the moment one is attempted.
+ *
+ * A function rather than a value because the answer is not always available
+ * yet: the catalogue may still be arriving, and `ValidationStore` distinguishes
+ * "the Host's Connections are not known yet" from "nobody can say". `pending`
+ * resolves, so the gate waits for it; `undescribed` never will, so the gate
+ * narrows and answers. See ADR-0023 for the whole table.
+ *
+ * Injected rather than read, because `ValidationStore` is built FROM this store
+ * and subscribes to it. What unties the knot is that validation needs the
+ * editing store continuously while publish needs validation once — so the half
+ * that is only needed later is bound later.
+ */
+export interface PublishGate {
+  blockers(): Promise<readonly Diagnostic[]>
+}
+
+/**
+ * Thrown by `publish()` when the document may not be promoted.
+ *
+ * It carries a list, for the reason `ExpressionError` carries one: a user
+ * fixing one field at a time is a user pressing Publish five times to find five
+ * mistakes. The list is empty when the document is not a Workflow Definition at
+ * all — there is nothing to attach a diagnostic to, and the message is the
+ * whole of what can be said.
+ */
+export class PublishBlocked extends Error {
+  readonly diagnostics: readonly Diagnostic[]
+
+  constructor(diagnostics: readonly Diagnostic[], message?: string) {
+    super(message ?? diagnostics.map((one) => one.message).join('; '))
+    this.name = 'PublishBlocked'
+    this.diagnostics = diagnostics
+  }
+}
+
 export interface EditingSnapshot {
   /** The source of truth. Mutated only through `apply`. */
   document: WorkflowDocument
@@ -74,6 +112,20 @@ export interface EditingSnapshot {
   invalid: Error | null
   /** True when `openDraft` resumed someone's existing Draft rather than making one. */
   resumed: boolean
+  /**
+   * Whether this session still holds the edit.
+   *
+   * False once **Publish**, **Release** or **Discard** has ended it. The
+   * document stays, and stays editable — it is simply saved nowhere, which is
+   * the truth and is otherwise invisible: a session that ended with nothing
+   * queued leaves `save` reading `saved`, so without this a finished session and
+   * a live one are the same snapshot and the user finds out by typing.
+   *
+   * It is also what says whether a halt can be resumed. That is the same fact —
+   * a halt with no token has nothing to write to — and asking it once here beats
+   * a second field on `SaveState` that means the same thing in one of its arms.
+   */
+  claimed: boolean
   lease: Lease
   save: SaveState
   /** What `undo()` would undo, and `redo()` redo. Null when the stack is empty. */
@@ -111,6 +163,26 @@ export interface EditingStore extends Store<EditingState> {
   /** Write now rather than waiting out the autosave delay. */
   flush(): Promise<void>
 
+  /**
+   * Clear a halt and start saving again, on the claim this session still holds.
+   *
+   * Not the retry ADR-0005 refuses. `halt()` will not retry on its own, and it
+   * is right not to — a Host that has said no "will not become true again by
+   * asking harder", so a timer behind it hammers a rejection that is most often
+   * a lease gone elsewhere. A person pressing a control once, having been told
+   * their work is no longer being saved, is a different act.
+   *
+   * It exists because the alternative was worse. `reopen()` was the only exit
+   * from `halted`, and it calls `openDraft()` — which drops the in-memory
+   * document and re-parses the Host's copy, discarding exactly the work
+   * ADR-0005 halts in order to keep.
+   *
+   * A no-op unless the store is halted AND still claimed: with the session over
+   * there is nothing left to write to, and pretending otherwise puts the
+   * snapshot back to `pending` for a write that can never run.
+   */
+  resumeSaving(): void
+
   publish(): Promise<PublishedVersion>
   release(): Promise<void>
   discard(): Promise<void>
@@ -131,6 +203,16 @@ export interface EditingStore extends Store<EditingState> {
 export interface EditingOptions {
   /** Quiet period before an edit is written. */
   autosaveDelayMs?: number
+  /**
+   * What blocks a **Publish**. Omit and only the floor below applies — a
+   * document that is not a Workflow Definition is still never published.
+   *
+   * Optional because the gate needs a catalogue, and a Host that serves no
+   * `ManifestSource` is correctly configured rather than broken (ADR-0022's
+   * argument, at its limit). Such a Host publishes against the floor alone,
+   * which ADR-0023 records rather than leaves to be discovered.
+   */
+  gate?: PublishGate
 }
 
 const asError = (cause: unknown): Error =>
@@ -271,6 +353,7 @@ export function createEditingStore(
           ? null
           : new Error(projection.error.issues[0]?.message ?? 'Not a valid Workflow Definition'),
         resumed,
+        claimed: token !== null,
         lease,
         save,
         undoLabel: history.at(-1)?.label ?? null,
@@ -588,7 +671,15 @@ export function createEditingStore(
           'This editing session has ended. Open the workflow again to keep editing it.',
         ),
       })
+      return
     }
+
+    // Nothing was in flight, so `save` is already the truth and there is no new
+    // save state to publish — but `claimed` has just changed, and it is read off
+    // the snapshot. Without this the session ends invisibly: the bar goes on
+    // showing a live document, and the user learns otherwise from the first
+    // keystroke that trips `schedule()`'s missing-token branch.
+    commit()
   }
 
   return {
@@ -696,6 +787,16 @@ export function createEditingStore(
       travel(future, history)
     },
 
+    resumeSaving() {
+      if (disposed || !token || save.state !== 'halted') return
+      // Straight to a write rather than back through the autosave delay: the
+      // press IS the request, and 800ms of nothing after it reads as a control
+      // that did not work.
+      cancelSave()
+      setSave(PENDING)
+      void write()
+    },
+
     flush() {
       cancelSave()
       // Just another turn in the queue: it waits out whatever is already open
@@ -725,10 +826,50 @@ export function createEditingStore(
     async publish() {
       const held = requireToken()
       if (!document) throw new Error('No Draft is open')
-      // The current text rather than the last text the Host accepted. Autosave
-      // may still have been pending, and publishing a version that silently
-      // omits the user's last edit is the one outcome worse than a rejected
-      // publish.
+
+      /*
+       * The floor: a document that does not project is never published.
+       *
+       * Checked here rather than by whatever drew the button, and checked
+       * without asking anything — the projection is this store's own, so this
+       * holds for every Host in every configuration, including one that builds
+       * the store by hand and mounts no toolbar. Promoting something that is not
+       * a Workflow Definition is indefensible under any reading of ADR-0009,
+       * and a rule that lives in a control is a rule the next control forgets.
+       */
+      const projection = document.validate()
+      if (!projection.success) {
+        throw new PublishBlocked(
+          [],
+          projection.error.issues[0]?.message ?? 'This is not a valid workflow yet.',
+        )
+      }
+
+      /*
+       * Then what the checker says, if anything can say it.
+       *
+       * Awaited, because the answer may not have arrived: ADR-0023's table says
+       * the gate waits while the catalogue is still loading or the Host's
+       * Connections are still unknown, and narrows rather than refuses when
+       * nobody can ever say. All of that is the gate's business — this store
+       * asks once and believes the answer.
+       */
+      const mine = generation
+      if (options.gate) {
+        const blockers = await options.gate.blockers()
+        if (blockers.length > 0) throw new PublishBlocked(blockers)
+      }
+      // The wait is unbounded from here, so the session may have ended inside
+      // it — released in another tab, or the store replaced. Publishing on a
+      // token this session no longer holds is a write nobody asked for.
+      if (mine !== generation || disposed) {
+        throw new Error('This editing session has ended. Open the workflow again to publish it.')
+      }
+
+      // The current text rather than the last text the Host accepted, and read
+      // after the gate rather than before it. Autosave may still have been
+      // pending, and publishing a version that silently omits the user's last
+      // edit is the one outcome worse than a rejected publish.
       const yaml = document.toString()
 
       const published = await port.publish(held, yaml)

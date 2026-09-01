@@ -181,6 +181,13 @@ const fingerprint = (text: string): string => {
 /** How long a claim survives without renewal. Short, so the expiry is watchable. */
 const LEASE_MS = 60_000
 
+/**
+ * Small on purpose. A workflow published a few times is enough to see the list
+ * page, which is the point of a reference Host implementing the port properly
+ * rather than conveniently.
+ */
+const VERSIONS_PER_PAGE = 5
+
 const now = () => new Date().toISOString()
 
 export interface LocalWorkflowStoreOptions {
@@ -374,14 +381,38 @@ export function createLocalWorkflowStore(options: LocalWorkflowStoreOptions = {}
       write(workflowId, stored)
     },
 
-    async listVersions(workflowId): Promise<Cursor<VersionSummary>> {
+    /**
+     * Paged, in pages small enough to see.
+     *
+     * A Host that returned everything would look identical to one that pages
+     * right up until a workflow got long, and the incremental path in
+     * `createVersionStore` would ship with nothing but its own unit tests ever
+     * walking it. `Cursor` says a Host with a small set omits `next`, so a
+     * workflow with two versions still comes back in one page and the cursor
+     * only appears once there is something to page to.
+     *
+     * The cursor is the version number to continue below, which is what makes
+     * it opaque to Hatua and meaningful only here.
+     */
+    async listVersions(workflowId, cursor): Promise<Cursor<VersionSummary>> {
       await wait()
       const stored = read(workflowId)
+      const ordered = [...stored.versions]
+        .sort((a, b) => b.version - a.version)
+        .map(({ version, status, updatedAt }) => ({ version, status, updatedAt }))
+
+      const from =
+        cursor === undefined ? 0 : ordered.findIndex((one) => `${one.version}` === cursor)
+      // A cursor naming a version that has since been discarded: start again
+      // rather than serving the whole list a second time from index -1.
+      const start = from < 0 ? 0 : from
+      const page = ordered.slice(start, start + VERSIONS_PER_PAGE)
+      const after = ordered[start + VERSIONS_PER_PAGE]
+
       return {
-        items: [...stored.versions]
-          .sort((a, b) => b.version - a.version)
-          .map(({ version, status, updatedAt }) => ({ version, status, updatedAt })),
-        total: stored.versions.length,
+        items: page,
+        ...(after ? { next: `${after.version}` } : {}),
+        total: ordered.length,
       }
     },
 

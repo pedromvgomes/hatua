@@ -1,4 +1,4 @@
-import type { EditToken } from '@hatua/react'
+import type { EditToken, WorkflowStore } from '@hatua/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createLocalWorkflowStore, createMemoryWorkflowStore, SEED } from './workflow-store'
 
@@ -323,6 +323,55 @@ describe('versions', () => {
     const store = createLocalWorkflowStore()
     await store.openDraft(WORKFLOW)
     await expect(store.loadVersion(WORKFLOW, 99)).rejects.toThrow(/No version 99/)
+  })
+
+  /**
+   * Publish enough times to need a second page.
+   *
+   * Each cycle publishes the draft and opens the next one, which is how a
+   * version number becomes permanent (ADR-0005).
+   */
+  const publishTimes = async (store: WorkflowStore, times: number) => {
+    for (let round = 0; round < times; round++) {
+      const session = await store.openDraft(WORKFLOW)
+      await store.publish(session.token, SEED)
+    }
+  }
+
+  it('omits the cursor entirely for a workflow small enough not to need one', async () => {
+    const store = createLocalWorkflowStore()
+    await publishTimes(store, 2)
+
+    const page = await store.listVersions(WORKFLOW)
+    expect(page.next).toBeUndefined()
+    expect(page.items).toHaveLength(2)
+  })
+
+  it('pages, and the pages join up into the whole history newest first', async () => {
+    const store = createLocalWorkflowStore()
+    await publishTimes(store, 7)
+
+    const first = await store.listVersions(WORKFLOW)
+    expect(first.items).toHaveLength(5)
+    expect(first.next).toBeDefined()
+    expect(first.total).toBe(7)
+
+    const second = await store.listVersions(WORKFLOW, first.next)
+    expect(second.next).toBeUndefined()
+
+    const walked = [...first.items, ...second.items].map((entry) => entry.version)
+    expect(walked).toEqual([7, 6, 5, 4, 3, 2, 1])
+  })
+
+  it('starts again rather than repeating itself when the cursor names a version that is gone', async () => {
+    // A draft discarded between two pages frees its number, so a cursor naming
+    // it resolves to nothing. Serving the whole list from index -1 would hand
+    // back every version a second time and grow the caller's list for ever.
+    const store = createLocalWorkflowStore()
+    await publishTimes(store, 6)
+
+    const page = await store.listVersions(WORKFLOW, '999')
+    expect(page.items[0]?.version).toBe(6)
   })
 })
 

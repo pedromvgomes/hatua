@@ -5,7 +5,7 @@ import { createEditingStore, type EditingStore } from './editing'
 import { createManifestStore, type ManifestStore } from './manifests'
 import type { ConnectionSource, DraftSession, EditToken, Lease, WorkflowStore } from './ports'
 import { removeStep } from './steps'
-import { createValidationStore } from './validation'
+import { createValidationStore, publishBlockers } from './validation'
 
 /**
  * The join between the document and the catalogue.
@@ -518,5 +518,108 @@ describe('what the connection rules are worth saying', () => {
     stores.validation.load()
     await settle()
     expect(listConnections).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('what blocks a publish', () => {
+  it('answers with nothing when there is no validation store to ask', async () => {
+    const { catalogue } = await opened()
+    await expect(publishBlockers(null, catalogue)).resolves.toEqual([])
+  })
+
+  it('reports what the checker found, once it has found it', async () => {
+    const { validation, catalogue } = await opened(MISSING)
+    const found = await publishBlockers(validation, catalogue)
+
+    expect(found).toHaveLength(2)
+    expect(found.map((one) => one.code)).toEqual(['FIELD_REQUIRED', 'FIELD_REQUIRED'])
+  })
+
+  it('reports nothing for a workflow with nothing wrong with it', async () => {
+    const { validation, catalogue } = await opened(VALID)
+    await expect(publishBlockers(validation, catalogue)).resolves.toEqual([])
+  })
+
+  /*
+   * `validation.ts` says of `pending` that "the port has not replied yet. It
+   * will, so a Publish gate may wait." This is that sentence, kept.
+   */
+  it('waits for the catalogue rather than answering without it', async () => {
+    let arrive: (manifests: Manifest[]) => void = () => {}
+    const pending = new Promise<Manifest[]>((resolve) => {
+      arrive = resolve
+    })
+    const editing = createEditingStore(workflowPort(MISSING), 'wf')
+    const catalogue = createManifestStore({ loadManifests: () => pending })
+    const validation = createValidationStore(editing, catalogue, null)
+    validation.load()
+    await settle()
+
+    let answered: readonly unknown[] | null = null
+    void publishBlockers(validation, catalogue).then((found) => {
+      answered = found
+    })
+    await settle()
+    expect(answered).toBeNull()
+
+    arrive(CATALOGUE)
+    await settle()
+    expect(answered).toHaveLength(2)
+  })
+
+  it('waits while the Host has not said what its Connections are', async () => {
+    let arrive: (found: never[]) => void = () => {}
+    const pending = new Promise<never[]>((resolve) => {
+      arrive = resolve
+    })
+    const source: ConnectionSource = { listConnections: () => pending as never }
+    const { validation, catalogue } = (() => {
+      const stores = wired(MISSING, CATALOGUE, createConnectionStore(source))
+      stores.validation.load()
+      return stores
+    })()
+    await settle()
+
+    let answered: readonly unknown[] | null = null
+    void publishBlockers(validation, catalogue).then((found) => {
+      answered = found
+    })
+    await settle()
+    expect(answered).toBeNull()
+
+    arrive([])
+    await settle()
+    expect(answered).toHaveLength(2)
+  })
+
+  /*
+   * The case that would otherwise hang Publish for ever. `ready` is false both
+   * while the manifests are arriving and permanently after they fail to, so a
+   * gate waiting on `ready` alone never answers for a Host whose manifest
+   * endpoint is down — and a Publish that never answers is worse than one that
+   * publishes unchecked.
+   */
+  it('answers rather than waiting when the catalogue failed', async () => {
+    const editing = createEditingStore(workflowPort(MISSING), 'wf')
+    const catalogue = createManifestStore({
+      loadManifests: async () => {
+        throw new Error('unreachable')
+      },
+    })
+    const validation = createValidationStore(editing, catalogue, null)
+    validation.load()
+    await settle()
+
+    await expect(publishBlockers(validation, catalogue)).resolves.toEqual([])
+  })
+
+  it('answers rather than waiting when nobody can describe the Connections', async () => {
+    // `undescribed` never resolves, so waiting on it never ends. ADR-0022:
+    // narrow the check, never withhold it.
+    const stores = wired(MISSING, CATALOGUE, null)
+    stores.validation.load()
+    await settle()
+
+    await expect(publishBlockers(stores.validation, stores.catalogue)).resolves.toHaveLength(2)
   })
 })

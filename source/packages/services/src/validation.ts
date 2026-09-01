@@ -184,6 +184,57 @@ const typesFrom = (
  */
 export const unchecked = (): ValidationState => UNCHECKED
 
+/**
+ * What blocks a **Publish**, once anything that is going to answer has.
+ *
+ * This is `PublishGate.blockers` — the async half ADR-0023 describes, kept here
+ * rather than in the composition root because deciding *when an answer has
+ * arrived* is a question about these stores and not about React.
+ *
+ * ## What it waits for, and what it refuses to wait for
+ *
+ * An answer is still coming while the catalogue is loading or the Host's
+ * Connections are `pending`. It is never coming when the catalogue **failed**,
+ * when the Connections are `undescribed`, or when there is no validation store
+ * at all — and each of those narrows the check instead of stopping it, which is
+ * ADR-0022's rule.
+ *
+ * The failed catalogue is the case worth naming. `ValidationState.ready` is
+ * false both while the manifests are arriving and forever after they fail to,
+ * so waiting on `ready` alone would hang **Publish** permanently for a Host
+ * whose manifest endpoint is down — and a Publish button that never answers is
+ * a worse failure than one that publishes unchecked. That is why the catalogue
+ * is read here directly rather than through `ready`.
+ *
+ * Nothing here needs to wait for the document: `publish()` has already refused
+ * a document that does not project before this is ever called.
+ */
+export function publishBlockers(
+  validation: ValidationStore | null | undefined,
+  manifests: ManifestStore | null | undefined,
+): Promise<readonly Diagnostic[]> {
+  if (!validation || !manifests) return Promise.resolve(NOTHING)
+
+  const decided = () =>
+    manifests.getSnapshot().status !== 'loading' &&
+    validation.getSnapshot().connections !== 'pending'
+
+  // Whatever it holds when nothing more is coming. An unready snapshot's `all`
+  // is empty, which is the honest answer for a catalogue that failed: nothing
+  // could be checked, so nothing is being reported.
+  const answer = () => validation.getSnapshot().all
+
+  if (decided()) return Promise.resolve(answer())
+
+  return new Promise((resolve) => {
+    const stop = validation.subscribe(() => {
+      if (!decided()) return
+      stop()
+      resolve(answer())
+    })
+  })
+}
+
 export function createValidationStore(
   editing: EditingStore,
   manifests: ManifestStore,
