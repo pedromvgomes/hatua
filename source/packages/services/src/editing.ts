@@ -570,6 +570,17 @@ export function createEditingStore(
       const next = await port.renewLease(token)
       if (mine !== generation || disposed) return
       lease = next
+      /*
+       * And the token with it, because a renewed lease may carry a new one.
+       *
+       * `Lease` holds a token as well as an expiry, which is only worth carrying
+       * if a Host may rotate it — and a Host that does leaves this store writing
+       * with a credential it no longer honours: every save refused, then a halt,
+       * and a publish, release or discard spending a claim that is not the live
+       * one. Reading the renewal's answer rather than only its clock is what
+       * makes the field mean something.
+       */
+      token = next.token
       if (resuming) save = SAVED
       commit()
       scheduleRenewal()

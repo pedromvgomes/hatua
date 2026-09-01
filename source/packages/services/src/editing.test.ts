@@ -1272,6 +1272,34 @@ describe('autosave', () => {
   })
 })
 
+describe('a Host that rotates the token on renewal', () => {
+  /*
+   * `Lease` carries a token as well as an expiry, which is only worth carrying
+   * if a Host may hand back a new one. Reading only the clock leaves this store
+   * writing with a credential the Host no longer honours: every save refused,
+   * then a halt, and a publish spending a claim that is not the live one.
+   */
+  it('writes with the token the renewal handed back', async () => {
+    const rotated = 'tok_2' as EditToken
+    const host = recorder({ lease: leaseFor(0.05) })
+    const seen: EditToken[] = []
+    host.port.renewLease = async () => ({ token: rotated, expiresAt: leaseFor(30).expiresAt })
+    host.port.saveDraft = async (given) => {
+      seen.push(given)
+    }
+
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+    await vi.advanceTimersByTimeAsync(2000)
+
+    store.apply(removeStep({ board: null, id: 's1' }))
+    await vi.advanceTimersByTimeAsync(200)
+
+    expect(seen).toEqual([rotated])
+  })
+})
+
 describe('the lease', () => {
   it('renews at the halfway mark, so one lost renewal still leaves time to retry', async () => {
     const host = recorder({ lease: leaseFor(30) })

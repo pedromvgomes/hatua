@@ -240,7 +240,22 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
     // reader dismissed leaves a real message behind, and a Host ending the next
     // session through the store would otherwise have that message caption it.
     setAttempt(null)
-  }, [claimed])
+    /*
+     * And the history is a version out of date, because `openDraft` is what
+     * MINTS the next Draft on the Host.
+     *
+     * Here rather than beside the control that asked for the reopen: `reopen()`
+     * only STARTS the open, so invalidating there races the very request whose
+     * result it wants — and wins, refetching a list that does not yet hold the
+     * Draft being created. A claim arriving is that open having finished, which
+     * makes this the first moment the answer can be right; it also covers a Host
+     * reopening through the store rather than through this bar.
+     *
+     * `invalidate()` and not `reload()`, so a list nobody has opened is still
+     * not fetched.
+     */
+    versions?.invalidate()
+  }, [claimed, versions])
 
   /*
    * Absent, not zero, until the answer means something. Every Step looks like
@@ -335,10 +350,6 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
   /** Open the Draft again, on a bar that is showing how the last session ended. */
   const editAgain = () => {
     setAttempt(null)
-    // `openDraft` is what MINTS the next Draft on the Host, so the list is a
-    // version out of date the moment this is pressed — the same staleness a
-    // publish or a discard leaves, arrived at from the other end.
-    versions?.invalidate()
     // A publish refused AFTER its session ended sets both the attempt and the
     // layer, and only the attempt is on screen — the panel is held back because
     // there is no claim. Left set, the reopened bar draws a count reading
@@ -368,13 +379,7 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
         {state.status === 'failed' ? (
           <div className={styles.cluster}>
             <p className={styles.problem}>{state.error.message}</p>
-            <Button
-              size="sm"
-              onClick={() => {
-                versions?.invalidate()
-                store?.reopen()
-              }}
-            >
+            <Button size="sm" onClick={() => store?.reopen()}>
               Try again
             </Button>
           </div>
@@ -564,7 +569,7 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
                         : `Published as version ${published}.`}
                     </p>
                   )}
-                  <Button size="sm" variant="primary" onClick={editAgain}>
+                  <Button size="sm" variant="primary" disabled={busy} onClick={editAgain}>
                     Edit
                   </Button>
                 </>
@@ -664,11 +669,25 @@ function VersionLayer({
             </ul>
           )}
 
-          {/* A later page failing keeps every page before it — what is lost is
-              the next page, not the history already on screen. */}
-          {state.error ? <p className={styles.problem}>{state.error.message}</p> : null}
-
-          {state.more ? (
+          {/*
+           * A later page failing keeps every page before it — what is lost is
+           * the next page, not the history already on screen.
+           *
+           * What is offered then is starting over rather than asking again.
+           * A cursor can fail because the list moved under it — a Draft
+           * discarded between two pages frees its number — and that cursor
+           * will fail the same way for ever, so "Show more" beside the message
+           * would be a control that cannot work. Reloading is the one action
+           * that recovers from both that and a Host that simply blinked.
+           */}
+          {state.error ? (
+            <div className={styles.layerNote}>
+              <p className={styles.problem}>{state.error.message}</p>
+              <Button size="sm" onClick={() => store.reload()}>
+                Try again
+              </Button>
+            </div>
+          ) : state.more ? (
             <Button
               size="sm"
               variant="ghost"

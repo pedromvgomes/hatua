@@ -935,3 +935,76 @@ describe('what the readout says once the session is over', () => {
     await waitFor(() => expect(asked).toBe(3))
   })
 })
+
+describe('keeping the history level with the Host', () => {
+  /*
+   * `reopen()` only STARTS the open, and `openDraft` is what mints the next
+   * Draft — so refetching beside the control that asked for the reopen races the
+   * very request whose result it wants, and wins.
+   */
+  it('refetches the list only once the Draft the reopen mints exists', async () => {
+    const history: VersionSummary[] = [
+      { version: 5, status: 'draft', updatedAt: '2026-03-04T09:00:00.000Z' },
+    ]
+    const source = host(VALID, {
+      async openDraft(): Promise<DraftSession> {
+        // What a Host does on open: create-or-resume, and the row appears.
+        const next = (history[0]?.version ?? 0) + 1
+        if (!history.some((one) => one.status === 'draft')) {
+          history.unshift({ version: next, status: 'draft', updatedAt: '2026-03-06T09:00:00.000Z' })
+        }
+        return { token, lease, yaml: VALID, resumed: false }
+      },
+      async publish(): Promise<PublishedVersion> {
+        const draft = history.find((one) => one.status === 'draft')
+        if (draft) draft.status = 'published'
+        return { version: draft?.version ?? 6, publishedAt: '2026-03-05T09:00:00.000Z' }
+      },
+      async listVersions(): Promise<Cursor<VersionSummary>> {
+        return { items: history.map((one) => ({ ...one })) }
+      },
+    })
+
+    mount(source)
+    fireEvent.click(await screen.findByRole('button', { name: /Draft/ }))
+    await screen.findByRole('dialog', { name: 'Versions' })
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Publish' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+    await screen.findByRole('button', { name: 'Publish' })
+
+    fireEvent.click(screen.getByRole('button', { name: /Draft/ }))
+    const list = await screen.findByRole('dialog', { name: 'Versions' })
+    // The Draft the reopen minted is in it. Sent alongside the reopen instead of
+    // after it, the refetch lands before that row exists and the list comes back
+    // holding only the version just published.
+    await waitFor(() => expect(list.textContent).toContain('v6'))
+  })
+
+  it('offers a way out of a cursor that will never advance', async () => {
+    // A Draft discarded between two pages frees its number, so the cursor names
+    // nothing and will fail the same way for ever. Asking again with it is not
+    // the recovery; starting over is.
+    let call = 0
+    const source = host(VALID, {
+      async listVersions(_workflowId, cursor): Promise<Cursor<VersionSummary>> {
+        call++
+        if (cursor !== undefined) throw new Error('That page of versions is no longer there.')
+        return { items: VERSIONS.slice(0, 1), next: 'gone' }
+      },
+    })
+    mount(source)
+    fireEvent.click(await screen.findByRole('button', { name: /v5 · Draft/ }))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Show more' }))
+    expect(await screen.findByText(/no longer there/)).toBeDefined()
+    // Not offered again: it cannot work.
+    expect(screen.queryByRole('button', { name: 'Show more' })).toBeNull()
+
+    const before = call
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    await waitFor(() => expect(call).toBe(before + 1))
+    expect(await screen.findByRole('button', { name: 'Show more' })).toBeDefined()
+  })
+})
