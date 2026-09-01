@@ -981,7 +981,16 @@ export function createEditingStore(
       // edit is the one outcome worse than a rejected publish.
       const yaml = document.toString()
 
-      const published = await port.publish(held, yaml)
+      /*
+       * And the token as it stands now, for the same reason the text is.
+       *
+       * A renewal can land inside the gate's wait and hand back a NEW token —
+       * which is why `renew()` keeps it — and it does not bump the generation,
+       * so the guard above says nothing about it. Publishing on the credential
+       * captured before the wait is then refused by the Host for a reason the
+       * user cannot see or act on.
+       */
+      const published = await port.publish(token ?? held, yaml)
       /*
        * The same guard the gate's wait needs, for the same reason.
        *
@@ -1001,6 +1010,19 @@ export function createEditingStore(
     async release() {
       const held = requireToken()
       const mine = generation
+      /*
+       * Whether there is anything for the write below to lose.
+       *
+       * Read BEFORE it, because the guard afterwards asks whether THIS release's
+       * write failed — and `attempt()` returns immediately when the store is
+       * already halted, so a halt that predates the press makes `write()` a
+       * no-op and leaves the halt standing whether or not anything was pending.
+       * Judged on the halt alone, a Release pressed on a clean document after a
+       * refused RENEWAL — the commonest halt there is, and one that loses
+       * nothing — would be refused for ever, which is the opposite of handing
+       * the Draft back.
+       */
+      const pending = dirty()
       // The Draft is kept for whoever picks it up next, so the last edit has to
       // reach it — and awaited rather than fired off, so the Host records the
       // write before it records the release.
@@ -1016,11 +1038,16 @@ export function createEditingStore(
        * ending, and leaves nothing on screen to say otherwise — the halt is
        * drawn against a claim, and the claim would be gone.
        *
-       * So the claim is kept and the halt stands. The document is intact, the
-       * control to resume saving is still there, and releasing again once the
-       * write lands does what it was asked to do.
+       * So the claim is kept and the halt stands. The document is intact,
+       * `resumeSaving()` is the way back, and releasing again once the write
+       * lands does what it was asked to do. A halt with nothing outstanding is
+       * not this release's problem and does not stop it.
        */
-      if (halted()) throw reasonFor(save)
+      if (pending && halted()) throw reasonFor(save)
+
+      // Read before `finish()` nulls it, and after the write that may have
+      // rotated it.
+      const spent = token
       /*
        * The guard `publish()` carries, for the hazard `publish()` has.
        *
@@ -1035,7 +1062,10 @@ export function createEditingStore(
        * up; what it must not do is end a session that is not its own.
        */
       if (mine === generation && !disposed) finish()
-      return port.releaseDraft(held)
+      // `finish()` has just dropped the token, so the one to hand back is
+      // whatever was live before it — the renewal's, if one landed during the
+      // write above.
+      return port.releaseDraft(spent ?? held)
     },
 
     async discard() {
