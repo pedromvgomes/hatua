@@ -392,3 +392,26 @@ describe('a Host that answers with the wrong shape', () => {
     expect(state.error?.message).toMatch(/could not be read/)
   })
 })
+
+describe('a Host whose pages overlap', () => {
+  /*
+   * `advance` guards the cursor and not the items. A Host whose cursor is
+   * INCLUSIVE of the last row it served hands back a fresh cursor each time and
+   * an overlapping page with it, so the guard is satisfied while the list grows
+   * by repeating itself — two rows for one version, which is a duplicate React
+   * key and a history that reads as though something was published twice.
+   */
+  it('appends only what it does not already hold', async () => {
+    const { port } = fake([
+      { items: [summary(3, 'draft'), summary(2, 'published')], next: '2' },
+      { items: [summary(2, 'published'), summary(1, 'archived')] },
+    ])
+    const store = createVersionStore(port, 'wf_morning')
+    store.load()
+    await settle()
+    store.loadMore()
+    await settle()
+
+    expect(readyState(store.getSnapshot()).versions.map((one) => one.version)).toEqual([3, 2, 1])
+  })
+})

@@ -1,4 +1,4 @@
-import { type BoardId, boardKey, type Segment, type StepRef } from '@hatua/model'
+import { type BoardId, boardKey, type RegionRef, type Segment, type StepRef } from '@hatua/model'
 import { addStep, type InsertPoint, rootStepCount } from '@hatua/services'
 import { type ComponentPropsWithRef, useState } from 'react'
 import { Components } from '../layouts/Components'
@@ -88,6 +88,17 @@ export function Build({ className, ...rest }: BuildProps) {
    */
   const [selectedOn, setSelectedOn] = useState<Readonly<Record<string, Segment>>>({})
   const [collapsed, setCollapsed] = useState<readonly StepRef[]>([])
+  /*
+   * Which REGIONS are folded, held here for the reason the Board is.
+   *
+   * A fold is chrome and the canvas owns it — but folding is two axes, not one:
+   * `layout` hides a collapsed region's Steps exactly as it hides a collapsed
+   * container's, and a Step inside a folded branch is drawn by nothing. Left
+   * inside <FlowMap>, that axis is unreachable from here, so revealing a problem
+   * could unfold every container on the Board and still arrive at a Step nobody
+   * can see.
+   */
+  const [foldedRegions, setFoldedRegions] = useState<readonly RegionRef[]>([])
   /*
    * Which Board is on screen, and the reason it is up here rather than inside
    * either region.
@@ -189,6 +200,9 @@ export function Build({ className, ...rest }: BuildProps) {
                  * visible and undoable; arriving at a blank canvas is neither.
                  */
                 setCollapsed((held) =>
+                  held.filter((ref) => boardKey(ref.board) !== boardKey(target)),
+                )
+                setFoldedRegions((held) =>
                   held.filter((ref) => boardKey(ref.board) !== boardKey(target)),
                 )
 
@@ -327,6 +341,8 @@ export function Build({ className, ...rest }: BuildProps) {
                 })
               }
               collapsed={collapsed}
+              collapsedRegions={foldedRegions}
+              onCollapsedRegionsChange={setFoldedRegions}
               onCollapseChange={setCollapsed}
             />
           </div>
