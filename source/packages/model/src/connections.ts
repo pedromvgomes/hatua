@@ -1,37 +1,16 @@
 import type { Manifest, WorkflowDefinition } from '@hatua/schema'
+import { type Diagnostic, raise } from './diagnostic'
 import { own, walkDocument } from './tree'
 
 /**
- * Connection rules. Two of them, and they fail at different moments on purpose.
+ * Connection rules. Two families, and they fail at different moments on purpose.
+ *
+ * The only rules here that cannot be answered from the Workflow Definition. A
+ * Connection stores an opaque `ref` and nothing else (ADR-0007), so what type it
+ * is comes from the Host — which makes absence a third answer these rules have
+ * to hold, distinct from "matches" and "does not match". ADR-0022 is why that
+ * answer is silence rather than a diagnostic.
  */
-
-export interface Diagnostic {
-  code: string
-  message: string
-  /** Where it surfaces: an unconnected connection must not block editing. */
-  blocks: 'edit' | 'publish'
-  stepId?: string
-  /**
-   * Set instead of `stepId` when the subject is a Trigger.
-   *
-   * Separate because a Trigger is not a Step and the two are rendered by
-   * different regions: the Flow tab looks a Step's id up in `byStep`, and a
-   * Trigger's id filed there is either drawn by nobody or — if a hand-edited
-   * Trigger id happens to match a Step's — painted on that Step's row.
-   */
-  triggerId?: string
-  /**
-   * Which Board the subject sits on: a Block's id, or absent for the root.
-   *
-   * Set ALONGSIDE `stepId`, not instead of it: a step id alone does not name one
-   * Step, because ids are Board-local — two Blocks may each hold a `ret`.
-   * Set on its own when the subject is the Block itself: "a path through this
-   * block can finish without returning" belongs to no Step in it.
-   */
-  blockId?: string
-  connectionId?: string
-  fieldKey?: string
-}
 
 type ManifestIndex = ReadonlyMap<string, Manifest>
 
@@ -40,32 +19,57 @@ export const indexManifests = (manifests: readonly Manifest[]): ManifestIndex =>
   new Map(manifests.map((m) => [m.use, m]))
 
 /**
+ * What the Host says each established Connection is, keyed by the opaque `ref` a
+ * Workflow Definition stores.
+ *
+ * A map rather than a `(ref) => type | undefined` function so that a missing
+ * entry means one thing and one thing only: the Host listed its Connections and
+ * this handle was not among them. A function returning `undefined` cannot say
+ * whether it was asked before the Host answered.
+ *
+ * **An empty map is an answer.** It says the Host has established no Connections
+ * — a fresh environment, and a legitimate one. `undefined` in its place is the
+ * other case entirely: nobody can describe them, because no `ConnectionSource`
+ * is wired or the one that is would not answer. The two must not look alike, or
+ * a workflow whose Connections are perfectly fine reports every one of them
+ * revoked on first paint, and two of these codes block editing.
+ */
+export type ConnectionTypes = ReadonlyMap<string, string>
+
+/**
  * A connection with no `ref` was never established. That blocks publish but not
  * editing — you can lay out a whole workflow before wiring up its connections,
  * and forcing the connection first would make the builder unusable on a fresh
  * environment.
+ *
+ * Answered from the document alone, so it is reported whether or not anything
+ * can describe a Connection.
  */
 export function unresolvedConnections(doc: WorkflowDefinition): Diagnostic[] {
   return (doc.connections ?? [])
     .filter((c) => c.ref === null || c.ref === undefined)
-    .map((c) => ({
-      code: 'CONNECTION_NOT_ESTABLISHED',
-      message: `"${c.id}" is not connected yet. Connect it before publishing.`,
-      blocks: 'publish' as const,
-      connectionId: c.id,
-    }))
+    .map((c) => raise('CONNECTION_NOT_ESTABLISHED', { connectionId: c.id }, { name: c.id }))
 }
 
 /**
  * A `conn` field offers only connections whose Host-reported type matches its
- * `conn_type` — so a "send email" step is never handed an LLM connection. This
- * one blocks editing, because unlike a missing connection it is never a
- * legitimate intermediate state: it can only arise from a hand-edit.
+ * `conn_type` — so a "send email" step is never handed an LLM connection. Both
+ * codes that decide it block editing, because unlike a missing connection
+ * neither is a legitimate intermediate state: each can only arise from a
+ * hand-edit.
+ *
+ * **`types` is optional, and its absence is not an error.** Handed nothing, this
+ * reports only what the document answers on its own — a field naming a
+ * Connection the document does not declare — and says nothing about the two
+ * questions that need a type. Reporting those anyway would say "no longer
+ * resolves" about every Connection in the workflow before the Host has spoken,
+ * and CONNECTION_TYPE_MISMATCH blocks editing: a document would lock itself over
+ * Connections that are entirely fine. See ADR-0022.
  */
 export function mismatchedConnections(
   doc: WorkflowDefinition,
   manifests: ManifestIndex,
-  typeOf: (ref: string) => string | undefined,
+  types?: ConnectionTypes,
 ): Diagnostic[] {
   const byId = new Map((doc.connections ?? []).map((c) => [c.id, c]))
   const out: Diagnostic[] = []
@@ -78,48 +82,52 @@ export function mismatchedConnections(
     const manifest = manifests.get(use)
     if (!manifest) return
     for (const field of manifest.fields) {
-      if (field.kind !== 'conn' || !field.conn_type) continue
+      if (field.kind !== 'conn') continue
       const connectionId = own(values, field.k)
       if (typeof connectionId !== 'string') continue
 
       const connection = byId.get(connectionId)
       if (!connection) {
-        out.push({
-          code: 'CONNECTION_UNKNOWN',
-          message: `"${connectionId}" is not declared in this workflow.`,
-          blocks: 'edit',
-          ...subject,
-          fieldKey: field.k,
-        })
+        // A name, not a type: this is wrong whatever the Host says, and a field
+        // that declares no `conn_type` still cannot hold a Connection that does
+        // not exist.
+        out.push(
+          raise(
+            'CONNECTION_UNKNOWN',
+            { ...subject, connectionId, fieldKey: field.k },
+            { name: connectionId },
+          ),
+        )
         continue
       }
       // An unestablished connection has no type yet; that is reported separately.
       if (!connection.ref) continue
+      // Nothing to match against, and a field that accepts any type has nothing
+      // to be wrong about.
+      if (!types || !field.conn_type) continue
 
-      const actual = typeOf(connection.ref)
+      const actual = types.get(connection.ref)
       if (!actual) {
         // The Host no longer recognises this handle — revoked, deleted, or
         // pointing at another environment. Silence here would look identical
         // to a matching type.
-        out.push({
-          code: 'CONNECTION_UNRESOLVABLE',
-          message: `"${connection.id}" no longer resolves. Reconnect it or pick another.`,
-          blocks: 'publish',
-          ...subject,
-          connectionId: connection.id,
-          fieldKey: field.k,
-        })
+        out.push(
+          raise(
+            'CONNECTION_UNRESOLVABLE',
+            { ...subject, connectionId: connection.id, fieldKey: field.k },
+            { name: connection.id },
+          ),
+        )
         continue
       }
       if (actual !== field.conn_type) {
-        out.push({
-          code: 'CONNECTION_TYPE_MISMATCH',
-          message: `${field.label} needs a ${field.conn_type} connection, but "${connection.id}" is ${actual}.`,
-          blocks: 'edit',
-          ...subject,
-          connectionId: connection.id,
-          fieldKey: field.k,
-        })
+        out.push(
+          raise(
+            'CONNECTION_TYPE_MISMATCH',
+            { ...subject, connectionId: connection.id, fieldKey: field.k },
+            { label: field.label, wanted: field.conn_type, name: connection.id, actual },
+          ),
+        )
       }
     }
   }

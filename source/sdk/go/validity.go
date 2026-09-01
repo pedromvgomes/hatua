@@ -9,7 +9,8 @@ import (
 
 // Whether a Workflow Definition is filled in enough to run — the rules that read
 // a step against its Component Manifest, the verbs Hatua interprets
-// structurally, and the contract a block declares.
+// structurally, the contract a block declares, and the connections a conn field
+// may hold.
 //
 // The mirror of packages/model/src/validity.ts, rule for rule. Every code and
 // what it blocks is declared in schemas/definition-diagnostics.yaml and
@@ -50,6 +51,11 @@ type Validity struct {
 	ByTrigger map[string][]Diagnostic
 	// ByBlock holds what belongs to a block rather than to any step in it.
 	ByBlock map[string][]Diagnostic
+	// ByConnection holds what belongs to a connection rather than to any step
+	// using it — a name the workflow declares and nothing ever wired. Filed once
+	// here rather than raised at every field pointing at it, so a publish gate
+	// does not count one connection five times because five steps use it.
+	ByConnection map[string][]Diagnostic
 	// All is everything, in the order the rules ran. Returned rather than left
 	// to a caller to flatten out of ByStep: a diagnostic about a trigger has no
 	// StepID, so flattening the step map silently drops it.
@@ -77,23 +83,43 @@ func raise(code DefinitionCode, subject Diagnostic, fields map[string]string) Di
 	return subject
 }
 
+// Inputs are the facts a rule needs that the Workflow Definition does not hold.
+//
+// One struct rather than a parameter each, because there is now more than one
+// and Go has no default arguments — and because what unites them is exactly
+// that: each comes from the caller's environment rather than from the document,
+// and each may legitimately be absent.
+type Inputs struct {
+	// Context is the Run Context keys. Scope rather than a verb: `run.*` is on
+	// every Board, and a checker that was not given them would report every one
+	// as naming nothing.
+	Context []ContextKey
+	// Connections is what the Host says each established connection is. Its
+	// Known field decides whether the two connection codes that need a type are
+	// reported at all; every other rule runs either way.
+	Connections ConnectionTypes
+}
+
 // ValidateDefinition runs every rule over every Board.
 //
 // Manifests are indexed by Use. A runner holding no manifests still gets the
 // structural and block rules; the two that read a manifest report nothing
 // rather than guessing.
-func ValidateDefinition(doc Definition, manifests []Manifest, context ...[]ContextKey) Validity {
+//
+// Inputs is variadic so a runner holding neither Run Context keys nor connection
+// types calls this unchanged. Absence narrows the pass and never stops it: a
+// caller that cannot describe a connection still gets every rule that reads the
+// document, which is the whole difference between "we cannot check this" and "we
+// will not check anything". See ADR-0022.
+func ValidateDefinition(doc Definition, manifests []Manifest, inputs ...Inputs) Validity {
 	byUse := make(map[string]Manifest, len(manifests))
 	for _, manifest := range manifests {
 		byUse[manifest.Use] = manifest
 	}
 
-	// Variadic so a runner that holds no Run Context keys calls this unchanged.
-	// The keys are scope rather than a verb: `run.*` is on every Board, and a
-	// checker that was not given them would report every one as naming nothing.
-	var keys []ContextKey
-	if len(context) > 0 {
-		keys = context[0]
+	var in Inputs
+	if len(inputs) > 0 {
+		in = inputs[0]
 	}
 
 	all := []Diagnostic{}
@@ -101,13 +127,16 @@ func ValidateDefinition(doc Definition, manifests []Manifest, context ...[]Conte
 	all = append(all, MissingRequiredFields(doc, byUse)...)
 	all = append(all, MalformedContainers(doc, manifests)...)
 	all = append(all, BlockRules(doc)...)
-	all = append(all, ExpressionRules(doc, manifests, keys)...)
+	all = append(all, ExpressionRules(doc, manifests, in.Context)...)
+	all = append(all, UnresolvedConnections(doc)...)
+	all = append(all, MismatchedConnections(doc, byUse, in.Connections)...)
 
 	found := Validity{
-		ByStep:    map[string][]Diagnostic{},
-		ByTrigger: map[string][]Diagnostic{},
-		ByBlock:   map[string][]Diagnostic{},
-		All:       all,
+		ByStep:       map[string][]Diagnostic{},
+		ByTrigger:    map[string][]Diagnostic{},
+		ByBlock:      map[string][]Diagnostic{},
+		ByConnection: map[string][]Diagnostic{},
+		All:          all,
 	}
 	for _, d := range all {
 		switch {
@@ -118,6 +147,11 @@ func ValidateDefinition(doc Definition, manifests []Manifest, context ...[]Conte
 			found.ByTrigger[d.TriggerID] = append(found.ByTrigger[d.TriggerID], d)
 		case d.BlockID != "":
 			found.ByBlock[d.BlockID] = append(found.ByBlock[d.BlockID], d)
+		// Last, because a connection is the subject of a fault only when no step
+		// or trigger is. A conn field's diagnostic names both, and the row
+		// holding the field is where somebody can act on it.
+		case d.ConnectionID != "":
+			found.ByConnection[d.ConnectionID] = append(found.ByConnection[d.ConnectionID], d)
 		}
 	}
 	return found

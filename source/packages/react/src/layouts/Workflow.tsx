@@ -35,6 +35,7 @@ import {
   setVariableValue,
   setWorkflowName,
   setWorkflowSlug,
+  unchecked,
   type ValidationState,
 } from '@hatua/services'
 import {
@@ -157,14 +158,6 @@ const CATALOGUE_LOADING = { status: 'loading' } as const
 const NO_ENTRIES: ManifestEntry[] = []
 const NO_SCOPE: readonly ScopeEntry[] = []
 const NO_PROBLEMS: ReadonlyMap<string, Diagnostic[]> = new Map()
-const UNCHECKED: ValidationState = {
-  byStep: NO_PROBLEMS,
-  byTrigger: NO_PROBLEMS,
-  byBlock: NO_PROBLEMS,
-  all: [],
-  ready: false,
-}
-
 // Module-level and therefore stable: useSyncExternalStore re-subscribes
 // whenever `subscribe` changes identity, and re-renders forever if `getSnapshot`
 // returns a fresh object each call.
@@ -173,7 +166,6 @@ const readUnconfigured = (): PanelState => UNCONFIGURED
 const readOpening = (): PanelState => OPENING
 const readCatalogueUnconfigured = (): CatalogueState => CATALOGUE_UNCONFIGURED
 const readCatalogueLoading = (): CatalogueState => CATALOGUE_LOADING
-const readUnchecked = (): ValidationState => UNCHECKED
 
 type CatalogueState = ManifestState | { status: 'unconfigured' }
 
@@ -207,8 +199,8 @@ export function Workflow({ className, board = null, onBoardRename, ...rest }: Wo
 
   const checks = useSyncExternalStore<ValidationState>(
     validation ? validation.subscribe : subscribeToNothing,
-    validation ? validation.getSnapshot : readUnchecked,
-    readUnchecked,
+    validation ? validation.getSnapshot : unchecked,
+    unchecked,
   )
 
   const workflow = state.status === 'ready' ? state.workflow : null

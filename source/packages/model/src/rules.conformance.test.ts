@@ -4,8 +4,8 @@ import { join } from 'node:path'
 import type { Manifest, WorkflowDefinition } from '@hatua/schema'
 import { describe, expect, it } from 'vitest'
 import { parse } from 'yaml'
-import type { Diagnostic } from './connections'
 import { indexManifests } from './connections'
+import type { Diagnostic } from './diagnostic'
 import { validateDefinition } from './validity'
 
 /**
@@ -30,13 +30,29 @@ interface Expected {
   stepId?: string
   triggerId?: string
   blockId?: string
+  connectionId?: string
   fieldKey?: string
+}
+
+/** One entry of a scenario's `connections:` — what the Host reports, not what the document stores. */
+interface Established {
+  ref: string
+  type: string
 }
 
 interface Scenario {
   name: string
   definition: WorkflowDefinition
   manifests?: Manifest[]
+  /**
+   * Absent and empty are different scenarios, and the harness must keep them so.
+   *
+   * Absent is a checker that cannot describe a Connection at all, which leaves
+   * the two type-dependent codes unreported; empty is a Host answering that it
+   * has established none, where a ref it does not hold genuinely no longer
+   * resolves.
+   */
+  connections?: Established[]
   expect: Expected[]
 }
 
@@ -48,6 +64,7 @@ const render = (one: Expected | Diagnostic): string =>
     one.stepId ?? '',
     one.triggerId ?? '',
     one.blockId ?? '',
+    one.connectionId ?? '',
     one.fieldKey ?? '',
   ].join('|')
 
@@ -63,7 +80,10 @@ describe('conformance · definition rules', () => {
       for (const scenario of corpus.scenarios as Scenario[]) {
         it(scenario.name, () => {
           const manifests = indexManifests(scenario.manifests ?? shared)
-          const found = validateDefinition(scenario.definition, manifests).all
+          const types = scenario.connections
+            ? new Map(scenario.connections.map((one) => [one.ref, one.type]))
+            : undefined
+          const found = validateDefinition(scenario.definition, manifests, [], types).all
 
           // Codes first: when the sets differ, that is the readable failure.
           expect(found.map((one) => one.code).sort()).toEqual(

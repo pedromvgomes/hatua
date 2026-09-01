@@ -19,19 +19,33 @@ import (
 // the same thing about the same document.
 
 type ruleExpectation struct {
-	Code      string `yaml:"code"`
-	Blocks    string `yaml:"blocks"`
-	StepID    string `yaml:"stepId"`
-	TriggerID string `yaml:"triggerId"`
-	BlockID   string `yaml:"blockId"`
-	FieldKey  string `yaml:"fieldKey"`
+	Code         string `yaml:"code"`
+	Blocks       string `yaml:"blocks"`
+	StepID       string `yaml:"stepId"`
+	TriggerID    string `yaml:"triggerId"`
+	BlockID      string `yaml:"blockId"`
+	ConnectionID string `yaml:"connectionId"`
+	FieldKey     string `yaml:"fieldKey"`
+}
+
+// establishedConnection is one entry of a scenario's `connections:` — what the
+// Host would report, not what the document stores.
+type establishedConnection struct {
+	Ref  string `yaml:"ref"`
+	Type string `yaml:"type"`
 }
 
 type ruleScenario struct {
-	Name       string            `yaml:"name"`
-	Definition Definition        `yaml:"definition"`
-	Manifests  []Manifest        `yaml:"manifests"`
-	Expect     []ruleExpectation `yaml:"expect"`
+	Name       string     `yaml:"name"`
+	Definition Definition `yaml:"definition"`
+	Manifests  []Manifest `yaml:"manifests"`
+	// Connections is a POINTER so that "the key is absent" and "the key is an
+	// empty list" stay different scenarios. Absent is a caller that cannot
+	// describe a connection at all and leaves the two type-dependent codes
+	// unreported; empty is a Host answering that it has established none, where a
+	// ref it does not hold genuinely no longer resolves.
+	Connections *[]establishedConnection `yaml:"connections"`
+	Expect      []ruleExpectation        `yaml:"expect"`
 }
 
 type ruleCorpus struct {
@@ -41,8 +55,8 @@ type ruleCorpus struct {
 
 // render is one diagnostic as one comparable line, matching the TypeScript
 // harness field for field. Absent subjects render empty.
-func render(code, blocks, step, trigger, block, field string) string {
-	return strings.Join([]string{code, blocks, step, trigger, block, field}, "|")
+func render(code, blocks, step, trigger, block, connection, field string) string {
+	return strings.Join([]string{code, blocks, step, trigger, block, connection, field}, "|")
 }
 
 func TestDefinitionRules(t *testing.T) {
@@ -79,20 +93,32 @@ func TestDefinitionRules(t *testing.T) {
 						manifests = corpus.Manifests
 					}
 
-					found := ValidateDefinition(scenario.Definition, manifests).All
+					var types ConnectionTypes
+					if scenario.Connections != nil {
+						types = ConnectionTypes{Known: true, ByRef: map[string]string{}}
+						for _, established := range *scenario.Connections {
+							types.ByRef[established.Ref] = established.Type
+						}
+					}
+
+					found := ValidateDefinition(
+						scenario.Definition,
+						manifests,
+						Inputs{Connections: types},
+					).All
 
 					got := make([]string, 0, len(found))
 					for _, d := range found {
 						got = append(got, render(
 							string(d.Code), string(d.Blocks),
-							d.StepID, d.TriggerID, d.BlockID, d.FieldKey,
+							d.StepID, d.TriggerID, d.BlockID, d.ConnectionID, d.FieldKey,
 						))
 					}
 					want := make([]string, 0, len(scenario.Expect))
 					for _, e := range scenario.Expect {
 						want = append(want, render(
 							e.Code, e.Blocks,
-							e.StepID, e.TriggerID, e.BlockID, e.FieldKey,
+							e.StepID, e.TriggerID, e.BlockID, e.ConnectionID, e.FieldKey,
 						))
 					}
 					sort.Strings(got)
