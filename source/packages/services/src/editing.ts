@@ -660,6 +660,15 @@ export function createEditingStore(
     future = []
     save = SAVED
     savedText = ''
+    /*
+     * The press that asked for saving to resume belonged to the session being
+     * replaced. Carried across, a renewal in the NEXT session reads it, clears a
+     * halt nobody asked it to clear, and reschedules the write — which is
+     * precisely the automatic retry ADR-0005 refuses, arrived at through a flag
+     * rather than a timer. A renewal abandoned by a dispose or a generation bump
+     * returns before it can clear this itself.
+     */
+    resumeWanted = false
     // Abandoned along with everything else this generation held. A Host whose
     // `saveDraft` never settles — a fetch with no timeout is all it takes —
     // would otherwise leave this set for the life of the store, and every
@@ -1068,6 +1077,11 @@ export function createEditingStore(
        * the Draft back.
        */
       const pending = dirty()
+      // What the Host had before this release asked for one last write. A write
+      // that lands always moves it, so comparing it afterwards says whether the
+      // write happened — which typing during the write does not disturb, and
+      // which `dirty()` alone cannot tell apart from a write that never went out.
+      const before = savedText
       // The Draft is kept for whoever picks it up next, so the last edit has to
       // reach it — and awaited rather than fired off, so the Host records the
       // write before it records the release.
@@ -1087,14 +1101,15 @@ export function createEditingStore(
        * `resumeSaving()` is the way back, and releasing again once the write
        * lands does what it was asked to do.
        *
-       * The question is whether the text still differs from what the Host has,
-       * not whether the store is halted. A halt is raised by a refused RENEWAL
-       * too, and that one fires on a timer — so a write that succeeded inside
-       * the same round trip as a refused renewal would otherwise be reported as
-       * lost, refusing a release whose Draft is on the Host intact and leaving
-       * Discard as the only way out of it.
+       * The question is whether the Host's copy MOVED, and neither "is the
+       * store halted" nor "is the document dirty" answers it. A halt is raised
+       * by a refused RENEWAL too, which fires on a timer — so a write that
+       * succeeded alongside one would be reported as lost. And a document is
+       * dirty again the moment somebody types during the write, which is a
+       * healthy store with another save already scheduled rather than an edit
+       * that went nowhere.
        */
-      if (pending && dirty()) {
+      if (pending && savedText === before) {
         // The Host's reason, and what to do about it. Rejecting with the raw
         // save error says why the write failed and nothing about the fact that
         // the workflow is still open, or that resuming the save is the way out —

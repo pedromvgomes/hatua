@@ -1637,6 +1637,38 @@ describe('ending the session', () => {
     expect(host.released).toBe(1)
   })
 
+  /*
+   * A document is dirty again the moment somebody types during the write, which
+   * is a healthy store with another save already scheduled — not an edit that
+   * went nowhere. Judged on that, a release refused with "could not be saved"
+   * over a write that had just succeeded, and pointed the reader at a control
+   * that is only drawn when saving has stopped.
+   */
+  it('releases when its write landed and the reader kept typing through it', async () => {
+    let land: () => void = () => {}
+    const host = recorder()
+    host.port.saveDraft = async (_token, text) => {
+      host.writes.push(text)
+      await new Promise<void>((resolve) => {
+        land = resolve
+      })
+    }
+
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+    store.apply(removeStep({ board: null, id: 's1' }))
+
+    const ending = store.release()
+    await vi.advanceTimersByTimeAsync(200)
+    // Typed while that write is still in the air.
+    store.apply(removeStep({ board: null, id: 's4' }))
+    land()
+
+    await ending
+    expect(host.released).toBe(1)
+  })
+
   it('does not write before discarding, because the Draft is being thrown away', async () => {
     // The only possible effect would be to lose a race with the delete.
     const { host, store } = await open()
@@ -2243,6 +2275,48 @@ describe('resuming a halted save', () => {
     await vi.advanceTimersByTimeAsync(200)
 
     expect(ready(store).save).not.toMatchObject({ state: 'halted' })
+  })
+
+  /*
+   * The press belongs to the session that made it. Carried across an open, a
+   * renewal in the NEXT session reads it, clears a halt nobody asked it to
+   * clear, and reschedules the write — the automatic retry ADR-0005 refuses,
+   * reached through a flag rather than a timer.
+   */
+  it('does not carry a resume into the session that replaces it', async () => {
+    const answers: ((lease: Lease) => void)[] = []
+    const host = recorder()
+    host.port.renewLease = () =>
+      new Promise<Lease>((resolve) => {
+        answers.push(resolve)
+      })
+    host.port.saveDraft = async () => {
+      throw new Error('The workflow service is unreachable.')
+    }
+
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+    store.apply(removeStep({ board: null, id: 's1' }))
+    await vi.advanceTimersByTimeAsync(200)
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
+
+    // Asked for, and then abandoned by a reopen before any renewal answered.
+    store.resumeSaving()
+    await settle()
+    store.reopen()
+    await settle()
+
+    // A genuine halt in the new session, and a renewal that succeeds after it.
+    store.apply(removeStep({ board: null, id: 's2' }))
+    await vi.advanceTimersByTimeAsync(200)
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
+
+    for (const answer of answers) answer(leaseFor(30))
+    await vi.advanceTimersByTimeAsync(16 * 60_000)
+
+    // Still halted: nobody asked this session to resume.
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
   })
 
   it('halts again, rather than spinning, when the Host says no twice', async () => {
