@@ -79,6 +79,15 @@ const LOADING: VersionsState = { status: 'loading' }
 
 const unreadable = () => new Error('The list of versions could not be read.')
 
+/** Everything held, plus what is new in the page that just arrived. */
+const joined = (
+  held: readonly VersionSummary[],
+  page: readonly VersionSummary[],
+): VersionSummary[] => {
+  const known = new Set(held.map((one) => one.version))
+  return [...held, ...page.filter((one) => !known.has(one.version))]
+}
+
 export function createVersionStore(port: WorkflowStore, workflowId: string): VersionStore {
   let state: VersionsState = LOADING
   const listeners = new Set<() => void>()
@@ -236,7 +245,14 @@ export function createVersionStore(port: WorkflowStore, workflowId: string): Ver
           // whatever is on screen now: a reload during the flight has bumped
           // the generation and this never runs, and nothing else can have
           // changed the list underneath it.
-          versions: [...held.versions, ...page.items],
+          //
+          // Deduplicated, because `advance` guards the cursor and not the
+          // items: a Host whose cursor is INCLUSIVE of the last row it served
+          // returns a fresh cursor each time and an overlapping page with it,
+          // which appends a version the list already holds. Two rows for one
+          // version is a duplicate React key and a history that reads as though
+          // something was published twice.
+          versions: joined(held.versions, page.items),
           more: cursor !== undefined,
           fetching: false,
           error: null,

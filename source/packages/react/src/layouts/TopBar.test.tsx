@@ -690,23 +690,6 @@ describe('two ways of ending one session', () => {
     )
     expect(screen.getByRole('button', { name: 'Discard' }).hasAttribute('disabled')).toBe(true)
   })
-
-  it('still offers Release and Discard while a publish is going nowhere', async () => {
-    // The opposite case, and deliberately not symmetrical: a Publish can be
-    // refused and leaves everything running, so a Host that never answers one
-    // must not take the way out down with it.
-    const source = host(VALID, {
-      publish: () => new Promise<never>(() => {}),
-    })
-    mount(source)
-    fireEvent.click(await screen.findByRole('button', { name: 'Publish' }))
-
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Publish' }).hasAttribute('disabled')).toBe(true),
-    )
-    expect(screen.getByRole('button', { name: 'Release' }).hasAttribute('disabled')).toBe(false)
-    expect(screen.getByRole('button', { name: 'Discard' }).hasAttribute('disabled')).toBe(false)
-  })
 })
 
 describe('a panel outliving what it hangs from', () => {
@@ -732,5 +715,27 @@ describe('a panel outliving what it hangs from', () => {
 
     await waitFor(() => expect(screen.getByText(/cannot be read yet/)).toBeDefined())
     expect(screen.queryByRole('dialog', { name: 'Versions' })).toBeNull()
+  })
+})
+
+describe('two decisions cannot both be in flight', () => {
+  /*
+   * All three end the session and all three spend the same token. `release()`
+   * awaits a last write before dropping the claim, so a Publish pressed in that
+   * window promotes the Draft while the release goes on to release a token that
+   * is gone — surfacing as a claim error captioning a publish that succeeded.
+   */
+  it('takes the other two down while any one of them is waiting', async () => {
+    const source = host(VALID, {
+      publish: () => new Promise<never>(() => {}),
+    })
+    mount(source)
+    fireEvent.click(await screen.findByRole('button', { name: 'Publish' }))
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Release' }).hasAttribute('disabled')).toBe(true),
+    )
+    expect(screen.getByRole('button', { name: 'Discard' }).hasAttribute('disabled')).toBe(true)
+    expect(screen.getByRole('button', { name: 'Publish' }).hasAttribute('disabled')).toBe(true)
   })
 })

@@ -391,8 +391,8 @@ export function createLocalWorkflowStore(options: LocalWorkflowStoreOptions = {}
      * workflow with two versions still comes back in one page and the cursor
      * only appears once there is something to page to.
      *
-     * The cursor is the version number to continue below, which is what makes
-     * it opaque to Hatua and meaningful only here.
+     * The cursor is the version number the next page STARTS at, which is what
+     * makes it opaque to Hatua and meaningful only here.
      */
     async listVersions(workflowId, cursor): Promise<Cursor<VersionSummary>> {
       await wait()

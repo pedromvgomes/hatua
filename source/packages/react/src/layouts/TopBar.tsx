@@ -10,6 +10,7 @@ import {
 import {
   type ComponentPropsWithRef,
   type ReactNode,
+  useCallback,
   useEffect,
   useId,
   useLayoutEffect,
@@ -177,17 +178,22 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
   const [published, setPublished] = useState<number | null>(null)
 
   /*
-   * A session already on its way out takes the other two decisions with it.
+   * One decision at a time, whichever it is.
    *
-   * `release()` awaits one last write BEFORE dropping the claim, so the claimed
-   * cluster — Publish included — stays on screen for the length of that write.
-   * Pressing Publish inside that window promotes the Draft, and the release then
-   * calls `releaseDraft` on a token the publish has already consumed. Two ways
-   * of ending one session cannot both be in flight, so the first one to start
-   * wins; a Publish, which can be refused and leaves everything running, does
-   * not claim the same right.
+   * All three end the session and all three spend the same token, so two in
+   * flight is one of them acting on a claim the other has already consumed.
+   * `release()` in particular awaits a last write BEFORE dropping the claim, so
+   * the claimed cluster stays on screen for the length of it — and a Publish
+   * pressed there promotes the Draft while the release goes on to release a
+   * token that is gone, which surfaces as a claim error captioning a publish
+   * that actually succeeded.
+   *
+   * This is stricter than it first was, deliberately. The earlier reading let a
+   * Publish leave the other two live so a Host that never answered one could
+   * still be escaped — but a bar that needs a reload is a worse outcome only
+   * until you compare it with a claim spent twice, which no reload repairs.
    */
-  const ending = busy === 'release' || busy === 'discard'
+  const ending = busy !== null
 
   /*
    * The count, so it can tell its own panel from Publish's.
@@ -203,6 +209,25 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
   const definition = workflow?.definition ?? null
 
   /*
+   * A layer whose control is no longer drawn is closed, not merely hidden.
+   *
+   * Both panels are guarded at the render site so neither can be SEEN over a
+   * missing anchor — but the state behind them survives, and it holds the
+   * element. Let the document stop projecting and project again, or the store
+   * reopen, and the guard lifts over an anchor that has since been detached:
+   * `getBoundingClientRect()` on it is all zeros, so `place` puts the panel in
+   * the corner of the viewport attached to nothing, and Escape focuses a node
+   * that is not in the page.
+   */
+  const orphaned =
+    (layer?.kind === 'versions' && !definition) ||
+    (layer?.kind === 'problems' && !workflow?.claimed)
+
+  useEffect(() => {
+    if (orphaned) setLayer(null)
+  }, [orphaned])
+
+  /*
    * Absent, not zero, until the answer means something. Every Step looks like
    * an unknown component until the manifests land, so a count painted before
    * `ready` reports a dozen problems with a workflow that has none, on every
@@ -210,7 +235,10 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
    */
   const blocking = checks.ready ? checks.all : null
 
-  const closeLayer = () => setLayer(null)
+  // Stable, because <Layer> lists it as an effect dependency: recreated every
+  // render, the document-level keydown and pointerdown handlers are torn off and
+  // re-attached on every keystroke the bar re-renders for.
+  const closeLayer = useCallback(() => setLayer(null), [])
 
   const attemptPublish = async (from: HTMLElement) => {
     if (!store) return
@@ -436,7 +464,7 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
                   <Button
                     size="sm"
                     variant="primary"
-                    disabled={busy === 'publish' || ending}
+                    disabled={ending}
                     onClick={(event) => void attemptPublish(event.currentTarget)}
                   >
                     Publish
