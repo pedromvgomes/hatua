@@ -359,11 +359,12 @@ describe('load()', () => {
 
 /*
  * A Connection's type is the one input that is not in the document, so absence
- * is a state these rules have to hold. Getting it wrong does not merely add
- * noise: CONNECTION_TYPE_MISMATCH blocks editing, so a store that reported it
- * before the Host had answered would lock a document over Connections that are
- * entirely fine — and one that withheld the whole answer instead would leave a
- * Host wiring no ConnectionSource with no validation at all.
+ * is a state these rules have to hold, and both ways of getting it wrong are
+ * worse than the bug being fixed. A store that reported CONNECTION_UNRESOLVABLE
+ * before the Host had answered would refuse Publish to a workflow with nothing
+ * wrong with it, forever for a Host wiring no ConnectionSource; one that
+ * withheld the whole answer instead would leave that same Host with no
+ * validation at all.
  */
 
 const CONNECTED = `id: wf

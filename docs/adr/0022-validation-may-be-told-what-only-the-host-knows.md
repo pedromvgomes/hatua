@@ -45,8 +45,10 @@ So the input distinguishes *empty* from *absent*, and the two must never collaps
 - **No answer is not an empty answer.** No port wired, a port still loading, a port that failed —
   the two type-dependent codes are simply not reported, for as long as that holds.
 
-The distinction is load-bearing rather than tidy: `CONNECTION_TYPE_MISMATCH` `blocks: 'edit'`, so
-getting it wrong does not add noise, it locks a document over Connections that are entirely fine.
+The distinction is load-bearing rather than tidy. Collapsed, every Connection in the workflow is
+`CONNECTION_UNRESOLVABLE` on first paint, and that code blocks Publish — so a workflow with nothing
+wrong with it cannot be published, and every `conn` field carries a sentence saying its Connection is
+gone. It clears when the port answers. For a Host that wires no port, it never clears.
 
 ## And it narrows the pass, never defers it
 
@@ -81,6 +83,19 @@ unconfigured case.
   `byTrigger` and `byBlock` all miss it and a fourth bucket is the only honest place. The `conn`
   field pointing at the Connection draws it, looked up by the id the field holds — filed once and
   drawn where it can be acted on, which is what `troubledBlocks` does for a call through a doorway.
+- **A `ref` of no characters is not a handle.** The schema types `ref` as a string or null with no
+  `minLength`, so `ref: ""` parses. Both rules share one `established` predicate rather than each
+  writing its own guard: one treating `""` as a handle and the other as an absence gives a Connection
+  reported unresolvable and never reported unfinished, and the two languages spelt that guard
+  differently before the corpus was asked about it.
+- **The canvas does not mark a Step for a Connection nobody wired.** `CONNECTION_NOT_ESTABLISHED` is
+  in `all`, so the Publish gate and the toolbar count are right, and every `conn` field pointing at
+  the Connection says so. But no card carries a marker, because knowing which Steps hold such a field
+  needs the manifests — and `StepList` draws Steps without a catalogue on purpose, so the derivation
+  that `troubledBlocks` performs from the document alone has no equivalent here. A marker that
+  appeared on the canvas and not in the list, for the same document, would be worse than none. The
+  honest resolution is a marker set computed where the manifests already are, which is a decision
+  about `Validity`'s shape rather than about connections.
 - **This does not weaken ADR-0006.** The schema remains the source of truth for every code, and every
   code remains implemented in both languages. What has changed is that a rule may be handed a fact
   the document does not carry.

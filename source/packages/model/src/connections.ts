@@ -30,11 +30,28 @@ export const indexManifests = (manifests: readonly Manifest[]): ManifestIndex =>
  * **An empty map is an answer.** It says the Host has established no Connections
  * — a fresh environment, and a legitimate one. `undefined` in its place is the
  * other case entirely: nobody can describe them, because no `ConnectionSource`
- * is wired or the one that is would not answer. The two must not look alike, or
- * a workflow whose Connections are perfectly fine reports every one of them
- * revoked on first paint, and two of these codes block editing.
+ * is wired or the one that is would not answer.
+ *
+ * The two must not look alike. Collapsed, every Connection in the workflow is
+ * CONNECTION_UNRESOLVABLE on first paint — so a workflow with nothing wrong with
+ * it cannot be published, and every `conn` field carries a sentence saying its
+ * Connection is gone. It clears when the port answers, and for a Host that wires
+ * no port it never clears at all.
  */
 export type ConnectionTypes = ReadonlyMap<string, string>
+
+/**
+ * Whether a Connection points at anything.
+ *
+ * Empty is not established, and not merely `null`: the schema types `ref` as a
+ * string or null with no `minLength`, so `ref: ""` parses, and a handle of no
+ * characters resolves to nothing anywhere. Shared by both rules below because
+ * they must agree — one treating `""` as a handle and the other as an absence is
+ * a Connection reported unresolvable and never reported unfinished, which is a
+ * workflow that cannot be published and does not say why.
+ */
+const established = (ref: string | null | undefined): ref is string =>
+  typeof ref === 'string' && ref.trim() !== ''
 
 /**
  * A connection with no `ref` was never established. That blocks publish but not
@@ -47,7 +64,7 @@ export type ConnectionTypes = ReadonlyMap<string, string>
  */
 export function unresolvedConnections(doc: WorkflowDefinition): Diagnostic[] {
   return (doc.connections ?? [])
-    .filter((c) => c.ref === null || c.ref === undefined)
+    .filter((c) => !established(c.ref))
     .map((c) => raise('CONNECTION_NOT_ESTABLISHED', { connectionId: c.id }, { name: c.id }))
 }
 
@@ -63,8 +80,7 @@ export function unresolvedConnections(doc: WorkflowDefinition): Diagnostic[] {
  * Connection the document does not declare — and says nothing about the two
  * questions that need a type. Reporting those anyway would say "no longer
  * resolves" about every Connection in the workflow before the Host has spoken,
- * and CONNECTION_TYPE_MISMATCH blocks editing: a document would lock itself over
- * Connections that are entirely fine. See ADR-0022.
+ * which refuses Publish to a workflow with nothing wrong with it. See ADR-0022.
  */
 export function mismatchedConnections(
   doc: WorkflowDefinition,
@@ -101,7 +117,7 @@ export function mismatchedConnections(
         continue
       }
       // An unestablished connection has no type yet; that is reported separately.
-      if (!connection.ref) continue
+      if (!established(connection.ref)) continue
       // Nothing to match against, and a field that accepts any type has nothing
       // to be wrong about.
       if (!types || !field.conn_type) continue

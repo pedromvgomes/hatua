@@ -73,8 +73,9 @@ describe('mismatchedConnections', () => {
     bad.steps[0]!.with = { connection: 'ghost' }
     const [issue] = mismatchedConnections(bad, index, CONNECTION_TYPES)
     expect(issue?.code).toBe('CONNECTION_UNKNOWN')
-    // Carried so the Connection the field names is what `troubledConnections`
-    // finds, even though nothing declares it.
+    // Carried so the diagnostic names which Connection the field asked for, and
+    // not only which field asked. It still files under the Step, because that is
+    // the row holding the field somebody can fix.
     expect(issue?.connectionId).toBe('ghost')
   })
 
@@ -109,11 +110,11 @@ describe('unresolvable connections', () => {
 })
 
 /*
- * The case that locks a document if it is got wrong. A checker with no type
- * source answers every `types.get(ref)` with undefined, and undefined means
- * CONNECTION_UNRESOLVABLE — so a workflow whose Connections are perfectly fine
- * would report every one of them revoked before the Host had answered, and
- * CONNECTION_TYPE_MISMATCH blocks editing.
+ * The case that refuses Publish to a good workflow if it is got wrong. A checker
+ * with no type source answers every `types.get(ref)` with undefined, and
+ * undefined means CONNECTION_UNRESOLVABLE — so every Connection in a workflow
+ * with nothing wrong with it reports as revoked before the Host has answered,
+ * and for a Host that wires no port, for as long as it is mounted.
  */
 describe('with nobody able to describe a connection', () => {
   it('says nothing about a type it cannot know', () => {
