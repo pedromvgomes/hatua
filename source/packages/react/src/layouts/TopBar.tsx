@@ -159,7 +159,17 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
 
   const [layer, setLayer] = useState<Layer>(null)
   const [attempt, setAttempt] = useState<Attempt | null>(null)
-  const [busy, setBusy] = useState(false)
+  /**
+   * Which action is waiting on the Host, if any.
+   *
+   * Which one, rather than a flag, because they must not disable each other. A
+   * Host whose port never settles would otherwise take Release and Discard down
+   * with Publish — and Discard is exactly what someone does about a Publish that
+   * is going nowhere. Nothing here puts a deadline on a Host: `flush()` makes
+   * the same call and says so, "that is the honest answer to 'tell me when this
+   * is written' when it is not written and never will be".
+   */
+  const [busy, setBusy] = useState<'publish' | 'release' | 'discard' | null>(null)
   const [confirming, setConfirming] = useState(false)
   /** What the last **Publish** produced, so the ended session can say what ended it. */
   const [published, setPublished] = useState<number | null>(null)
@@ -179,7 +189,7 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
 
   const attemptPublish = async (from: HTMLElement) => {
     if (!store) return
-    setBusy(true)
+    setBusy('publish')
     try {
       const result = await store.publish()
       setPublished(result.version)
@@ -196,7 +206,7 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
       )
       setLayer({ kind: 'problems', anchor: from })
     } finally {
-      setBusy(false)
+      setBusy(null)
     }
   }
 
@@ -214,20 +224,29 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
    */
   const end = async (how: 'release' | 'discard') => {
     if (!store) return
-    setBusy(true)
+    setBusy(how)
     setLayer(null)
-    // Whatever ends this session now is what ended it. Left standing, a version
-    // from an earlier Publish would caption a release with "Published as
-    // version 6."
+    /*
+     * Whatever ends this session now is what ended it.
+     *
+     * Both of these have to be cleared BEFORE the call, not after it succeeds:
+     * `release()` and `discard()` drop the claim synchronously and only then
+     * await the port, so the ended cluster is on screen for the whole of that
+     * call. Left standing, a version from an earlier Publish captions a release
+     * with "Published as version 6." — and an `attempt` left over from the
+     * problems panel captions it with a publish error, or, when the panel was
+     * opened from the count, with the empty string that carries no message at
+     * all.
+     */
     setPublished(null)
+    setAttempt(null)
     try {
       await store[how]()
-      setAttempt(null)
       if (how === 'discard') versions?.invalidate()
     } catch (cause) {
       setAttempt({ kind: 'rejected', message: messageOf(cause) })
     } finally {
-      setBusy(false)
+      setBusy(null)
     }
   }
 
@@ -382,18 +401,22 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
                   <Button
                     size="sm"
                     variant="primary"
-                    disabled={busy}
+                    disabled={busy === 'publish'}
                     onClick={(event) => void attemptPublish(event.currentTarget)}
                   >
                     Publish
                   </Button>
-                  <Button size="sm" disabled={busy} onClick={() => void end('release')}>
+                  <Button
+                    size="sm"
+                    disabled={busy === 'release'}
+                    onClick={() => void end('release')}
+                  >
                     Release
                   </Button>
                   <Button
                     size="sm"
                     variant="danger"
-                    disabled={busy}
+                    disabled={busy === 'discard'}
                     onClick={() => setConfirming(true)}
                   >
                     Discard
@@ -443,6 +466,7 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
         <ProblemLayer
           anchor={layer.anchor}
           attempt={attempt}
+          live={blocking}
           onReveal={onRevealDiagnostic}
           onClose={closeLayer}
         />
@@ -536,31 +560,54 @@ function VersionLayer({
   )
 }
 
-/** What stopped the last **Publish**, and where to go about it. */
+/**
+ * What is stopping a **Publish**, and where to go about it.
+ *
+ * ## The list is live, not the one the press captured
+ *
+ * `live` is the validation store's current answer, and it is what the rows are
+ * drawn from whenever there is one. The alternative — rendering the list carried
+ * by the refusal — freezes at the moment Publish was pressed: fix a field with
+ * the panel open and the row stays, delete the Step and pressing that row
+ * reveals a Step that is no longer there, while the count beside it, which reads
+ * the store directly, disagrees with the list it opened.
+ *
+ * The captured list is still the fallback, for the window where validation
+ * cannot answer at all.
+ */
 function ProblemLayer({
   anchor,
   attempt,
+  live,
   onReveal,
   onClose,
 }: {
   anchor: HTMLElement
   attempt: Attempt
+  live: readonly Diagnostic[] | null
   onReveal?: (diagnostic: Diagnostic) => void
   onClose: () => void
 }) {
+  const shown = attempt.kind === 'blocked' ? (live ?? attempt.diagnostics) : []
+
   return (
     <Layer anchor={anchor} label="Problems" onClose={onClose}>
       {attempt.kind === 'rejected' ? (
         <p className={styles.problem}>{attempt.message}</p>
-      ) : attempt.diagnostics.length === 0 ? (
+      ) : attempt.diagnostics.length === 0 && attempt.message !== '' ? (
         // The floor refused it: the document is not a Workflow Definition, so
         // there is nothing to attach a diagnostic to and the message is the
         // whole of what can be said.
         <p className={styles.problem}>{attempt.message}</p>
+      ) : shown.length === 0 ? (
+        // Everything the panel was opened about has been fixed while it stood
+        // open. Saying so beats an empty panel, and beats closing itself under
+        // the reader.
+        <p className={styles.muted}>Nothing is blocking Publish now.</p>
       ) : (
         <ul className={styles.problems}>
-          {attempt.diagnostics.map((diagnostic) => (
-            <li key={keyOf(diagnostic)} className={styles.problemRow}>
+          {keyed(shown).map(({ key, diagnostic }) => (
+            <li key={key} className={styles.problemRow}>
               {onReveal && navigable(diagnostic) ? (
                 <button
                   type="button"
@@ -691,9 +738,13 @@ const statusLabel = (status: 'published' | 'draft' | 'archived'): string =>
  *
  * Everything a diagnostic is *about*, rather than its position: the list is
  * rebuilt from a fresh validation pass on every keystroke, so a key that was an
- * index would move a row's identity onto whatever landed in its place. Two
- * diagnostics carrying the same code about the same field of the same Step are
- * the same problem said twice.
+ * index would move a row's identity onto whatever landed in its place.
+ *
+ * The message is part of it because the subject is not enough to tell two rows
+ * apart. One Template holding two bad holes yields two diagnostics with the same
+ * code, Step, Board and field — `checkTemplate` reports per hole — and a
+ * `core.fork` with two broken `when:` expressions files both under `when` on the
+ * same Step, because that is the slot's name on every branch.
  */
 const keyOf = (diagnostic: Diagnostic): string =>
   [
@@ -701,7 +752,27 @@ const keyOf = (diagnostic: Diagnostic): string =>
     diagnostic.blockId ?? '',
     diagnostic.stepId ?? diagnostic.triggerId ?? diagnostic.connectionId ?? '',
     diagnostic.fieldKey ?? '',
+    diagnostic.message,
   ].join(':')
+
+/**
+ * The rows, each with a key nothing else in the list carries.
+ *
+ * Even the message is not a guarantee — two branches of a Fork whose conditions
+ * are the same broken expression say the same sentence about the same slot — so
+ * a repeat is numbered rather than deduplicated. Dropping one would disagree
+ * with the count beside the panel, which reports every diagnostic the checker
+ * raised.
+ */
+const keyed = (diagnostics: readonly Diagnostic[]): { key: string; diagnostic: Diagnostic }[] => {
+  const seen = new Map<string, number>()
+  return diagnostics.map((diagnostic) => {
+    const identity = keyOf(diagnostic)
+    const nth = (seen.get(identity) ?? 0) + 1
+    seen.set(identity, nth)
+    return { key: nth === 1 ? identity : `${identity}#${String(nth)}`, diagnostic }
+  })
+}
 
 const problemCount = (count: number): string =>
   count === 1 ? '1 problem' : `${String(count)} problems`

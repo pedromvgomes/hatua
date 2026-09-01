@@ -166,6 +166,12 @@ export function Build({ className, ...rest }: BuildProps) {
               onRevealDiagnostic={(diagnostic) => {
                 const target: BoardId = diagnostic.blockId ?? null
                 setBoard(target)
+                // An insert point names a list on the Board it was made on, so
+                // it does not survive going to another one — the same rule the
+                // canvas's doorway and the tab strip both follow, and for the
+                // same reason: the next Component picked would land somewhere
+                // nobody chose, on a Board nobody is looking at.
+                setPending(null)
 
                 if (diagnostic.triggerId !== undefined) {
                   setTab('workflow')

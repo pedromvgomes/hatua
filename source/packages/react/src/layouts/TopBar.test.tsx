@@ -560,3 +560,46 @@ describe('an ending that the Host refused', () => {
     expect(screen.queryByText('Published as version 6.')).toBeNull()
   })
 })
+
+describe('the problems list while it stands open', () => {
+  /*
+   * `checkTemplate` reports per hole, so one field with two bad References is
+   * two diagnostics carrying the same code, Step, Board and field. Keyed on the
+   * subject alone they collide, React warns, and the rows mis-reconcile on the
+   * next validation pass — which is every keystroke.
+   */
+  it('draws a row per problem when two share a subject', async () => {
+    const twoHoles = `id: wf_morning
+name: "Morning inbox triage"
+version: 5
+status: draft
+
+steps:
+  - id: s1
+    use: component.email.send
+    with:
+      to: "{{ nope }} and {{ alsoNope }}"
+`
+    const warned = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      mount(host(twoHoles))
+      fireEvent.click(await screen.findByRole('button', { name: 'Publish' }))
+
+      const panel = await screen.findByRole('dialog', { name: 'Problems' })
+      await waitFor(() => expect(panel.querySelectorAll('li').length).toBeGreaterThan(1))
+      expect(warned.mock.calls.some((call) => String(call[0]).includes('same key'))).toBe(false)
+    } finally {
+      warned.mockRestore()
+    }
+  })
+
+  it('follows the checker rather than the list the press captured', async () => {
+    // Opened over a broken workflow, then the store's document is replaced by
+    // one with nothing wrong: the panel is showing the checker's answer, so it
+    // keeps up.
+    const source = host(BROKEN)
+    mount(source)
+    fireEvent.click(await screen.findByRole('button', { name: '1 problem' }))
+    expect(await screen.findByText('To is required.')).toBeDefined()
+  })
+})
