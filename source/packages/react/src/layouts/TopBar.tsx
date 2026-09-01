@@ -160,40 +160,29 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
 
   const [layer, setLayer] = useState<Layer>(null)
   const [attempt, setAttempt] = useState<Attempt | null>(null)
-  /**
-   * Which action is waiting on the Host, if any.
+  /*
+   * Whether one of the three is waiting on the Host — and therefore whether any
+   * of them may be pressed.
    *
-   * Which one, rather than a flag, because a Publish must not disable the other
-   * two. A Host whose port never settles would otherwise take Release and
-   * Discard down with it — and Discard is exactly what someone does about a
-   * Publish that is going nowhere. Nothing here puts a deadline on a Host:
-   * `flush()` makes the same call and says so, "that is the honest answer to
-   * 'tell me when this is written' when it is not written and never will be".
+   * One decision at a time, whichever it is. All three end the session and all
+   * three spend the same token, so two in flight is one of them acting on a
+   * claim the other has already consumed. `release()` in particular awaits a
+   * last write BEFORE dropping the claim, so the claimed cluster stays on screen
+   * for the length of it — and a Publish pressed there promotes the Draft while
+   * the release goes on to release a token that is gone, which surfaces as a
+   * claim error captioning a publish that actually succeeded. A claim spent
+   * twice is not something a reload repairs.
    *
-   * Ending the session is not symmetrical with that, and `ending` below is why.
+   * What keeps this from stranding the bar is where the waiting happens rather
+   * than what it disables: the gate's wait is bounded (ADR-0023), so a Host with
+   * a hanging catalogue still answers the press, and only a Host that never
+   * answers `publish` itself leaves these disabled — the same wait `flush()`
+   * accepts, for the same reason.
    */
-  const [busy, setBusy] = useState<'publish' | 'release' | 'discard' | null>(null)
+  const [busy, setBusy] = useState(false)
   const [confirming, setConfirming] = useState(false)
   /** What the last **Publish** produced, so the ended session can say what ended it. */
   const [published, setPublished] = useState<number | null>(null)
-
-  /*
-   * One decision at a time, whichever it is.
-   *
-   * All three end the session and all three spend the same token, so two in
-   * flight is one of them acting on a claim the other has already consumed.
-   * `release()` in particular awaits a last write BEFORE dropping the claim, so
-   * the claimed cluster stays on screen for the length of it — and a Publish
-   * pressed there promotes the Draft while the release goes on to release a
-   * token that is gone, which surfaces as a claim error captioning a publish
-   * that actually succeeded.
-   *
-   * This is stricter than it first was, deliberately. The earlier reading let a
-   * Publish leave the other two live so a Host that never answered one could
-   * still be escaped — but a bar that needs a reload is a worse outcome only
-   * until you compare it with a claim spent twice, which no reload repairs.
-   */
-  const ending = busy !== null
 
   /*
    * The count, so it can tell its own panel from Publish's.
@@ -268,7 +257,7 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
 
   const attemptPublish = async (from: HTMLElement) => {
     if (!store) return
-    setBusy('publish')
+    setBusy(true)
     try {
       const result = await store.publish()
       // Only when this publish is what ended the session. `publish()` skips
@@ -290,7 +279,7 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
       )
       setLayer({ kind: 'problems', anchor: from })
     } finally {
-      setBusy(null)
+      setBusy(false)
     }
   }
 
@@ -308,7 +297,7 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
    */
   const end = async (how: 'release' | 'discard', from?: HTMLElement) => {
     if (!store) return
-    setBusy(how)
+    setBusy(true)
     setLayer(null)
     /*
      * Cleared BEFORE the call, not after it succeeds.
@@ -339,7 +328,7 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
        */
       if (from?.isConnected) setLayer({ kind: 'problems', anchor: from })
     } finally {
-      setBusy(null)
+      setBusy(false)
     }
   }
 
@@ -525,14 +514,14 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
                   <Button
                     size="sm"
                     variant="primary"
-                    disabled={ending}
+                    disabled={busy}
                     onClick={(event) => void attemptPublish(event.currentTarget)}
                   >
                     Publish
                   </Button>
                   <Button
                     size="sm"
-                    disabled={ending}
+                    disabled={busy}
                     onClick={(event) => void end('release', event.currentTarget)}
                   >
                     Release
@@ -540,7 +529,7 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
                   <Button
                     size="sm"
                     variant="danger"
-                    disabled={ending}
+                    disabled={busy}
                     onClick={() => setConfirming(true)}
                   >
                     Discard
