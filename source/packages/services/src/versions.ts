@@ -79,13 +79,33 @@ const LOADING: VersionsState = { status: 'loading' }
 
 const unreadable = () => new Error('The list of versions could not be read.')
 
-/** Everything held, plus what is new in the page that just arrived. */
+/**
+ * Everything held, plus what is new in the page that just arrived.
+ *
+ * Deduplicated ACROSS pages and WITHIN one, because both produce the same row
+ * twice — a duplicate React key and a history that reads as though something was
+ * published twice. Across, because `advance` guards the cursor and not the
+ * items, so a Host whose cursor is inclusive of the last row it served overlaps
+ * its pages while satisfying the guard. Within, because nothing stops a Host
+ * repeating a version inside one page, and the first page has no `held` to be
+ * caught by.
+ *
+ * A summary with no version number is dropped rather than kept: it is the key
+ * every row is drawn and identified by, and there is nothing to show or to
+ * dedupe an entry without one against.
+ */
 const joined = (
   held: readonly VersionSummary[],
   page: readonly VersionSummary[],
 ): VersionSummary[] => {
   const known = new Set(held.map((one) => one.version))
-  return [...held, ...page.filter((one) => !known.has(one.version))]
+  const out = [...held]
+  for (const one of page) {
+    if (typeof one?.version !== 'number' || known.has(one.version)) continue
+    known.add(one.version)
+    out.push(one)
+  }
+  return out
 }
 
 export function createVersionStore(port: WorkflowStore, workflowId: string): VersionStore {
@@ -164,7 +184,10 @@ export function createVersionStore(port: WorkflowStore, workflowId: string): Ver
       advance(page.next)
       publish({
         status: 'ready',
-        versions: page.items,
+        // Through the same join as every later page: a Host that repeats a
+        // version inside one page produces the duplicate key on the first one
+        // too, where there is nothing already held to catch it.
+        versions: joined([], page.items),
         more: cursor !== undefined,
         fetching: false,
         error: null,

@@ -885,8 +885,14 @@ const navigable = (diagnostic: Diagnostic): boolean =>
  * Sliced rather than formatted: `toLocaleDateString` makes what renders depend
  * on the machine's locale and time zone, which turns every story and every
  * assertion into one that passes where it was written.
+ *
+ * Read defensively, because a type is a promise the Host makes and an endpoint
+ * can break it. `createVersionStore` checks the page is a list and that every
+ * row has the number it is keyed by; a row missing its timestamp is still a row
+ * worth drawing, and throwing here would take the tree down over a date.
  */
-const dateOf = (version: VersionSummary): string => version.updatedAt.slice(0, 10)
+const dateOf = (version: VersionSummary): string =>
+  typeof version.updatedAt === 'string' ? version.updatedAt.slice(0, 10) : ''
 
 const messageOf = (cause: unknown): string =>
   cause instanceof Error ? cause.message : String(cause)

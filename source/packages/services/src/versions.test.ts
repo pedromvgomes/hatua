@@ -415,3 +415,27 @@ describe('a Host whose pages overlap', () => {
     expect(readyState(store.getSnapshot()).versions.map((one) => one.version)).toEqual([3, 2, 1])
   })
 })
+
+describe('a page that repeats itself', () => {
+  it('draws one row per version even on the first page', async () => {
+    // Nothing stops a Host repeating a version inside one page, and the first
+    // page has nothing already held to catch it.
+    const { port } = fake([
+      { items: [summary(3, 'draft'), summary(3, 'draft'), summary(2, 'published')] },
+    ])
+    const store = createVersionStore(port, 'wf_morning')
+    store.load()
+    await settle()
+
+    expect(readyState(store.getSnapshot()).versions.map((one) => one.version)).toEqual([3, 2])
+  })
+
+  it('drops a summary with no version, because that is what every row is keyed by', async () => {
+    const { port } = fake([{ items: [summary(2, 'draft'), {} as unknown as VersionSummary] }])
+    const store = createVersionStore(port, 'wf_morning')
+    store.load()
+    await settle()
+
+    expect(readyState(store.getSnapshot()).versions).toHaveLength(1)
+  })
+})
