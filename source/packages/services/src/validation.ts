@@ -128,6 +128,15 @@ export interface ValidationStore extends Store<ValidationState> {
   load(): void
 }
 
+/**
+ * How long a Publish waits for an answer that is still coming.
+ *
+ * Generous, because the normal case is a catalogue landing in well under a
+ * second and the cost of waiting is nothing; bounded, because a Host whose
+ * fetch hangs would otherwise leave the press unanswered for ever.
+ */
+const GATE_DEADLINE_MS = 10_000
+
 const NONE: ReadonlyMap<string, Diagnostic[]> = new Map()
 const NOTHING: readonly Diagnostic[] = []
 
@@ -212,6 +221,7 @@ export const unchecked = (): ValidationState => UNCHECKED
 export function publishBlockers(
   validation: ValidationStore | null | undefined,
   manifests: ManifestStore | null | undefined,
+  { deadlineMs = GATE_DEADLINE_MS }: { deadlineMs?: number } = {},
 ): Promise<readonly Diagnostic[]> {
   if (!validation || !manifests) return Promise.resolve(NOTHING)
 
@@ -240,11 +250,40 @@ export function publishBlockers(
   if (decided()) return Promise.resolve(answer())
 
   return new Promise((resolve) => {
-    const stop = validation.subscribe(() => {
-      if (!decided()) return
+    let stop = () => {}
+
+    const settle = () => {
+      clearTimeout(timer)
       stop()
       resolve(answer())
+    }
+
+    /*
+     * The wait is bounded, and only this half of it is.
+     *
+     * "It will reply" is true of a Host that replies. One whose manifest fetch
+     * hangs — no timeout on the request — leaves the catalogue at `loading` for
+     * the life of the page, and a gate waiting on that never answers: `publish()`
+     * never settles, and the control that pressed it never hears back.
+     *
+     * That is worth a deadline where the Host's own `publish` is not, and the
+     * difference is what a wait costs. Nothing has been spent here — no claim,
+     * no version, no call to the port — so giving up and checking what IS known
+     * is exactly ADR-0022's narrowing, arrived at by clock instead of by a
+     * port's answer. Waiting on `port.publish` is different in kind: the write
+     * is in the Host's hands, and no local timer can un-make it.
+     */
+    const timer = setTimeout(settle, deadlineMs)
+
+    stop = validation.subscribe(() => {
+      if (!decided()) return
+      settle()
     })
+
+    // Subscribing can be the thing that makes it decidable — `load()` above may
+    // have resolved between the check and here — so ask once more rather than
+    // waiting out the deadline for an answer already sitting there.
+    if (decided()) settle()
   })
 }
 

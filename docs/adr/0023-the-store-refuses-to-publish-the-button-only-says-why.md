@@ -64,6 +64,15 @@ port is what stops the floor from being unwirable.
 The two `waits` follow `validation.ts`, which already says of `pending` that "it will, so a Publish
 gate may wait" — so the gate is `async` and the waiting is its business rather than `publish()`'s.
 
+**The wait is bounded, and only this half of it is.** "It will reply" is true of a Host that replies;
+one whose manifest fetch hangs leaves the catalogue loading for the life of the page, and a gate
+waiting on that never answers — so the press is never heard back from and every control that a press
+disables stays disabled. Giving up after a deadline and reporting what IS known is the same narrowing
+ADR-0022 describes, reached by clock rather than by a port's answer, and it costs nothing to reach:
+no claim is spent and the port is never called while the gate waits. Waiting on `port.publish` is
+different in kind — the write is in the Host's hands, and no local timer can un-make it — so that
+wait stays unbounded.
+
 The two `proceeds` follow [ADR-0022](0022-validation-may-be-told-what-only-the-host-knows.md): an
 absent answer **narrows** the check and never withholds it. The alternative is that a Host which
 wired no `ConnectionSource` — a correct configuration, not a broken one — can never publish

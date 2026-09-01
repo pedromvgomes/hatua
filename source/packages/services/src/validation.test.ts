@@ -642,3 +642,68 @@ describe('a gate nobody has loaded the catalogue for', () => {
     await expect(publishBlockers(validation, catalogue)).resolves.toHaveLength(2)
   })
 })
+
+describe('a gate waiting on a Host that never answers', () => {
+  /*
+   * "It will reply" is true of a Host that replies. One whose manifest fetch
+   * hangs leaves the catalogue loading for the life of the page, and a gate
+   * waiting on that never answers — so the press is never heard back from and
+   * every control it disabled stays disabled.
+   *
+   * Nothing is spent while it waits: no claim, no version, no call to the port.
+   * So giving up and reporting what IS known is ADR-0022's narrowing, reached by
+   * clock instead of by a port's answer.
+   */
+  it('gives up after its deadline and answers with what is known', async () => {
+    vi.useFakeTimers()
+    try {
+      const editing = createEditingStore(workflowPort(MISSING), 'wf')
+      // Never settles, which is what a fetch with no timeout does.
+      const catalogue = createManifestStore({ loadManifests: () => new Promise(() => {}) })
+      const validation = createValidationStore(editing, catalogue, null)
+      validation.load()
+      await vi.advanceTimersByTimeAsync(0)
+
+      let answered: readonly unknown[] | null = null
+      void publishBlockers(validation, catalogue, { deadlineMs: 50 }).then((found) => {
+        answered = found
+      })
+
+      await vi.advanceTimersByTimeAsync(10)
+      expect(answered).toBeNull()
+
+      await vi.advanceTimersByTimeAsync(100)
+      // Nothing could be checked, so nothing is reported — and the press is
+      // answered rather than left hanging.
+      expect(answered).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('answers before the deadline when the catalogue lands', async () => {
+    vi.useFakeTimers()
+    try {
+      let arrive: (manifests: Manifest[]) => void = () => {}
+      const pending = new Promise<Manifest[]>((resolve) => {
+        arrive = resolve
+      })
+      const editing = createEditingStore(workflowPort(MISSING), 'wf')
+      const catalogue = createManifestStore({ loadManifests: () => pending })
+      const validation = createValidationStore(editing, catalogue, null)
+      validation.load()
+      await vi.advanceTimersByTimeAsync(0)
+
+      let answered: readonly unknown[] | null = null
+      void publishBlockers(validation, catalogue, { deadlineMs: 10_000 }).then((found) => {
+        answered = found
+      })
+
+      arrive(CATALOGUE)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(answered).toHaveLength(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
