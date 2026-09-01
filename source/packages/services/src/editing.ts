@@ -930,7 +930,19 @@ export function createEditingStore(
       const yaml = document.toString()
 
       const published = await port.publish(held, yaml)
-      finish()
+      /*
+       * The same guard the gate's wait needs, for the same reason.
+       *
+       * A Host's publish is a network call and the session can end or begin
+       * again underneath it — `dispose()` then `open()`, a `reopen()`, a second
+       * publish. `finish()` here bumps the generation, drops the token and halts
+       * autosave; run late, it does all of that to the session that REPLACED
+       * this one, leaving a Draft the user has visibly just reopened saved
+       * nowhere and reporting that it has ended.
+       *
+       * The version is still returned, because the Host really did publish it.
+       */
+      if (mine === generation && !disposed) finish()
       return published
     },
 

@@ -10,7 +10,7 @@ import type {
   VersionSummary,
   WorkflowStore,
 } from '@hatua/services'
-import { setWorkflowName } from '@hatua/services'
+import { setStepField, setWorkflowName } from '@hatua/services'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useEffect } from 'react'
 import { describe, expect, it, vi } from 'vitest'
@@ -170,6 +170,29 @@ function Breaks() {
       }}
     >
       break the document
+    </button>
+  )
+}
+
+/** A Host's own Release, driving the store directly rather than through the bar. */
+function Releases() {
+  const store = useEditingStore()
+  return (
+    <button type="button" onClick={() => void store?.release()}>
+      release it
+    </button>
+  )
+}
+
+/** A control that repairs the workflow, so the count that opened a panel goes. */
+function Fixes() {
+  const store = useEditingStore()
+  return (
+    <button
+      type="button"
+      onClick={() => store?.apply(setStepField({ board: null, id: 's1' }, 'to', 'ops@example.com'))}
+    >
+      fix the workflow
     </button>
   )
 }
@@ -737,5 +760,89 @@ describe('two decisions cannot both be in flight', () => {
     )
     expect(screen.getByRole('button', { name: 'Discard' }).hasAttribute('disabled')).toBe(true)
     expect(screen.getByRole('button', { name: 'Publish' }).hasAttribute('disabled')).toBe(true)
+  })
+})
+
+describe('a panel whose control leaves the page', () => {
+  /*
+   * The count is drawn only while something is blocking, so fixing the last
+   * problem with its panel open takes the anchor out from under it. The claim is
+   * still held, so no condition about the SESSION notices — which is why the
+   * question is asked of the anchor rather than of the conditions that draw it.
+   */
+  it('closes the problems panel when the count it belongs to goes', async () => {
+    const source = host(BROKEN)
+    render(
+      <HatuaProvider
+        ports={{ workflows: source.port, manifests: serving(CATALOGUE) }}
+        workflowId="wf_morning"
+      >
+        <Fixes />
+        <TopBar />
+      </HatuaProvider>,
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: '1 problem' }))
+    expect(await screen.findByRole('dialog', { name: 'Problems' })).toBeDefined()
+
+    fireEvent.click(screen.getByRole('button', { name: 'fix the workflow' }))
+
+    await waitFor(() => expect(screen.queryByRole('button', { name: /problem/ })).toBeNull())
+    expect(screen.queryByRole('dialog', { name: 'Problems' })).toBeNull()
+  })
+
+  it('keeps it open when Publish opened it, because Publish does not go', async () => {
+    // The deliberate other half: an anchor that survives keeps its panel, and
+    // the panel says the workflow is clear rather than vanishing under the
+    // reader.
+    const source = host(BROKEN)
+    render(
+      <HatuaProvider
+        ports={{ workflows: source.port, manifests: serving(CATALOGUE) }}
+        workflowId="wf_morning"
+      >
+        <Fixes />
+        <TopBar />
+      </HatuaProvider>,
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Publish' }))
+    expect(await screen.findByRole('dialog', { name: 'Problems' })).toBeDefined()
+
+    fireEvent.click(screen.getByRole('button', { name: 'fix the workflow' }))
+
+    expect(await screen.findByText('Nothing is blocking Publish now.')).toBeDefined()
+  })
+})
+
+describe('a session ended by something other than this bar', () => {
+  /*
+   * ADR-0023: "nothing about it requires a toolbar". A Host driving the store
+   * itself ends sessions this bar never handled, so a version number cleared
+   * only in these handlers outlives the session it belongs to.
+   */
+  it('does not caption a Host’s own release with an earlier publish', async () => {
+    const source = host(VALID)
+    render(
+      <HatuaProvider
+        ports={{ workflows: source.port, manifests: serving(CATALOGUE) }}
+        workflowId="wf_morning"
+      >
+        <Releases />
+        <TopBar />
+      </HatuaProvider>,
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Publish' }))
+    expect(await screen.findByText('Published as version 6.')).toBeDefined()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    await screen.findByRole('button', { name: 'Publish' })
+
+    // The Host's own control, on the store rather than on this bar.
+    fireEvent.click(screen.getByRole('button', { name: 'release it' }))
+
+    expect(await screen.findByText(/no longer editing/)).toBeDefined()
+    expect(screen.queryByText('Published as version 6.')).toBeNull()
   })
 })
