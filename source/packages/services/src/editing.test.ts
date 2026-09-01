@@ -1696,6 +1696,42 @@ describe('the publish gate', () => {
     expect(host.published).toHaveLength(0)
   })
 
+  /*
+   * `finish()` bumps the generation, drops the token and halts autosave. Run
+   * late — the Host's publish is a network call and the session can end and
+   * begin again underneath it — it does all of that to the session that
+   * REPLACED this one, leaving a Draft the user visibly just reopened saved
+   * nowhere and reporting that it has ended.
+   */
+  it('does not end the session that replaced it while the Host was publishing', async () => {
+    let answer: (published: PublishedVersion) => void = () => {}
+    const host = recorder()
+    host.port.publish = () =>
+      new Promise<PublishedVersion>((resolve) => {
+        answer = resolve
+      })
+
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+
+    const attempt = store.publish()
+    await settle()
+
+    // A second session, opened while the first publish is still in the air.
+    store.reopen()
+    await settle()
+    expect(ready(store).claimed).toBe(true)
+
+    answer({ version: 9, publishedAt: '2026-01-01T00:00:00.000Z' })
+    await attempt
+
+    expect(ready(store).claimed).toBe(true)
+    store.apply(removeStep({ board: null, id: 's1' }))
+    await vi.advanceTimersByTimeAsync(200)
+    expect(host.writes.length).toBeGreaterThan(0)
+  })
+
   it('refuses to publish on a claim the session lost while it waited', async () => {
     let answer: (found: Diagnostic[]) => void = () => {}
     const pending = new Promise<Diagnostic[]>((resolve) => {

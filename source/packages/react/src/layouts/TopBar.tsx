@@ -209,23 +209,44 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
   const definition = workflow?.definition ?? null
 
   /*
-   * A layer whose control is no longer drawn is closed, not merely hidden.
+   * A layer whose control has left the page is closed, not merely hidden.
    *
-   * Both panels are guarded at the render site so neither can be SEEN over a
-   * missing anchor — but the state behind them survives, and it holds the
-   * element. Let the document stop projecting and project again, or the store
-   * reopen, and the guard lifts over an anchor that has since been detached:
-   * `getBoundingClientRect()` on it is all zeros, so `place` puts the panel in
-   * the corner of the viewport attached to nothing, and Escape focuses a node
-   * that is not in the page.
+   * Asked of the anchor itself rather than of the conditions that draw it.
+   * Enumerating those conditions is what went wrong the first time: the version
+   * button goes when the document stops projecting, and BOTH the count and
+   * Publish go when the claim does — but the count also goes on its own, the
+   * moment the last problem is fixed with its panel open, and no list of
+   * render conditions stays complete as controls are added.
+   *
+   * Left open, the panel sits over a detached node: its rect is all zeros, so
+   * `place` puts it in the corner of the viewport attached to nothing, and
+   * Escape focuses a node that is not in the document — dropping the next Tab
+   * to the top of the Host's page.
+   *
+   * No dependency array, because `isConnected` is a fact about the DOM after
+   * the commit rather than about anything in this render's scope: computed
+   * during render it is still true, on the very render that is removing the
+   * node.
    */
-  const orphaned =
-    (layer?.kind === 'versions' && !definition) ||
-    (layer?.kind === 'problems' && !workflow?.claimed)
+  useEffect(() => {
+    if (layer && !layer.anchor.isConnected) setLayer(null)
+  })
+
+  /*
+   * A version number belongs to the session it ended, and to no later one.
+   *
+   * Cleared whenever a claim is taken, which is the only moment a new session
+   * begins — so it cannot outlive one however that session is ended. Clearing it
+   * in the handlers instead only covers the endings this bar performs, and
+   * ADR-0023 is explicit that nothing about the store requires a toolbar: a Host
+   * calling `release()` itself would otherwise caption its release with the
+   * version some earlier Publish produced.
+   */
+  const claimed = workflow?.claimed ?? false
 
   useEffect(() => {
-    if (orphaned) setLayer(null)
-  }, [orphaned])
+    if (claimed) setPublished(null)
+  }, [claimed])
 
   /*
    * Absent, not zero, until the answer means something. Every Step looks like
@@ -280,19 +301,18 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
     setBusy(how)
     setLayer(null)
     /*
-     * Whatever ends this session now is what ended it.
+     * Cleared BEFORE the call, not after it succeeds.
      *
-     * Both of these have to be cleared BEFORE the call, not after it succeeds.
      * `discard()` drops the claim synchronously and only then awaits the port,
      * so the ended cluster is on screen for the whole of that call; `release()`
-     * awaits one last write first, so the claimed cluster is. Either way what is
-     * left standing is read: a version from an earlier Publish captions a
-     * release with "Published as version 6.", and an `attempt` left over from
-     * the problems panel captions it with a publish error — or, when the panel
-     * was opened from the count, with the empty string that carries no message
-     * at all.
+     * awaits one last write first, so the claimed cluster is. Either way an
+     * `attempt` left standing from the problems panel captions the ending with a
+     * publish error — or, when the panel was opened from the count, with the
+     * empty string that carries no message at all.
+     *
+     * `published` needs no clearing here: taking a claim clears it, and this
+     * session took one.
      */
-    setPublished(null)
     setAttempt(null)
     try {
       await store[how]()
@@ -307,7 +327,6 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
   /** Open the Draft again, on a bar that is showing how the last session ended. */
   const editAgain = () => {
     setAttempt(null)
-    setPublished(null)
     // A publish refused AFTER its session ended sets both the attempt and the
     // layer, and only the attempt is on screen — the panel is held back because
     // there is no claim. Left set, the reopened bar draws a count reading
