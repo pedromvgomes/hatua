@@ -60,7 +60,11 @@ status: draft
 
 connections:
   - id: mailbox
-    ref: host_mailbox_1
+    # A handle the Host's connection port actually serves, so the Trigger's
+    # Mailbox resolves to a described Connection. A ref nothing describes reads
+    # as a Connection of unknown type, which every connection field then offers
+    # whatever type it asks for.
+    ref: cx_9f2a
 
 triggers:
   - id: overnight
