@@ -269,9 +269,27 @@ export function publishBlockers(
     resolve: (found: readonly Diagnostic[]) => void,
     refuse: (why: Error) => void,
   ) => {
-    const state = validation.getSnapshot()
-    if (state.ready) resolve(state.all)
-    else refuse(new PublishBlocked(NOTHING, UNCHECKABLE))
+    if (validation.getSnapshot().ready) {
+      resolve(validation.getSnapshot().all)
+      return
+    }
+    /*
+     * Unready has two causes, and only one of them is this gate's to report.
+     *
+     * A catalogue in hand means the rules could have run, so what stopped them
+     * is the document — someone typed it out of shape during the wait, which is
+     * ordinary: the canvas keeps editing while the three buttons are disabled.
+     * Answering with nothing hands the question back to `publish()`, whose floor
+     * check runs again after the wait and says what is actually wrong. Refusing
+     * here instead would bury that behind "could not be checked, try again in a
+     * moment" — advice that is wrong, and that says the same thing on every
+     * retry because the document is what needs fixing.
+     */
+    if (manifests.getSnapshot().status === 'ready') {
+      resolve(NOTHING)
+      return
+    }
+    refuse(new PublishBlocked(NOTHING, UNCHECKABLE))
   }
 
   return new Promise((resolve, reject) => {

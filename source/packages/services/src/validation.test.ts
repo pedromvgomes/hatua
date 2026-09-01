@@ -6,6 +6,7 @@ import { createManifestStore, type ManifestStore } from './manifests'
 import type { ConnectionSource, DraftSession, EditToken, Lease, WorkflowStore } from './ports'
 import { removeStep } from './steps'
 import { createValidationStore, publishBlockers } from './validation'
+import { setWorkflowName } from './workflow'
 
 /**
  * The join between the document and the catalogue.
@@ -734,5 +735,40 @@ describe('a gate waiting on a Host that never answers', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('a document that stops projecting while the gate waits', () => {
+  /*
+   * The canvas keeps editing while the three toolbar buttons are disabled, so a
+   * keystroke can break the projection mid-wait. Refusing here buries the floor's
+   * own message — "This is not a valid workflow yet." — behind "could not be
+   * checked, try again in a moment", which is wrong and says the same thing on
+   * every retry, because what needs fixing is the document.
+   */
+  it('hands the question back rather than reporting an uncheckable workflow', async () => {
+    let arrive: (manifests: Manifest[]) => void = () => {}
+    const pending = new Promise<Manifest[]>((resolve) => {
+      arrive = resolve
+    })
+    const editing = createEditingStore(workflowPort(MISSING), 'wf')
+    const catalogue = createManifestStore({ loadManifests: () => pending })
+    const validation = createValidationStore(editing, catalogue, null)
+    validation.load()
+    await settle()
+
+    const asked = publishBlockers(validation, catalogue)
+
+    // Typed out of shape while the catalogue was still coming.
+    const state = editing.getSnapshot()
+    if (state.status === 'ready') {
+      state.workflow.document.ast.delete('steps')
+      state.workflow.document.ast.delete('version')
+      editing.apply(setWorkflowName('Renamed while broken'))
+    }
+
+    arrive(CATALOGUE)
+    // Nothing to report, and `publish()`'s floor is what says why.
+    await expect(asked).resolves.toEqual([])
   })
 })

@@ -142,8 +142,14 @@ markers can never disagree about what is wrong, because there is one answer.
   automatically, correctly: a Host that has said no "will not become true again by asking harder".
   But `reopen()` — the only exit that existed — calls `openDraft()`, which discards the in-memory
   document that [ADR-0005](0005-hatua-owns-versioning-hosts-own-storage.md) promises to keep. So
-  `resumeSaving()` clears the halt and re-enters the schedule on the held token. One press, chosen by
-  the person whose work it is, is a different act from a timer.
+  `resumeSaving()` asks the Host to renew the claim, and clears the halt only once it says yes. One
+  press, chosen by the person whose work it is, is a different act from a timer.
+
+  **It renews rather than simply writing again**, because the halt it answers is most often a refused
+  RENEWAL — which fires on a timer, and therefore while nobody is typing. A resume that went straight
+  back to the write queue would find the document already level with the Host, report `saved`, and take
+  the control off screen having verified nothing at all; the lease would then lapse a few seconds
+  later. The renewal is what re-checks the claim, and anything outstanding is written once it holds.
 - **The conflict a Host reports is rendered, not diagnosed.** `WorkflowStore.publish` rejects with a
   plain `Error` and carries no code, so Hatua cannot tell "someone else published" from "your claim
   was taken". Both surface as the Host's own message with a way to try again. A typed conflict on the

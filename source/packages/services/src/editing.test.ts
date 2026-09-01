@@ -2003,7 +2003,7 @@ describe('the publish gate', () => {
     expect(host.writes.length).toBeGreaterThan(0)
   })
 
-  it('refuses to publish on a claim the session lost while it waited', async () => {
+  it('refuses, and says which, when the workflow is opened again mid-wait', async () => {
     let answer: (found: Diagnostic[]) => void = () => {}
     const pending = new Promise<Diagnostic[]>((resolve) => {
       answer = resolve
@@ -2012,9 +2012,27 @@ describe('the publish gate', () => {
 
     const attempt = store.publish()
     await settle()
-    // Another tab took over, so this store reopened underneath the wait.
+    // A live session again, not an ended one — so telling the reader editing has
+    // finished would be both wrong and unactionable.
     store.reopen()
     await settle()
+    answer([])
+
+    await expect(attempt).rejects.toThrow(/opened again/)
+    expect(host.published).toHaveLength(0)
+    expect(ready(store).claimed).toBe(true)
+  })
+
+  it('says the session ended when it actually has', async () => {
+    let answer: (found: Diagnostic[]) => void = () => {}
+    const pending = new Promise<Diagnostic[]>((resolve) => {
+      answer = resolve
+    })
+    const { host, store } = await opened({ gate: { blockers: () => pending } })
+
+    const attempt = store.publish()
+    await settle()
+    store.dispose()
     answer([])
 
     await expect(attempt).rejects.toThrow(/session has ended/)
