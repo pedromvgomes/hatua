@@ -172,6 +172,25 @@ export function Build({ className, ...rest }: BuildProps) {
                 // same reason: the next Component picked would land somewhere
                 // nobody chose, on a Board nobody is looking at.
                 setPending(null)
+                /*
+                 * And unfold the Board, or the reveal can arrive at something
+                 * nothing draws.
+                 *
+                 * `collapsed` is handed straight to `layout`, and a folded
+                 * container hides its descendants outright — so a bad `when:`
+                 * inside a collapsed Fork would select a Step that is not on
+                 * screen, and the row meant to be the way to the problem would
+                 * do nothing observable.
+                 *
+                 * The whole Board rather than the ancestors of the one Step:
+                 * nothing exported names a Step's ancestors, and inventing that
+                 * walk here would be a second answer to a question
+                 * `@hatua/model` owns. Unfolding more than strictly necessary is
+                 * visible and undoable; arriving at a blank canvas is neither.
+                 */
+                setCollapsed((held) =>
+                  held.filter((ref) => boardKey(ref.board) !== boardKey(target)),
+                )
 
                 if (diagnostic.triggerId !== undefined) {
                   setTab('workflow')

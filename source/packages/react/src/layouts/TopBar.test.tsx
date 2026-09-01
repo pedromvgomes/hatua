@@ -10,9 +10,11 @@ import type {
   VersionSummary,
   WorkflowStore,
 } from '@hatua/services'
+import { setWorkflowName } from '@hatua/services'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { useEffect } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { HatuaProvider } from '../theme/HatuaProvider'
+import { HatuaProvider, useEditingStore } from '../theme/HatuaProvider'
 import { TopBar } from './TopBar'
 
 /**
@@ -121,6 +123,30 @@ function host(yaml = VALID, overrides: Partial<WorkflowStore> = {}): Host {
 const serving = (manifests: Manifest[]): ManifestSource => ({
   loadManifests: async () => manifests,
 })
+
+/**
+ * Makes one edit, so autosave has something outstanding.
+ *
+ * The toolbar edits nothing itself — the Workflow tab is where a name is
+ * changed — so a test about a write still in flight has to make one happen.
+ */
+function Edits() {
+  const store = useEditingStore()
+
+  useEffect(() => {
+    if (!store) return
+    if (store.getSnapshot().status === 'ready') {
+      store.apply(setWorkflowName('Morning inbox triage, revised'))
+      return
+    }
+    return store.subscribe(() => {
+      if (store.getSnapshot().status !== 'ready') return
+      store.apply(setWorkflowName('Morning inbox triage, revised'))
+    })
+  }, [store])
+
+  return null
+}
 
 const mount = (
   source?: Host,
@@ -601,5 +627,58 @@ steps:
     mount(source)
     fireEvent.click(await screen.findByRole('button', { name: '1 problem' }))
     expect(await screen.findByText('To is required.')).toBeDefined()
+  })
+})
+
+describe('two ways of ending one session', () => {
+  /*
+   * `release()` awaits one last write BEFORE dropping the claim, so the claimed
+   * cluster — Publish included — is on screen for the length of that write.
+   * Pressing Publish inside that window promotes the Draft, and the release then
+   * calls `releaseDraft` on a token the publish has already consumed.
+   */
+  it('does not offer Publish while a release is still going', async () => {
+    const source = host(VALID, {
+      // Never settles, so the window the race lives in stays open.
+      saveDraft: () => new Promise<void>(() => {}),
+    })
+    // An edit has to be outstanding for the window to exist at all: with
+    // nothing to write, `release()` finds the Host's copy already current and
+    // drops the claim on the spot.
+    render(
+      <HatuaProvider
+        ports={{ workflows: source.port, manifests: serving(CATALOGUE) }}
+        workflowId="wf_morning"
+      >
+        <Edits />
+        <TopBar />
+      </HatuaProvider>,
+    )
+    const release = await screen.findByRole('button', { name: 'Release' })
+    await waitFor(() => expect(screen.getByText('Saving…')).toBeDefined())
+
+    fireEvent.click(release)
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Publish' }).hasAttribute('disabled')).toBe(true),
+    )
+    expect(screen.getByRole('button', { name: 'Discard' }).hasAttribute('disabled')).toBe(true)
+  })
+
+  it('still offers Release and Discard while a publish is going nowhere', async () => {
+    // The opposite case, and deliberately not symmetrical: a Publish can be
+    // refused and leaves everything running, so a Host that never answers one
+    // must not take the way out down with it.
+    const source = host(VALID, {
+      publish: () => new Promise<never>(() => {}),
+    })
+    mount(source)
+    fireEvent.click(await screen.findByRole('button', { name: 'Publish' }))
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Publish' }).hasAttribute('disabled')).toBe(true),
+    )
+    expect(screen.getByRole('button', { name: 'Release' }).hasAttribute('disabled')).toBe(false)
+    expect(screen.getByRole('button', { name: 'Discard' }).hasAttribute('disabled')).toBe(false)
   })
 })
