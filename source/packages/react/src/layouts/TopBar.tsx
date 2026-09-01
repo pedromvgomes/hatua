@@ -183,6 +183,17 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
   const [confirming, setConfirming] = useState(false)
   /** What the last **Publish** produced, so the ended session can say what ended it. */
   const [published, setPublished] = useState<number | null>(null)
+  /*
+   * Where focus goes when the controls a discard was confirmed from disappear.
+   *
+   * `discard()` drops the claim synchronously, so the whole claimed cluster —
+   * including the button `ConfirmDialog` recorded to restore focus to — has
+   * unmounted by the time its restore runs, and focus lands on <body>. The next
+   * Tab then restarts from the top of the Host's page, which is the failure the
+   * layer's own Escape handler exists to avoid.
+   */
+  const editButton = useRef<HTMLButtonElement>(null)
+  const [handOver, setHandOver] = useState(false)
 
   /*
    * The count, so it can tell its own panel from Publish's.
@@ -233,6 +244,19 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
    */
   const claimed = workflow?.claimed ?? false
 
+  /*
+   * `busy` is the dependency, because neither the button nor its ability to take
+   * focus exists on the commit that sets this: the discard drops the claim
+   * before the Host has answered, so Edit renders disabled — and a disabled
+   * button cannot be focused at all. `busy` falling is that answer arriving,
+   * with the claim already gone and the cluster already swapped.
+   */
+  useEffect(() => {
+    if (!handOver || busy || !editButton.current) return
+    editButton.current.focus()
+    setHandOver(false)
+  }, [handOver, busy])
+
   useEffect(() => {
     if (!claimed) return
     setPublished(null)
@@ -268,12 +292,20 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
   // Stable, because <Layer> lists it as an effect dependency: recreated every
   // render, the document-level keydown and pointerdown handlers are torn off and
   // re-attached on every keystroke the bar re-renders for.
-  const closeLayer = useCallback(() => {
+  const closeLayer = useCallback(() => setLayer(null), [])
+
+  /**
+   * Closing the problems panel, which also retires what it was showing.
+   *
+   * Separate from `closeLayer` because `attempt` belongs to this panel and not
+   * to the other one. Cleared on any close, dismissing the VERSION list would
+   * erase an ending's error from the cluster beside it — the Host's explanation
+   * of a refused release replaced by the generic sentence, with nothing left
+   * saying why. Kept on any close, a rejected Publish the reader dismissed goes
+   * on to caption the next ending.
+   */
+  const closeProblems = useCallback(() => {
     setLayer(null)
-    // And what the panel was showing. `attempt` is read by the ended-session
-    // cluster too, so a rejected Publish whose panel the reader dismissed would
-    // otherwise still be standing when the session ends — captioning a release
-    // with the reason a publish failed.
     setAttempt(null)
   }, [])
 
@@ -576,7 +608,13 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
                         : `Published as version ${published}.`}
                     </p>
                   )}
-                  <Button size="sm" variant="primary" disabled={busy} onClick={editAgain}>
+                  <Button
+                    ref={editButton}
+                    size="sm"
+                    variant="primary"
+                    disabled={busy}
+                    onClick={editAgain}
+                  >
                     Edit
                   </Button>
                 </>
@@ -604,7 +642,7 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
           attempt={attempt}
           live={blocking}
           onReveal={onRevealDiagnostic}
-          onClose={closeLayer}
+          onClose={closeProblems}
         />
       ) : null}
 
@@ -617,6 +655,7 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
         onCancel={() => setConfirming(false)}
         onConfirm={() => {
           setConfirming(false)
+          setHandOver(true)
           void end('discard')
         }}
       />
@@ -818,10 +857,20 @@ function Layer({
   const titleId = useId()
   const [at, setAt] = useState<{ left: number; top?: number; bottom?: number } | null>(null)
 
-  // Measured after layout and once per opening. The anchor is a toolbar control
-  // that does not move while its panel is open, so tracking it would be work
-  // done on every scroll for a position that never changes.
-  useLayoutEffect(() => {
+  /*
+   * Measured after layout, and again whenever the anchor can have moved.
+   *
+   * The panel is `position: fixed`, so its coordinates are the viewport's while
+   * the control it belongs to is not: `views/Build` puts the whole screen —
+   * toolbar included — inside an `overflow-x: auto` scroller with a 1240px
+   * floor, so on any narrower viewport the bar slides sideways underneath a
+   * panel that stays put. A resize does the same.
+   *
+   * Captured, so an ancestor scrolling counts and not only the window, which is
+   * exactly what that scroller is. `<TemplateInput>` tracks its picker the same
+   * way and for the same reason.
+   */
+  const measure = useCallback(() => {
     const rect = anchor.getBoundingClientRect()
     const found = place({ left: rect.left, top: rect.top, bottom: rect.bottom }, LAYER)
     setAt({
@@ -829,6 +878,17 @@ function Layer({
       ...(found.top === undefined ? { bottom: found.bottom } : { top: found.top }),
     })
   }, [anchor])
+
+  useLayoutEffect(measure, [measure])
+
+  useEffect(() => {
+    window.addEventListener('scroll', measure, true)
+    window.addEventListener('resize', measure)
+    return () => {
+      window.removeEventListener('scroll', measure, true)
+      window.removeEventListener('resize', measure)
+    }
+  }, [measure])
 
   /*
    * Focus moves into the panel when it opens.

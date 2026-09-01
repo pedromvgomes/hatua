@@ -1058,3 +1058,40 @@ describe('a message that has outlived what it was about', () => {
     expect(screen.queryByText('There are no versions yet.')).toBeNull()
   })
 })
+
+describe('an ending error and the version list are different subjects', () => {
+  /*
+   * `attempt` belongs to the problems panel. Cleared on any close, dismissing
+   * the VERSION list erases the Host's explanation of a refused ending from the
+   * cluster beside it, leaving the generic sentence and nothing saying why.
+   */
+  it('keeps a refused release on screen when the version list is dismissed', async () => {
+    const source = host(VALID, {
+      async releaseDraft() {
+        throw new Error('The workflow service is unreachable.')
+      },
+    })
+    mount(source)
+    fireEvent.click(await screen.findByRole('button', { name: 'Release' }))
+    expect(await screen.findByText('The workflow service is unreachable.')).toBeDefined()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Versions' }))
+    await screen.findByRole('dialog', { name: 'Versions' })
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Versions' })).toBeNull())
+    expect(screen.getByText('The workflow service is unreachable.')).toBeDefined()
+  })
+
+  it('hands focus to Edit when a confirmed discard takes the controls away', async () => {
+    // `discard()` drops the claim synchronously, so the button ConfirmDialog
+    // recorded to restore focus to has unmounted by the time it tries.
+    const source = host(VALID)
+    mount(source)
+    fireEvent.click(await screen.findByRole('button', { name: 'Discard' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Discard draft' }))
+
+    const edit = await screen.findByRole('button', { name: 'Edit' })
+    await waitFor(() => expect(document.activeElement).toBe(edit))
+  })
+})

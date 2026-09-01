@@ -1388,6 +1388,56 @@ describe('a renewal that answers with less than a full lease', () => {
   })
 })
 
+describe('two renewals in the air at once', () => {
+  /*
+   * The armed timer can fire while a press has already asked, or a press can
+   * land twice — and against a Host that ROTATES the token, whichever response
+   * arrives LAST wins the assignment. The older one then installs a credential
+   * the Host has already superseded: every write refused, and the three endings
+   * spending a claim that is not live.
+   */
+  it('keeps the token from the renewal that was asked for last', async () => {
+    const answers: ((lease: Lease) => void)[] = []
+    let refuseWrite = true
+    const written: EditToken[] = []
+    const host = recorder({ lease: leaseFor(30) })
+    host.port.renewLease = () =>
+      new Promise<Lease>((resolve) => {
+        answers.push(resolve)
+      })
+    host.port.saveDraft = async (given) => {
+      if (refuseWrite) throw new Error('The workflow service is unreachable.')
+      written.push(given)
+    }
+
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+
+    // Halted by a refused write, which leaves the armed renewal alone.
+    store.apply(removeStep({ board: null, id: 's1' }))
+    await vi.advanceTimersByTimeAsync(200)
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
+
+    // The armed renewal fires and hangs...
+    await vi.advanceTimersByTimeAsync(16 * 60_000)
+    // ...and the reader presses "try again", which asks a second time.
+    store.resumeSaving()
+    await settle()
+    expect(answers).toHaveLength(2)
+
+    refuseWrite = false
+    // The newer answers first, the older last.
+    answers[1]?.({ token: 'tok_new' as EditToken, expiresAt: leaseFor(30).expiresAt })
+    await settle()
+    answers[0]?.({ token: 'tok_old' as EditToken, expiresAt: leaseFor(30).expiresAt })
+    await settle()
+
+    await vi.advanceTimersByTimeAsync(200)
+    expect(written).toEqual(['tok_new'])
+  })
+})
+
 describe('the lease', () => {
   it('renews at the halfway mark, so one lost renewal still leaves time to retry', async () => {
     const host = recorder({ lease: leaseFor(30) })

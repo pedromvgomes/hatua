@@ -289,6 +289,18 @@ export function createEditingStore(
   let history: Revision[] = []
   let future: Revision[] = []
 
+  /*
+   * Which renewal is the current one.
+   *
+   * Two can be in the air at once — the armed timer fires while a press has
+   * already asked, or a press lands twice — and against a Host that ROTATES the
+   * token that is not merely wasteful: whichever response arrives last wins the
+   * assignment below, so the older one can install a credential the Host has
+   * already superseded. Every write after it is refused, and the three endings
+   * spend a claim that is not live. Bumped per attempt, checked after the await.
+   */
+  let renewal = 0
+
   let saveTimer: ReturnType<typeof setTimeout> | undefined
   let leaseTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -571,10 +583,11 @@ export function createEditingStore(
      */
     if (disposed || !token) return
     const mine = generation
+    const asked = ++renewal
 
     try {
       const next = await port.renewLease(token)
-      if (mine !== generation || disposed) return
+      if (mine !== generation || disposed || asked !== renewal) return
       lease = next
       /*
        * And the token with it, because a renewed lease may carry a new one.
@@ -604,7 +617,7 @@ export function createEditingStore(
       // meaning "waiting" about a document already level with the Host.
       if (resuming && dirty()) schedule()
     } catch (cause) {
-      if (mine !== generation || disposed) return
+      if (mine !== generation || disposed || asked !== renewal) return
       // A lost lease is a rejected write that has not happened yet: the claim
       // is gone, so the next save would be refused anyway. Halting now stops
       // autosave from finding that out the expensive way, and keeps the
