@@ -202,10 +202,28 @@ const now = () => new Date().toISOString()
 const stamped = (yaml: string, version: number, status: VersionSummary['status']): string => {
   const withVersion = /^version:.*$/m.test(yaml)
     ? yaml.replace(/^version:.*$/m, `version: ${String(version)}`)
-    : `version: ${String(version)}\n${yaml}`
+    : declaring(yaml, `version: ${String(version)}`)
   return /^status:.*$/m.test(withVersion)
     ? withVersion.replace(/^status:.*$/m, `status: ${status}`)
-    : `status: ${status}\n${withVersion}`
+    : declaring(withVersion, `status: ${status}`)
+}
+
+/**
+ * Add a top-level key to a document that has none, after anything that has to
+ * come first.
+ *
+ * `seed` is the caller's, and a YAML file may open with directives and a `---`
+ * marker. A key put in front of those is content before the directives-end
+ * marker, which is either invalid or a second document — and `parseWorkflow`
+ * refuses a multi-document source at the seam, so the failure would reach the
+ * user as a draft that will not open.
+ */
+const declaring = (yaml: string, line: string): string => {
+  const lines = yaml.split('\n')
+  let at = 0
+  while (at < lines.length && /^(%|---\s*$)/.test(lines[at] ?? '')) at++
+  lines.splice(at, 0, line)
+  return lines.join('\n')
 }
 
 export interface LocalWorkflowStoreOptions {

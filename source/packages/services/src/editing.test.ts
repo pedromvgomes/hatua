@@ -1300,6 +1300,72 @@ describe('a Host that rotates the token on renewal', () => {
   })
 })
 
+describe('a token rotated while an ending is in flight', () => {
+  const rotated = 'tok_2' as EditToken
+
+  /*
+   * A renewal can land inside the gate's wait and hand back a new token, and it
+   * does not bump the generation — so the guard after the wait says nothing
+   * about it. Spending the credential captured before the wait gets the publish
+   * refused for a reason the user can neither see nor act on.
+   */
+  it('publishes on the token the renewal handed back', async () => {
+    let answer: (found: Diagnostic[]) => void = () => {}
+    const pending = new Promise<Diagnostic[]>((resolve) => {
+      answer = resolve
+    })
+    const spent: EditToken[] = []
+    const host = recorder({ lease: leaseFor(0.05) })
+    host.port.renewLease = async () => ({ token: rotated, expiresAt: leaseFor(30).expiresAt })
+    host.port.publish = async (given): Promise<PublishedVersion> => {
+      spent.push(given)
+      return { version: 5, publishedAt: '2026-01-01T00:00:00.000Z' }
+    }
+
+    const store = createEditingStore(host.port, 'wf_morning', {
+      autosaveDelayMs: 100,
+      gate: { blockers: () => pending },
+    })
+    store.open()
+    await settle()
+
+    const attempt = store.publish()
+    await settle()
+    // The renewal fires inside the wait.
+    await vi.advanceTimersByTimeAsync(2000)
+
+    answer([])
+    await attempt
+    expect(spent).toEqual([rotated])
+  })
+
+  it('releases on it too, because the last write is an unbounded wait', async () => {
+    let land: () => void = () => {}
+    const spent: EditToken[] = []
+    const host = recorder({ lease: leaseFor(0.05) })
+    host.port.renewLease = async () => ({ token: rotated, expiresAt: leaseFor(30).expiresAt })
+    host.port.saveDraft = () =>
+      new Promise<void>((resolve) => {
+        land = resolve
+      })
+    host.port.releaseDraft = async (given) => {
+      spent.push(given)
+    }
+
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+    store.apply(removeStep({ board: null, id: 's1' }))
+
+    const ending = store.release()
+    await vi.advanceTimersByTimeAsync(2000)
+    land()
+    await ending
+
+    expect(spent).toEqual([rotated])
+  })
+})
+
 describe('the lease', () => {
   it('renews at the halfway mark, so one lost renewal still leaves time to retry', async () => {
     const host = recorder({ lease: leaseFor(30) })
@@ -1446,6 +1512,32 @@ describe('ending the session', () => {
     // The claim is kept, so the halt is still on screen and still resumable.
     expect(ready(store).claimed).toBe(true)
     expect(ready(store).save).toMatchObject({ state: 'halted' })
+  })
+
+  /*
+   * `attempt()` returns immediately when the store is already halted, so the
+   * write a Release awaits is a no-op and the halt stands whether or not
+   * anything was pending. Judged on the halt alone, a Release pressed on a clean
+   * document after a refused RENEWAL — the commonest halt, and one that loses
+   * nothing — is refused for ever, which is the opposite of handing the Draft
+   * back.
+   */
+  it('releases a clean Draft even though autosave is halted', async () => {
+    const host = recorder({ lease: leaseFor(0.05) })
+    host.port.renewLease = async () => {
+      throw new Error('Your lease on this workflow expired.')
+    }
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+
+    // Nothing typed, and the renewal is refused.
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
+
+    await store.release()
+    expect(host.released).toBe(1)
+    expect(ready(store).claimed).toBe(false)
   })
 
   it('does not write before discarding, because the Draft is being thrown away', async () => {

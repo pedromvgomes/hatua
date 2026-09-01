@@ -338,6 +338,23 @@ describe('versions', () => {
     }
   }
 
+  it('stamps a seed that opens with a document marker without breaking it', async () => {
+    // `seed` is the caller's, and a key put in front of a `---` marker is
+    // content before the directives end — which is either invalid or a second
+    // document, and `parseWorkflow` refuses a multi-document source outright.
+    const store = createLocalWorkflowStore({
+      namespace: 'marked',
+      seed: '---\nid: wf_morning\nname: n\nsteps: []\n',
+    })
+    const { yaml } = await store.openDraft(WORKFLOW)
+
+    expect(yaml.startsWith('---')).toBe(true)
+    expect(yaml).toContain('version: 1')
+    expect(yaml).toContain('status: draft')
+    // One document still, which is all @hatua/document will accept.
+    expect(yaml.split('\n').filter((line) => line === '---')).toHaveLength(1)
+  })
+
   it('omits the cursor entirely for a workflow small enough not to need one', async () => {
     const store = createLocalWorkflowStore()
     await publishTimes(store, 2)
