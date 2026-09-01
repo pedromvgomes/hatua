@@ -10,7 +10,6 @@ import {
 import {
   type ComponentPropsWithRef,
   type ReactNode,
-  type RefObject,
   useEffect,
   useId,
   useLayoutEffect,
@@ -84,8 +83,16 @@ type Attempt =
   | { kind: 'blocked'; message: string; diagnostics: readonly Diagnostic[] }
   | { kind: 'rejected'; message: string }
 
-/** Which floating layer is open. One at a time: they share an anchor row. */
-type Layer = 'versions' | 'problems' | null
+/**
+ * Which floating layer is open, and what it belongs to.
+ *
+ * The anchor is the ELEMENT that opened it rather than a ref to one particular
+ * control, because the problems panel has two ways in — the count and Publish —
+ * and a panel anchored to a control the user did not press is a panel that
+ * cannot be pressed closed again: the outside-pointer handler would treat the
+ * opening control as outside, close, and let the click reopen it.
+ */
+type Layer = { kind: 'versions' | 'problems'; anchor: HTMLElement } | null
 
 /**
  * The toolbar: which workflow this is, which version of it, and the three
@@ -157,9 +164,6 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
   /** What the last **Publish** produced, so the ended session can say what ended it. */
   const [published, setPublished] = useState<number | null>(null)
 
-  const versionsButton = useRef<HTMLButtonElement>(null)
-  const publishButton = useRef<HTMLButtonElement>(null)
-
   const workflow = state.status === 'ready' ? state.workflow : null
   const definition = workflow?.definition ?? null
 
@@ -173,12 +177,7 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
 
   const closeLayer = () => setLayer(null)
 
-  const openProblems = (next: Attempt) => {
-    setAttempt(next)
-    setLayer('problems')
-  }
-
-  const attemptPublish = async () => {
+  const attemptPublish = async (from: HTMLElement) => {
     if (!store) return
     setBusy(true)
     try {
@@ -186,36 +185,57 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
       setPublished(result.version)
       setAttempt(null)
       setLayer(null)
-      // The list the bar can open is now a version out of date, and so is the
-      // one it would open next.
-      versions?.reload()
+      // The list the bar can open is now a version out of date — but only worth
+      // refetching if anything ever opened it.
+      versions?.invalidate()
     } catch (cause) {
-      if (cause instanceof PublishBlocked) {
-        openProblems({
-          kind: 'blocked',
-          message: cause.message,
-          diagnostics: cause.diagnostics,
-        })
-      } else {
-        openProblems({ kind: 'rejected', message: messageOf(cause) })
-      }
+      setAttempt(
+        cause instanceof PublishBlocked
+          ? { kind: 'blocked', message: cause.message, diagnostics: cause.diagnostics }
+          : { kind: 'rejected', message: messageOf(cause) },
+      )
+      setLayer({ kind: 'problems', anchor: from })
     } finally {
       setBusy(false)
     }
   }
 
+  /*
+   * Release and Discard both END the claim by definition, so a rejection from
+   * the Host arrives at a bar that has already replaced these controls with the
+   * ended-session cluster — the store drops the token before it calls the port,
+   * because "a Host that fails to record either has still had the claim
+   * relinquished on this side".
+   *
+   * So the failure is not put in a floating panel. There is nothing left on
+   * screen to anchor one to, and what the user needs to read is not "here is
+   * what to fix" but "this is how the session you no longer have ended". It is
+   * rendered inline beside that, and `attempt` is what carries it.
+   */
   const end = async (how: 'release' | 'discard') => {
     if (!store) return
     setBusy(true)
+    setLayer(null)
+    // Whatever ends this session now is what ended it. Left standing, a version
+    // from an earlier Publish would caption a release with "Published as
+    // version 6."
+    setPublished(null)
     try {
       await store[how]()
       setAttempt(null)
-      if (how === 'discard') versions?.reload()
+      if (how === 'discard') versions?.invalidate()
     } catch (cause) {
-      openProblems({ kind: 'rejected', message: messageOf(cause) })
+      setAttempt({ kind: 'rejected', message: messageOf(cause) })
     } finally {
       setBusy(false)
     }
+  }
+
+  /** Open the Draft again, on a bar that is showing how the last session ended. */
+  const editAgain = () => {
+    setAttempt(null)
+    setPublished(null)
+    store?.reopen()
   }
 
   return (
@@ -278,17 +298,16 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
                   </span>
                   <button
                     type="button"
-                    ref={versionsButton}
                     className={styles.version}
                     aria-haspopup="dialog"
-                    aria-expanded={layer === 'versions'}
-                    onClick={() => {
-                      if (layer === 'versions') {
+                    aria-expanded={layer?.kind === 'versions'}
+                    onClick={(event) => {
+                      if (layer?.kind === 'versions') {
                         closeLayer()
                         return
                       }
                       versions?.load()
-                      setLayer('versions')
+                      setLayer({ kind: 'versions', anchor: event.currentTarget })
                     }}
                   >
                     v{definition.version} · {statusLabel(definition.status)}
@@ -346,17 +365,14 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
                       type="button"
                       className={styles.count}
                       aria-haspopup="dialog"
-                      aria-expanded={layer === 'problems'}
-                      onClick={() => {
-                        if (layer === 'problems') {
+                      aria-expanded={layer?.kind === 'problems'}
+                      onClick={(event) => {
+                        if (layer?.kind === 'problems') {
                           closeLayer()
                           return
                         }
-                        openProblems({
-                          kind: 'blocked',
-                          message: '',
-                          diagnostics: blocking,
-                        })
+                        setAttempt({ kind: 'blocked', message: '', diagnostics: blocking })
+                        setLayer({ kind: 'problems', anchor: event.currentTarget })
                       }}
                     >
                       {problemCount(blocking.length)}
@@ -364,11 +380,10 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
                   ) : null}
 
                   <Button
-                    ref={publishButton}
                     size="sm"
                     variant="primary"
                     disabled={busy}
-                    onClick={() => void attemptPublish()}
+                    onClick={(event) => void attemptPublish(event.currentTarget)}
                   >
                     Publish
                   </Button>
@@ -394,12 +409,20 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
                  * away deliberately, and the release kept it.
                  */
                 <>
-                  <p className={styles.ended}>
-                    {published === null
-                      ? 'You are no longer editing this workflow.'
-                      : `Published as version ${published}.`}
-                  </p>
-                  <Button size="sm" variant="primary" onClick={() => store?.reopen()}>
+                  {/* The Host refused the release or the discard, and the claim
+                      is gone on this side regardless. Said here rather than in a
+                      floating panel: the control that would have anchored one is
+                      the control this cluster replaced. */}
+                  {attempt ? (
+                    <p className={styles.problem}>{attempt.message}</p>
+                  ) : (
+                    <p className={styles.ended}>
+                      {published === null
+                        ? 'You are no longer editing this workflow.'
+                        : `Published as version ${published}.`}
+                    </p>
+                  )}
+                  <Button size="sm" variant="primary" onClick={editAgain}>
                     Edit
                   </Button>
                 </>
@@ -409,13 +432,16 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
         ) : null}
       </section>
 
-      {layer === 'versions' && versions ? (
-        <VersionLayer anchor={versionsButton} store={versions} onClose={closeLayer} />
+      {layer?.kind === 'versions' && versions ? (
+        <VersionLayer anchor={layer.anchor} store={versions} onClose={closeLayer} />
       ) : null}
 
-      {layer === 'problems' && attempt ? (
+      {/* Only while the claim is held. Every control that can anchor this panel
+          lives in the cluster that goes away with the session, so a panel
+          outliving them would have nothing to hang from. */}
+      {layer?.kind === 'problems' && attempt && workflow?.claimed ? (
         <ProblemLayer
-          anchor={publishButton}
+          anchor={layer.anchor}
           attempt={attempt}
           onReveal={onRevealDiagnostic}
           onClose={closeLayer}
@@ -451,7 +477,7 @@ function VersionLayer({
   store,
   onClose,
 }: {
-  anchor: RefObject<HTMLButtonElement | null>
+  anchor: HTMLElement
   store: NonNullable<ReturnType<typeof useVersionStore>>
   onClose: () => void
 }) {
@@ -517,7 +543,7 @@ function ProblemLayer({
   onReveal,
   onClose,
 }: {
-  anchor: RefObject<HTMLButtonElement | null>
+  anchor: HTMLElement
   attempt: Attempt
   onReveal?: (diagnostic: Diagnostic) => void
   onClose: () => void
@@ -582,7 +608,7 @@ function Layer({
   onClose,
   children,
 }: {
-  anchor: RefObject<HTMLButtonElement | null>
+  anchor: HTMLElement
   label: string
   onClose: () => void
   children: ReactNode
@@ -596,9 +622,7 @@ function Layer({
   // that does not move while its panel is open, so tracking it would be work
   // done on every scroll for a position that never changes.
   useLayoutEffect(() => {
-    const trigger = anchor.current
-    if (!trigger) return
-    const rect = trigger.getBoundingClientRect()
+    const rect = anchor.getBoundingClientRect()
     const found = place({ left: rect.left, top: rect.top, bottom: rect.bottom }, LAYER)
     setAt({
       left: found.left,
@@ -612,13 +636,13 @@ function Layer({
       onClose()
       // Back to the control that opened it, or focus is left on <body> and the
       // next Tab starts from the top of the page.
-      anchor.current?.focus()
+      anchor.focus()
     }
 
     const onPointer = (event: PointerEvent) => {
       const target = event.target as Node | null
       if (!target) return
-      if (panel.current?.contains(target) || anchor.current?.contains(target)) return
+      if (panel.current?.contains(target) || anchor.contains(target)) return
       onClose()
     }
 

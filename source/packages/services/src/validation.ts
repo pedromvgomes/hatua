@@ -215,6 +215,19 @@ export function publishBlockers(
 ): Promise<readonly Diagnostic[]> {
   if (!validation || !manifests) return Promise.resolve(NOTHING)
 
+  /*
+   * Ask, before waiting to be told.
+   *
+   * A manifest store nobody has called `load()` on sits at `loading` for ever —
+   * that is not a fetch in flight, it is a fetch that has not been started. So a
+   * gate that only waited would never answer for a Host that drives publish
+   * without mounting a region, and the Publish it belongs to would hang. This is
+   * exactly what `ValidationStore.load` exists for: "validation needs what the
+   * other regions happen to ask for", and it is idempotent, so a catalogue
+   * already on its way is not fetched twice.
+   */
+  validation.load()
+
   const decided = () =>
     manifests.getSnapshot().status !== 'loading' &&
     validation.getSnapshot().connections !== 'pending'

@@ -59,6 +59,17 @@ export interface VersionStore extends Store<VersionsState> {
   loadMore(): void
   /** Fetch again from the start, discarding what is held. This is what a Retry does. */
   reload(): void
+  /**
+   * Fetch again only if anything ever asked in the first place.
+   *
+   * What a **Publish** or a **Discard** calls: both make the history stale, and
+   * neither is a reason to go and fetch one nobody has looked at. `reload()`
+   * would — it is the Retry behind a list that is already on screen — and using
+   * it here would cost a `listVersions` on every publish for every user who
+   * never opens the list, which is the request this store's laziness exists to
+   * avoid.
+   */
+  invalidate(): void
 }
 
 const asError = (cause: unknown): Error =>
@@ -168,6 +179,10 @@ export function createVersionStore(port: WorkflowStore, workflowId: string): Ver
       if (!started) fetch()
     },
     reload: fetch,
+
+    invalidate() {
+      if (started) fetch()
+    },
 
     loadMore() {
       const held = state
