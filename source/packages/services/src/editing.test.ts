@@ -1669,6 +1669,33 @@ describe('the publish gate', () => {
     expect(host.published[0]).not.toContain('id: s1')
   })
 
+  /*
+   * "Refused unconditionally" has to mean at the moment of publishing rather
+   * than at the moment of asking. Editing does not stop while the gate waits,
+   * and a command that breaks the projection during it also empties the gate's
+   * own answer — `createValidationStore` reports nothing about a document that
+   * does not project — so nothing else would say no.
+   */
+  it('refuses a document that stopped projecting while the gate waited', async () => {
+    let answer: (found: Diagnostic[]) => void = () => {}
+    const pending = new Promise<Diagnostic[]>((resolve) => {
+      answer = resolve
+    })
+    const { host, store } = await opened({ gate: { blockers: () => pending } })
+
+    const attempt = store.publish()
+    await settle()
+
+    // Text Mode, or anything else that writes the document directly.
+    const snapshot = ready(store)
+    snapshot.document.ast.delete('steps')
+    snapshot.document.ast.delete('version')
+
+    answer([])
+    await expect(attempt).rejects.toBeInstanceOf(PublishBlocked)
+    expect(host.published).toHaveLength(0)
+  })
+
   it('refuses to publish on a claim the session lost while it waited', async () => {
     let answer: (found: Diagnostic[]) => void = () => {}
     const pending = new Promise<Diagnostic[]>((resolve) => {
@@ -1829,6 +1856,43 @@ describe('resuming a halted save', () => {
     await vi.advanceTimersByTimeAsync(16 * 60_000)
 
     expect(renewals).toBeGreaterThan(before)
+  })
+
+  /*
+   * The write succeeded, so the Host does hold the text — but the lease was
+   * refused while it was in the air. Reporting `saved` would clear that halt:
+   * the bar goes quiet with no renewal armed and no claim behind it, and
+   * autosave goes on writing to a Host that has already said no.
+   */
+  it('does not let a successful write clear a halt that landed during it', async () => {
+    let release: () => void = () => {}
+    const host = recorder({ lease: leaseFor(0.05) })
+    host.port.saveDraft = () =>
+      new Promise<void>((resolve) => {
+        release = resolve
+      })
+    host.port.renewLease = async () => {
+      throw new Error('Your lease on this workflow expired.')
+    }
+
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+
+    store.apply(removeStep({ board: null, id: 's1' }))
+    // The write goes out...
+    await vi.advanceTimersByTimeAsync(150)
+    expect(ready(store).save).toEqual({ state: 'saving' })
+
+    // ...the renewal is refused while it is still in the air...
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
+
+    // ...and then the Host answers the write.
+    release()
+    await vi.advanceTimersByTimeAsync(50)
+
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
   })
 
   it('does nothing when the store is not halted', async () => {

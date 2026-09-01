@@ -189,6 +189,16 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
    */
   const ending = busy === 'release' || busy === 'discard'
 
+  /*
+   * The count, so it can tell its own panel from Publish's.
+   *
+   * Both controls open the same kind of layer, and `aria-expanded` is a claim
+   * about THIS control: after a refused Publish the panel belongs to the Publish
+   * button, and a count announcing itself expanded sends a screen-reader user to
+   * close a panel that is not theirs instead of opening one that is.
+   */
+  const countButton = useRef<HTMLButtonElement>(null)
+
   const workflow = state.status === 'ready' ? state.workflow : null
   const definition = workflow?.definition ?? null
 
@@ -406,9 +416,12 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
                       type="button"
                       className={styles.count}
                       aria-haspopup="dialog"
-                      aria-expanded={layer?.kind === 'problems'}
+                      ref={countButton}
+                      aria-expanded={
+                        layer?.kind === 'problems' && layer.anchor === countButton.current
+                      }
                       onClick={(event) => {
-                        if (layer?.kind === 'problems') {
+                        if (layer?.kind === 'problems' && layer.anchor === event.currentTarget) {
                           closeLayer()
                           return
                         }
@@ -454,7 +467,13 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
                       is gone on this side regardless. Said here rather than in a
                       floating panel: the control that would have anchored one is
                       the control this cluster replaced. */}
-                  {attempt ? (
+                  {/* `message` is empty when the panel was opened from the
+                      count rather than by a refusal, and `attempt` outlives the
+                      panel — so the test is whether there is something to say,
+                      not whether an attempt happened. Every path inside this
+                      region clears it first; a Host calling `release()` on the
+                      store itself does not, and that is the one this guards. */}
+                  {attempt && attempt.message !== '' ? (
                     <p className={styles.problem}>{attempt.message}</p>
                   ) : (
                     <p className={styles.ended}>
@@ -473,7 +492,12 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
         ) : null}
       </section>
 
-      {layer?.kind === 'versions' && versions ? (
+      {/* Only while the readout it hangs from is drawn. The identity cluster
+          swaps for "This workflow cannot be read yet." the moment the document
+          stops projecting, taking the version button with it — and a panel left
+          open over a detached anchor focuses nothing on Escape, dropping the
+          next Tab back to the top of the Host's page. */}
+      {layer?.kind === 'versions' && versions && definition ? (
         <VersionLayer anchor={layer.anchor} store={versions} onClose={closeLayer} />
       ) : null}
 

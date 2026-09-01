@@ -387,6 +387,17 @@ export function createEditingStore(
     commit()
   }
 
+  /**
+   * Whether autosave has stopped, read through a call.
+   *
+   * `save` is reassigned from `halt()`, which runs while an `await` in `attempt`
+   * is outstanding — and the compiler's narrowing does not survive that, so a
+   * second `save.state === 'halted'` after the await is judged against the type
+   * the first one left behind. Asking through a function is what makes the
+   * question about the field now rather than about what it was.
+   */
+  const halted = () => save.state === 'halted'
+
   const setSave = (next: SaveState) => {
     save = next
     commit()
@@ -434,6 +445,18 @@ export function createEditingStore(
     if (mine !== generation || disposed) return
 
     savedText = attempted
+
+    /*
+     * A halt that landed while this write was in the air stands.
+     *
+     * The write succeeded, so the Host does hold `attempted` and `savedText`
+     * above is true — but a lease refused mid-flight halted the session, and
+     * reporting `saved` here would clear that halt: the bar would go quiet with
+     * no renewal armed and no claim behind it, and autosave would go on writing
+     * to a Host that has already said no until the next write is refused.
+     */
+    if (halted()) return
+
     // The user kept typing while that was in flight, so the Host's copy is
     // already behind again. Reschedule rather than reporting `saved`, which
     // would tell them their last few edits were written when they were not.
@@ -879,6 +902,25 @@ export function createEditingStore(
       // token this session no longer holds is a write nobody asked for.
       if (mine !== generation || disposed) {
         throw new Error('This editing session has ended. Open the workflow again to publish it.')
+      }
+
+      /*
+       * The floor again, because the document has had the whole of that wait to
+       * move.
+       *
+       * "Refused unconditionally" has to mean at the moment of publishing, not
+       * at the moment of asking. Editing does not stop while the gate waits, and
+       * a command that breaks the projection during it makes the gate's own
+       * answer meaningless as well: `createValidationStore` reports nothing for a
+       * document that does not project, so the blockers come back empty and the
+       * broken YAML would go to the port with nothing having said no.
+       */
+      const still = document.validate()
+      if (!still.success) {
+        throw new PublishBlocked(
+          [],
+          still.error.issues[0]?.message ?? 'This is not a valid workflow yet.',
+        )
       }
 
       // The current text rather than the last text the Host accepted, and read

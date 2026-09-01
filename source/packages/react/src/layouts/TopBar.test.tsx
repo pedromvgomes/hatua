@@ -148,6 +148,32 @@ function Edits() {
   return null
 }
 
+/**
+ * A control that makes the open document stop projecting, the way Text Mode
+ * would. Rendered beside the bar rather than inside it: nothing in the toolbar
+ * edits, which is the whole reason this harness exists.
+ */
+function Breaks() {
+  const store = useEditingStore()
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        const state = store?.getSnapshot()
+        if (state?.status !== 'ready') return
+        state.workflow.document.ast.delete('steps')
+        state.workflow.document.ast.delete('version')
+        // One real command, so the store re-reads the document it has just been
+        // handed and republishes. A name it does not already carry, or `apply`
+        // finds nothing changed and publishes nothing.
+        store?.apply(setWorkflowName('Renamed while broken'))
+      }}
+    >
+      break the document
+    </button>
+  )
+}
+
 const mount = (
   source?: Host,
   {
@@ -680,5 +706,31 @@ describe('two ways of ending one session', () => {
     )
     expect(screen.getByRole('button', { name: 'Release' }).hasAttribute('disabled')).toBe(false)
     expect(screen.getByRole('button', { name: 'Discard' }).hasAttribute('disabled')).toBe(false)
+  })
+})
+
+describe('a panel outliving what it hangs from', () => {
+  it('closes the version list when the document stops projecting', async () => {
+    // The identity cluster swaps for "cannot be read yet" and takes the version
+    // button with it. A panel left open over a detached anchor focuses nothing
+    // on Escape, dropping the next Tab to the top of the Host's page.
+    const source = host(VALID)
+    render(
+      <HatuaProvider
+        ports={{ workflows: source.port, manifests: serving(CATALOGUE) }}
+        workflowId="wf_morning"
+      >
+        <Breaks />
+        <TopBar />
+      </HatuaProvider>,
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: /v5 · Draft/ }))
+    expect(await screen.findByRole('dialog', { name: 'Versions' })).toBeDefined()
+
+    fireEvent.click(screen.getByRole('button', { name: 'break the document' }))
+
+    await waitFor(() => expect(screen.getByText(/cannot be read yet/)).toBeDefined())
+    expect(screen.queryByRole('dialog', { name: 'Versions' })).toBeNull()
   })
 })
