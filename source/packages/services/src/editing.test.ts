@@ -1398,6 +1398,28 @@ describe('ending the session', () => {
     expect(host.released).toBe(1)
   })
 
+  /*
+   * `write()` cannot reject — `attempt()` turns a refused `saveDraft` into a halt
+   * and returns normally — so awaiting it says the attempt is over, not that it
+   * worked. Releasing anyway hands the Draft on WITHOUT the edit that was in
+   * flight and reports a clean ending, with nothing on screen to say otherwise:
+   * the halt is drawn against a claim, and the claim would be gone.
+   */
+  it('refuses to release a Draft whose last edit never reached the Host', async () => {
+    const host = recorder({ rejectSave: new Error('Your lease on this workflow expired.') })
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+    store.apply(removeStep({ board: null, id: 's1' }))
+
+    await expect(store.release()).rejects.toThrow(/lease/)
+
+    expect(host.released).toBe(0)
+    // The claim is kept, so the halt is still on screen and still resumable.
+    expect(ready(store).claimed).toBe(true)
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
+  })
+
   it('does not write before discarding, because the Draft is being thrown away', async () => {
     // The only possible effect would be to lose a race with the delete.
     const { host, store } = await open()
@@ -1890,6 +1912,42 @@ describe('resuming a halted save', () => {
     store.resumeSaving()
     await vi.advanceTimersByTimeAsync(0)
     expect(ready(store).save).toEqual({ state: 'saved' })
+  })
+
+  /*
+   * A halt from a refused WRITE leaves the renewal timer armed — `halt()` only
+   * cancels the save. Entering `renew()` out of band then dropped that handle
+   * without clearing it and armed a second, so every resume doubled the renewal
+   * rate for the life of the session.
+   */
+  it('does not leave a second renewal timer running behind it', async () => {
+    let refuse = true
+    let renewals = 0
+    const host = recorder()
+    host.port.saveDraft = async () => {
+      if (refuse) throw new Error('Your lease on this workflow expired.')
+    }
+    host.port.renewLease = async () => {
+      renewals++
+      return leaseFor(30)
+    }
+
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+
+    store.apply(removeStep({ board: null, id: 's1' }))
+    await vi.advanceTimersByTimeAsync(200)
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
+
+    refuse = false
+    store.resumeSaving()
+    await vi.advanceTimersByTimeAsync(0)
+
+    // One renewal per half-life from here, not two.
+    const after = renewals
+    await vi.advanceTimersByTimeAsync(16 * 60_000)
+    expect(renewals).toBe(after + 1)
   })
 
   it('halts again, rather than spinning, when the Host says no twice', async () => {

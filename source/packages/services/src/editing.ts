@@ -218,6 +218,10 @@ export interface EditingOptions {
 const asError = (cause: unknown): Error =>
   cause instanceof Error ? cause : new Error(String(cause))
 
+/** Why autosave stopped, for a caller that has to report it rather than render it. */
+const reasonFor = (save: SaveState): Error =>
+  save.state === 'halted' ? save.error : new Error('The workflow could not be saved.')
+
 const OPENING: EditingState = { status: 'opening' }
 const SAVED: SaveState = { state: 'saved' }
 const PENDING: SaveState = { state: 'pending' }
@@ -551,6 +555,13 @@ export function createEditingStore(
    * before.
    */
   const renew = async (resuming = false) => {
+    // Cleared, not merely dropped. Nulling the handle is enough when this was
+    // entered FROM the timer, and `resumeSaving` enters it out of band — where
+    // the armed timer is still pending, because a halt from a refused write
+    // cancels the save and leaves the renewal running. Losing the handle
+    // without clearing it leaves that one live, and `scheduleRenewal` below
+    // arms a second: every resume doubles the rate for the life of the session.
+    if (leaseTimer !== undefined) clearTimeout(leaseTimer)
     leaseTimer = undefined
     if (disposed || !token) return
     const mine = generation
@@ -983,6 +994,22 @@ export function createEditingStore(
       // reach it — and awaited rather than fired off, so the Host records the
       // write before it records the release.
       await write()
+
+      /*
+       * And if it did not reach it, the session does not end.
+       *
+       * `write()` cannot reject: `attempt()` turns a refused `saveDraft` into a
+       * halt and returns normally, so awaiting it says only that the attempt is
+       * over, not that it worked. Releasing anyway hands the Draft to whoever
+       * picks it up next WITHOUT the edit that was in flight, reports a clean
+       * ending, and leaves nothing on screen to say otherwise — the halt is
+       * drawn against a claim, and the claim would be gone.
+       *
+       * So the claim is kept and the halt stands. The document is intact, the
+       * control to resume saving is still there, and releasing again once the
+       * write lands does what it was asked to do.
+       */
+      if (halted()) throw reasonFor(save)
       /*
        * The guard `publish()` carries, for the hazard `publish()` has.
        *
