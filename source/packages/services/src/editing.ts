@@ -1007,7 +1007,18 @@ export function createEditingStore(
       // it — released in another tab, or the store replaced. Publishing on a
       // token this session no longer holds is a write nobody asked for.
       if (mine !== generation || disposed) {
-        throw new Error('This editing session has ended. Open the workflow again to publish it.')
+        /*
+         * A generation moves when a session ENDS and when a new one BEGINS, and
+         * the two need different sentences. A Host reopening mid-wait leaves a
+         * live, claimed Draft on screen, and telling its reader that editing has
+         * ended is both wrong and unactionable — the way forward is simply to
+         * press again.
+         */
+        throw new Error(
+          token
+            ? 'This workflow was opened again while it was being published, so nothing has been published. Try again.'
+            : 'This editing session has ended. Open the workflow again to publish it.',
+        )
       }
 
       /*
