@@ -346,6 +346,10 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
   /** Open the Draft again, on a bar that is showing how the last session ended. */
   const editAgain = () => {
     setAttempt(null)
+    // `openDraft` is what MINTS the next Draft on the Host, so the list is a
+    // version out of date the moment this is pressed — the same staleness a
+    // publish or a discard leaves, arrived at from the other end.
+    versions?.invalidate()
     // A publish refused AFTER its session ended sets both the attempt and the
     // layer, and only the attempt is on screen — the panel is held back because
     // there is no claim. Left set, the reopened bar draws a count reading
@@ -375,7 +379,13 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
         {state.status === 'failed' ? (
           <div className={styles.cluster}>
             <p className={styles.problem}>{state.error.message}</p>
-            <Button size="sm" onClick={() => store?.reopen()}>
+            <Button
+              size="sm"
+              onClick={() => {
+                versions?.invalidate()
+                store?.reopen()
+              }}
+            >
               Try again
             </Button>
           </div>
@@ -413,6 +423,17 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
                   <span aria-hidden="true" className={styles.dot}>
                     ·
                   </span>
+                  {/*
+                   * The version and its status describe the document that is
+                   * open, and the moment a session ends that document stops
+                   * being any version the Host holds: publishing v6 leaves the
+                   * in-memory copy still saying `status: draft`, and discarding
+                   * leaves it naming a number that no longer exists anywhere.
+                   * Neither is restamped, because neither is the user's file any
+                   * more — so the readout stops asserting and the control keeps
+                   * doing the other half of its job, which is opening a list
+                   * that is about the WORKFLOW and stays true either way.
+                   */}
                   <button
                     type="button"
                     className={styles.version}
@@ -427,7 +448,9 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
                       setLayer({ kind: 'versions', anchor: event.currentTarget })
                     }}
                   >
-                    v{definition.version} · {statusLabel(definition.status)}
+                    {claimed
+                      ? `v${String(definition.version)} · ${statusLabel(definition.status)}`
+                      : 'Versions'}
                   </button>
                 </>
               ) : (

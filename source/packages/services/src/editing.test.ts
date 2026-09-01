@@ -1853,6 +1853,45 @@ describe('resuming a halted save', () => {
     expect(ready(store).definition?.steps.map((one) => one.id)).toEqual(['s2', 's4'])
   })
 
+  /*
+   * The halt this control answers is usually a refused RENEWAL, which fires on a
+   * timer and therefore while nobody is typing. A resume that went straight to
+   * the write queue would find the document already level with the Host, report
+   * `saved`, and take the control off screen having verified nothing — and the
+   * lease would lapse quietly a few seconds later.
+   */
+  it('re-checks the claim before clearing a halt on a document with nothing to write', async () => {
+    let refuse = true
+    let renewals = 0
+    const host = recorder({ lease: leaseFor(0.05) })
+    host.port.renewLease = async () => {
+      renewals++
+      if (refuse) throw new Error('Your lease on this workflow expired.')
+      return leaseFor(30)
+    }
+
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+    // Nothing has been typed, so there is nothing for a write to verify with.
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
+
+    const before = renewals
+    store.resumeSaving()
+    await vi.advanceTimersByTimeAsync(0)
+
+    // The Host was asked, and said no again — so the halt stands rather than the
+    // bar going quiet on a claim nobody re-checked.
+    expect(renewals).toBe(before + 1)
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
+
+    refuse = false
+    store.resumeSaving()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(ready(store).save).toEqual({ state: 'saved' })
+  })
+
   it('halts again, rather than spinning, when the Host says no twice', async () => {
     const { store } = await halted()
     store.resumeSaving()
