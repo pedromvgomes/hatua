@@ -846,3 +846,42 @@ describe('a session ended by something other than this bar', () => {
     expect(screen.queryByText('Published as version 6.')).toBeNull()
   })
 })
+
+describe('reaching a panel from the keyboard', () => {
+  /*
+   * The panel portals into the provider's container, which sits after
+   * everything the Host rendered — so without moving focus, Tab from the control
+   * that opened it walks the whole screen before arriving.
+   */
+  it('takes focus when it opens, and gives it back on Escape', async () => {
+    mount(host())
+    const trigger = await screen.findByRole('button', { name: /v5 · Draft/ })
+
+    fireEvent.click(trigger)
+    const panel = await screen.findByRole('dialog', { name: 'Versions' })
+    await waitFor(() => expect(document.activeElement).toBe(panel))
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => expect(document.activeElement).toBe(trigger))
+  })
+})
+
+describe('an ending the Host refused while the claim still stood', () => {
+  /*
+   * `release()` awaits a last write BEFORE dropping the claim, so a rejection
+   * out of that write leaves the claim held — and the ended cluster, which is
+   * where these messages normally land, is not drawn. Pressed Release, nothing
+   * happened, nothing said why.
+   */
+  it('says so against the control that was pressed', async () => {
+    const source = host(VALID, {
+      async releaseDraft() {
+        throw new Error('The workflow service is unreachable.')
+      },
+    })
+    mount(source)
+    fireEvent.click(await screen.findByRole('button', { name: 'Release' }))
+
+    expect(await screen.findByText('The workflow service is unreachable.')).toBeDefined()
+  })
+})

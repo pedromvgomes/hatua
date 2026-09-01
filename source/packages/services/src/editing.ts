@@ -948,11 +948,25 @@ export function createEditingStore(
 
     async release() {
       const held = requireToken()
+      const mine = generation
       // The Draft is kept for whoever picks it up next, so the last edit has to
       // reach it — and awaited rather than fired off, so the Host records the
       // write before it records the release.
       await write()
-      finish()
+      /*
+       * The guard `publish()` carries, for the hazard `publish()` has.
+       *
+       * That write is an unbounded wait on the Host, and the session can end or
+       * begin again inside it. A late `finish()` bumps the generation a second
+       * time, which is worse here than anywhere else: an `openDraft` started in
+       * the meantime finds its own generation stale when its fetch lands and
+       * returns silently, leaving the store at `opening` for good — no token,
+       * nothing in flight, and no path back except another `reopen()`.
+       *
+       * The Host is still told, because this session really is giving the claim
+       * up; what it must not do is end a session that is not its own.
+       */
+      if (mine === generation && !disposed) finish()
       return port.releaseDraft(held)
     },
 

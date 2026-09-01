@@ -245,7 +245,12 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
   const claimed = workflow?.claimed ?? false
 
   useEffect(() => {
-    if (claimed) setPublished(null)
+    if (!claimed) return
+    setPublished(null)
+    // `attempt` too, and for the same reason. A rejected Publish whose panel the
+    // reader dismissed leaves a real message behind, and a Host ending the next
+    // session through the store would otherwise have that message caption it.
+    setAttempt(null)
   }, [claimed])
 
   /*
@@ -266,7 +271,12 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
     setBusy('publish')
     try {
       const result = await store.publish()
-      setPublished(result.version)
+      // Only when this publish is what ended the session. `publish()` skips
+      // `finish()` when the session moved on beneath the Host's call, and the
+      // claim then never transitions — so nothing would clear a version number
+      // set here, and it would surface later captioning somebody else's ending.
+      const after = store.getSnapshot()
+      if (after.status === 'ready' && !after.workflow.claimed) setPublished(result.version)
       setAttempt(null)
       setLayer(null)
       // The list the bar can open is now a version out of date — but only worth
@@ -296,7 +306,7 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
    * what to fix" but "this is how the session you no longer have ended". It is
    * rendered inline beside that, and `attempt` is what carries it.
    */
-  const end = async (how: 'release' | 'discard') => {
+  const end = async (how: 'release' | 'discard', from?: HTMLElement) => {
     if (!store) return
     setBusy(how)
     setLayer(null)
@@ -319,6 +329,15 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
       if (how === 'discard') versions?.invalidate()
     } catch (cause) {
       setAttempt({ kind: 'rejected', message: messageOf(cause) })
+      /*
+       * The ended cluster is where this normally lands, and it is only drawn
+       * once the claim is gone. `release()` awaits a last write BEFORE dropping
+       * it, so a rejection out of that write leaves the claim standing and the
+       * message with nowhere to go — pressed Release, nothing happened, nothing
+       * said why. Anchored to the control that was pressed, if it is still
+       * there to anchor to.
+       */
+      if (from?.isConnected) setLayer({ kind: 'problems', anchor: from })
     } finally {
       setBusy(null)
     }
@@ -488,7 +507,11 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
                   >
                     Publish
                   </Button>
-                  <Button size="sm" disabled={ending} onClick={() => void end('release')}>
+                  <Button
+                    size="sm"
+                    disabled={ending}
+                    onClick={(event) => void end('release', event.currentTarget)}
+                  >
                     Release
                   </Button>
                   <Button
@@ -766,6 +789,25 @@ function Layer({
     })
   }, [anchor])
 
+  /*
+   * Focus moves into the panel when it opens.
+   *
+   * Without it the panel is unreachable in practice: it portals into the
+   * provider's container, which sits AFTER everything the Host rendered, so Tab
+   * from the control that opened it walks the canvas, the step editor and the
+   * side panel before arriving — and a reader who opened a list of problems has
+   * to traverse the whole screen to reach the first one.
+   *
+   * Focus moves in; it is not trapped. `ConfirmDialog` traps because it is
+   * modal and says so with `aria-modal`, which is a claim that the rest of the
+   * page is unreachable. This panel makes no such claim: the workflow behind it
+   * stays usable, Escape closes it and hands focus back, and Tab out of it is a
+   * legitimate way to leave.
+   */
+  useEffect(() => {
+    panel.current?.focus()
+  }, [])
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
@@ -798,6 +840,11 @@ function Layer({
     <div
       ref={panel}
       role="dialog"
+      // Focusable as a container so the panel itself can take focus when it
+      // opens — the heading and the rows are not focusable, and a panel whose
+      // first control is a "Show more" three rows down would skip past what it
+      // is for.
+      tabIndex={-1}
       aria-labelledby={titleId}
       className={styles.layer}
       style={at ?? { left: -9999, top: 0 }}

@@ -363,15 +363,32 @@ describe('versions', () => {
     expect(walked).toEqual([7, 6, 5, 4, 3, 2, 1])
   })
 
-  it('starts again rather than repeating itself when the cursor names a version that is gone', async () => {
+  it('refuses a cursor naming a version that is gone, rather than restarting', async () => {
     // A draft discarded between two pages frees its number, so a cursor naming
-    // it resolves to nothing. Serving the whole list from index -1 would hand
-    // back every version a second time and grow the caller's list for ever.
+    // it resolves to nothing. Serving page one again hands back a cursor the
+    // caller has already seen, which trips the store's did-not-advance guard —
+    // reporting a paging fault in Hatua for a list that moved under the reader.
     const store = createLocalWorkflowStore()
     await publishTimes(store, 6)
 
-    const page = await store.listVersions(WORKFLOW, '999')
-    expect(page.items[0]?.version).toBe(6)
+    await expect(store.listVersions(WORKFLOW, '999')).rejects.toThrow(/no longer there/)
+  })
+
+  it('stamps the draft with its own version, so the document and the list agree', async () => {
+    // `version:` and `status:` live in the YAML (ADR-0005), and a draft branched
+    // by copying the live version's bytes carries the LIVE version's numbers —
+    // which the top bar reads straight off the document.
+    const store = createLocalWorkflowStore()
+    const first = await store.openDraft(WORKFLOW)
+    await store.publish(first.token, first.yaml)
+
+    const second = await store.openDraft(WORKFLOW)
+    expect(second.yaml).toContain('version: 2')
+    expect(second.yaml).toContain('status: draft')
+
+    const live = await store.loadVersion(WORKFLOW, 1)
+    expect(live).toContain('version: 1')
+    expect(live).toContain('status: published')
   })
 })
 

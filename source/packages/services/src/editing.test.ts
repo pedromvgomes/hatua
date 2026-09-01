@@ -1966,3 +1966,39 @@ describe('resuming a halted save', () => {
     expect(ready(store).save).toMatchObject({ state: 'halted' })
   })
 })
+
+describe('a release the session outlived', () => {
+  /*
+   * `release()` awaits a last write, which is an unbounded wait on the Host, and
+   * the session can begin again inside it. A late `finish()` bumps the
+   * generation a second time — and an `openDraft` started in the meantime then
+   * finds its own generation stale when its fetch lands and returns silently,
+   * leaving the store at `opening` for good.
+   */
+  it('does not strand the session that replaced it', async () => {
+    let release: () => void = () => {}
+    const host = recorder()
+    host.port.saveDraft = () =>
+      new Promise<void>((resolve) => {
+        release = resolve
+      })
+
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+    store.apply(removeStep({ board: null, id: 's1' }))
+
+    const ending = store.release()
+    await settle()
+
+    store.reopen()
+    await settle()
+
+    release()
+    await ending.catch(() => {})
+    await settle()
+
+    expect(store.getSnapshot().status).toBe('ready')
+    expect(ready(store).claimed).toBe(true)
+  })
+})
