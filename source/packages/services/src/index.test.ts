@@ -25,10 +25,18 @@ const SURFACE = [
   'createEditingStore',
   'createManifestStore',
   'createValidationStore',
+  'createVersionStore',
+
+  // The refusal `publish()` answers with, which the surface reporting it has to
+  // be able to tell apart from a Host's own rejection.
+  'PublishBlocked',
 
   // The snapshot a region renders when there is no store to read, which every
   // one of them needs as its `useSyncExternalStore` fallback.
   'unchecked',
+
+  // The gate's answer, which the composition root hands to the editing store.
+  'publishBlockers',
 
   // Paging, which a Host's port is drained with.
   'drain',

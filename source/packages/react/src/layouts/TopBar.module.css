@@ -1,12 +1,39 @@
 @layer hatua {
   .topBar {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 12px;
     padding: 0 14px;
     min-block-size: 56px;
     background: var(--hatua-surface-raised);
     border-block-end: 1px solid var(--hatua-border-subtle);
+  }
+
+  /*
+   * The left cluster is fixed and the right one keeps its room, so a long name
+   * or a long slug is truncated rather than pushing Publish off the bar. Both
+   * carry a `title`, which is what makes the truncation recoverable.
+   */
+  .identity {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-inline-size: 0;
+    flex: 1 1 auto;
+  }
+
+  .actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+    margin-inline-start: auto;
+  }
+
+  .cluster {
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
 
   .title {
@@ -15,5 +42,208 @@
     font-weight: 600;
     color: var(--hatua-text-primary);
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-inline-size: 22ch;
+  }
+
+  .slug {
+    margin: 0;
+    font-family: var(--hatua-font-mono);
+    font-size: 0.8125rem;
+    color: var(--hatua-text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-inline-size: 18ch;
+  }
+
+  .dot,
+  .separator {
+    color: var(--hatua-text-muted);
+    flex: 0 0 auto;
+  }
+
+  .breadcrumb {
+    padding: 2px 4px;
+    border: 0;
+    border-radius: var(--hatua-radius-sm);
+    background: none;
+    font: inherit;
+    font-size: 0.8125rem;
+    color: var(--hatua-text-secondary);
+    cursor: pointer;
+    flex: 0 0 auto;
+  }
+
+  .breadcrumb:hover {
+    color: var(--hatua-text-primary);
+  }
+
+  .version {
+    padding: 3px 8px;
+    border: 1px solid var(--hatua-border-subtle);
+    border-radius: var(--hatua-radius-sm);
+    background: var(--hatua-surface-card);
+    font: inherit;
+    font-size: 0.8125rem;
+    color: var(--hatua-text-primary);
+    cursor: pointer;
+    white-space: nowrap;
+    flex: 0 0 auto;
+  }
+
+  .version:hover {
+    border-color: var(--hatua-border-strong);
+  }
+
+  /*
+   * A count, not a warning sign. It says how many things block Publish and
+   * opens the same panel Publish opens — the affordance for "show me now"
+   * beside the path for someone who pressed ahead anyway.
+   */
+  .count {
+    padding: 3px 8px;
+    border: 1px solid var(--hatua-status-error);
+    border-radius: var(--hatua-radius-sm);
+    background: none;
+    font: inherit;
+    font-size: 0.8125rem;
+    color: var(--hatua-status-error);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .halted {
+    color: var(--hatua-status-error);
+    white-space: nowrap;
+  }
+
+  .ended {
+    margin: 0;
+    font-size: 0.8125rem;
+    color: var(--hatua-text-secondary);
+    white-space: nowrap;
+  }
+
+  .note {
+    margin: 0;
+    font-size: 0.8125rem;
+    color: var(--hatua-text-secondary);
+  }
+
+  .muted {
+    margin: 0;
+    font-size: 0.8125rem;
+    color: var(--hatua-text-muted);
+  }
+
+  .problem {
+    margin: 0;
+    font-size: 0.8125rem;
+    color: var(--hatua-status-error);
+  }
+
+  .code {
+    font-family: var(--hatua-font-mono);
+    font-size: 0.75rem;
+    padding: 1px 4px;
+    border-radius: var(--hatua-radius-sm);
+    background: var(--hatua-surface-sunken);
+  }
+
+  .layer {
+    position: fixed;
+    inline-size: 320px;
+    max-block-size: 60vh;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px;
+    border: 1px solid var(--hatua-border-strong);
+    border-radius: var(--hatua-radius-md);
+    background: var(--hatua-surface-raised);
+    box-shadow: 0 10px 30px var(--hatua-shadow-color);
+    z-index: 30;
+  }
+
+  .layerHeading {
+    margin: 0;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--hatua-text-muted);
+  }
+
+  .layerNote {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-start;
+  }
+
+  .versions,
+  .problems {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .versionRow {
+    display: grid;
+    grid-template-columns: 3.5rem 1fr auto;
+    gap: 8px;
+    align-items: baseline;
+    padding: 4px 6px;
+    border-radius: var(--hatua-radius-sm);
+    font-size: 0.8125rem;
+  }
+
+  .versionNumber {
+    font-family: var(--hatua-font-mono);
+    color: var(--hatua-text-primary);
+  }
+
+  /* Spelled `draft | published | archived`, as the schema spells it. */
+  .versionStatus {
+    color: var(--hatua-text-secondary);
+  }
+
+  .versionDate {
+    font-family: var(--hatua-font-mono);
+    font-size: 0.75rem;
+    color: var(--hatua-text-muted);
+  }
+
+  .problemRow {
+    font-size: 0.8125rem;
+  }
+
+  .problemLink {
+    display: block;
+    inline-size: 100%;
+    text-align: start;
+    padding: 4px 6px;
+    border: 0;
+    border-radius: var(--hatua-radius-sm);
+    background: none;
+    font: inherit;
+    color: var(--hatua-text-primary);
+    cursor: pointer;
+  }
+
+  .problemLink:hover {
+    background: var(--hatua-surface-sunken);
+  }
+
+  .problemText {
+    display: block;
+    padding: 4px 6px;
+    color: var(--hatua-text-secondary);
   }
 }

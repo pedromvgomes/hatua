@@ -1,9 +1,10 @@
 import type { WorkflowDocument } from '@hatua/document'
+import type { Diagnostic } from '@hatua/model'
 import { regionsOf } from '@hatua/model'
 import type { Step } from '@hatua/schema'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { sequence } from './command'
-import { createEditingStore, type EditingSnapshot } from './editing'
+import { createEditingStore, type EditingSnapshot, PublishBlocked } from './editing'
 import type {
   Cursor,
   DraftSession,
@@ -1548,5 +1549,286 @@ describe('ending the session', () => {
     const { store } = await open()
     await store.release()
     expect(ready(store).save).toEqual({ state: 'saved' })
+  })
+})
+
+describe('the publish gate', () => {
+  const blocker = (message: string): Diagnostic => ({
+    code: 'FIELD_REQUIRED',
+    message,
+    blocks: 'publish',
+    stepId: 's1',
+  })
+
+  const opened = async (options: Parameters<typeof createEditingStore>[2] = {}) => {
+    const host = recorder()
+    const store = createEditingStore(host.port, 'wf_morning', {
+      autosaveDelayMs: 500,
+      ...options,
+    })
+    store.open()
+    await settle()
+    return { host, store }
+  }
+
+  /*
+   * The floor. It asks nothing and needs nothing wired, which is the point:
+   * ADR-0023 puts it here rather than in whatever drew the button precisely so
+   * a Host that builds this store by hand and mounts no toolbar still cannot
+   * promote something that is not a Workflow Definition.
+   */
+  it('refuses a document that does not project, with no gate in sight', async () => {
+    const host = recorder({ yaml: 'name: half written\n' })
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+
+    await expect(store.publish()).rejects.toBeInstanceOf(PublishBlocked)
+    expect(host.published).toHaveLength(0)
+  })
+
+  it('carries no diagnostics for that, because there is nothing to attach one to', async () => {
+    const host = recorder({ yaml: 'name: half written\n' })
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+
+    const refusal = await store.publish().catch((error: unknown) => error)
+    expect(refusal).toBeInstanceOf(PublishBlocked)
+    expect((refusal as PublishBlocked).diagnostics).toEqual([])
+    expect((refusal as PublishBlocked).message).not.toBe('')
+  })
+
+  it('refuses what the gate blocks, and never reaches the Host', async () => {
+    const found = [blocker('Folder is required.'), blocker('To is required.')]
+    const { host, store } = await opened({ gate: { blockers: async () => found } })
+
+    const refusal = await store.publish().catch((error: unknown) => error)
+    expect(refusal).toBeInstanceOf(PublishBlocked)
+    // Every one of them, not the first: a user fixing one field at a time is a
+    // user pressing Publish five times to find five mistakes.
+    expect((refusal as PublishBlocked).diagnostics).toEqual(found)
+    expect(host.published).toHaveLength(0)
+  })
+
+  it('keeps the session alive when it refuses, so the fix can be typed and saved', async () => {
+    const { host, store } = await opened({
+      gate: { blockers: async () => [blocker('Folder is required.')] },
+    })
+    await expect(store.publish()).rejects.toBeInstanceOf(PublishBlocked)
+
+    expect(ready(store).claimed).toBe(true)
+    store.apply(removeStep({ board: null, id: 's1' }))
+    await vi.advanceTimersByTimeAsync(500)
+    expect(host.writes).toHaveLength(1)
+  })
+
+  it('publishes when the gate finds nothing', async () => {
+    const { host, store } = await opened({ gate: { blockers: async () => [] } })
+    await store.publish()
+    expect(host.published).toHaveLength(1)
+  })
+
+  it('publishes with no gate at all, on the floor alone', async () => {
+    // A Host that serves no ManifestSource is correctly configured, not broken
+    // — ADR-0022's argument at its limit, recorded in ADR-0023.
+    const { host, store } = await opened()
+    await store.publish()
+    expect(host.published).toHaveLength(1)
+  })
+
+  it('waits for an answer rather than deciding without one', async () => {
+    let answer: (found: Diagnostic[]) => void = () => {}
+    const pending = new Promise<Diagnostic[]>((resolve) => {
+      answer = resolve
+    })
+    const { host, store } = await opened({ gate: { blockers: () => pending } })
+
+    const attempt = store.publish()
+    await settle()
+    expect(host.published).toHaveLength(0)
+
+    answer([])
+    await attempt
+    expect(host.published).toHaveLength(1)
+  })
+
+  it('reads the text after the wait, so an edit made during it is not dropped', async () => {
+    let answer: (found: Diagnostic[]) => void = () => {}
+    const pending = new Promise<Diagnostic[]>((resolve) => {
+      answer = resolve
+    })
+    const { host, store } = await opened({ gate: { blockers: () => pending } })
+
+    const attempt = store.publish()
+    await settle()
+    store.apply(removeStep({ board: null, id: 's1' }))
+    answer([])
+    await attempt
+
+    expect(host.published[0]).not.toContain('id: s1')
+  })
+
+  it('refuses to publish on a claim the session lost while it waited', async () => {
+    let answer: (found: Diagnostic[]) => void = () => {}
+    const pending = new Promise<Diagnostic[]>((resolve) => {
+      answer = resolve
+    })
+    const { host, store } = await opened({ gate: { blockers: () => pending } })
+
+    const attempt = store.publish()
+    await settle()
+    // Another tab took over, so this store reopened underneath the wait.
+    store.reopen()
+    await settle()
+    answer([])
+
+    await expect(attempt).rejects.toThrow(/session has ended/)
+    expect(host.published).toHaveLength(0)
+  })
+})
+
+describe('whether the session still holds the claim', () => {
+  const opened = async () => {
+    const host = recorder()
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 500 })
+    store.open()
+    await settle()
+    return { host, store }
+  }
+
+  it('is claimed while the Draft is open', async () => {
+    const { store } = await opened()
+    expect(ready(store).claimed).toBe(true)
+  })
+
+  /*
+   * The state that was invisible. Publish, Release and Discard all drop the
+   * token, and a session that ended with nothing queued leaves `save` reading
+   * `saved` — so without this the snapshot after publishing is the snapshot of
+   * a live session, and the user finds out by typing into a document that is
+   * saved nowhere.
+   */
+  it('is not claimed after publish, release or discard — with nothing queued', async () => {
+    for (const end of ['publish', 'release', 'discard'] as const) {
+      const { store } = await opened()
+      expect(ready(store).save).toEqual({ state: 'saved' })
+
+      await store[end]()
+      expect(ready(store).claimed, end).toBe(false)
+      expect(ready(store).save, end).toEqual({ state: 'saved' })
+    }
+  })
+
+  it('tells subscribers, rather than leaving them on the last snapshot', async () => {
+    const { store } = await opened()
+    let notifications = 0
+    store.subscribe(() => {
+      notifications++
+    })
+
+    await store.release()
+    expect(notifications).toBeGreaterThan(0)
+    expect(ready(store).claimed).toBe(false)
+  })
+
+  it('stays claimed when a publish is refused', async () => {
+    const host = recorder()
+    host.port.publish = async () => {
+      throw new Error('Another session holds the edit on this workflow.')
+    }
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+
+    await expect(store.publish()).rejects.toThrow(/Another session/)
+    // ADR-0005 detects conflict here and nowhere else, so the session may only
+    // end once the Host has said yes.
+    expect(ready(store).claimed).toBe(true)
+  })
+})
+
+describe('resuming a halted save', () => {
+  const halted = async () => {
+    let refuse = true
+    const host = recorder()
+    const writes: string[] = []
+    host.port.saveDraft = async (_token, yaml) => {
+      if (refuse) throw new Error('Lease expired.')
+      writes.push(yaml)
+    }
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 500 })
+    store.open()
+    await settle()
+    store.apply(removeStep({ board: null, id: 's1' }))
+    await vi.advanceTimersByTimeAsync(500)
+
+    return { store, writes, accept: () => (refuse = false) }
+  }
+
+  it('writes again on the claim it still holds, and the halt clears', async () => {
+    const { store, writes, accept } = await halted()
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
+    expect(ready(store).claimed).toBe(true)
+
+    accept()
+    store.resumeSaving()
+    await vi.advanceTimersByTimeAsync(500)
+
+    expect(writes).toHaveLength(1)
+    expect(ready(store).save).toEqual({ state: 'saved' })
+  })
+
+  it('keeps the work, which is the whole reason it exists', async () => {
+    // `reopen()` was the only exit, and it re-parses the Host's copy — throwing
+    // away exactly what ADR-0005 halts in order to keep.
+    const { store, accept } = await halted()
+    accept()
+    store.resumeSaving()
+    await vi.advanceTimersByTimeAsync(500)
+
+    expect(ready(store).definition?.steps.map((one) => one.id)).toEqual(['s2', 's4'])
+  })
+
+  it('halts again, rather than spinning, when the Host says no twice', async () => {
+    const { store } = await halted()
+    store.resumeSaving()
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
+  })
+
+  it('does nothing when the store is not halted', async () => {
+    const host = recorder()
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 500 })
+    store.open()
+    await settle()
+
+    store.resumeSaving()
+    await vi.advanceTimersByTimeAsync(500)
+    expect(ready(store).save).toEqual({ state: 'saved' })
+    expect(host.writes).toHaveLength(0)
+  })
+
+  /*
+   * The halt after a session ends has no token behind it, so there is nothing
+   * to write to. Putting the snapshot back to `pending` would promise a write
+   * that can never run, with no timer behind it and no way out.
+   */
+  it('does nothing once the session has ended, because there is nothing to write to', async () => {
+    const host = recorder()
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 500 })
+    store.open()
+    await settle()
+    store.apply(removeStep({ board: null, id: 's1' }))
+    await store.release()
+
+    expect(ready(store).claimed).toBe(false)
+    store.apply(removeStep({ board: null, id: 's4' }))
+    await vi.advanceTimersByTimeAsync(500)
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
+
+    store.resumeSaving()
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
   })
 })

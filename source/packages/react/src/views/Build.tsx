@@ -147,7 +147,39 @@ export function Build({ className, ...rest }: BuildProps) {
       <div className={cx(styles.scroller, className)} {...rest}>
         <div className={styles.build}>
           <div className={styles.bar}>
-            <TopBar />
+            <TopBar
+              /*
+               * Where a blocking problem actually is.
+               *
+               * The bar knows what is wrong and nothing about Boards, tabs or
+               * selection; this view holds all three already, for the canvas and
+               * the list. So the bar emits the diagnostic and the translation
+               * lives here — the same shape as `onInsert` and `onSelect`, and
+               * the same reason: a region that reached for chrome would be a
+               * second answer to a question this view already answers.
+               *
+               * A diagnostic names a Board and, usually, a Step. What it never
+               * names is a tab, so the Workflow tab is opened only for a Trigger
+               * — a Trigger is not a Step and is edited there rather than in the
+               * step editor.
+               */
+              onRevealDiagnostic={(diagnostic) => {
+                const target: BoardId = diagnostic.blockId ?? null
+                setBoard(target)
+
+                if (diagnostic.triggerId !== undefined) {
+                  setTab('workflow')
+                  return
+                }
+
+                const { stepId } = diagnostic
+                if (stepId === undefined) return
+                setSelectedOn((held) => ({
+                  ...held,
+                  [boardKey(target)]: { board: target, steps: [stepId] },
+                }))
+              }}
+            />
           </div>
           <div className={styles.side}>
             <TabbedPanel
