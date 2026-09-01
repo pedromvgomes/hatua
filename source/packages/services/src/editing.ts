@@ -301,6 +301,19 @@ export function createEditingStore(
    */
   let renewal = 0
 
+  /*
+   * That a reader has asked for saving to resume, held until some renewal
+   * answers it.
+   *
+   * Not a parameter on the renewal that was asked for, because that one can lose
+   * — a halt from a refused write leaves the lease timer armed, so the press and
+   * the timer can both be in the air and only the later answer is applied. Held
+   * on the request, the resume dies with the request that was superseded: a
+   * healthy lease, a dirty document, and autosave refused for ever by a halt
+   * nothing goes on to clear.
+   */
+  let resumeWanted = false
+
   let saveTimer: ReturnType<typeof setTimeout> | undefined
   let leaseTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -567,7 +580,7 @@ export function createEditingStore(
    * check: the halt clears when the Host says the claim is still ours, and not
    * before.
    */
-  const renew = async (resuming = false) => {
+  const renew = async () => {
     /*
      * The armed timer is left alone.
      *
@@ -607,6 +620,8 @@ export function createEditingStore(
        * Host makes, which is why `versions.ts` checks its pages too.
        */
       if (next.token) token = next.token
+      const resuming = resumeWanted
+      resumeWanted = false
       if (resuming) save = SAVED
       commit()
       scheduleRenewal()
@@ -618,6 +633,9 @@ export function createEditingStore(
       if (resuming && dirty()) schedule()
     } catch (cause) {
       if (mine !== generation || disposed || asked !== renewal) return
+      // The ask has been answered, even though the answer was no. A later press
+      // sets it again.
+      resumeWanted = false
       // A lost lease is a rejected write that has not happened yet: the claim
       // is gone, so the next save would be refused anyway. Halting now stops
       // autosave from finding that out the expensive way, and keeps the
@@ -910,7 +928,8 @@ export function createEditingStore(
        * and the only other caller of `scheduleRenewal` is a fresh open.
        */
       cancelSave()
-      void renew(true)
+      resumeWanted = true
+      void renew()
     },
 
     flush() {
@@ -1066,10 +1085,16 @@ export function createEditingStore(
        *
        * So the claim is kept and the halt stands. The document is intact,
        * `resumeSaving()` is the way back, and releasing again once the write
-       * lands does what it was asked to do. A halt with nothing outstanding is
-       * not this release's problem and does not stop it.
+       * lands does what it was asked to do.
+       *
+       * The question is whether the text still differs from what the Host has,
+       * not whether the store is halted. A halt is raised by a refused RENEWAL
+       * too, and that one fires on a timer — so a write that succeeded inside
+       * the same round trip as a refused renewal would otherwise be reported as
+       * lost, refusing a release whose Draft is on the Host intact and leaving
+       * Discard as the only way out of it.
        */
-      if (pending && halted()) {
+      if (pending && dirty()) {
         // The Host's reason, and what to do about it. Rejecting with the raw
         // save error says why the write failed and nothing about the fact that
         // the workflow is still open, or that resuming the save is the way out —
