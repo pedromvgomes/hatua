@@ -623,3 +623,22 @@ describe('what blocks a publish', () => {
     await expect(publishBlockers(stores.validation, stores.catalogue)).resolves.toHaveLength(2)
   })
 })
+
+describe('a gate nobody has loaded the catalogue for', () => {
+  /*
+   * A manifest store nobody has called `load()` on sits at `loading` for ever:
+   * that is a fetch not started rather than one in flight. A gate that only
+   * waited would never answer, and the Publish behind it would hang — which is
+   * the failure `publishBlockers` exists to avoid, arrived at from the other
+   * side.
+   */
+  it('asks for the catalogue rather than waiting to be handed one', async () => {
+    const editing = createEditingStore(workflowPort(MISSING), 'wf')
+    const catalogue = createManifestStore({ loadManifests: async () => CATALOGUE })
+    const validation = createValidationStore(editing, catalogue, null)
+    // Deliberately no `validation.load()`: nothing has mounted.
+    expect(catalogue.getSnapshot().status).toBe('loading')
+
+    await expect(publishBlockers(validation, catalogue)).resolves.toHaveLength(2)
+  })
+})

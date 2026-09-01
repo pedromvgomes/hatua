@@ -329,3 +329,33 @@ describe('getSnapshot stability', () => {
     expect(seen).toBe(0)
   })
 })
+
+describe('invalidating', () => {
+  it('fetches nothing when the list was never opened', async () => {
+    // What a Publish calls. The history is stale either way, and going to get
+    // one nobody has looked at is the request this store's laziness avoids.
+    const { port, calls } = fake([{ items: [summary(1, 'published')] }])
+    const store = createVersionStore(port, 'wf_morning')
+
+    store.invalidate()
+    await settle()
+    expect(calls).toHaveLength(0)
+    expect(store.getSnapshot()).toEqual({ status: 'loading' })
+  })
+
+  it('fetches again when it was', async () => {
+    const { port, calls } = fake([
+      { items: [summary(1, 'published')] },
+      { items: [summary(2, 'draft'), summary(1, 'published')] },
+    ])
+    const store = createVersionStore(port, 'wf_morning')
+    store.load()
+    await settle()
+
+    store.invalidate()
+    await settle()
+
+    expect(calls).toHaveLength(2)
+    expect(readyState(store.getSnapshot()).versions.map((one) => one.version)).toEqual([2, 1])
+  })
+})
