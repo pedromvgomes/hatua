@@ -359,3 +359,36 @@ describe('invalidating', () => {
     expect(readyState(store.getSnapshot()).versions.map((one) => one.version)).toEqual([2, 1])
   })
 })
+
+describe('a Host that answers with the wrong shape', () => {
+  /*
+   * A type is a promise the Host makes and an endpoint can break it —
+   * `manifests.ts` guards its payload for the same reason. Unguarded, the page
+   * reaches a region and throws inside its `map`, taking the React tree down
+   * instead of rendering the failure this store has a state for.
+   */
+  const malformed = { total: 3 } as unknown as Cursor<VersionSummary>
+
+  it('fails rather than publishing a page with no items', async () => {
+    const { port } = fake([malformed])
+    const store = createVersionStore(port, 'wf_morning')
+    store.load()
+    await settle()
+
+    expect(store.getSnapshot()).toMatchObject({ status: 'failed' })
+  })
+
+  it('keeps the pages it has when a later one comes back unreadable', async () => {
+    const { port } = fake([{ items: [summary(2, 'draft')], next: 'p2' }, malformed])
+    const store = createVersionStore(port, 'wf_morning')
+    store.load()
+    await settle()
+    store.loadMore()
+    await settle()
+
+    const state = readyState(store.getSnapshot())
+    expect(state.versions.map((one) => one.version)).toEqual([2])
+    expect(state.fetching).toBe(false)
+    expect(state.error?.message).toMatch(/could not be read/)
+  })
+})

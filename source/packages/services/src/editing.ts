@@ -795,6 +795,21 @@ export function createEditingStore(
       cancelSave()
       setSave(PENDING)
       void write()
+      /*
+       * And put the lease back on a timer.
+       *
+       * A halt is reached from two directions and one of them takes the renewal
+       * with it: `renew()` fires, the Host refuses, and `halt()` stops autosave
+       * without rescheduling anything — so the only two callers of
+       * `scheduleRenewal` are a successful renewal and a fresh open, and after a
+       * refused one there is no timer left at all.
+       *
+       * Resuming writes without it is the worst of both: the bar goes quiet, the
+       * token still works, and the lease lapses a minute later — at which point
+       * every write is refused and the session halts for good, now carrying
+       * everything typed since the resume.
+       */
+      scheduleRenewal()
     },
 
     flush() {

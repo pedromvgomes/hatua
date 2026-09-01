@@ -162,17 +162,32 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
   /**
    * Which action is waiting on the Host, if any.
    *
-   * Which one, rather than a flag, because they must not disable each other. A
-   * Host whose port never settles would otherwise take Release and Discard down
-   * with Publish — and Discard is exactly what someone does about a Publish that
-   * is going nowhere. Nothing here puts a deadline on a Host: `flush()` makes
-   * the same call and says so, "that is the honest answer to 'tell me when this
-   * is written' when it is not written and never will be".
+   * Which one, rather than a flag, because a Publish must not disable the other
+   * two. A Host whose port never settles would otherwise take Release and
+   * Discard down with it — and Discard is exactly what someone does about a
+   * Publish that is going nowhere. Nothing here puts a deadline on a Host:
+   * `flush()` makes the same call and says so, "that is the honest answer to
+   * 'tell me when this is written' when it is not written and never will be".
+   *
+   * Ending the session is not symmetrical with that, and `ending` below is why.
    */
   const [busy, setBusy] = useState<'publish' | 'release' | 'discard' | null>(null)
   const [confirming, setConfirming] = useState(false)
   /** What the last **Publish** produced, so the ended session can say what ended it. */
   const [published, setPublished] = useState<number | null>(null)
+
+  /*
+   * A session already on its way out takes the other two decisions with it.
+   *
+   * `release()` awaits one last write BEFORE dropping the claim, so the claimed
+   * cluster — Publish included — stays on screen for the length of that write.
+   * Pressing Publish inside that window promotes the Draft, and the release then
+   * calls `releaseDraft` on a token the publish has already consumed. Two ways
+   * of ending one session cannot both be in flight, so the first one to start
+   * wins; a Publish, which can be refused and leaves everything running, does
+   * not claim the same right.
+   */
+  const ending = busy === 'release' || busy === 'discard'
 
   const workflow = state.status === 'ready' ? state.workflow : null
   const definition = workflow?.definition ?? null
@@ -229,14 +244,15 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
     /*
      * Whatever ends this session now is what ended it.
      *
-     * Both of these have to be cleared BEFORE the call, not after it succeeds:
-     * `release()` and `discard()` drop the claim synchronously and only then
-     * await the port, so the ended cluster is on screen for the whole of that
-     * call. Left standing, a version from an earlier Publish captions a release
-     * with "Published as version 6." — and an `attempt` left over from the
-     * problems panel captions it with a publish error, or, when the panel was
-     * opened from the count, with the empty string that carries no message at
-     * all.
+     * Both of these have to be cleared BEFORE the call, not after it succeeds.
+     * `discard()` drops the claim synchronously and only then awaits the port,
+     * so the ended cluster is on screen for the whole of that call; `release()`
+     * awaits one last write first, so the claimed cluster is. Either way what is
+     * left standing is read: a version from an earlier Publish captions a
+     * release with "Published as version 6.", and an `attempt` left over from
+     * the problems panel captions it with a publish error — or, when the panel
+     * was opened from the count, with the empty string that carries no message
+     * at all.
      */
     setPublished(null)
     setAttempt(null)
@@ -254,6 +270,12 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
   const editAgain = () => {
     setAttempt(null)
     setPublished(null)
+    // A publish refused AFTER its session ended sets both the attempt and the
+    // layer, and only the attempt is on screen — the panel is held back because
+    // there is no claim. Left set, the reopened bar draws a count reading
+    // `aria-expanded="true"` over nothing, and the first press closes a panel
+    // nobody can see instead of opening one.
+    setLayer(null)
     store?.reopen()
   }
 
@@ -401,22 +423,18 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
                   <Button
                     size="sm"
                     variant="primary"
-                    disabled={busy === 'publish'}
+                    disabled={busy === 'publish' || ending}
                     onClick={(event) => void attemptPublish(event.currentTarget)}
                   >
                     Publish
                   </Button>
-                  <Button
-                    size="sm"
-                    disabled={busy === 'release'}
-                    onClick={() => void end('release')}
-                  >
+                  <Button size="sm" disabled={ending} onClick={() => void end('release')}>
                     Release
                   </Button>
                   <Button
                     size="sm"
                     variant="danger"
-                    disabled={busy === 'discard'}
+                    disabled={ending}
                     onClick={() => setConfirming(true)}
                   >
                     Discard

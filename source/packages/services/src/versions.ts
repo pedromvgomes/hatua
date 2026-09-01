@@ -77,6 +77,8 @@ const asError = (cause: unknown): Error =>
 
 const LOADING: VersionsState = { status: 'loading' }
 
+const unreadable = () => new Error('The list of versions could not be read.')
+
 export function createVersionStore(port: WorkflowStore, workflowId: string): VersionStore {
   let state: VersionsState = LOADING
   const listeners = new Set<() => void>()
@@ -141,6 +143,15 @@ export function createVersionStore(port: WorkflowStore, workflowId: string): Ver
 
     const received = (page: Cursor<VersionSummary>) => {
       if (mine !== generation) return
+      // A type is a promise the Host makes and an endpoint can break it — the
+      // check `manifests.ts` makes for the same reason. Unguarded, a page with
+      // no `items` reaches a region and throws inside its `map`, taking the
+      // React tree down instead of rendering the failure this store has a state
+      // for.
+      if (!Array.isArray(page?.items)) {
+        publish({ status: 'failed', error: unreadable() })
+        return
+      }
       advance(page.next)
       publish({
         status: 'ready',
@@ -203,6 +214,10 @@ export function createVersionStore(port: WorkflowStore, workflowId: string): Ver
 
       const received = (page: Cursor<VersionSummary>) => {
         if (mine !== generation) return
+        if (!Array.isArray(page?.items)) {
+          failed(unreadable())
+          return
+        }
         if (!advance(page.next)) {
           // Offered no further pages, not merely reported: a cursor that
           // repeats will repeat again, so leaving "Show more" on screen invites

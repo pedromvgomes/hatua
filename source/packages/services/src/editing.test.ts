@@ -1797,6 +1797,40 @@ describe('resuming a halted save', () => {
     expect(ready(store).save).toMatchObject({ state: 'halted' })
   })
 
+  /*
+   * A halt reached through a refused renewal takes the renewal timer with it:
+   * `halt()` stops autosave and schedules nothing, and the only two callers of
+   * `scheduleRenewal` are a successful renewal and a fresh open. Resuming writes
+   * without re-arming it is the worst of both — the bar goes quiet, the token
+   * still works, and the lease lapses a minute later carrying everything typed
+   * since.
+   */
+  it('puts the lease back on a timer, not just the writes', async () => {
+    let refuse = true
+    let renewals = 0
+    const host = recorder()
+    host.port.renewLease = async () => {
+      renewals++
+      if (refuse) throw new Error('Your lease on this workflow expired.')
+      return leaseFor(30)
+    }
+
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 500 })
+    store.open()
+    await settle()
+
+    // A two-minute lease renews at the halfway mark, and the Host refuses.
+    await vi.advanceTimersByTimeAsync(16 * 60_000)
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
+
+    refuse = false
+    const before = renewals
+    store.resumeSaving()
+    await vi.advanceTimersByTimeAsync(16 * 60_000)
+
+    expect(renewals).toBeGreaterThan(before)
+  })
+
   it('does nothing when the store is not halted', async () => {
     const host = recorder()
     const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 500 })
