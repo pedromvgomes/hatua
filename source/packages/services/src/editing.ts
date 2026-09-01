@@ -302,6 +302,21 @@ export function createEditingStore(
   let renewal = 0
 
   /*
+   * Whether one is in the air.
+   *
+   * Two overlapping renewals are sent with the SAME token, and only the later
+   * ASK is applied — so against a Host that rotates, the loser's answer carries
+   * the new credential and is thrown away, while the winner is refused for
+   * presenting the old one. The session is then stranded on a token nothing can
+   * refresh, and only a reopen recovers it, which discards the work ADR-0005
+   * exists to keep.
+   *
+   * So a second ask does not start: `resumeWanted` is a standing intent, and
+   * whichever renewal is already in flight answers it.
+   */
+  let renewing = false
+
+  /*
    * That a reader has asked for saving to resume, held until some renewal
    * answers it.
    *
@@ -511,7 +526,11 @@ export function createEditingStore(
 
   /** Take a place in the queue, and hand back a promise for that turn alone. */
   const write = (): Promise<void> => {
-    saveTimer = undefined
+    // Cancelled, not merely forgotten. Dropping the handle is enough when this
+    // is entered from the timer's own callback, and `release()` calls it
+    // directly — leaving an armed timeout nothing tracks, which `cancelSave()`
+    // and `finish()` then cannot cancel however plainly they say they do.
+    cancelSave()
     // Both arms, so one write's failure cannot stop every write after it.
     const mine = queue.then(attempt, attempt)
     queue = mine
@@ -594,7 +613,8 @@ export function createEditingStore(
      * A renewal entered FROM the timer nulls the handle in the callback, so
      * `leaseTimer` always means "one is armed".
      */
-    if (disposed || !token) return
+    if (disposed || !token || renewing) return
+    renewing = true
     const mine = generation
     const asked = ++renewal
 
@@ -641,6 +661,10 @@ export function createEditingStore(
       // autosave from finding that out the expensive way, and keeps the
       // in-memory document exactly as ADR-0005 requires.
       halt(cause)
+    } finally {
+      // Every path, including the guarded returns above: left set by one of
+      // them, no renewal could ever be asked for again.
+      renewing = false
     }
   }
 
@@ -1088,11 +1112,6 @@ export function createEditingStore(
        * the Draft back.
        */
       const pending = dirty()
-      // What the Host had before this release asked for one last write. A write
-      // that lands always moves it, so comparing it afterwards says whether the
-      // write happened — which typing during the write does not disturb, and
-      // which `dirty()` alone cannot tell apart from a write that never went out.
-      const before = savedText
       // The Draft is kept for whoever picks it up next, so the last edit has to
       // reach it — and awaited rather than fired off, so the Host records the
       // write before it records the release.
@@ -1112,22 +1131,42 @@ export function createEditingStore(
        * `resumeSaving()` is the way back, and releasing again once the write
        * lands does what it was asked to do.
        *
-       * The question is whether the Host's copy MOVED, and neither "is the
-       * store halted" nor "is the document dirty" answers it. A halt is raised
-       * by a refused RENEWAL too, which fires on a timer — so a write that
-       * succeeded alongside one would be reported as lost. And a document is
-       * dirty again the moment somebody types during the write, which is a
-       * healthy store with another save already scheduled rather than an edit
-       * that went nowhere.
+       * The question is whether anything is STILL unwritten once the writes
+       * above have run, which is what `dirty()` answers directly.
+       *
+       * Comparing what the Host held before and after does not: `write()` queues
+       * behind whatever is already in flight, so an earlier autosave landing in
+       * the meantime moves that mark and reports this release's own refused
+       * write as a success. And asking whether the store is halted does not
+       * either — a halt is raised by a refused RENEWAL too, which fires on a
+       * timer, so a write that succeeded alongside one would be called lost.
        */
-      if (pending && savedText === before) {
+      /*
+       * One more turn, for the edit made DURING that write.
+       *
+       * `write()` takes its place in the queue and sends whatever the document
+       * says when its turn comes, so a keystroke landing while it is in the air
+       * is left over afterwards — and unlike an ordinary edit it has nowhere to
+       * go, because ending the session cancels the save that would have carried
+       * it. Bounded at one extra turn: a reader still typing is not a reason to
+       * refuse for ever, and what is left after this is reported rather than
+       * chased.
+       */
+      if (dirty()) await write()
+
+      if (pending && dirty()) {
         // The Host's reason, and what to do about it. Rejecting with the raw
         // save error says why the write failed and nothing about the fact that
         // the workflow is still open, or that resuming the save is the way out —
         // which leaves a user pressing Release again and getting the same
         // sentence.
+        // The Host's reason when there is one, because a halt carries why the
+        // write was refused; a plain statement when there is not, because the
+        // text simply has not reached the Host and no error explains that.
         throw new Error(
-          `${reasonFor(save).message} Your last change is not saved yet, so this workflow is still open — try saving again, or discard the draft.`,
+          halted()
+            ? `${reasonFor(save).message} Your last change is not saved yet, so this workflow is still open — try saving again, or discard the draft.`
+            : 'Your last change is not saved yet, so this workflow is still open. Try again in a moment, or discard the draft.',
         )
       }
 

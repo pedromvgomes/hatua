@@ -1388,53 +1388,40 @@ describe('a renewal that answers with less than a full lease', () => {
   })
 })
 
-describe('two renewals in the air at once', () => {
+describe('renewals do not overlap', () => {
   /*
-   * The armed timer can fire while a press has already asked, or a press can
-   * land twice — and against a Host that ROTATES the token, whichever response
-   * arrives LAST wins the assignment. The older one then installs a credential
-   * the Host has already superseded: every write refused, and the three endings
-   * spending a claim that is not live.
+   * Two overlapping renewals are sent with the SAME token, and only the later
+   * ASK is applied — so against a Host that rotates, the loser's answer carries
+   * the new credential and is discarded while the winner is refused for
+   * presenting the old one. The session is then stranded on a token nothing can
+   * refresh, and only a reopen recovers it, which discards the work ADR-0005
+   * exists to keep.
    */
-  it('keeps the token from the renewal that was asked for last', async () => {
+  it('does not ask again while an ask is outstanding', async () => {
     const answers: ((lease: Lease) => void)[] = []
-    let refuseWrite = true
-    const written: EditToken[] = []
     const host = recorder({ lease: leaseFor(30) })
     host.port.renewLease = () =>
       new Promise<Lease>((resolve) => {
         answers.push(resolve)
       })
-    host.port.saveDraft = async (given) => {
-      if (refuseWrite) throw new Error('The workflow service is unreachable.')
-      written.push(given)
+    host.port.saveDraft = async () => {
+      throw new Error('The workflow service is unreachable.')
     }
 
     const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
     store.open()
     await settle()
-
-    // Halted by a refused write, which leaves the armed renewal alone.
     store.apply(removeStep({ board: null, id: 's1' }))
     await vi.advanceTimersByTimeAsync(200)
     expect(ready(store).save).toMatchObject({ state: 'halted' })
 
-    // The armed renewal fires and hangs...
+    // The armed timer asks; the press and a second press find one outstanding.
     await vi.advanceTimersByTimeAsync(16 * 60_000)
-    // ...and the reader presses "try again", which asks a second time.
+    store.resumeSaving()
     store.resumeSaving()
     await settle()
-    expect(answers).toHaveLength(2)
 
-    refuseWrite = false
-    // The newer answers first, the older last.
-    answers[1]?.({ token: 'tok_new' as EditToken, expiresAt: leaseFor(30).expiresAt })
-    await settle()
-    answers[0]?.({ token: 'tok_old' as EditToken, expiresAt: leaseFor(30).expiresAt })
-    await settle()
-
-    await vi.advanceTimersByTimeAsync(200)
-    expect(written).toEqual(['tok_new'])
+    expect(answers).toHaveLength(1)
   })
 })
 
@@ -1644,11 +1631,14 @@ describe('ending the session', () => {
    * over a write that had just succeeded, and pointed the reader at a control
    * that is only drawn when saving has stopped.
    */
-  it('releases when its write landed and the reader kept typing through it', async () => {
+  it('carries the edit made during its last write, rather than leaving it behind', async () => {
     let land: () => void = () => {}
+    let hang = true
     const host = recorder()
     host.port.saveDraft = async (_token, text) => {
       host.writes.push(text)
+      if (!hang) return
+      hang = false
       await new Promise<void>((resolve) => {
         land = resolve
       })
@@ -1661,12 +1651,47 @@ describe('ending the session', () => {
 
     const ending = store.release()
     await vi.advanceTimersByTimeAsync(200)
-    // Typed while that write is still in the air.
+    // Typed while that write is still in the air. Ending the session cancels the
+    // save that would otherwise have carried it, so it has nowhere else to go.
     store.apply(removeStep({ board: null, id: 's4' }))
     land()
 
     await ending
     expect(host.released).toBe(1)
+    expect(host.writes.at(-1)).not.toContain('id: s4')
+  })
+
+  /*
+   * `write()` queues behind whatever is already in flight, so an earlier
+   * autosave landing in the meantime moves what the Host holds — and a guard
+   * that watched that mark read somebody else's success as this release's own,
+   * handing the Draft over without the edit that was actually refused.
+   */
+  it('refuses when its own write was refused, even though an earlier one landed', async () => {
+    let refuse = false
+    const host = recorder()
+    host.port.saveDraft = async (_token, text) => {
+      if (refuse) throw new Error('Your lease on this workflow expired.')
+      host.writes.push(text)
+    }
+
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+
+    // One edit autosaves cleanly, moving the Host's copy off what it held when
+    // the session opened.
+    store.apply(removeStep({ board: null, id: 's1' }))
+    await vi.advanceTimersByTimeAsync(200)
+    expect(host.writes).toHaveLength(1)
+
+    // A second edit, and the Host refuses everything from here.
+    refuse = true
+    store.apply(removeStep({ board: null, id: 's4' }))
+
+    await expect(store.release()).rejects.toThrow(/lease/)
+    expect(host.released).toBe(0)
+    expect(ready(store).claimed).toBe(true)
   })
 
   it('does not write before discarding, because the Draft is being thrown away', async () => {
@@ -2255,13 +2280,11 @@ describe('resuming a halted save', () => {
   })
 
   /*
-   * A halt from a refused write leaves the lease timer armed, so a press and the
-   * timer can both be in the air — and only the later answer is applied. Held on
-   * the request that was asked for, the resume dies with the one that loses: a
-   * healthy lease, a dirty document, and autosave refused for ever by a halt
-   * nothing goes on to clear.
+   * A press that arrives while a renewal is already outstanding does not start a
+   * second one — so the intent has to be standing rather than carried on the
+   * request, or the press is simply lost and the halt never clears.
    */
-  it('clears the halt on whichever renewal answers, not only the one it asked', async () => {
+  it('is answered by the renewal already in flight', async () => {
     const answers: ((lease: Lease) => void)[] = []
     let refuseWrite = true
     const host = recorder({ lease: leaseFor(30) })
@@ -2280,61 +2303,17 @@ describe('resuming a halted save', () => {
     await vi.advanceTimersByTimeAsync(200)
     expect(ready(store).save).toMatchObject({ state: 'halted' })
 
-    // The press asks first; the armed timer asks second and therefore wins.
+    // The timer's renewal is outstanding when the press arrives.
+    await vi.advanceTimersByTimeAsync(16 * 60_000)
+    expect(answers).toHaveLength(1)
     store.resumeSaving()
     await settle()
-    await vi.advanceTimersByTimeAsync(16 * 60_000)
-    expect(answers.length).toBeGreaterThan(1)
 
     refuseWrite = false
     answers[0]?.(leaseFor(30))
-    await settle()
-    answers[answers.length - 1]?.(leaseFor(30))
     await vi.advanceTimersByTimeAsync(200)
 
     expect(ready(store).save).not.toMatchObject({ state: 'halted' })
-  })
-
-  /*
-   * The press belongs to the session that made it. Carried across an open, a
-   * renewal in the NEXT session reads it, clears a halt nobody asked it to
-   * clear, and reschedules the write — the automatic retry ADR-0005 refuses,
-   * reached through a flag rather than a timer.
-   */
-  it('does not carry a resume into the session that replaces it', async () => {
-    const answers: ((lease: Lease) => void)[] = []
-    const host = recorder()
-    host.port.renewLease = () =>
-      new Promise<Lease>((resolve) => {
-        answers.push(resolve)
-      })
-    host.port.saveDraft = async () => {
-      throw new Error('The workflow service is unreachable.')
-    }
-
-    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
-    store.open()
-    await settle()
-    store.apply(removeStep({ board: null, id: 's1' }))
-    await vi.advanceTimersByTimeAsync(200)
-    expect(ready(store).save).toMatchObject({ state: 'halted' })
-
-    // Asked for, and then abandoned by a reopen before any renewal answered.
-    store.resumeSaving()
-    await settle()
-    store.reopen()
-    await settle()
-
-    // A genuine halt in the new session, and a renewal that succeeds after it.
-    store.apply(removeStep({ board: null, id: 's2' }))
-    await vi.advanceTimersByTimeAsync(200)
-    expect(ready(store).save).toMatchObject({ state: 'halted' })
-
-    for (const answer of answers) answer(leaseFor(30))
-    await vi.advanceTimersByTimeAsync(16 * 60_000)
-
-    // Still halted: nobody asked this session to resume.
-    expect(ready(store).save).toMatchObject({ state: 'halted' })
   })
 
   it('halts again, rather than spinning, when the Host says no twice', async () => {
