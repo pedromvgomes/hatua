@@ -539,6 +539,7 @@ export function createEditingStore(
     const delay = Math.min(Math.max(1000, half), MAX_RENEWAL_DELAY_MS)
 
     leaseTimer = setTimeout(() => {
+      leaseTimer = undefined
       void renew()
     }, delay)
   }
@@ -555,14 +556,19 @@ export function createEditingStore(
    * before.
    */
   const renew = async (resuming = false) => {
-    // Cleared, not merely dropped. Nulling the handle is enough when this was
-    // entered FROM the timer, and `resumeSaving` enters it out of band — where
-    // the armed timer is still pending, because a halt from a refused write
-    // cancels the save and leaves the renewal running. Losing the handle
-    // without clearing it leaves that one live, and `scheduleRenewal` below
-    // arms a second: every resume doubles the rate for the life of the session.
-    if (leaseTimer !== undefined) clearTimeout(leaseTimer)
-    leaseTimer = undefined
+    /*
+     * The armed timer is left alone.
+     *
+     * `scheduleRenewal` clears before it arms, so a renewal that SUCCEEDS
+     * cannot leave two running however it was entered — and one that fails out
+     * of `resumeSaving` leaves the timer that was already armed to try again on
+     * its own. Cancelling it here would take a healthy renewal down with a
+     * transient refusal: before the press the lease would have renewed itself at
+     * the half-way mark, and after it the claim would simply lapse.
+     *
+     * A renewal entered FROM the timer nulls the handle in the callback, so
+     * `leaseTimer` always means "one is armed".
+     */
     if (disposed || !token) return
     const mine = generation
 
@@ -579,8 +585,15 @@ export function createEditingStore(
        * and a publish, release or discard spending a claim that is not the live
        * one. Reading the renewal's answer rather than only its clock is what
        * makes the field mean something.
+       *
+       * Only when there IS one. Nothing read this field before, so a Host
+       * answering with the expiry alone was correct and may still be — and
+       * taking `undefined` from it would end a session whose lease the Host
+       * considers perfectly good: the bar swaps to "no longer editing", the next
+       * keystroke halts, and all three actions refuse. A type is a promise the
+       * Host makes, which is why `versions.ts` checks its pages too.
        */
-      token = next.token
+      if (next.token) token = next.token
       if (resuming) save = SAVED
       commit()
       scheduleRenewal()
@@ -1045,9 +1058,17 @@ export function createEditingStore(
        */
       if (pending && halted()) throw reasonFor(save)
 
-      // Read before `finish()` nulls it, and after the write that may have
-      // rotated it.
-      const spent = token
+      /*
+       * Which token to hand back: this session's, as it stands now.
+       *
+       * Read after the write, because that write may have rotated it — and only
+       * when this session is still the current one. `await write()` is an
+       * unbounded wait, and a reopen that both starts AND lands inside it leaves
+       * `token` holding the NEW session's credential; releasing that would
+       * unclaim the Draft somebody is actively editing, and every save after it
+       * would be refused.
+       */
+      const spent = mine === generation ? (token ?? held) : held
       /*
        * The guard `publish()` carries, for the hazard `publish()` has.
        *
@@ -1065,7 +1086,7 @@ export function createEditingStore(
       // `finish()` has just dropped the token, so the one to hand back is
       // whatever was live before it — the renewal's, if one landed during the
       // write above.
-      return port.releaseDraft(spent ?? held)
+      return port.releaseDraft(spent)
     },
 
     async discard() {
