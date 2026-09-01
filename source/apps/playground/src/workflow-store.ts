@@ -190,6 +190,24 @@ const VERSIONS_PER_PAGE = 5
 
 const now = () => new Date().toISOString()
 
+/**
+ * Write `version:` and `status:` into the document, because they belong to it.
+ *
+ * ADR-0005 puts both in the **Workflow Definition** and gives the Host the
+ * bytes, which makes keeping them level with the record this store holds the
+ * Host's job. A real one would do this server-side against its own schema; a
+ * line rewrite is enough here, and it is deliberately anchored to column zero so
+ * a `version:` nested inside a Step's `with:` is left alone.
+ */
+const stamped = (yaml: string, version: number, status: VersionSummary['status']): string => {
+  const withVersion = /^version:.*$/m.test(yaml)
+    ? yaml.replace(/^version:.*$/m, `version: ${String(version)}`)
+    : `version: ${String(version)}\n${yaml}`
+  return /^status:.*$/m.test(withVersion)
+    ? withVersion.replace(/^status:.*$/m, `status: ${status}`)
+    : `status: ${status}\n${withVersion}`
+}
+
 export interface LocalWorkflowStoreOptions {
   /** Namespaced so two pages of the playground do not fight over one workflow. */
   namespace?: string
@@ -282,11 +300,18 @@ export function createLocalWorkflowStore(options: LocalWorkflowStoreOptions = {}
       // calls would race: between checking whether a draft exists and claiming
       // it, another session can create one.
       if (!draft) {
+        const version = (live?.version ?? 0) + 1
         draft = {
-          version: (live?.version ?? 0) + 1,
+          version,
           status: 'draft',
           updatedAt: now(),
-          yaml: live?.yaml ?? seed,
+          // Stamped, not copied. `version:` and `status:` live in the YAML
+          // (ADR-0005), so a draft branched from the live version by copying its
+          // bytes carries the LIVE version's numbers — and the top bar reads
+          // them straight off the document. Left alone, the readout says
+          // `v1 · Published` beside a list saying `v2 draft`, which is one
+          // screen disagreeing with itself about what is open.
+          yaml: stamped(live?.yaml ?? seed, version, 'draft'),
         }
         stored.versions.push(draft)
       }
@@ -356,7 +381,10 @@ export function createLocalWorkflowStore(options: LocalWorkflowStoreOptions = {}
       for (const entry of stored.versions) {
         if (entry.status === 'published') entry.status = 'archived'
       }
-      draft.yaml = yaml
+      // Stamped for the reason `openDraft` stamps: the client sends the text it
+      // was editing, which still says `status: draft`, and the next session
+      // opens on those bytes.
+      draft.yaml = stamped(yaml, draft.version, 'published')
       draft.status = 'published'
       draft.updatedAt = now()
       stored.claim = undefined
@@ -403,9 +431,19 @@ export function createLocalWorkflowStore(options: LocalWorkflowStoreOptions = {}
 
       const from =
         cursor === undefined ? 0 : ordered.findIndex((one) => `${one.version}` === cursor)
-      // A cursor naming a version that has since been discarded: start again
-      // rather than serving the whole list a second time from index -1.
-      const start = from < 0 ? 0 : from
+      /*
+       * A cursor naming a version that is no longer there — a draft discarded
+       * between two pages frees its number (ADR-0005).
+       *
+       * Refused rather than restarted. Serving page one again hands back a
+       * cursor the caller has already seen, which trips `createVersionStore`'s
+       * did-not-advance guard and reports a paging fault in Hatua for what is
+       * really a list that moved under the reader. Whose fault it is, is the
+       * Host's to say, and the store renders it with what is already loaded
+       * left intact.
+       */
+      if (from < 0) throw new Error('That page of versions is no longer there. Try again.')
+      const start = from
       const page = ordered.slice(start, start + VERSIONS_PER_PAGE)
       const after = ordered[start + VERSIONS_PER_PAGE]
 
