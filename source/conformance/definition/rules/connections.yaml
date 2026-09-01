@@ -15,10 +15,10 @@ about: >-
   has established none — where a ref it does not hold genuinely no longer
   resolves.
 
-  Getting that distinction wrong does not merely add noise. CONNECTION_UNKNOWN
-  and CONNECTION_TYPE_MISMATCH block editing, so a checker that answered
-  "unresolvable" while it was still waiting would lock a document over
-  connections that are perfectly fine.
+  Getting that distinction wrong does not merely add noise: a checker that
+  answered "unresolvable" while it was still waiting would refuse to publish a
+  workflow with nothing wrong with it, and go on refusing for as long as nobody
+  answers — which, for a Host that wires no connection port, is forever.
 
 manifests:
   - kind: component
@@ -215,7 +215,8 @@ scenarios:
 
   - name: >-
       with no connection types stated, nothing is said about a type — silence,
-      not "no longer resolves", or a valid workflow locks itself on first paint
+      not "no longer resolves", or a valid workflow cannot be published on first
+      paint
     definition:
       id: wf
       name: W
@@ -338,6 +339,37 @@ scenarios:
           connectionId: brain,
           fieldKey: mailbox,
         }
+
+  - name: >-
+      an empty ref is not a handle, and is the same absence as a null one — the
+      guard is shared, so one rule cannot call it established while the other
+      calls it missing
+    connections: [{ ref: cx_mail, type: email }]
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      connections:
+        - { id: ops_mailbox, ref: "" }
+      steps:
+        - { id: s1, use: component.email.send, with: { to: "x", mailbox: ops_mailbox } }
+    expect:
+      - { code: CONNECTION_NOT_ESTABLISHED, blocks: publish, connectionId: ops_mailbox }
+
+  - name: and so is a ref of nothing but whitespace
+    connections: []
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      connections:
+        - { id: ops_mailbox, ref: "   " }
+      steps:
+        - { id: s1, use: component.email.send, with: { to: "x", mailbox: ops_mailbox } }
+    expect:
+      - { code: CONNECTION_NOT_ESTABLISHED, blocks: publish, connectionId: ops_mailbox }
 
   - name: >-
       an unestablished connection used by a field reports only that it was never

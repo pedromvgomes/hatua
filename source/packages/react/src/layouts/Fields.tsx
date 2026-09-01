@@ -204,7 +204,9 @@ function useConnectionChecks(): ReadonlyMap<string, readonly Diagnostic[]> {
   const checks = useSyncExternalStore<ValidationState>(
     store ? store.subscribe : subscribeToNothing,
     store ? store.getSnapshot : unchecked,
-    store ? store.getSnapshot : unchecked,
+    // The static snapshot on the server, matching every other region: a store
+    // built in the browser has nothing to hand a hydration render.
+    unchecked,
   )
   // Absent, not empty, until the answer means something: a Connection looks
   // unestablished before the document has projected, and a form that painted it
