@@ -1008,3 +1008,53 @@ describe('keeping the history level with the Host', () => {
     expect(await screen.findByRole('button', { name: 'Show more' })).toBeDefined()
   })
 })
+
+describe('a message that has outlived what it was about', () => {
+  /*
+   * A rejected Publish leaves a real message behind, and dismissing its panel
+   * did not clear it — so a Host ending the next session through the store had
+   * the ended cluster captioned with the reason a publish failed.
+   */
+  it('does not caption an ending with a publish error the reader dismissed', async () => {
+    const source = host(VALID, {
+      async publish(): Promise<PublishedVersion> {
+        throw new Error('Another session holds the edit on this workflow.')
+      },
+    })
+    render(
+      <HatuaProvider
+        ports={{ workflows: source.port, manifests: serving(CATALOGUE) }}
+        workflowId="wf_morning"
+      >
+        <Releases />
+        <TopBar />
+      </HatuaProvider>,
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Publish' }))
+    expect(await screen.findByText(/Another session holds the edit/)).toBeDefined()
+
+    // Dismissed, not acted on.
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Problems' })).toBeNull())
+
+    fireEvent.click(screen.getByRole('button', { name: 'release it' }))
+
+    expect(await screen.findByText(/no longer editing/)).toBeDefined()
+    expect(screen.queryByText(/Another session holds the edit/)).toBeNull()
+  })
+
+  it('does not say a workflow has no versions while offering more of them', async () => {
+    const source = host(VALID, {
+      async listVersions(): Promise<Cursor<VersionSummary>> {
+        // Everything in the first page was unusable, but the Host has more.
+        return { items: [], next: 'p2' }
+      },
+    })
+    mount(source)
+    fireEvent.click(await screen.findByRole('button', { name: /v5 · Draft/ }))
+
+    expect(await screen.findByRole('button', { name: 'Show more' })).toBeDefined()
+    expect(screen.queryByText('There are no versions yet.')).toBeNull()
+  })
+})

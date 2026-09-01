@@ -268,7 +268,14 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
   // Stable, because <Layer> lists it as an effect dependency: recreated every
   // render, the document-level keydown and pointerdown handlers are torn off and
   // re-attached on every keystroke the bar re-renders for.
-  const closeLayer = useCallback(() => setLayer(null), [])
+  const closeLayer = useCallback(() => {
+    setLayer(null)
+    // And what the panel was showing. `attempt` is read by the ended-session
+    // cluster too, so a rejected Publish whose panel the reader dismissed would
+    // otherwise still be standing when the session ends — captioning a release
+    // with the reason a publish failed.
+    setAttempt(null)
+  }, [])
 
   const attemptPublish = async (from: HTMLElement) => {
     if (!store) return
@@ -655,7 +662,10 @@ function VersionLayer({
 
       {state.status === 'ready' ? (
         <>
-          {state.versions.length === 0 ? (
+          {/* Empty AND exhausted. A first page that is empty but carries a
+              cursor is a Host with more to send, and "no versions yet" over a
+              "Show more" is the screen contradicting itself. */}
+          {state.versions.length === 0 && !state.more ? (
             <p className={styles.muted}>There are no versions yet.</p>
           ) : (
             <ul className={styles.versions}>

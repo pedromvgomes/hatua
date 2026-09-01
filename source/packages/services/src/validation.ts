@@ -6,7 +6,7 @@ import {
 } from '@hatua/model'
 import { contextKeysIn, manifestsIn } from '@hatua/schema'
 import type { ConnectionStore } from './connections'
-import type { EditingStore } from './editing'
+import { type EditingStore, PublishBlocked } from './editing'
 import type { ManifestStore } from './manifests'
 import type { Store } from './store'
 
@@ -249,13 +249,50 @@ export function publishBlockers(
 
   if (decided()) return Promise.resolve(answer())
 
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     let stop = () => {}
 
     const settle = () => {
       clearTimeout(timer)
       stop()
       resolve(answer())
+    }
+
+    /*
+     * The deadline REFUSES; it does not answer.
+     *
+     * An unready snapshot's `all` is empty, and an empty list means "nothing is
+     * wrong" to the only caller there is — so falling through to it would
+     * publish a workflow against which no rule has run, which is the guarantee
+     * ADR-0023 exists to make. A Host that is merely slow is the reachable case:
+     * the catalogue fetch starts when the bar mounts, so a cold endpoint and a
+     * user who presses Publish inside the window is all it takes.
+     *
+     * "Could not be checked" and "checked, and fine" are different answers, and
+     * only one of them may publish. The narrowing this file does elsewhere is
+     * for a question nobody can EVER answer; a wait that ran out is a question
+     * that has not been answered yet, and asking again is the way through.
+     */
+    const giveUp = () => {
+      stop()
+      /*
+       * `ready`, not `decided()`. The catalogue having arrived is what says the
+       * rules RAN, and a wait that ran out with only the Connections still
+       * outstanding leaves exactly the two codes `undescribed` leaves — which
+       * ADR-0022 already settles in favour of narrowing. A catalogue that never
+       * arrived leaves an empty list that ran nothing, and that is the one that
+       * must not be mistaken for a clean workflow.
+       */
+      if (validation.getSnapshot().ready) {
+        resolve(answer())
+        return
+      }
+      reject(
+        new PublishBlocked(
+          NOTHING,
+          'This workflow could not be checked just now, so it has not been published. Try again in a moment.',
+        ),
+      )
     }
 
     /*
@@ -273,7 +310,7 @@ export function publishBlockers(
      * port's answer. Waiting on `port.publish` is different in kind: the write
      * is in the Host's hands, and no local timer can un-make it.
      */
-    const timer = setTimeout(settle, deadlineMs)
+    const timer = setTimeout(giveUp, deadlineMs)
 
     stop = validation.subscribe(() => {
       if (!decided()) return
