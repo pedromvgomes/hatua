@@ -9,7 +9,8 @@ import {
   returnSlots,
   troubledBlocks,
 } from './blocks'
-import { type Diagnostic, indexManifests } from './connections'
+import { indexManifests } from './connections'
+import type { Diagnostic } from './diagnostic'
 import { blockOutputType, boardScope, scopeFor } from './scope'
 import { boards, stepKey, walkDocument } from './tree'
 import { validateDefinition } from './validity'

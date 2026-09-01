@@ -1,8 +1,9 @@
 import type { Manifest } from '@hatua/schema'
 import { describe, expect, it, vi } from 'vitest'
+import { type ConnectionStore, createConnectionStore } from './connections'
 import { createEditingStore, type EditingStore } from './editing'
 import { createManifestStore, type ManifestStore } from './manifests'
-import type { DraftSession, EditToken, Lease, WorkflowStore } from './ports'
+import type { ConnectionSource, DraftSession, EditToken, Lease, WorkflowStore } from './ports'
 import { removeStep } from './steps'
 import { createValidationStore } from './validation'
 
@@ -10,9 +11,11 @@ import { createValidationStore } from './validation'
  * The join between the document and the catalogue.
  *
  * The rules themselves are @hatua/model's and are tested there. What is tested
- * here is everything this store adds: that an answer is withheld until both
- * inputs mean something, that a snapshot stays referentially stable until one
- * of them moves, and that asking for the answer is what makes both arrive.
+ * here is everything this store adds: that an answer is withheld until the
+ * document and the catalogue mean something, that the Host's Connections narrow
+ * the answer instead of withholding it, that a snapshot stays referentially
+ * stable until one of its sources moves, and that asking for the answer is what
+ * makes all of them arrive.
  */
 
 const token = 'tok_v' as EditToken
@@ -57,10 +60,19 @@ const settle = async () => {
   for (let turn = 0; turn < 8; turn++) await Promise.resolve()
 }
 
-const wired = (yaml = MISSING, manifests: Manifest[] = CATALOGUE) => {
+const wired = (
+  yaml = MISSING,
+  manifests: Manifest[] = CATALOGUE,
+  connections?: ConnectionStore | null,
+) => {
   const editing = createEditingStore(workflowPort(yaml), 'wf')
   const catalogue = createManifestStore({ loadManifests: async () => manifests })
-  return { editing, catalogue, validation: createValidationStore(editing, catalogue) }
+  return {
+    editing,
+    catalogue,
+    connections,
+    validation: createValidationStore(editing, catalogue, connections),
+  }
 }
 
 const opened = async (yaml?: string, manifests?: Manifest[]) => {
@@ -83,8 +95,10 @@ describe('withholding an answer', () => {
       byStep: new Map(),
       byTrigger: new Map(),
       byBlock: new Map(),
+      byConnection: new Map(),
       all: [],
       ready: false,
+      connections: 'undescribed',
     })
   })
 
@@ -340,5 +354,168 @@ describe('load()', () => {
 
     expect(opens).toHaveBeenCalledTimes(1)
     expect(loads).toHaveBeenCalledTimes(1)
+  })
+})
+
+/*
+ * A Connection's type is the one input that is not in the document, so absence
+ * is a state these rules have to hold. Getting it wrong does not merely add
+ * noise: CONNECTION_TYPE_MISMATCH blocks editing, so a store that reported it
+ * before the Host had answered would lock a document over Connections that are
+ * entirely fine — and one that withheld the whole answer instead would leave a
+ * Host wiring no ConnectionSource with no validation at all.
+ */
+
+const CONNECTED = `id: wf
+name: n
+version: 1
+status: draft
+connections:
+  - id: mailbox
+    ref: cx_ok
+  - id: unwired
+    ref: null
+steps:
+  - id: s1
+    use: component.email.send
+    with:
+      to: a@b.c
+      connection: mailbox
+`
+
+const CONN_CATALOGUE: Manifest[] = [
+  {
+    kind: 'component',
+    use: 'component.email.send',
+    name: 'Send email',
+    fields: [
+      { k: 'to', label: 'To', kind: 'text', req: true },
+      { k: 'connection', label: 'Mailbox', kind: 'conn', conn_type: 'email' },
+    ],
+    outputs: [],
+  },
+]
+
+const listing = (items: { ref: string; type: string }[]): ConnectionSource => ({
+  async listConnections() {
+    return { items }
+  },
+})
+
+const never: ConnectionSource = { listConnections: () => new Promise(() => {}) }
+const refuses: ConnectionSource = {
+  async listConnections() {
+    throw new Error('nope')
+  },
+}
+
+const withConnections = async (source?: ConnectionSource) => {
+  const store = source ? createConnectionStore(source) : null
+  const stores = wired(CONNECTED, CONN_CATALOGUE, store)
+  stores.validation.load()
+  await settle()
+  return stores.validation.getSnapshot()
+}
+
+describe('what the connection rules are worth saying', () => {
+  it('checks every code once the Host has listed its Connections', async () => {
+    const found = await withConnections(listing([{ ref: 'cx_ok', type: 'email' }]))
+    expect(found.connections).toBe('checked')
+    expect(found.all.map((d) => d.code)).toEqual(['CONNECTION_NOT_ESTABLISHED'])
+  })
+
+  it('calls an empty list an answer, so a ref it does not hold no longer resolves', async () => {
+    // A Host with nothing established is answering, not silent — which is the
+    // one case where CONNECTION_UNRESOLVABLE is the honest report.
+    const found = await withConnections(listing([]))
+    expect(found.connections).toBe('checked')
+    expect(found.all.map((d) => d.code).sort()).toEqual([
+      'CONNECTION_NOT_ESTABLISHED',
+      'CONNECTION_UNRESOLVABLE',
+    ])
+  })
+
+  it('says nothing about a type while the port has not answered', async () => {
+    const found = await withConnections(never)
+    expect(found.connections).toBe('pending')
+    expect(found.all.map((d) => d.code)).not.toContain('CONNECTION_UNRESOLVABLE')
+  })
+
+  it('says nothing about a type when the port failed, and does not wait on it', async () => {
+    const found = await withConnections(refuses)
+    expect(found.connections).toBe('undescribed')
+    expect(found.all.map((d) => d.code)).not.toContain('CONNECTION_UNRESOLVABLE')
+  })
+
+  it('says nothing about a type when no ConnectionSource is wired', async () => {
+    const found = await withConnections()
+    expect(found.connections).toBe('undescribed')
+    expect(found.all.map((d) => d.code)).not.toContain('CONNECTION_UNRESOLVABLE')
+  })
+
+  /*
+   * The regression that would pass every test not written for it. A Host that
+   * wires no ConnectionSource is correctly configured, and must still be told
+   * about a required field it left empty.
+   */
+  it('validates everything else whether or not anything can describe a Connection', async () => {
+    for (const source of [undefined, never, refuses]) {
+      const found = await withConnections(source)
+      expect(found.ready).toBe(true)
+      expect(found.all.map((d) => d.code)).toContain('CONNECTION_NOT_ESTABLISHED')
+    }
+
+    const unfilled = await (async () => {
+      const stores = wired(MISSING, CATALOGUE, null)
+      stores.validation.load()
+      await settle()
+      return stores.validation.getSnapshot()
+    })()
+    expect(unfilled.ready).toBe(true)
+    expect(unfilled.all.map((d) => d.code)).toContain('FIELD_REQUIRED')
+  })
+
+  it('files a Connection nothing wired under its own id, where no Step could hold it', async () => {
+    const found = await withConnections(listing([{ ref: 'cx_ok', type: 'email' }]))
+    expect([...found.byConnection.keys()]).toEqual(['unwired'])
+  })
+
+  it('recomputes when the Host answers, and holds the snapshot still until it does', async () => {
+    let answer: (items: { ref: string; type: string }[]) => void = () => {}
+    const store = createConnectionStore({
+      listConnections: () =>
+        new Promise((resolve) => {
+          answer = (items) => resolve({ items })
+        }),
+    })
+    const stores = wired(CONNECTED, CONN_CATALOGUE, store)
+    stores.validation.load()
+    await settle()
+
+    // The document and the catalogue have landed, so the answer means
+    // something; the Host has not spoken, so two of the codes are not in it.
+    const before = stores.validation.getSnapshot()
+    expect(before.ready).toBe(true)
+    expect(before.connections).toBe('pending')
+    expect(stores.validation.getSnapshot()).toBe(before)
+
+    answer([{ ref: 'cx_ok', type: 'llm' }])
+    await settle()
+
+    const after = stores.validation.getSnapshot()
+    expect(after).not.toBe(before)
+    expect(after.connections).toBe('checked')
+    expect(after.all.map((d) => d.code)).toContain('CONNECTION_TYPE_MISMATCH')
+  })
+
+  it('asks the Host for its Connections itself, so a Host that opens no form is still checked', async () => {
+    const listConnections = vi.fn(async () => ({ items: [] }))
+    const store = createConnectionStore({ listConnections })
+    const stores = wired(CONNECTED, CONN_CATALOGUE, store)
+
+    expect(listConnections).not.toHaveBeenCalled()
+    stores.validation.load()
+    await settle()
+    expect(listConnections).toHaveBeenCalledTimes(1)
   })
 })

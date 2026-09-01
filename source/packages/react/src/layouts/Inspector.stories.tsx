@@ -177,6 +177,9 @@ const catalogue = (manifests: Manifest[]): ManifestSource => ({
 const ESTABLISHED = [
   { ref: 'ref_ops', type: 'email', label: 'Ops mailbox' },
   { ref: 'ref_support', type: 'email', label: 'Support inbox' },
+  // Never offered for an email field: `conn_type` filters the picker, which is
+  // why a Step holding this one can only be a hand-edit.
+  { ref: 'ref_brain', type: 'llm', label: 'A model' },
 ]
 
 const connectionPorts = (): {
@@ -202,14 +205,112 @@ const connectionPorts = (): {
  * story cannot un-set an inherited one — the unconfigured story that tried
  * would silently inherit a workflow and show a form instead.
  */
-const wired = (store: WorkflowStore, manifests: Manifest[] | null = CATALOGUE) => ({
+const wired = (
+  store: WorkflowStore,
+  manifests: Manifest[] | null = CATALOGUE,
+  connections: object = connectionPorts(),
+) => ({
   ports: {
     workflows: store,
     ...(manifests ? { manifests: catalogue(manifests) } : {}),
-    ...connectionPorts(),
+    ...connections,
   },
   workflowId: 'wf',
 })
+
+/*
+ * One Step holding one `conn` field, over what the document says its Connection
+ * is.
+ *
+ * Written out whole rather than interpolated from one template: `stories.fixtures`
+ * reads these literals out of the source and projects each one, and a document
+ * assembled at runtime is a document nothing checks.
+ *
+ * The four connection codes are the only rules whose answer is not in the
+ * document, so what separates these stories is a pair — what the file declares,
+ * and what the Host is able to say about it.
+ */
+
+const CONNECTED = `id: wf_morning
+name: "Morning inbox triage"
+version: 4
+status: draft
+connections:
+  - id: ops_mailbox
+    ref: ref_ops
+steps:
+  - id: s1
+    use: component.email.fetch
+    name: "Fetch the mail"
+    with:
+      folder: "INBOX"
+      mailbox: ops_mailbox
+`
+
+/** A handle the Host lists nothing for. */
+const REVOKED = `id: wf_morning
+name: "Morning inbox triage"
+version: 4
+status: draft
+connections:
+  - id: ops_mailbox
+    ref: ref_gone
+steps:
+  - id: s1
+    use: component.email.fetch
+    name: "Fetch the mail"
+    with:
+      folder: "INBOX"
+      mailbox: ops_mailbox
+`
+
+/** An LLM handle in a field that wants email, which only a hand-edit can produce. */
+const WRONG_TYPE = `id: wf_morning
+name: "Morning inbox triage"
+version: 4
+status: draft
+connections:
+  - id: ops_mailbox
+    ref: ref_brain
+steps:
+  - id: s1
+    use: component.email.fetch
+    name: "Fetch the mail"
+    with:
+      folder: "INBOX"
+      mailbox: ops_mailbox
+`
+
+/** Declared and never wired, which is how every workflow starts. */
+const NEVER_ESTABLISHED = `id: wf_morning
+name: "Morning inbox triage"
+version: 4
+status: draft
+connections:
+  - id: ops_mailbox
+    ref: null
+steps:
+  - id: s1
+    use: component.email.fetch
+    name: "Fetch the mail"
+    with:
+      folder: "INBOX"
+      mailbox: ops_mailbox
+`
+
+const AT_THE_CONN_FIELD: Story['args'] = { selected: { board: null, steps: ['s1'] } }
+
+/** A port that never answers, so the picker and the checker both stay waiting. */
+const stillLoading = { connections: { listConnections: () => new Promise<never>(() => {}) } }
+
+/** A port that answers with an error. Nothing here will make the types appear. */
+const failing = {
+  connections: {
+    async listConnections(): Promise<never> {
+      throw new Error('The connection service is unavailable.')
+    },
+  },
+}
 
 const meta = {
   title: 'Layouts/Inspector',
@@ -341,3 +442,68 @@ export const Failed: Story = {
 
 /** No WorkflowStore at all — a wiring mistake, told apart from an empty workflow. */
 export const Unconfigured: Story = {}
+
+/*
+ * Two of the four codes block editing, so the three stories where the Host
+ * cannot answer are the ones worth looking at hardest — the form must stay
+ * exactly as usable as it is when the Host answers perfectly.
+ */
+
+/** No `ConnectionSource` wired. A correct configuration, not a broken one — and no picker. */
+export const NoConnectionPort: Story = {
+  args: AT_THE_CONN_FIELD,
+  parameters: wired(serving(CONNECTED), CATALOGUE, {}),
+}
+
+/**
+ * The port has not answered yet. The field says so, and the checker says nothing
+ * about a type it cannot know — "no longer resolves" here would be a lie on
+ * every Connection in the workflow.
+ */
+export const ConnectionsStillLoading: Story = {
+  args: AT_THE_CONN_FIELD,
+  parameters: wired(serving(CONNECTED), CATALOGUE, stillLoading),
+}
+
+/**
+ * The port answered with an error. The field carries the Host's message and a
+ * Retry; the checker stays silent, because nothing it does will make a type
+ * appear.
+ */
+export const ConnectionsFailed: Story = {
+  args: AT_THE_CONN_FIELD,
+  parameters: wired(serving(CONNECTED), CATALOGUE, failing),
+}
+
+/**
+ * A handle the Host lists nothing for — revoked, deleted, or from another
+ * environment. Blocks publish and not editing: a Connection going away outside
+ * the builder is not something building did wrong.
+ */
+export const ConnectionTheHostDoesNotRecognise: Story = {
+  args: AT_THE_CONN_FIELD,
+  parameters: wired(serving(REVOKED)),
+}
+
+/**
+ * An LLM Connection in a field that wants email. Blocks editing, because the
+ * picker filters by `conn_type` and ordinary building cannot produce this — only
+ * a hand-edit can.
+ */
+export const ConnectionOfTheWrongType: Story = {
+  args: AT_THE_CONN_FIELD,
+  parameters: wired(serving(WRONG_TYPE)),
+}
+
+/**
+ * Declared and never wired. Blocks publish and not editing — laying out a whole
+ * workflow before connecting anything is the ordinary way to start one.
+ *
+ * The diagnostic names the Connection and no Step, so no region that draws
+ * Steps, Triggers or Blocks would ever find it. It reaches a screen because the
+ * field pointing at the Connection looks it up by the id it holds.
+ */
+export const ConnectionNeverEstablished: Story = {
+  args: AT_THE_CONN_FIELD,
+  parameters: wired(serving(NEVER_ESTABLISHED)),
+}

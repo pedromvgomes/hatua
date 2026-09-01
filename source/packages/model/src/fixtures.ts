@@ -1,4 +1,5 @@
 import type { Manifest, WorkflowDefinition } from '@hatua/schema'
+import type { ConnectionTypes } from './connections'
 
 /** Mirrors the worked example in the plan, so tests and docs cannot drift apart. */
 export const DOC: WorkflowDefinition = {
@@ -103,8 +104,11 @@ export const MANIFESTS: Manifest[] = [
   },
 ]
 
-/** What ConnectionDescriber.describe(ref).type would report. */
-export const CONNECTION_TYPES: Record<string, string> = {
-  conn_9f21c: 'email',
-  conn_44b0e: 'llm',
-}
+/**
+ * What the Host reports each established Connection is, keyed by the opaque ref
+ * a Workflow Definition stores — `ConnectionSource.listConnections` as a map.
+ */
+export const CONNECTION_TYPES: ConnectionTypes = new Map([
+  ['conn_9f21c', 'email'],
+  ['conn_44b0e', 'llm'],
+])
