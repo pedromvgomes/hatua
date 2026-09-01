@@ -1,6 +1,6 @@
 import type { Slot } from '@hatua/expressions'
 import type { Block, Declaration, Step, WorkflowDefinition } from '@hatua/schema'
-import type { Diagnostic } from './connections'
+import type { Diagnostic } from './diagnostic'
 import { own, regionsOf, type StepRef, walkDocument } from './tree'
 
 /**

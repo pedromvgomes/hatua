@@ -26,6 +26,10 @@ const SURFACE = [
   'createManifestStore',
   'createValidationStore',
 
+  // The snapshot a region renders when there is no store to read, which every
+  // one of them needs as its `useSyncExternalStore` fallback.
+  'unchecked',
+
   // Paging, which a Host's port is drained with.
   'drain',
 

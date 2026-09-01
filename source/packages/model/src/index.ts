@@ -1,6 +1,7 @@
 export * from './authoring'
 export * from './blocks'
 export * from './connections'
+export * from './diagnostic'
 export * from './metadata'
 export * from './scope'
 export * from './segment'

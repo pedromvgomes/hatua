@@ -28,6 +28,7 @@ import {
   setStepField,
   setStepName,
   stepIn,
+  unchecked,
   type ValidationState,
 } from '@hatua/services'
 import { type ComponentPropsWithRef, useEffect, useId, useMemo, useSyncExternalStore } from 'react'
@@ -109,14 +110,6 @@ const NO_ENTRIES: ManifestEntry[] = []
 const NO_SCOPE: readonly ScopeEntry[] = []
 const NO_PROBLEMS: ReadonlyMap<string, Diagnostic[]> = new Map()
 const NO_KEYS: ReadonlySet<string> = new Set()
-const UNCHECKED: ValidationState = {
-  byStep: NO_PROBLEMS,
-  byTrigger: NO_PROBLEMS,
-  byBlock: NO_PROBLEMS,
-  all: [],
-  ready: false,
-}
-
 // Module-level and therefore stable: useSyncExternalStore re-subscribes
 // whenever `subscribe` changes identity, and re-renders forever if `getSnapshot`
 // returns a fresh object each call.
@@ -125,7 +118,6 @@ const readUnconfigured = (): EditorState => UNCONFIGURED
 const readOpening = (): EditorState => OPENING
 const readCatalogueUnconfigured = (): CatalogueState => CATALOGUE_UNCONFIGURED
 const readCatalogueLoading = (): CatalogueState => CATALOGUE_LOADING
-const readUnchecked = (): ValidationState => UNCHECKED
 
 export function Inspector({
   className,
@@ -165,8 +157,8 @@ export function Inspector({
   )
   const checks = useSyncExternalStore<ValidationState>(
     validation ? validation.subscribe : subscribeToNothing,
-    validation ? validation.getSnapshot : readUnchecked,
-    readUnchecked,
+    validation ? validation.getSnapshot : unchecked,
+    unchecked,
   )
 
   const workflow = state.status === 'ready' ? state.workflow : null
