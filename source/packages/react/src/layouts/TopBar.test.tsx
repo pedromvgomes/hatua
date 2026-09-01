@@ -885,3 +885,53 @@ describe('an ending the Host refused while the claim still stood', () => {
     expect(await screen.findByText('The workflow service is unreachable.')).toBeDefined()
   })
 })
+
+describe('what the readout says once the session is over', () => {
+  /*
+   * `publish()` promotes the version and never touches the in-memory document,
+   * so the copy on screen still says `status: draft` — and a discard leaves it
+   * naming a number that exists nowhere. Neither is the user's file any more, so
+   * the readout stops asserting rather than asserting something false beside a
+   * list that disagrees.
+   */
+  it('stops naming a version, and still opens the list', async () => {
+    const source = host(VALID)
+    mount(source)
+    fireEvent.click(await screen.findByRole('button', { name: 'Publish' }))
+    await screen.findByText('Published as version 6.')
+
+    expect(screen.queryByRole('button', { name: /v5 · Draft/ })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Versions' }))
+    expect(await screen.findByRole('dialog', { name: 'Versions' })).toBeDefined()
+  })
+
+  it('names it again once a Draft is open', async () => {
+    const source = host(VALID)
+    mount(source)
+    fireEvent.click(await screen.findByRole('button', { name: 'Publish' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+
+    expect(await screen.findByRole('button', { name: /v5 · Draft/ })).toBeDefined()
+  })
+
+  it('refetches the list when Edit mints the next Draft', async () => {
+    let asked = 0
+    const source = host(VALID, {
+      async listVersions(): Promise<Cursor<VersionSummary>> {
+        asked++
+        return { items: VERSIONS }
+      },
+    })
+    mount(source)
+    // Opened once, so the store has something to invalidate.
+    fireEvent.click(await screen.findByRole('button', { name: /v5 · Draft/ }))
+    await waitFor(() => expect(asked).toBe(1))
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Publish' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }))
+
+    // Once for the publish, once for the reopen that minted the next Draft.
+    await waitFor(() => expect(asked).toBe(3))
+  })
+})

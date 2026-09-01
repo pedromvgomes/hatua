@@ -398,6 +398,22 @@ export function createEditingStore(
    */
   const halted = () => save.state === 'halted'
 
+  /**
+   * Whether the document has moved past what the Host last accepted.
+   *
+   * Guarded, because `toString()` throws on a tree a command left unserialisable
+   * — and "cannot be serialised" is not "needs writing", so the honest answer
+   * for a document nothing can send is that there is nothing to send.
+   */
+  const dirty = () => {
+    if (!document) return false
+    try {
+      return document.toString() !== savedText
+    } catch {
+      return false
+    }
+  }
+
   const setSave = (next: SaveState) => {
     save = next
     commit()
@@ -523,7 +539,18 @@ export function createEditingStore(
     }, delay)
   }
 
-  const renew = async () => {
+  /**
+   * Ask the Host to keep the claim alive.
+   *
+   * `resuming` is the one press that asks for it out of turn. A halt is most
+   * often a refused renewal, which fires on a timer — so it lands while nobody
+   * is typing and the document is clean, and a resume that only re-entered the
+   * write queue would find nothing to write, report `saved`, and assert
+   * everything was safe on a claim nothing had re-checked. The renewal IS the
+   * check: the halt clears when the Host says the claim is still ours, and not
+   * before.
+   */
+  const renew = async (resuming = false) => {
     leaseTimer = undefined
     if (disposed || !token) return
     const mine = generation
@@ -532,8 +559,15 @@ export function createEditingStore(
       const next = await port.renewLease(token)
       if (mine !== generation || disposed) return
       lease = next
+      if (resuming) save = SAVED
       commit()
       scheduleRenewal()
+      // Anything typed before the halt, or during it, still has to reach the
+      // Host — and `schedule()` refuses while halted, so this is its first
+      // chance. Only when there IS something: scheduling a clean document
+      // announces a write that will find nothing to do, which is `pending`
+      // meaning "waiting" about a document already level with the Host.
+      if (resuming && dirty()) schedule()
     } catch (cause) {
       if (mine !== generation || disposed) return
       // A lost lease is a rejected write that has not happened yet: the claim
@@ -812,27 +846,23 @@ export function createEditingStore(
 
     resumeSaving() {
       if (disposed || !token || save.state !== 'halted') return
-      // Straight to a write rather than back through the autosave delay: the
-      // press IS the request, and 800ms of nothing after it reads as a control
-      // that did not work.
-      cancelSave()
-      setSave(PENDING)
-      void write()
       /*
-       * And put the lease back on a timer.
+       * The claim is re-checked before the halt is cleared, and the renewal is
+       * what checks it.
        *
-       * A halt is reached from two directions and one of them takes the renewal
-       * with it: `renew()` fires, the Host refuses, and `halt()` stops autosave
-       * without rescheduling anything — so the only two callers of
-       * `scheduleRenewal` are a successful renewal and a fresh open, and after a
-       * refused one there is no timer left at all.
+       * Not a write: the halt this control answers is usually a refused
+       * RENEWAL, which fires on a timer and therefore while nobody is typing —
+       * so a resume that went straight to the write queue would find the
+       * document already level with the Host, report `saved`, and take the
+       * control off screen having verified nothing. The lease would then lapse
+       * quietly a few seconds later.
        *
-       * Resuming writes without it is the worst of both: the bar goes quiet, the
-       * token still works, and the lease lapses a minute later — at which point
-       * every write is refused and the session halts for good, now carrying
-       * everything typed since the resume.
+       * It also puts the renewal back on a timer, which a halt takes away:
+       * `halt()` schedules nothing, so a refused renewal leaves no timer at all
+       * and the only other caller of `scheduleRenewal` is a fresh open.
        */
-      scheduleRenewal()
+      cancelSave()
+      void renew(true)
     },
 
     flush() {
