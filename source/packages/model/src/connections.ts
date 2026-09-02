@@ -101,6 +101,17 @@ export function mismatchedConnections(
       if (field.kind !== 'conn') continue
       const connectionId = own(values, field.k)
       if (typeof connectionId !== 'string') continue
+      /*
+       * Empty is unset, not wrong.
+       *
+       * A `conn` field nobody has filled in yet holds `''`, and reading that as
+       * a name would report `"" is not declared in this workflow` — a sentence
+       * about a Connection called nothing, over a field whose actual problem is
+       * that it is empty. `req:` already says so, and says it in the words the
+       * user can act on. The same call `expressionRules` makes about a blank
+       * Template: a field left alone is not a field filled in wrongly.
+       */
+      if (connectionId.trim() === '') continue
 
       const connection = byId.get(connectionId)
       if (!connection) {

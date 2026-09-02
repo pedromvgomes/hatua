@@ -2,6 +2,7 @@ import { Hatua } from '@hatua/react'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { SOURCES } from './catalogue'
+import { CONNECTIONS } from './connections'
 import { createLocalWorkflowStore } from './workflow-store'
 
 // The Host imports no CSS — Hatua renders its own stylesheet (ADR-0003).
@@ -45,6 +46,9 @@ const workflows = createLocalWorkflowStore()
 
 createRoot(document.getElementById('root') as HTMLElement).render(
   <StrictMode>
-    <Hatua ports={{ manifests: SOURCES.ready, workflows }} workflowId="wf_morning" />
+    <Hatua
+      ports={{ manifests: SOURCES.ready, workflows, ...CONNECTIONS.ready }}
+      workflowId="wf_morning"
+    />
   </StrictMode>,
 )
