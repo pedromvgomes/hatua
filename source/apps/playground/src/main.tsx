@@ -1,4 +1,4 @@
-import { configureLogging, type Level } from '@hatua/log'
+import { configureLogging, type Level, levelsFrom, resetLogging } from '@hatua/log'
 import { Hatua } from '@hatua/react'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -67,18 +67,21 @@ const workflows = createLocalWorkflowStore()
  */
 const STORED = 'hatua.log'
 
-/** `services.editing:trace,react:debug` — the shortest thing that types cleanly. */
-const parseLevels = (spec: string): Record<string, Level> =>
-  Object.fromEntries(
-    spec
-      .split(',')
-      .map((one) => one.trim())
-      .filter(Boolean)
-      .map((one) => {
-        const at = one.lastIndexOf(':')
-        return at < 0 ? ['*', one as Level] : [one.slice(0, at), one.slice(at + 1) as Level]
-      }),
-  )
+/**
+ * What was asked for, however it was asked.
+ *
+ * A string because that is what types cleanly into a console; the config object
+ * because that is what `configureLogging` takes and what a reader who has seen
+ * the package reaches for first. Accepting one and silently storing the other
+ * as `[object Object]` is a switch that appears to work and does nothing, which
+ * is the failure this whole affordance exists to avoid.
+ */
+const asSpec = (asked: string | { levels?: Record<string, Level> }): string =>
+  typeof asked === 'string'
+    ? asked
+    : Object.entries(asked.levels ?? {})
+        .map(([category, level]) => `${category}:${level}`)
+        .join(',')
 
 const remembered = (): string | null => {
   const asked = new URLSearchParams(globalThis.location.search).get('log')
@@ -92,21 +95,36 @@ const remembered = (): string | null => {
   }
 }
 
-const spec = remembered()
-if (spec) configureLogging({ levels: parseLevels(spec) })
+const stored = remembered()
+if (stored) configureLogging({ levels: levelsFrom(stored) })
 
-;(globalThis as unknown as { hatuaLogging: (spec: string | null) => unknown }).hatuaLogging = (
-  next,
-) => {
+;(
+  globalThis as unknown as {
+    hatuaLogging: (asked: string | { levels?: Record<string, Level> } | null) => unknown
+  }
+).hatuaLogging = (asked) => {
+  if (asked === null) {
+    try {
+      globalThis.localStorage.removeItem(STORED)
+    } catch {
+      // Not remembered; the reset below still applies to this page.
+    }
+    resetLogging()
+    return 'Logging off.'
+  }
+
+  const spec = asSpec(asked)
+  const levels = levelsFrom(spec)
+  if (Object.keys(levels).length === 0) {
+    return `Nothing usable in "${spec}". Try '*:debug' or 'services.editing:trace'.`
+  }
+
   try {
-    if (next === null) globalThis.localStorage.removeItem(STORED)
-    else globalThis.localStorage.setItem(STORED, next)
+    globalThis.localStorage.setItem(STORED, spec)
   } catch {
     // Not remembered, but still applied for this page.
   }
-  return next === null
-    ? 'Logging off from the next reload. Reload to apply.'
-    : configureLogging({ levels: parseLevels(next) })
+  return configureLogging({ levels })
 }
 
 createRoot(document.getElementById('root') as HTMLElement).render(
