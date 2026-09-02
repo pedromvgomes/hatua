@@ -1,4 +1,4 @@
-import { configureLogging, type Level, levelsFrom, resetLogging } from '@hatua/log'
+import { configureLogging, type Level, levelsFrom, logger, resetLogging } from '@hatua/log'
 import { Hatua } from '@hatua/react'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -95,14 +95,41 @@ const remembered = (): string | null => {
   }
 }
 
+const log = logger('playground')
+
+/*
+ * A stored spec that yields nothing is thrown away rather than kept.
+ *
+ * It is how this went wrong once already: a spec written under an older
+ * signature was stored as `[object Object]`, read back on every load, parsed to
+ * nothing, and left logging silent — with no way to tell that from never having
+ * switched it on. `warn` is through by default, so saying so reaches somebody
+ * who is looking at a console wondering why it is empty.
+ */
 const stored = remembered()
-if (stored) configureLogging({ levels: levelsFrom(stored) })
+if (stored) {
+  const levels = levelsFrom(stored)
+  if (Object.keys(levels).length === 0) {
+    console.warn(`[hatua] ignoring an unreadable log level: "${stored}". Cleared.`)
+    try {
+      globalThis.localStorage.removeItem(STORED)
+    } catch {
+      // Nothing to clear, which is the same outcome.
+    }
+  } else {
+    configureLogging({ levels })
+    log.info('logging on', { levels })
+  }
+}
 
 ;(
   globalThis as unknown as {
-    hatuaLogging: (asked: string | { levels?: Record<string, Level> } | null) => unknown
+    hatuaLogging: (asked?: string | { levels?: Record<string, Level> } | null) => unknown
   }
 ).hatuaLogging = (asked) => {
+  // Asked nothing: report what is in force rather than changing it.
+  if (asked === undefined) return configureLogging({})
+
   if (asked === null) {
     try {
       globalThis.localStorage.removeItem(STORED)
@@ -124,7 +151,18 @@ if (stored) configureLogging({ levels: levelsFrom(stored) })
   } catch {
     // Not remembered, but still applied for this page.
   }
-  return configureLogging({ levels })
+
+  const inForce = configureLogging({ levels })
+  /*
+   * And write one line at the level just asked for, through the logger.
+   *
+   * The whole chain in one call — settings, threshold, sink, console — so the
+   * switch answers "did that work" itself instead of leaving it to be inferred
+   * from whether something else logs later. Every failure of this affordance so
+   * far has looked exactly like a quiet application.
+   */
+  log.debug('logging on', { levels: inForce.levels })
+  return inForce
 }
 
 createRoot(document.getElementById('root') as HTMLElement).render(
