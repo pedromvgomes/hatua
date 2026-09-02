@@ -257,6 +257,24 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
     setHandOver(false)
   }, [handOver, busy])
 
+  /*
+   * An ending nothing in this bar asked for takes its messages with it.
+   *
+   * `attempt` outlives its panel by design — the ended cluster is where a
+   * refused Release is read — so a rejected Publish left standing would caption
+   * the NEXT ending instead. The three endings this bar drives each clear it
+   * first; a Host calling `release()` on the store does not, and `busy` is what
+   * tells the two apart: an ending arriving while nothing here is waiting on the
+   * Host is not this bar's.
+   */
+  const wasClaimed = useRef(claimed)
+
+  useEffect(() => {
+    const ended = wasClaimed.current && !claimed
+    wasClaimed.current = claimed
+    if (ended && !busy) setAttempt(null)
+  }, [claimed, busy])
+
   useEffect(() => {
     if (!claimed) return
     setPublished(null)

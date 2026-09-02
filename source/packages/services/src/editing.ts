@@ -301,8 +301,14 @@ export function createEditingStore(
    *
    * So a second ask does not start: `resumeWanted` is a standing intent, and
    * whichever renewal is already in flight answers it.
+   *
+   * It holds the GENERATION that took it rather than a flag, so a renewal
+   * abandoned by a reopen releases only what it took. A bare flag is cleared by
+   * whoever finishes last: the abandoned call returns, clears it, and the live
+   * session's renewal — still in the air — is no longer protected, which is the
+   * overlap this exists to prevent arrived at from underneath.
    */
-  let renewing = false
+  let renewingFor: number | null = null
 
   /*
    * That a reader has asked for saving to resume, held until some renewal
@@ -602,15 +608,15 @@ export function createEditingStore(
      * `leaseTimer` always means "one is armed".
      */
     if (disposed || !token) return
-    if (renewing) {
+    if (renewingFor !== null) {
       // Asked while one is outstanding. The timer that brought us here has
       // already dropped its handle, so leaving now would lose the renewal
       // altogether — and the one in flight only re-arms if it answers.
       scheduleRenewal()
       return
     }
-    renewing = true
     const mine = generation
+    renewingFor = mine
 
     try {
       const next = await port.renewLease(token)
@@ -656,9 +662,10 @@ export function createEditingStore(
       // in-memory document exactly as ADR-0005 requires.
       halt(cause)
     } finally {
-      // Every path, including the guarded returns above: left set by one of
-      // them, no renewal could ever be asked for again.
-      renewing = false
+      // Only what this call took. A renewal the generation has moved past
+      // returns through here while the session that replaced it may already
+      // have one of its own outstanding.
+      if (renewingFor === mine) renewingFor = null
     }
   }
 
@@ -695,7 +702,7 @@ export function createEditingStore(
      * lapses, its writes are refused, and autosave halts on work the reader
      * believes is being saved.
      */
-    renewing = false
+    renewingFor = null
     // Abandoned along with everything else this generation held. A Host whose
     // `saveDraft` never settles — a fetch with no timeout is all it takes —
     // would otherwise leave this set for the life of the store, and every

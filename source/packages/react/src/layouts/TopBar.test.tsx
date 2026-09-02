@@ -1095,3 +1095,37 @@ describe('an ending error and the version list are different subjects', () => {
     await waitFor(() => expect(document.activeElement).toBe(edit))
   })
 })
+
+describe('an ending nothing in the bar asked for', () => {
+  /*
+   * `attempt` outlives its panel by design — the ended cluster is where a
+   * refused Release is read. A rejected Publish left standing therefore captions
+   * the NEXT ending, and the three endings this bar drives all clear it first,
+   * so only a Host driving the store hits it.
+   */
+  it('does not caption a Host’s release with a publish error still on screen', async () => {
+    const source = host(VALID, {
+      async publish(): Promise<PublishedVersion> {
+        throw new Error('Another session holds the edit on this workflow.')
+      },
+    })
+    render(
+      <HatuaProvider
+        ports={{ workflows: source.port, manifests: serving(CATALOGUE) }}
+        workflowId="wf_morning"
+      >
+        <Releases />
+        <TopBar />
+      </HatuaProvider>,
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Publish' }))
+    // Left open, rather than dismissed.
+    expect(await screen.findByText(/Another session holds the edit/)).toBeDefined()
+
+    fireEvent.click(screen.getByRole('button', { name: 'release it' }))
+
+    expect(await screen.findByText(/no longer editing/)).toBeDefined()
+    expect(screen.queryByText(/Another session holds the edit/)).toBeNull()
+  })
+})
