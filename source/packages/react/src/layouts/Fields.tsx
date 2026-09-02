@@ -680,7 +680,13 @@ function ConnectionField({
   const choose = (next: string) => {
     const binding = bindable.find((connection) => `+${connection.ref}` === next)
     if (!binding) {
-      log.debug('connection chosen from those the workflow declares', { field: field.k, next })
+      log.debug('connection chosen from those the workflow declares', {
+        field: field.k,
+        next,
+        // What the picker was offering when it was chosen from, because a value
+        // that matches none of them is the interesting case.
+        offered: bindable.map((one) => `+${one.ref}`),
+      })
       onChange(next)
       return
     }

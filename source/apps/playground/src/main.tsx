@@ -1,4 +1,4 @@
-import { configureLogging, type LogConfig } from '@hatua/log'
+import { configureLogging, type Level } from '@hatua/log'
 import { Hatua } from '@hatua/react'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -46,19 +46,68 @@ import { createLocalWorkflowStore } from './workflow-store'
 const workflows = createLocalWorkflowStore()
 
 /*
- * A switch on the window, because the thing worth watching is usually something
- * that already happened once and will not happen again until it is provoked —
- * and reaching for a rebuild to see it is how a session's state gets thrown away
- * before it can be read.
+ * Logging, switched on in a way that survives a reload.
  *
- *   hatuaLogging({ levels: { '*': 'trace' } })
- *   hatuaLogging({ levels: { 'services.editing': 'debug' } })
+ * `configureLogging` holds its settings in memory, which is right for a library
+ * — a Host decides afresh each time it starts — and useless for chasing
+ * something here: every edit to a region forces a full page reload, so a switch
+ * thrown in the console is gone before the thing being watched happens again.
+ *
+ * So the playground remembers. A level written here is put in `localStorage` and
+ * read back at startup, and `?log=` sets it for one visit without touching what
+ * is stored.
+ *
+ *   hatuaLogging('*:debug')
+ *   hatuaLogging('services.editing:trace,react.fields:debug')
+ *   hatuaLogging(null)                       // back to silent
+ *   http://localhost:5173/?log=*:trace
  *
  * The playground's own affordance, not Hatua's: a Host decides whether it wants
  * one at all, and this one is a development harness.
  */
-;(globalThis as unknown as { hatuaLogging: (config: LogConfig) => void }).hatuaLogging =
-  configureLogging
+const STORED = 'hatua.log'
+
+/** `services.editing:trace,react:debug` — the shortest thing that types cleanly. */
+const parseLevels = (spec: string): Record<string, Level> =>
+  Object.fromEntries(
+    spec
+      .split(',')
+      .map((one) => one.trim())
+      .filter(Boolean)
+      .map((one) => {
+        const at = one.lastIndexOf(':')
+        return at < 0 ? ['*', one as Level] : [one.slice(0, at), one.slice(at + 1) as Level]
+      }),
+  )
+
+const remembered = (): string | null => {
+  const asked = new URLSearchParams(globalThis.location.search).get('log')
+  if (asked !== null) return asked
+  try {
+    return globalThis.localStorage.getItem(STORED)
+  } catch {
+    // A browser with site data blocked. Nothing to remember, which is the
+    // default anyway.
+    return null
+  }
+}
+
+const spec = remembered()
+if (spec) configureLogging({ levels: parseLevels(spec) })
+
+;(globalThis as unknown as { hatuaLogging: (spec: string | null) => unknown }).hatuaLogging = (
+  next,
+) => {
+  try {
+    if (next === null) globalThis.localStorage.removeItem(STORED)
+    else globalThis.localStorage.setItem(STORED, next)
+  } catch {
+    // Not remembered, but still applied for this page.
+  }
+  return next === null
+    ? 'Logging off from the next reload. Reload to apply.'
+    : configureLogging({ levels: parseLevels(next) })
+}
 
 createRoot(document.getElementById('root') as HTMLElement).render(
   <StrictMode>
