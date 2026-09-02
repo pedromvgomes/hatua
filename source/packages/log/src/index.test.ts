@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { configureLogging, type Line, levelsFrom, logger, resetLogging } from './index'
+import { configureLogging, type Line, levelsFrom, logger, resetLogging, setLogLevel } from './index'
 
 const collected = (): { lines: Line[]; sink: (line: Line) => void } => {
   const lines: Line[] = []
@@ -241,5 +241,34 @@ describe('levels from a string', () => {
     logger('services.editing').debug('not written')
 
     expect(lines.map((one) => one.message)).toEqual(['written'])
+  })
+})
+
+describe('turning a level on from code', () => {
+  /*
+   * What a `console.log` used to be for: a line put where the question is, and
+   * deleted an hour later. Going through `configureLogging({ levels: … })` asks
+   * for a nested object at the moment attention is elsewhere.
+   */
+  it('takes the spec a person types', () => {
+    const { lines, sink } = collected()
+    configureLogging({ sink })
+    setLogLevel('react.fields:debug')
+
+    logger('react.fields').debug('written')
+    expect(lines.map((one) => one.message)).toEqual(['written'])
+  })
+
+  it('complains rather than doing nothing when the spec is unusable', () => {
+    const said: unknown[] = []
+    const original = console.warn
+    console.warn = (...args: unknown[]) => said.push(args[0])
+    try {
+      setLogLevel('verbose-ish')
+    } finally {
+      console.warn = original
+    }
+
+    expect(String(said[0])).toContain('nothing usable')
   })
 })

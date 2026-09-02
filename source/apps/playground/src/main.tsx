@@ -1,4 +1,11 @@
-import { configureLogging, type Level, levelsFrom, logger, resetLogging } from '@hatua/log'
+import {
+  configureLogging,
+  type Level,
+  levelsFrom,
+  logger,
+  resetLogging,
+  setLogLevel,
+} from '@hatua/log'
 import { Hatua } from '@hatua/react'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -117,7 +124,7 @@ if (stored) {
       // Nothing to clear, which is the same outcome.
     }
   } else {
-    configureLogging({ levels })
+    setLogLevel(stored)
     log.info('logging on', { levels })
   }
 }
@@ -152,7 +159,7 @@ if (stored) {
     // Not remembered, but still applied for this page.
   }
 
-  const inForce = configureLogging({ levels })
+  const inForce = setLogLevel(spec)
   /*
    * And write one line at the level just asked for, through the logger.
    *
