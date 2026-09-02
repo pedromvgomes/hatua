@@ -633,3 +633,81 @@ describe('once the session has ended', () => {
     }
   })
 })
+
+describe('the playground’s own shape', () => {
+  /*
+   * What the seed actually has: a workflow declaring one email Connection bound
+   * to a served handle, a Step whose field wants a different type, and several
+   * handles served — only one of which fits.
+   */
+  const LLM = `id: wf_morning
+name: n
+version: 1
+status: draft
+
+connections:
+  - id: mailbox
+    ref: cx_9f2a
+
+steps:
+  - id: s1
+    use: component.agent.act
+    name: "Sort by urgency"
+`
+
+  const AGENT: Manifest[] = [
+    {
+      kind: 'component',
+      use: 'component.agent.act',
+      name: 'Run agent',
+      fields: [{ k: 'connection', label: 'Model', kind: 'conn', conn_type: 'llm', req: true }],
+      outputs: [],
+    },
+  ]
+
+  const SERVED = [
+    { ref: 'cx_9f2a', type: 'email', label: 'Ops mailbox' },
+    { ref: 'cx_7c04', type: 'llm', label: 'Claude Code · Haiku 4.5' },
+  ]
+
+  const ports = () => ({
+    connections: {
+      async listConnections() {
+        return { items: SERVED.map(({ ref, type }) => ({ ref, type })) }
+      },
+    },
+    describeConnection: {
+      async describe(ref: string) {
+        const found = SERVED.find((one) => one.ref === ref)
+        if (!found) throw new Error(`No connection "${ref}"`)
+        return { type: found.type, label: found.label, status: 'ready' as const, details: {} }
+      },
+    },
+  })
+
+  it('offers only the Connection that fits, and keeps it once chosen', async () => {
+    const source = host(LLM)
+    render(
+      <HatuaProvider
+        ports={{ workflows: source.port, manifests: serving(AGENT), ...ports() }}
+        workflowId="wf_morning"
+      >
+        <Inspector selected={{ board: null, steps: ['s1'] }} />
+      </HatuaProvider>,
+    )
+
+    const picker = (await screen.findByLabelText('Model')) as HTMLSelectElement
+    await waitFor(() => expect(picker.querySelectorAll('option').length).toBeGreaterThan(1))
+
+    // The email mailbox is not offered for a Model.
+    expect([...picker.querySelectorAll('option')].map((one) => one.textContent)).not.toContain(
+      'Ops mailbox',
+    )
+
+    fireEvent.change(picker, { target: { value: '+cx_7c04' } })
+
+    await waitFor(() =>
+      expect((screen.getByLabelText('Model') as HTMLSelectElement).value).not.toBe(''),
+    )
+  })
+})
