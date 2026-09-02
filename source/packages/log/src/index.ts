@@ -186,6 +186,33 @@ const levelFor = (category: string): Level => {
   return best
 }
 
+/**
+ * Levels from a short string: `*:debug`, `services.editing:trace,react:debug`.
+ *
+ * Here rather than in whatever is calling it because it is the form a person
+ * types under time pressure — into a console, into a query string, into an
+ * environment variable — and every one of those callers would otherwise write
+ * its own splitter and get a different one wrong.
+ *
+ * A bare level with no category means everything: `debug` is `*:debug`.
+ */
+export function levelsFrom(spec: string): Record<string, Level> {
+  const out: Record<string, Level> = {}
+  for (const part of spec.split(',')) {
+    const one = part.trim()
+    if (!one) continue
+    const at = one.lastIndexOf(':')
+    const category = at < 0 ? '*' : one.slice(0, at).trim()
+    const level = (at < 0 ? one : one.slice(at + 1)).trim()
+    if (!isLevel(level)) continue
+    out[category || '*'] = level
+  }
+  return out
+}
+
+/** A level Hatua knows, rather than whatever was typed. */
+const isLevel = (value: string): value is Level => value in RANK
+
 export interface Logger {
   error(message: string, detail?: Record<string, unknown>): void
   warn(message: string, detail?: Record<string, unknown>): void

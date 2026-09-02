@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { configureLogging, type Line, logger, resetLogging } from './index'
+import { configureLogging, type Line, levelsFrom, logger, resetLogging } from './index'
 
 const collected = (): { lines: Line[]; sink: (line: Line) => void } => {
   const lines: Line[] = []
@@ -198,5 +198,48 @@ describe('what the console sink writes', () => {
 
     expect(String(calls[0]?.[1])).not.toContain('%c')
     expect(calls[0]).toHaveLength(2)
+  })
+})
+
+describe('levels from a string', () => {
+  /*
+   * The form a person types under time pressure — into a console, a query
+   * string, an environment variable. Every caller would otherwise write its own
+   * splitter and get a different one wrong.
+   */
+  it('reads a category and a level', () => {
+    expect(levelsFrom('services.editing:trace')).toEqual({ 'services.editing': 'trace' })
+  })
+
+  it('reads several, separated by commas and forgiving of spaces', () => {
+    expect(levelsFrom(' services.editing:trace , react.fields:debug ')).toEqual({
+      'services.editing': 'trace',
+      'react.fields': 'debug',
+    })
+  })
+
+  it('takes a bare level as everything, because that is what it means', () => {
+    expect(levelsFrom('debug')).toEqual({ '*': 'debug' })
+    expect(levelsFrom('*:debug')).toEqual({ '*': 'debug' })
+  })
+
+  /*
+   * A typo yields nothing rather than a category set to a level that does not
+   * exist — which would compare as unranked and silence the category it was
+   * meant to open up.
+   */
+  it('drops what is not a level at all', () => {
+    expect(levelsFrom('services:verbose')).toEqual({})
+    expect(levelsFrom('[object Object]')).toEqual({})
+  })
+
+  it('turns a spec straight into lines being written', () => {
+    const { lines, sink } = collected()
+    configureLogging({ sink, levels: levelsFrom('react.fields:debug') })
+
+    logger('react.fields').debug('written')
+    logger('services.editing').debug('not written')
+
+    expect(lines.map((one) => one.message)).toEqual(['written'])
   })
 })
