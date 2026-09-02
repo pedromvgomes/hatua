@@ -6,6 +6,7 @@ import { indexManifests, scopeFor, validateDefinition } from '@hatua/model'
 import type { Manifest, WorkflowDefinition } from '@hatua/schema'
 import { describe, expect, it } from 'vitest'
 import { parse } from 'yaml'
+import { ESTABLISHED } from './connections'
 import { SEED } from './workflow-store'
 
 /**
@@ -57,5 +58,24 @@ describe('the seed workflow', () => {
     // declares is not silently accepted.
     expect(validate('{{ steps.s4.item.filename }}', 'number', context)).not.toEqual([])
     expect(validate('{{ steps.s4.item.bytes }}', 'number', context)).toEqual([])
+  })
+})
+
+describe('the seed against the Connections the Host serves', () => {
+  /*
+   * The seed's own comment says `cx_9f2a` is "a handle the Host's connection
+   * port actually serves", and that is only true of a page that wires the port.
+   * Without one, nothing describes the ref: every `conn` field then reads the
+   * Connection as being of unknown type and offers it whatever type it asks
+   * for, so a Model picker lists a mailbox.
+   */
+  it('declares only refs the connection port serves', () => {
+    const doc = parse(SEED) as WorkflowDefinition
+    const served = new Set(ESTABLISHED.map((connection) => connection.ref))
+
+    for (const connection of doc.connections ?? []) {
+      expect(connection.ref, `${connection.id} points at a ref nothing serves`).toBeDefined()
+      expect(served, `${connection.id}`).toContain(connection.ref)
+    }
   })
 })
