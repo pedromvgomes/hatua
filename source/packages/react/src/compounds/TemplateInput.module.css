@@ -348,4 +348,29 @@
     line-height: 1.4;
     color: var(--hatua-text-secondary);
   }
+
+  /*
+   * Readable, and plainly not writable — the same treatment `Input` and
+   * `Select` give a disabled control, because a Template beside a disabled text
+   * field is one field and has to look like one.
+   *
+   * The trailing room goes back to the text: it is kept for the ⚡ that inserts
+   * a Reference, and that is not drawn here, so leaving it would be 44px of
+   * nothing on the end of every value.
+   */
+  .box.readOnly {
+    cursor: not-allowed;
+    background: var(--hatua-surface-sunken);
+    padding-inline-end: 12px;
+  }
+
+  /*
+   * The mirror carries the colour, so muting it is what mutes the value —
+   * chips included, since they take their text from it. What still picks a
+   * Reference out of the prose is its wash and its outline, which is the part
+   * of a chip that was never doing the work by contrast alone.
+   */
+  .box.readOnly .mirror {
+    color: var(--hatua-text-muted);
+  }
 }
