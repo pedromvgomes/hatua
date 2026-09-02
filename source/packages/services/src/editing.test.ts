@@ -1694,6 +1694,39 @@ describe('ending the session', () => {
     expect(ready(store).claimed).toBe(true)
   })
 
+  /*
+   * `openDraft` claims anew, so a reopen landing inside the last write leaves
+   * this call holding a token the Host has already superseded. Handing that back
+   * is at best refused — captioning a freshly opened, healthy session with
+   * someone else's claim error — and at worst honoured by a Host that unclaims
+   * by workflow rather than by token.
+   */
+  it('hands nothing back when the session it belonged to has been replaced', async () => {
+    let land: () => void = () => {}
+    const host = recorder()
+    host.port.saveDraft = () =>
+      new Promise<void>((resolve) => {
+        land = resolve
+      })
+
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+    store.apply(removeStep({ board: null, id: 's1' }))
+
+    const ending = store.release()
+    await settle()
+    store.reopen()
+    await settle()
+    land()
+    await ending
+
+    expect(host.released).toBe(0)
+    // The session that replaced it is untouched.
+    expect(store.getSnapshot().status).toBe('ready')
+    expect(ready(store).claimed).toBe(true)
+  })
+
   it('does not write before discarding, because the Draft is being thrown away', async () => {
     // The only possible effect would be to lose a race with the delete.
     const { host, store } = await open()

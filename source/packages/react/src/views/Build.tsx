@@ -212,7 +212,19 @@ export function Build({ className, ...rest }: BuildProps) {
                 }
 
                 const { stepId } = diagnostic
-                if (stepId === undefined) return
+                if (stepId === undefined) {
+                  /*
+                   * A Block's own problems — a duplicated id, the same parameter
+                   * declared twice — name no Step, and what they are about is
+                   * the Block's declarations, which the Workflow tab edits on
+                   * that Board. The canvas is always on screen, so opening the
+                   * tab costs a recursion or a missing return nothing while
+                   * putting the two that ARE edited there in front of the
+                   * reader.
+                   */
+                  setTab('workflow')
+                  return
+                }
                 setSelectedOn((held) => ({
                   ...held,
                   [boardKey(target)]: { board: target, steps: [stepId] },
