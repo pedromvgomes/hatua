@@ -108,6 +108,24 @@
     text-wrap: pretty;
   }
 
+  /*
+   * An edit that did not take. Boxed where a diagnostic is a bare line, because
+   * a diagnostic describes the workflow and this describes what just happened
+   * to the reader — the two sit next to each other and must not read as one
+   * list.
+   */
+  .refused {
+    margin: 0;
+    padding: 8px 10px;
+    border: 1px solid var(--hatua-status-error);
+    border-radius: var(--hatua-radius-sm);
+    background: var(--hatua-status-error-wash);
+    font-size: 0.75rem;
+    line-height: 1.45;
+    color: var(--hatua-text-primary);
+    text-wrap: pretty;
+  }
+
   .failure {
     display: grid;
     justify-items: start;

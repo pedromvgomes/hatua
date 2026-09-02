@@ -383,6 +383,21 @@ describe('the edits it writes', () => {
     expect(written).toContain('ref: ref_support')
     expect(written).toContain('mailbox: support_inbox')
   })
+
+  it('shows the Connection it just declared, rather than falling back to none', async () => {
+    // The document is written correctly and the picker still has to SAY so: a
+    // field that snaps back to "—" reads as a choice that did not take.
+    const source = host()
+    mount(source, on('s1'), CATALOGUE, true)
+
+    const picker = await screen.findByLabelText('Mailbox')
+    await waitFor(() => expect(picker.querySelectorAll('option').length).toBeGreaterThan(1))
+    fireEvent.change(picker, { target: { value: '+ref_support' } })
+
+    await waitFor(() =>
+      expect((screen.getByLabelText('Mailbox') as HTMLSelectElement).value).toBe('support_inbox'),
+    )
+  })
 })
 
 describe('the relationship with the Data panel beside it', () => {
