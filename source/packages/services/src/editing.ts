@@ -290,18 +290,6 @@ export function createEditingStore(
   let future: Revision[] = []
 
   /*
-   * Which renewal is the current one.
-   *
-   * Two can be in the air at once — the armed timer fires while a press has
-   * already asked, or a press lands twice — and against a Host that ROTATES the
-   * token that is not merely wasteful: whichever response arrives last wins the
-   * assignment below, so the older one can install a credential the Host has
-   * already superseded. Every write after it is refused, and the three endings
-   * spend a claim that is not live. Bumped per attempt, checked after the await.
-   */
-  let renewal = 0
-
-  /*
    * Whether one is in the air.
    *
    * Two overlapping renewals are sent with the SAME token, and only the later
@@ -613,14 +601,20 @@ export function createEditingStore(
      * A renewal entered FROM the timer nulls the handle in the callback, so
      * `leaseTimer` always means "one is armed".
      */
-    if (disposed || !token || renewing) return
+    if (disposed || !token) return
+    if (renewing) {
+      // Asked while one is outstanding. The timer that brought us here has
+      // already dropped its handle, so leaving now would lose the renewal
+      // altogether — and the one in flight only re-arms if it answers.
+      scheduleRenewal()
+      return
+    }
     renewing = true
     const mine = generation
-    const asked = ++renewal
 
     try {
       const next = await port.renewLease(token)
-      if (mine !== generation || disposed || asked !== renewal) return
+      if (mine !== generation || disposed) return
       lease = next
       /*
        * And the token with it, because a renewed lease may carry a new one.
@@ -652,7 +646,7 @@ export function createEditingStore(
       // meaning "waiting" about a document already level with the Host.
       if (resuming && dirty()) schedule()
     } catch (cause) {
-      if (mine !== generation || disposed || asked !== renewal) return
+      if (mine !== generation || disposed) return
       // The ask has been answered, even though the answer was no. A later press
       // sets it again.
       resumeWanted = false
@@ -693,6 +687,15 @@ export function createEditingStore(
      * returns before it can clear this itself.
      */
     resumeWanted = false
+    /*
+     * And whether one is outstanding, which is a fact about the session being
+     * replaced. A renewal that never settles — a fetch with no timeout is all it
+     * takes — would otherwise leave this set for the life of the store, and
+     * every renewal after it returns at the guard: the new session's claim
+     * lapses, its writes are refused, and autosave halts on work the reader
+     * believes is being saved.
+     */
+    renewing = false
     // Abandoned along with everything else this generation held. A Host whose
     // `saveDraft` never settles — a fetch with no timeout is all it takes —
     // would otherwise leave this set for the life of the store, and every
@@ -1111,7 +1114,7 @@ export function createEditingStore(
        * nothing — would be refused for ever, which is the opposite of handing
        * the Draft back.
        */
-      const pending = dirty()
+
       // The Draft is kept for whoever picks it up next, so the last edit has to
       // reach it — and awaited rather than fired off, so the Host records the
       // write before it records the release.
@@ -1132,7 +1135,10 @@ export function createEditingStore(
        * lands does what it was asked to do.
        *
        * The question is whether anything is STILL unwritten once the writes
-       * above have run, which is what `dirty()` answers directly.
+       * above have run, asked of the document as it stands rather than of what
+       * happened to be outstanding when the press arrived. A write already in
+       * flight can carry text an undo has since taken back, so "nothing was
+       * pending" at the press is no promise that nothing is pending now.
        *
        * Comparing what the Host held before and after does not: `write()` queues
        * behind whatever is already in flight, so an earlier autosave landing in
@@ -1154,7 +1160,7 @@ export function createEditingStore(
        */
       if (dirty()) await write()
 
-      if (pending && dirty()) {
+      if (dirty()) {
         // The Host's reason, and what to do about it. Rejecting with the raw
         // save error says why the write failed and nothing about the fact that
         // the workflow is still open, or that resuming the save is the way out —

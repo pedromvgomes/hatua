@@ -2465,3 +2465,93 @@ describe('a release the session outlived', () => {
     expect(ready(store).claimed).toBe(true)
   })
 })
+
+describe('a renewal that never comes back', () => {
+  /*
+   * `renewing` is a fact about the session that asked. Carried across an open, a
+   * renewal that never settles leaves it set for the life of the store — and
+   * every renewal after it returns at the guard, so the NEW session's claim
+   * lapses, its writes are refused, and autosave halts on work the reader
+   * believes is being saved.
+   */
+  it('does not stop the next session renewing its own claim', async () => {
+    let asks = 0
+    const host = recorder({ lease: leaseFor(0.05) })
+    host.port.renewLease = () => {
+      asks++
+      return new Promise<Lease>(() => {})
+    }
+
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+    // The first session's renewal fires and hangs.
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(asks).toBe(1)
+
+    store.reopen()
+    await settle()
+    await vi.advanceTimersByTimeAsync(2000)
+
+    expect(asks).toBeGreaterThan(1)
+  })
+
+  it('keeps a renewal armed when one it asked for is still outstanding', async () => {
+    // The timer that reached the guard has already dropped its handle, so
+    // leaving without re-arming loses the renewal altogether.
+    let asks = 0
+    let land: (lease: Lease) => void = () => {}
+    const host = recorder({ lease: leaseFor(0.05) })
+    host.port.renewLease = () => {
+      asks++
+      return new Promise<Lease>((resolve) => {
+        land = resolve
+      })
+    }
+
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(asks).toBe(1)
+
+    // The armed timer comes round again while the first is still in flight.
+    await vi.advanceTimersByTimeAsync(5000)
+    land(leaseFor(30))
+    await settle()
+    await vi.advanceTimersByTimeAsync(16 * 60_000)
+
+    expect(asks).toBeGreaterThan(1)
+  })
+})
+
+describe('a release with an undo behind it', () => {
+  /*
+   * A write already in flight can carry text an undo has since taken back, so
+   * "nothing was pending" at the press is no promise that nothing is pending
+   * once it lands.
+   */
+  it('refuses when its own write is refused after an earlier one landed', async () => {
+    let refuse = false
+    const host = recorder()
+    host.port.saveDraft = async (_token, text) => {
+      if (refuse) throw new Error('Your lease on this workflow expired.')
+      host.writes.push(text)
+    }
+
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+
+    store.apply(removeStep({ board: null, id: 's1' }))
+    await vi.advanceTimersByTimeAsync(200)
+    expect(host.writes).toHaveLength(1)
+
+    // Taken back, and the Host still holds the version without it.
+    refuse = true
+    store.undo()
+
+    await expect(store.release()).rejects.toThrow()
+    expect(host.released).toBe(0)
+  })
+})
