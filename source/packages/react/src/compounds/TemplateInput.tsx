@@ -485,7 +485,12 @@ export function TemplateInput({
       <div className={styles.wrap} ref={wrap}>
         <div
           ref={box}
-          className={cx(styles.box, multiline && styles.tall, invalid && styles.invalid)}
+          className={cx(
+            styles.box,
+            multiline && styles.tall,
+            invalid && styles.invalid,
+            disabled && styles.readOnly,
+          )}
           /*
            * At rest the mirror shows different characters from the ones the
            * `<input>` behind it holds, so the offset the browser derives from
