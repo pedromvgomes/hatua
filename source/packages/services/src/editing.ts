@@ -1,4 +1,5 @@
 import { parseWorkflow, type WorkflowDocument } from '@hatua/document'
+import { logger } from '@hatua/log'
 import type { Diagnostic } from '@hatua/model'
 import type { WorkflowDefinition } from '@hatua/schema'
 import type { EditCommand } from './command'
@@ -227,6 +228,8 @@ export interface EditingOptions {
    */
   gate?: PublishGate
 }
+
+const log = logger('services.editing')
 
 const asError = (cause: unknown): Error =>
   cause instanceof Error ? cause : new Error(String(cause))
@@ -886,7 +889,10 @@ export function createEditingStore(
     reopen: openDraft,
 
     apply(command) {
-      if (!document) return
+      if (!document) {
+        log.debug('command dropped: nothing is open', { command: command.label })
+        return
+      }
       /*
        * A session that has ended takes no more edits.
        *
@@ -901,7 +907,10 @@ export function createEditingStore(
        * open the Draft again; this is what makes that sentence true rather than
        * a description of somewhere the writes are not going.
        */
-      if (!token) return
+      if (!token) {
+        log.debug('command dropped: the session has ended', { command: command.label })
+        return
+      }
 
       /*
        * The serialisations are inside the guard, not only `command.apply`.
@@ -952,11 +961,15 @@ export function createEditingStore(
         // restoring without it turns the refusal into a control that did not
         // respond.
         refused = asError(cause)
+        log.debug('command refused', { command: command.label, why: refused.message })
         restore(before)
         return
       }
 
-      if (after === before) return
+      if (after === before) {
+        log.debug('command changed nothing', { command: command.label })
+        return
+      }
 
       /*
        * **A command may not turn a document that projects into one that does
@@ -978,11 +991,13 @@ export function createEditingStore(
         refused = new Error(
           'That change would leave the workflow in a state it cannot be saved in, so it was not made.',
         )
+        log.debug('command refused: it would break the projection', { command: command.label })
         restore(before)
         return
       }
 
       refused = null
+      log.trace('command applied', { command: command.label })
       history.push({ text: before, label: command.label })
       if (history.length > HISTORY_LIMIT) history.shift()
       // A new edit makes the redo stack unreachable: there is no longer one

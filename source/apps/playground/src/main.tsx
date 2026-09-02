@@ -1,3 +1,4 @@
+import { configureLogging, type LogConfig } from '@hatua/log'
 import { Hatua } from '@hatua/react'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -43,6 +44,21 @@ import { createLocalWorkflowStore } from './workflow-store'
  * rebuilt every render would reopen the Draft — a new lease per render.
  */
 const workflows = createLocalWorkflowStore()
+
+/*
+ * A switch on the window, because the thing worth watching is usually something
+ * that already happened once and will not happen again until it is provoked —
+ * and reaching for a rebuild to see it is how a session's state gets thrown away
+ * before it can be read.
+ *
+ *   hatuaLogging({ levels: { '*': 'trace' } })
+ *   hatuaLogging({ levels: { 'services.editing': 'debug' } })
+ *
+ * The playground's own affordance, not Hatua's: a Host decides whether it wants
+ * one at all, and this one is a development harness.
+ */
+;(globalThis as unknown as { hatuaLogging: (config: LogConfig) => void }).hatuaLogging =
+  configureLogging
 
 createRoot(document.getElementById('root') as HTMLElement).render(
   <StrictMode>

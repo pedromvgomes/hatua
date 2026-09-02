@@ -1,3 +1,4 @@
+import { logger } from '@hatua/log'
 import {
   type Diagnostic,
   FIELD_KIND_TYPES,
@@ -583,6 +584,8 @@ export function splitByField(problems: readonly Diagnostic[] | undefined): {
   return { byField, aboutTheSubject }
 }
 
+const log = logger('react.fields')
+
 const NO_SCOPE: readonly ScopeEntry[] = []
 
 /**
@@ -677,10 +680,20 @@ function ConnectionField({
   const choose = (next: string) => {
     const binding = bindable.find((connection) => `+${connection.ref}` === next)
     if (!binding) {
+      log.debug('connection chosen from those the workflow declares', { field: field.k, next })
       onChange(next)
       return
     }
-    onDeclare?.(nameFor(binding.label, takenNames), binding.ref)
+    const name = nameFor(binding.label, takenNames)
+    log.debug('connection chosen from those the Host has established', {
+      field: field.k,
+      ref: binding.ref,
+      name,
+      // The one that decides whether anything happens at all: without a handler
+      // this call is a no-op, and the option should not have been offered.
+      declares: Boolean(onDeclare),
+    })
+    onDeclare?.(name, binding.ref)
   }
 
   if (established.status === 'loading') {
