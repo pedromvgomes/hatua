@@ -69,11 +69,51 @@ export interface LogConfig {
  */
 const DEFAULT_LEVELS: Record<string, Level> = { '*': 'warn' }
 
+/**
+ * What each level looks like.
+ *
+ * Grey for the two that are only interesting while something is being chased,
+ * so a page of them reads as background rather than as a page of problems;
+ * amber and red for the two that are addressed to somebody. Chosen to stay
+ * legible on both a light and a dark devtools theme, which rules out anything
+ * near either end of the range.
+ */
+const COLOUR: Record<Level, string> = {
+  error: '#e5484d',
+  warn: '#d9a300',
+  info: '#8b8b8b',
+  debug: '#8b8b8b',
+  trace: '#8b8b8b',
+}
+
+/**
+ * Whether the console understands `%c`.
+ *
+ * A browser's does; Node's prints the directive and the style string as text,
+ * which is worse than no colour at all. Tests reach the sink through their own
+ * and never come here, so this is only about which runtime is drawing it.
+ */
+const styled = typeof window !== 'undefined'
+
 const consoleSink: Sink = ({ level, category, message, detail }) => {
   const say = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log
-  const head = `[hatua:${category}] ${message}`
-  if (detail === undefined) say(head)
-  else say(head, detail)
+  // The level first and the category second, both in the label, so a console
+  // filter can be typed against either — `[DEBUG]` for everything noisy,
+  // `[services.editing]` for one package's worth.
+  const label = `[${level.toUpperCase()}][${category}]`
+
+  if (!styled) {
+    const plain = `${label} ${message}`
+    if (detail === undefined) say(plain)
+    else say(plain, detail)
+    return
+  }
+
+  const head = `%c${label}%c ${message}`
+  const bold = `color:${COLOUR[level]};font-weight:bold`
+  const rest = `color:${COLOUR[level]};font-weight:normal`
+  if (detail === undefined) say(head, bold, rest)
+  else say(head, bold, rest, detail)
 }
 
 /**
