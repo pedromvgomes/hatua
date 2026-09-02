@@ -1775,30 +1775,49 @@ describe('ending the session', () => {
     expect(host.writes).toHaveLength(0)
   })
 
-  it('says the session ended rather than leaving an edit pending for ever', async () => {
-    // Without this the state would sit at `pending` for ever: schedule() fires,
-    // write() bails on the missing token, and nothing reports that the edit is
-    // going nowhere — indistinguishable from "about to be written".
-    const { store } = await open()
-    await store.release()
-    store.apply(removeStep({ board: null, id: 's1' }))
-
-    expect(ready(store).save).toMatchObject({ state: 'halted' })
-    expect((ready(store).save as { error: Error }).error.message).toMatch(/session has ended/)
-  })
-
-  it('writes nothing more once the session ended, even if the document is edited again', async () => {
-    // The Draft was released, discarded or promoted to an immutable Published
-    // Version. There is nothing left to write to, and a write against the old
-    // token would be refused anyway.
+  /*
+   * The Draft was released, discarded or promoted to an immutable Published
+   * Version. There is no claim to write under and, after a discard, no Draft on
+   * the Host to write to — so an edit accepted here is one the next page load
+   * takes away, made on a screen whose own toolbar says the workflow is no
+   * longer being edited.
+   */
+  it('takes no more edits once the session has ended', async () => {
     const { host, store } = await open()
     await store.release()
 
     store.apply(removeStep({ board: null, id: 's1' }))
     await vi.advanceTimersByTimeAsync(10_000)
+
     expect(host.writes).toHaveLength(0)
-    // Still an editor, though — the document was not taken away.
+    // Unchanged, rather than changed and unsaved.
+    expect(ready(store).definition?.steps.map((s) => s.id)).toEqual(['s1', 's2', 's4'])
+    expect(ready(store).save).toEqual({ state: 'saved' })
+  })
+
+  it('takes no undo either, because that is an edit too', async () => {
+    const { host, store } = await open()
+    store.apply(removeStep({ board: null, id: 's1' }))
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(host.writes).toHaveLength(1)
+
+    await store.release()
+    store.undo()
+
     expect(ready(store).definition?.steps.map((s) => s.id)).toEqual(['s2', 's4'])
+  })
+
+  it('reports the edit it could not write when one was already in the air', async () => {
+    // The one halt an ending still raises: a write was scheduled when the
+    // session ended, so it is cancelled with nothing left to carry it.
+    const { store } = await open()
+    store.apply(removeStep({ board: null, id: 's1' }))
+    expect(ready(store).save).toEqual({ state: 'pending' })
+
+    await store.discard()
+
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
+    expect((ready(store).save as { error: Error }).error.message).toMatch(/session has ended/)
   })
 
   it('releases and discards through the token', async () => {
@@ -2449,12 +2468,12 @@ describe('resuming a halted save', () => {
     const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 500 })
     store.open()
     await settle()
-    store.apply(removeStep({ board: null, id: 's1' }))
-    await store.release()
 
+    // A write was scheduled when the session ended, so `finish()` halts with
+    // nothing left to carry it — the one halt an ending still raises.
+    store.apply(removeStep({ board: null, id: 's1' }))
+    await store.discard()
     expect(ready(store).claimed).toBe(false)
-    store.apply(removeStep({ board: null, id: 's4' }))
-    await vi.advanceTimersByTimeAsync(500)
     expect(ready(store).save).toMatchObject({ state: 'halted' })
 
     store.resumeSaving()
