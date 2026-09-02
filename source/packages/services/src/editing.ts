@@ -1183,34 +1183,25 @@ export function createEditingStore(
         )
       }
 
+      // This session's token, as it stands now: read after the write, because
+      // that write may have rotated it.
+      const spent = token ?? held
       /*
-       * Which token to hand back: this session's, as it stands now.
+       * A session that has been replaced has nothing left to hand back.
        *
-       * Read after the write, because that write may have rotated it — and only
-       * when this session is still the current one. `await write()` is an
-       * unbounded wait, and a reopen that both starts AND lands inside it leaves
-       * `token` holding the NEW session's credential; releasing that would
-       * unclaim the Draft somebody is actively editing, and every save after it
-       * would be refused.
+       * That write is an unbounded wait on the Host, and a reopen can both
+       * start and land inside it. `openDraft` claims anew, so the token this
+       * call holds is already superseded — telling the Host to release it is at
+       * best refused, captioning a freshly opened healthy session with someone
+       * else's claim error, and at worst honoured by a Host that unclaims by
+       * workflow rather than by token, dropping the live session's claim while
+       * the bar goes on saying it is held. A late `finish()` is worse still: it
+       * bumps the generation again, and the `openDraft` in flight then finds its
+       * own stale and returns silently, leaving the store at `opening` for good.
        */
-      const spent = mine === generation ? (token ?? held) : held
-      /*
-       * The guard `publish()` carries, for the hazard `publish()` has.
-       *
-       * That write is an unbounded wait on the Host, and the session can end or
-       * begin again inside it. A late `finish()` bumps the generation a second
-       * time, which is worse here than anywhere else: an `openDraft` started in
-       * the meantime finds its own generation stale when its fetch lands and
-       * returns silently, leaving the store at `opening` for good — no token,
-       * nothing in flight, and no path back except another `reopen()`.
-       *
-       * The Host is still told, because this session really is giving the claim
-       * up; what it must not do is end a session that is not its own.
-       */
-      if (mine === generation && !disposed) finish()
-      // `finish()` has just dropped the token, so the one to hand back is
-      // whatever was live before it — the renewal's, if one landed during the
-      // write above.
+      if (mine !== generation || disposed) return
+
+      finish()
       return port.releaseDraft(spent)
     },
 

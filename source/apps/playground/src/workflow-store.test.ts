@@ -355,6 +355,24 @@ describe('versions', () => {
     expect(yaml.split('\n').filter((line) => line === '---')).toHaveLength(1)
   })
 
+  it('stamps a seed whose document marker is not its first line', async () => {
+    // The scan has to pass what may legally precede the marker. Stopping at the
+    // first line that is not itself one puts the keys in front of a comment,
+    // which is content before the directives end — a two-document stream, which
+    // `parseWorkflow` refuses outright.
+    const store = createLocalWorkflowStore({
+      namespace: 'commented',
+      seed: '# what this workflow is for\n---\nid: wf_morning\nname: n\nsteps: []\n',
+    })
+    const { yaml } = await store.openDraft(WORKFLOW)
+
+    expect(yaml.startsWith('# what this workflow is for')).toBe(true)
+    expect(yaml).toContain('version: 1')
+    expect(yaml.split('\n').filter((line) => line === '---')).toHaveLength(1)
+    // Everything stamped sits after the marker, not before it.
+    expect(yaml.indexOf('version:')).toBeGreaterThan(yaml.indexOf('---'))
+  })
+
   it('omits the cursor entirely for a workflow small enough not to need one', async () => {
     const store = createLocalWorkflowStore()
     await publishTimes(store, 2)

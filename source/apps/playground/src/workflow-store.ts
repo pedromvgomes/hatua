@@ -220,9 +220,28 @@ const stamped = (yaml: string, version: number, status: VersionSummary['status']
  */
 const declaring = (yaml: string, line: string): string => {
   const lines = yaml.split('\n')
+
+  /*
+   * After the document marker if there is one, and at the top if there is not.
+   *
+   * Found by scanning past what may legally precede it — directives, comments,
+   * blank lines — rather than stopping at the first line that is not itself a
+   * marker. Stopping there puts the key in front of a seed that opens with a
+   * comment, which is content before the directives end: a two-document stream,
+   * which `parseWorkflow` refuses outright, so the draft would not open at all.
+   */
   let at = 0
-  while (at < lines.length && /^(%|---\s*$)/.test(lines[at] ?? '')) at++
-  lines.splice(at, 0, line)
+  while (at < lines.length) {
+    const text = lines[at] ?? ''
+    if (/^---\s*$/.test(text)) {
+      lines.splice(at + 1, 0, line)
+      return lines.join('\n')
+    }
+    if (!/^(%|#|\s*$)/.test(text)) break
+    at++
+  }
+
+  lines.splice(0, 0, line)
   return lines.join('\n')
 }
 
