@@ -114,6 +114,16 @@ export interface TemplateInputProps {
   placeholder?: string
   /** The field has an issue; the border says so. */
   invalid?: boolean
+  /**
+   * Readable, and not writable.
+   *
+   * The value stays on screen in full — a Template is most of what a Step says
+   * it does, so hiding it would answer "what does this workflow do" with
+   * nothing. What goes is every way of changing it: the box refuses keys, the
+   * ⚡ that inserts a Reference is not drawn, and a drag dropped on it is not
+   * taken.
+   */
+  disabled?: boolean
   id?: string
 }
 
@@ -132,6 +142,7 @@ export function TemplateInput({
   multiline = false,
   placeholder,
   invalid = false,
+  disabled = false,
   id,
 }: TemplateInputProps) {
   const listId = useId()
@@ -474,7 +485,12 @@ export function TemplateInput({
       <div className={styles.wrap} ref={wrap}>
         <div
           ref={box}
-          className={cx(styles.box, multiline && styles.tall, invalid && styles.invalid)}
+          className={cx(
+            styles.box,
+            multiline && styles.tall,
+            invalid && styles.invalid,
+            disabled && styles.readOnly,
+          )}
           /*
            * At rest the mirror shows different characters from the ones the
            * `<input>` behind it holds, so the offset the browser derives from
@@ -580,6 +596,7 @@ export function TemplateInput({
             rows={multiline ? 3 : undefined}
             placeholder={placeholder}
             spellCheck={false}
+            disabled={disabled}
             aria-label={label}
             aria-invalid={invalid || undefined}
             role="combobox"
@@ -612,11 +629,12 @@ export function TemplateInput({
               if (mirror.current) mirror.current.scrollLeft = event.currentTarget.scrollLeft
             }}
             onDragOver={(event) => {
-              if (!droppedPath(event.dataTransfer)) return
+              if (disabled || !droppedPath(event.dataTransfer)) return
               event.preventDefault()
               event.dataTransfer.dropEffect = 'copy'
             }}
             onDrop={(event) => {
+              if (disabled) return
               const path = droppedPath(event.dataTransfer)
               if (!path) return
               event.preventDefault()
@@ -627,21 +645,26 @@ export function TemplateInput({
             }}
           />
 
-          <button
-            type="button"
-            className={styles.spark}
-            aria-label={`Insert into ${label}`}
-            ref={spark}
-            onClick={() => {
-              setAnchoredTo('button')
-              setReplacing(null)
-              setOpen('picker')
-            }}
-          >
-            <svg viewBox="0 0 16 16" width="14" height="14" focusable="false" aria-hidden="true">
-              <path d="M9 1.5 3.5 9h4l-.5 5.5L12.5 7h-4z" />
-            </svg>
-          </button>
+          {/* Not drawn at all rather than drawn inert: it exists only to write
+              into the field, so a disabled one is a control with nothing behind
+              it. The value it would have inserted into is still readable. */}
+          {disabled ? null : (
+            <button
+              type="button"
+              className={styles.spark}
+              aria-label={`Insert into ${label}`}
+              ref={spark}
+              onClick={() => {
+                setAnchoredTo('button')
+                setReplacing(null)
+                setOpen('picker')
+              }}
+            >
+              <svg viewBox="0 0 16 16" width="14" height="14" focusable="false" aria-hidden="true">
+                <path d="M9 1.5 3.5 9h4l-.5 5.5L12.5 7h-4z" />
+              </svg>
+            </button>
+          )}
         </div>
 
         {signature ? <SignatureHelp spec={signature.spec} active={signature.active} /> : null}

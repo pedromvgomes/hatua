@@ -6,13 +6,17 @@ import {
   createEditingStore,
   createManifestStore,
   createValidationStore,
+  createVersionStore,
   type EditingStore,
   type ManifestSource,
   type ManifestStore,
+  type PublishGate,
+  publishBlockers,
   type ValidationStore,
+  type VersionStore,
   type WorkflowStore,
 } from '@hatua/services'
-import { createContext, type ReactNode, use, useEffect, useMemo, useState } from 'react'
+import { createContext, type ReactNode, use, useEffect, useMemo, useRef, useState } from 'react'
 import base from '../styles/base.css?inline'
 import { createTheme, type Theme } from './createTheme'
 
@@ -107,6 +111,17 @@ const ValidationStoreContext = createContext<ValidationStore | null>(null)
 const ConnectionStoreContext = createContext<ConnectionStore | null>(null)
 
 /**
+ * The workflow's versions. Null on the same condition the editing store is,
+ * because both address one workflow through one port.
+ *
+ * A store of its own rather than a field on the editing store's snapshot: the
+ * version READOUT comes from the open document, whose `version` and `status`
+ * the schema makes required, while the LIST is about the workflow and answers
+ * even while the document on screen does not project.
+ */
+const VersionStoreContext = createContext<VersionStore | null>(null)
+
+/**
  * The element overlays should portal into. Null until the provider has mounted,
  * so callers must handle that — render nothing rather than falling back to
  * document.body, which would land outside the themed subtree.
@@ -126,6 +141,12 @@ export const useEditingStore = () => use(EditingStoreContext)
 
 /** The Host's established Connections, or null when no ConnectionSource was supplied. */
 export const useConnectionStore = () => use(ConnectionStoreContext)
+
+/**
+ * The workflow's versions, or null when the Host supplied no WorkflowStore or
+ * no `workflowId`. Nothing is fetched until a reader calls `load()`.
+ */
+export const useVersionStore = () => use(VersionStoreContext)
 
 /**
  * What is wrong with each Step, or null when there is no workflow or no
@@ -175,14 +196,55 @@ export function HatuaProvider({
     [manifestSource],
   )
 
+  /*
+   * What the publish gate reads, held behind a ref so the gate itself never
+   * changes identity.
+   *
+   * The ref is load-bearing, not stylistic. `ValidationStore` is built FROM the
+   * editing store — it subscribes to it — so `publish()` cannot simply read it,
+   * and the obvious repairs all put the validation store into the editing
+   * store's dependency list below. That list is `[workflowSource, workflowId]`
+   * and nothing else on purpose: rebuilding the editing store disposes the lease
+   * and re-claims the Draft, so keying it on anything that moves when the
+   * connection describer moves would REOPEN THE DOCUMENT when a Host swapped a
+   * describer.
+   *
+   * What unties it is that the dependency is mutual but not simultaneous:
+   * validation needs the editing store continuously, while publish needs
+   * validation once, at the moment it is pressed. See ADR-0023.
+   */
+  const gateSources = useRef<{
+    validation: ValidationStore | null
+    manifests: ManifestStore | null
+  }>({ validation: null, manifests: null })
+
+  const gate = useMemo<PublishGate>(
+    () => ({
+      blockers: () =>
+        publishBlockers(gateSources.current.validation, gateSources.current.manifests),
+    }),
+    [],
+  )
+
   // Keyed on the port and the id together, because either one changing means a
   // different Draft. The same stability rule applies as above: a Host that
   // rebuilds its WorkflowStore every render looks exactly like one that swapped
   // it, and a swap has to reopen — which also releases nothing, so hold it at
-  // module scope or in a useMemo.
+  // module scope or in a useMemo. `gate` is in the list and never moves, which
+  // is the whole point of the ref above.
   const workflowSource = ports?.workflows
   const editingStore = useMemo(
-    () => (workflowSource && workflowId ? createEditingStore(workflowSource, workflowId) : null),
+    () =>
+      workflowSource && workflowId
+        ? createEditingStore(workflowSource, workflowId, { gate })
+        : null,
+    [workflowSource, workflowId, gate],
+  )
+
+  // No lease and no claim, so rebuilding this one costs a refetch and nothing
+  // else — none of the hazard the editing store's key guards against.
+  const versionStore = useMemo(
+    () => (workflowSource && workflowId ? createVersionStore(workflowSource, workflowId) : null),
     [workflowSource, workflowId],
   )
 
@@ -215,6 +277,13 @@ export function HatuaProvider({
     [editingStore, manifestStore, connectionStore],
   )
 
+  // In an effect rather than during render: a render React discards must not
+  // leave the gate pointing at stores that were discarded with it. Publish can
+  // only be pressed after a commit, so there is no window where this matters.
+  useEffect(() => {
+    gateSources.current = { validation: validationStore, manifests: manifestStore }
+  }, [validationStore, manifestStore])
+
   return (
     <>
       <style href="hatua-base" precedence="hatua-base">
@@ -225,10 +294,12 @@ export function HatuaProvider({
           <EditingStoreContext value={editingStore}>
             <ConnectionStoreContext value={connectionStore}>
               <ValidationStoreContext value={validationStore}>
-                <PortalContext value={portalHost}>
-                  {children}
-                  <div className="hatua-portals" ref={setPortalHost} />
-                </PortalContext>
+                <VersionStoreContext value={versionStore}>
+                  <PortalContext value={portalHost}>
+                    {children}
+                    <div className="hatua-portals" ref={setPortalHost} />
+                  </PortalContext>
+                </VersionStoreContext>
               </ValidationStoreContext>
             </ConnectionStoreContext>
           </EditingStoreContext>

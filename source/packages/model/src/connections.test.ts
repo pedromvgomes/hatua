@@ -168,3 +168,22 @@ describe('validateDefinition files a connection diagnostic where it can be drawn
     expect(codes).not.toContain('CONNECTION_UNRESOLVABLE')
   })
 })
+
+describe('a connection field nobody has filled in', () => {
+  /*
+   * Reading an empty value as a name reports `"" is not declared in this
+   * workflow` — a sentence about a Connection called nothing, over a field
+   * whose actual problem is that it is empty. `req:` already says that, in
+   * words the user can act on, and `expressionRules` makes the same call about
+   * a blank Template.
+   */
+  it('is unset rather than naming something that does not exist', () => {
+    const empty = structuredClone(DOC)
+    const step = empty.steps.find((one) => 'with' in one && one.with && 'connection' in one.with)
+    if (!step || !('with' in step) || !step.with) throw new Error('fixture has no conn field')
+    step.with.connection = ''
+
+    const found = mismatchedConnections(empty, index, CONNECTION_TYPES)
+    expect(found.map((one) => one.code)).not.toContain('CONNECTION_UNKNOWN')
+  })
+})

@@ -72,6 +72,24 @@
     text-wrap: pretty;
   }
 
+  /*
+   * An edit that did not take. Boxed rather than another muted line, because
+   * the line above it reports where the document stands and this reports what
+   * just happened to the reader — two different subjects that must not read as
+   * one paragraph.
+   */
+  .refused {
+    margin: 0 16px 12px;
+    padding: 8px 10px;
+    border: 1px solid var(--hatua-status-error);
+    border-radius: var(--hatua-radius-sm);
+    background: var(--hatua-status-error-wash);
+    font-size: 0.75rem;
+    line-height: 1.45;
+    color: var(--hatua-text-primary);
+    text-wrap: pretty;
+  }
+
   /* The live region stays mounted with nothing to say; it must not take up a
      line of the panel while it is quiet. `display: none` would defeat the point
      — a hidden region is not observed — so it collapses instead. */

@@ -51,10 +51,20 @@ is free, and what replaces it is **Publish**.
 
 ## Scope
 
-Nothing above is built here. This PR delivers the editing store and the Flow tab; the top bar is
-still a stub, and the toolbar PR is what implements this. `listVersions` and `loadVersion` remain on
-the port with no reader, which is the same rule every other port follows — a shape a screen forced,
-waiting for the screen.
+The top bar carries the version and its status, and the list — paged, newest first, each row spelled
+as the schema spells it. It does **not** carry the read-only mode.
+
+Selecting a version and loading it through `loadVersion` puts the *whole screen* into a state where
+the canvas, the step editor and the **Workflow** tab all read a document other than the **Draft**.
+That is a property of every region rather than of this bar, and it is the change that has to be
+designed before the control can mean anything. So the list is a history — which version is live,
+which are archived, whether a **Draft** is outstanding — and `loadVersion` remains on the port with
+no reader, the same rule every other port follows: a shape a screen forced, waiting for the screen.
+
+Offering a selection that highlights a row and changes nothing would be worse than offering none. The
+control would claim a destination that does not exist, which is also why the **Build / Runs**
+segmented control is not drawn: `ExecutionSource` says "omit entirely and the Runs view is hidden",
+and there is no view to switch to.
 
 ## Three things in the design handoff our decisions have already overtaken
 
