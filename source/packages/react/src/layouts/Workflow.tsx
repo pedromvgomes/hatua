@@ -275,6 +275,19 @@ export function Workflow({ className, board = null, onBoardRename, ...rest }: Wo
             {liveMessage}
           </p>
 
+          {/*
+            An edit that did not take, and why. `role="alert"` where the line
+            above gets `role="status"`: that one reports where the document
+            stands, this one reports that the thing the reader just did had no
+            effect — which is worth interrupting for, because a control that
+            silently does nothing is one they will press again.
+          */}
+          {workflow?.refused ? (
+            <p className={styles.refused} role="alert">
+              {workflow.refused.message}
+            </p>
+          ) : null}
+
           {state.status === 'failed' ? (
             <div className={styles.failure} role="alert">
               <p className={styles.failureText}>

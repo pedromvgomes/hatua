@@ -2651,3 +2651,65 @@ describe('a release with an undo behind it', () => {
     expect(host.released).toBe(0)
   })
 })
+
+describe('a command that is refused', () => {
+  const open = async () => {
+    const host = recorder()
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 500 })
+    store.open()
+    await settle()
+    return { host, store }
+  }
+
+  /*
+   * A refused command restores the document and records nothing, which is
+   * right — but it also said nothing, so the control that asked re-rendered
+   * from a document that never moved. That reads as a click that did not
+   * register, and several commands throw a sentence written for the person who
+   * asked.
+   */
+  it('says why, rather than changing nothing quietly', async () => {
+    const { store } = await open()
+
+    store.apply({
+      label: 'Refuse',
+      apply() {
+        throw new Error('That connection is already declared as "mailbox"')
+      },
+    })
+
+    expect(ready(store).refused?.message).toBe('That connection is already declared as "mailbox"')
+    // Nothing moved, which is the other half of the promise.
+    expect(ready(store).definition?.steps.map((one) => one.id)).toEqual(['s1', 's2', 's4'])
+  })
+
+  it('stops saying it once a command takes', async () => {
+    const { store } = await open()
+    store.apply({
+      label: 'Refuse',
+      apply() {
+        throw new Error('nope')
+      },
+    })
+    expect(ready(store).refused).not.toBeNull()
+
+    store.apply(removeStep({ board: null, id: 's1' }))
+    expect(ready(store).refused).toBeNull()
+  })
+
+  it('reports the projection backstop in words, not as silence', async () => {
+    // The guard under every command: one that would leave the document
+    // unprojectable is refused, and until now the screen simply did not change.
+    const { store } = await open()
+
+    store.apply({
+      label: 'Break it',
+      apply(document) {
+        document.ast.delete('steps')
+      },
+    })
+
+    expect(ready(store).refused?.message).toMatch(/cannot be saved/)
+    expect(ready(store).definition).not.toBeNull()
+  })
+})

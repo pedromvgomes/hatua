@@ -407,6 +407,22 @@ export function Inspector({
                 </p>
               </div>
 
+              {/*
+                An edit that did not take, and why.
+
+                `role="alert"` where a diagnostic gets `role="status"`, and the
+                difference is who caused it: a diagnostic describes a workflow
+                that is unfinished, which is the ordinary state of one being
+                built, while this describes the thing the reader just did having
+                had no effect. That is worth interrupting for — a control that
+                silently does nothing is one they will press again.
+              */}
+              {workflow?.refused ? (
+                <p className={styles.refused} role="alert">
+                  {workflow.refused.message}
+                </p>
+              ) : null}
+
               {aboutTheStep.length > 0 ? (
                 /*
                   `role="status"` rather than `alert`: an unfilled field is the

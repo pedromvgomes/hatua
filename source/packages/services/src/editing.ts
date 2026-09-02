@@ -110,6 +110,19 @@ export interface EditingSnapshot {
    * mid-edit in Text Mode has, and it stays open and editable.
    */
   invalid: Error | null
+  /**
+   * Why the last command changed nothing, or null when the last one took.
+   *
+   * A refused command is a real outcome and was, until now, a silent one: the
+   * document is restored, nothing is recorded, and the control that asked
+   * re-renders from a document that never moved — which reads as a click that
+   * did not register. Every other refusal in this store says why, and this is
+   * the one that did not.
+   *
+   * Cleared by the next command that takes, so it describes the last thing
+   * tried rather than accumulating.
+   */
+  refused: Error | null
   /** True when `openDraft` resumed someone's existing Draft rather than making one. */
   resumed: boolean
   /**
@@ -272,6 +285,7 @@ export function createEditingStore(
   let token: EditToken | null = null
   let lease: Lease | null = null
   let resumed = false
+  let refused: Error | null = null
   let save: SaveState = SAVED
 
   /*
@@ -390,6 +404,7 @@ export function createEditingStore(
         invalid: projection.success
           ? null
           : new Error(projection.error.issues[0]?.message ?? 'Not a valid Workflow Definition'),
+        refused,
         resumed,
         claimed: token !== null,
         lease,
@@ -685,6 +700,7 @@ export function createEditingStore(
     document = null
     token = null
     lease = null
+    refused = null
     history = []
     future = []
     save = SAVED
@@ -924,12 +940,18 @@ export function createEditingStore(
       try {
         command.apply(document)
         after = document.toString()
-      } catch {
+      } catch (cause) {
         // A command throws when the tree it was built against has moved on — a
         // Step removed under a stale insertion point, most likely — or when
         // what it was asked to edit is not the shape it edits. Either way the
         // document is left as it was and nothing reaches the undo stack, so a
         // stale insertion point is a no-op rather than half an edit.
+        //
+        // Reported, though. Several commands throw a sentence written for the
+        // person who asked — "that connection is already declared as …" — and
+        // restoring without it turns the refusal into a control that did not
+        // respond.
+        refused = asError(cause)
         restore(before)
         return
       }
@@ -953,10 +975,14 @@ export function createEditingStore(
        * each time.
        */
       if (projected && !document.validate().success) {
+        refused = new Error(
+          'That change would leave the workflow in a state it cannot be saved in, so it was not made.',
+        )
         restore(before)
         return
       }
 
+      refused = null
       history.push({ text: before, label: command.label })
       if (history.length > HISTORY_LIMIT) history.shift()
       // A new edit makes the redo stack unreachable: there is no longer one
