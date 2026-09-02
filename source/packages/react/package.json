@@ -34,7 +34,8 @@
     "@hatua/layout": "workspace:*",
     "@hatua/model": "workspace:*",
     "@hatua/schema": "workspace:*",
-    "@hatua/services": "workspace:*"
+    "@hatua/services": "workspace:*",
+    "@hatua/log": "workspace:*"
   },
   "devDependencies": {
     "@hatua/document": "workspace:*",

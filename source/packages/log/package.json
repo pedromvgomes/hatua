@@ -1,0 +1,26 @@
+{
+  "name": "@hatua/log",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Levelled, categorised diagnostics — silent unless a Host asks",
+  "license": "MIT",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    }
+  },
+  "scripts": {
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage --coverage.reporter=text-summary --coverage.reporter=json-summary --coverage.reporter=lcovonly"
+  }
+}
