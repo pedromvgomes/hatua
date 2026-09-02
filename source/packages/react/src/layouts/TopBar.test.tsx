@@ -1129,3 +1129,47 @@ describe('an ending nothing in the bar asked for', () => {
     expect(screen.queryByText(/Another session holds the edit/)).toBeNull()
   })
 })
+
+describe('the count opens a list and writes nothing', () => {
+  /*
+   * A Release can refuse without ending anything — it keeps the claim when its
+   * last write did not land — so the Host's explanation is on screen with the
+   * controls still drawn. A count that set its own attempt replaced that
+   * message with one carrying no text at all, and nothing led back to it.
+   */
+  it('keeps a refused release readable after the problem list is opened', async () => {
+    const source = host(BROKEN, {
+      async saveDraft() {
+        throw new Error('Your lease on this workflow expired.')
+      },
+    })
+    render(
+      <HatuaProvider
+        ports={{ workflows: source.port, manifests: serving(CATALOGUE) }}
+        workflowId="wf_morning"
+      >
+        <Edits />
+        <TopBar />
+      </HatuaProvider>,
+    )
+
+    await screen.findByRole('button', { name: 'Release' })
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /Saving stopped/ })).toBeDefined(),
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Release' }))
+    expect(await screen.findByText(/lease on this workflow expired/)).toBeDefined()
+
+    // Opening the list is not a reason to lose it.
+    fireEvent.click(screen.getByRole('button', { name: /problem/ }))
+    expect(screen.getByText(/lease on this workflow expired/)).toBeDefined()
+  })
+
+  it('draws the checker’s answer when nothing has been refused', async () => {
+    mount(host(BROKEN))
+    fireEvent.click(await screen.findByRole('button', { name: '1 problem' }))
+
+    expect(await screen.findByText('To is required.')).toBeDefined()
+  })
+})

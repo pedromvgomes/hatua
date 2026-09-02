@@ -609,10 +609,20 @@ export function createEditingStore(
      */
     if (disposed || !token) return
     if (renewingFor !== null) {
-      // Asked while one is outstanding. The timer that brought us here has
-      // already dropped its handle, so leaving now would lose the renewal
-      // altogether — and the one in flight only re-arms if it answers.
-      scheduleRenewal()
+      /*
+       * Asked while one is outstanding. The timer that brought us here has
+       * already dropped its handle, so leaving now would lose the renewal
+       * altogether — and the one in flight only re-arms if it answers.
+       *
+       * Only while the lease has time left on it. A renewal that never settles
+       * never clears the guard, and `scheduleRenewal`'s floor clamps an expired
+       * lease to a second — so re-arming unconditionally turns a Host with no
+       * timeout on its request into a timer firing every second for the life of
+       * the session, each one bailing here and none making progress. Past the
+       * expiry there is nothing left to keep alive: the claim is already gone,
+       * and the next write is what finds out.
+       */
+      if (lease && Date.parse(lease.expiresAt) - Date.now() > 0) scheduleRenewal()
       return
     }
     const mine = generation
@@ -997,9 +1007,11 @@ export function createEditingStore(
      *
      * So the write is awaited before the session is closed, and a rejection
      * leaves the session exactly as it was — lease renewing, autosave running,
-     * every edit still going somewhere. Release and Discard are not like this:
-     * both END the claim by definition, and a Host that fails to record either
-     * has still had the claim relinquished on this side.
+     * every edit still going somewhere. `discard()` is not like this: it ends
+     * the claim by definition, and a Host that fails to record it has still had
+     * the claim relinquished on this side. `release()` sits between the two —
+     * it keeps the claim when its last write did not land, and gives it up
+     * once it has.
      */
     async publish() {
       const held = requireToken()
