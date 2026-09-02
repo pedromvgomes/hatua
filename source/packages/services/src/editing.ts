@@ -531,22 +531,16 @@ export function createEditingStore(
     return mine
   }
 
+  /**
+   * Queue a write for the quiet period from now.
+   *
+   * Nothing checks for a token here: every caller reaches this with a claim in
+   * hand, because `apply` and `travel` refuse an ended session outright and a
+   * renewal only runs while one is held. The edit that ARRIVES with a write
+   * already scheduled is `finish()`'s to report, and it does.
+   */
   const schedule = () => {
     if (disposed || save.state === 'halted') return
-
-    // The session ended — published, released or discarded — and the token went
-    // with it. The document is still here and still editable, but there is
-    // nothing left to write it to, and saying so beats leaving the edit sitting
-    // at `pending` for ever with nobody reporting that it goes nowhere.
-    if (!token) {
-      setSave({
-        state: 'halted',
-        error: new Error(
-          'This editing session has ended. Open the workflow again to keep editing it.',
-        ),
-      })
-      return
-    }
 
     cancelSave()
     setSave(PENDING)
@@ -761,7 +755,9 @@ export function createEditingStore(
 
   /** Restore a revision, keeping the counterpart stack in step. */
   const travel = (from: Revision[], to: Revision[]) => {
-    if (!document) return
+    // No claim, no edits — undo and redo change the document exactly as a
+    // command does, and land in the same place: nowhere.
+    if (!document || !token) return
     const revision = from.pop()
     if (!revision) return
 
@@ -875,6 +871,21 @@ export function createEditingStore(
 
     apply(command) {
       if (!document) return
+      /*
+       * A session that has ended takes no more edits.
+       *
+       * `finish()` keeps the document, and that is right — it is what the user
+       * was looking at, and after a **Publish** it is what was published. What
+       * it must not do is go on accepting changes: there is no claim to write
+       * them under and no Draft on the Host to write them to, so every one of
+       * them is lost the moment the page moves on. After a **Discard** the Draft
+       * they would belong to has been thrown away outright.
+       *
+       * The bar says "you are no longer editing this workflow" and offers to
+       * open the Draft again; this is what makes that sentence true rather than
+       * a description of somewhere the writes are not going.
+       */
+      if (!token) return
 
       /*
        * The serialisations are inside the guard, not only `command.apply`.
