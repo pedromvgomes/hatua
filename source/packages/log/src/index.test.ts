@@ -109,3 +109,30 @@ describe('a caller with work to do to build a line', () => {
     expect(logger('react.fields').enabled('debug')).toBe(false)
   })
 })
+
+describe('more than one copy of this module', () => {
+  /*
+   * A module holds its state once per instance, and nothing promises this
+   * module is instantiated once: a dev server resolving symlinked workspace
+   * packages, or a Host bundling `@hatua/react` while its own code imports
+   * `@hatua/log`, gives the app one table and the packages another. Held in the
+   * module, turning a category up changes a table nothing reads — and the
+   * switch appears to do nothing at all, which is the one failure a logging
+   * seam must not have.
+   */
+  it('shares its settings with the copies it cannot see', async () => {
+    const { lines, sink } = collected()
+    configureLogging({ sink, levels: { 'services.editing': 'debug' } })
+
+    // A second evaluation of this module, which is what a duplicate import is.
+    const second = (await import(`./index?copy=${Date.now()}`)) as typeof import('./index')
+    second.logger('services.editing').debug('written by the other copy')
+
+    expect(lines.map((one) => one.message)).toEqual(['written by the other copy'])
+  })
+
+  it('reports what is in force, so a console can show the switch took', () => {
+    const settings = configureLogging({ levels: { react: 'trace' } })
+    expect(settings.levels).toMatchObject({ '*': 'warn', react: 'trace' })
+  })
+})
