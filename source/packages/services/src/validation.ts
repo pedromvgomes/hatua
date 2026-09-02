@@ -289,6 +289,17 @@ export function publishBlockers(
       resolve(NOTHING)
       return
     }
+    /*
+     * A failed catalogue is asked for again, or "try again in a moment" is a
+     * sentence that never comes true.
+     *
+     * `load()` is idempotent and a failed fetch stays failed, so every press
+     * after the first would refuse with the same advice and nothing behind it.
+     * The press is the reader saying they want this now, which is exactly what
+     * a Retry is — so it retries, and this attempt still refuses because the
+     * answer is not back yet.
+     */
+    if (manifests.getSnapshot().status === 'failed') manifests.reload()
     refuse(new PublishBlocked(NOTHING, UNCHECKABLE))
   }
 
