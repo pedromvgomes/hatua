@@ -136,3 +136,67 @@ describe('more than one copy of this module', () => {
     expect(settings.levels).toMatchObject({ '*': 'warn', react: 'trace' })
   })
 })
+
+describe('what the console sink writes', () => {
+  const spied = () => {
+    const calls: unknown[][] = []
+    const original = { log: console.log, warn: console.warn, error: console.error }
+    console.log = (...args: unknown[]) => calls.push(['log', ...args])
+    console.warn = (...args: unknown[]) => calls.push(['warn', ...args])
+    console.error = (...args: unknown[]) => calls.push(['error', ...args])
+    return {
+      calls,
+      restore: () => {
+        console.log = original.log
+        console.warn = original.warn
+        console.error = original.error
+      },
+    }
+  }
+
+  /*
+   * The level first and the category second, both in the label, so a console
+   * filter can be typed against either — `[DEBUG]` for everything noisy,
+   * `[services.editing]` for one package's worth.
+   */
+  it('labels a line with its level and its category', () => {
+    const { calls, restore } = spied()
+    try {
+      configureLogging({ levels: { 'services.editing': 'debug' } })
+      logger('services.editing').debug('command applied')
+    } finally {
+      restore()
+    }
+
+    expect(String(calls[0]?.[1])).toContain('[DEBUG][services.editing]')
+    expect(String(calls[0]?.[1])).toContain('command applied')
+  })
+
+  it('sends a warning and an error to the console channels that match', () => {
+    const { calls, restore } = spied()
+    try {
+      logger('services.editing').warn('a port answered with the wrong shape')
+      logger('services.editing').error('nothing to draw')
+    } finally {
+      restore()
+    }
+
+    expect(calls.map((one) => one[0])).toEqual(['warn', 'error'])
+  })
+
+  /*
+   * Node's console prints the directive and the style string as text, which is
+   * worse than no colour at all — so the plain form is what a terminal gets.
+   */
+  it('writes plainly where `%c` means nothing', () => {
+    const { calls, restore } = spied()
+    try {
+      logger('services.editing').warn('said once')
+    } finally {
+      restore()
+    }
+
+    expect(String(calls[0]?.[1])).not.toContain('%c')
+    expect(calls[0]).toHaveLength(2)
+  })
+})
