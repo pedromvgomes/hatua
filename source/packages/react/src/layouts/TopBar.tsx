@@ -356,16 +356,19 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
   }
 
   /*
-   * Release and Discard both END the claim by definition, so a rejection from
-   * the Host arrives at a bar that has already replaced these controls with the
-   * ended-session cluster — the store drops the token before it calls the port,
-   * because "a Host that fails to record either has still had the claim
-   * relinquished on this side".
+   * Where a refused ending is read, which depends on whether the claim survived
+   * it.
    *
-   * So the failure is not put in a floating panel. There is nothing left on
-   * screen to anchor one to, and what the user needs to read is not "here is
-   * what to fix" but "this is how the session you no longer have ended". It is
-   * rendered inline beside that, and `attempt` is what carries it.
+   * `discard()` gives the claim up before it calls the port, so its rejection
+   * arrives at a bar that has already swapped to the ended cluster — nothing is
+   * left to anchor a panel to, and what the reader needs is not "here is what to
+   * fix" but "this is how the session you no longer have ended". It is rendered
+   * inline there, and `attempt` carries it.
+   *
+   * `release()` can refuse without ending anything: it keeps the claim when its
+   * last write did not land, so its controls are still on screen and the message
+   * belongs against the one that was pressed. Both cases go through `attempt`;
+   * which surface draws it follows the claim.
    */
   const end = async (how: 'release' | 'discard', from?: HTMLElement) => {
     if (!store) return
@@ -565,7 +568,11 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
                           closeLayer()
                           return
                         }
-                        setAttempt({ kind: 'blocked', message: '', diagnostics: blocking })
+                        // Opens the panel and writes nothing. Setting an attempt
+                        // here overwrote whatever the bar was reporting — a
+                        // Host's refusal of a Release, most sharply — with a
+                        // blocked attempt carrying no message, and there was no
+                        // way back to what it replaced.
                         setLayer({ kind: 'problems', anchor: event.currentTarget })
                       }}
                     >
@@ -654,7 +661,7 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
       {/* Only while the claim is held. Every control that can anchor this panel
           lives in the cluster that goes away with the session, so a panel
           outliving them would have nothing to hang from. */}
-      {layer?.kind === 'problems' && attempt && workflow?.claimed ? (
+      {layer?.kind === 'problems' && workflow?.claimed ? (
         <ProblemLayer
           anchor={layer.anchor}
           attempt={attempt}
@@ -793,18 +800,20 @@ function ProblemLayer({
   onClose,
 }: {
   anchor: HTMLElement
-  attempt: Attempt
+  attempt: Attempt | null
   live: readonly Diagnostic[] | null
   onReveal?: (diagnostic: Diagnostic) => void
   onClose: () => void
 }) {
-  const shown = attempt.kind === 'blocked' ? (live ?? attempt.diagnostics) : []
+  const shown = !attempt || attempt.kind === 'blocked' ? (live ?? attempt?.diagnostics ?? []) : []
 
   return (
     <Layer anchor={anchor} label="Problems" onClose={onClose}>
-      {attempt.kind === 'rejected' ? (
+      {attempt?.kind === 'rejected' ? (
         <p className={styles.problem}>{attempt.message}</p>
-      ) : attempt.diagnostics.length === 0 && attempt.message !== '' ? (
+      ) : attempt?.kind === 'blocked' &&
+        attempt.diagnostics.length === 0 &&
+        attempt.message !== '' ? (
         // The floor refused it: the document is not a Workflow Definition, so
         // there is nothing to attach a diagnostic to and the message is the
         // whole of what can be said.
