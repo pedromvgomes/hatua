@@ -1903,3 +1903,89 @@ blocks:
     expect(cardOf('Go through').getAttribute('title')).toBeNull()
   })
 })
+
+describe('what a card calls a Connection', () => {
+  /*
+   * `ref` is opaque by construction (ADR-0007): the document stores a handle so
+   * nothing cached in it goes stale when a Connection is renamed, and it means
+   * nothing to anybody reading the workflow. A card showing `cx_9f2a` is a card
+   * showing the Host's bookkeeping.
+   */
+  const CONNECTED = `id: wf_map
+name: n
+version: 1
+status: draft
+
+connections:
+  - id: mailbox
+    ref: cx_9f2a
+
+steps:
+  - id: s1
+    use: component.email.send
+    name: "Send the digest"
+    with:
+      connection: mailbox
+`
+
+  const CATALOGUE: Manifest[] = [
+    {
+      kind: 'component',
+      use: 'component.email.send',
+      name: 'Send email',
+      fields: [{ k: 'connection', label: 'Mailbox', kind: 'conn', conn_type: 'email' }],
+      outputs: [],
+    },
+  ]
+
+  const wired = (described: boolean) =>
+    render(
+      <HatuaProvider
+        ports={{
+          workflows: serving(CONNECTED),
+          manifests: { loadManifests: async () => CATALOGUE },
+          ...(described
+            ? {
+                connections: {
+                  async listConnections() {
+                    return { items: [{ ref: 'cx_9f2a', type: 'email' }] }
+                  },
+                },
+                describeConnection: {
+                  async describe() {
+                    return {
+                      type: 'email',
+                      label: 'Ops mailbox',
+                      status: 'ready' as const,
+                      details: {},
+                    }
+                  },
+                },
+              }
+            : {}),
+        }}
+        workflowId="wf_map"
+      >
+        <FlowMap />
+      </HatuaProvider>,
+    )
+
+  it('shows what the Host calls it, never the handle it stores', async () => {
+    wired(true)
+
+    await canvas().findByText('Send the digest')
+    await waitFor(() => expect(canvas().getByText('Ops mailbox')).toBeDefined())
+    expect(canvas().queryByText('cx_9f2a')).toBeNull()
+  })
+
+  it('falls back to the name the workflow chose, still not the handle', async () => {
+    // A Host that wires no `ConnectionSource` is correctly configured. Its cards
+    // get the workflow's own word for the Connection, which is at least a word
+    // somebody chose.
+    wired(false)
+
+    await canvas().findByText('Send the digest')
+    await waitFor(() => expect(canvas().getByText('mailbox')).toBeDefined())
+    expect(canvas().queryByText('cx_9f2a')).toBeNull()
+  })
+})
