@@ -159,6 +159,30 @@ export function configureLogging(config: LogConfig): Readonly<Settings> {
   return { levels: { ...current.levels }, sink: current.sink }
 }
 
+/**
+ * Turn a level on from code, in one line, with the spec a person types.
+ *
+ * What a `console.log` used to be for. Chasing something means putting a line
+ * where the question is, and going through `configureLogging({ levels: … })`
+ * asks for two imports and a nested object at the moment attention is
+ * elsewhere — so this is the form that gets pasted at the top of a file and
+ * deleted an hour later.
+ *
+ *   import { setLogLevel } from '@hatua/log'
+ *   setLogLevel('*:debug')
+ *
+ * It complains rather than doing nothing when the spec is unusable, because a
+ * diagnostic switch that fails silently is worse than none: the silence reads
+ * as "nothing is happening" when it means "nothing was turned on".
+ */
+export function setLogLevel(spec: string): Readonly<Settings> {
+  const levels = levelsFrom(spec)
+  if (Object.keys(levels).length === 0) {
+    console.warn(`[hatua] nothing usable in the log level "${spec}". Try '*:debug'.`)
+  }
+  return configureLogging({ levels })
+}
+
 /** Back to silent-unless-asked, and back to the console. What a test resets to. */
 export function resetLogging(): void {
   held[SETTINGS] = { levels: { ...DEFAULT_LEVELS }, sink: consoleSink }
