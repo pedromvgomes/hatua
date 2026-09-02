@@ -163,6 +163,16 @@ export function Inspector({
 
   const workflow = state.status === 'ready' ? state.workflow : null
   const definition = workflow?.definition ?? null
+  /*
+   * Readable, and not writable, once the session has ended.
+   *
+   * Everything a Step declares stays on screen — most of what a Step DOES is
+   * what its fields say, so emptying the panel would answer "what is this
+   * workflow" with nothing. What goes is the writing, and the store refuses it
+   * anyway: a form that still looked editable would be one whose every
+   * keystroke was dropped without a word.
+   */
+  const readOnly = workflow !== null && !workflow.claimed
   const entries = catalogue.status === 'ready' ? catalogue.manifests : NO_ENTRIES
   const served = useMemo(() => manifestsIn(entries), [entries])
   const context = useMemo(() => contextKeysIn(entries), [entries])
@@ -386,6 +396,7 @@ export function Inspector({
                   label="Name"
                   value={step.name ?? ''}
                   placeholder={manifest?.name ?? step.use}
+                  disabled={readOnly}
                   onCommit={(next) => store?.apply(setStepName(ref, next))}
                 />
                 {/* The verb and the id, mono, because both are what a Template
@@ -414,6 +425,7 @@ export function Inspector({
                   declarations={contract}
                   values={(step.with ?? {}) as Record<string, unknown>}
                   scope={scope}
+                  readOnly={readOnly}
                   highlighted={reading}
                   problems={byField}
                   onChange={(key, next) => store?.apply(setStepField(ref, key, next))}
@@ -424,6 +436,7 @@ export function Inspector({
                   values={(step.with ?? {}) as Record<string, unknown>}
                   connections={definition.connections ?? NO_CONNECTIONS}
                   scope={scope}
+                  readOnly={readOnly}
                   highlighted={reading}
                   problems={byField}
                   onChange={(key, next) => store?.apply(setStepField(ref, key, next))}
@@ -481,6 +494,7 @@ function Contract({
   declarations,
   values,
   scope,
+  readOnly,
   highlighted,
   problems,
   onChange,
@@ -488,6 +502,7 @@ function Contract({
   declarations: readonly Declaration[]
   values: Record<string, unknown>
   scope: readonly ScopeEntry[]
+  readOnly: boolean
   highlighted: ReadonlySet<string>
   problems: ReadonlyMap<string, readonly Diagnostic[]>
   onChange: (key: string, value: string) => void
@@ -507,6 +522,7 @@ function Contract({
           declaration={declaration}
           value={values[declaration.k]}
           scope={scope}
+          readOnly={readOnly}
           highlighted={highlighted.has(declaration.k)}
           problems={problems.get(declaration.k)}
           onChange={(next) => onChange(declaration.k, next)}
@@ -520,6 +536,7 @@ function Argument({
   declaration,
   value,
   scope,
+  readOnly,
   highlighted,
   problems,
   onChange,
@@ -527,6 +544,7 @@ function Argument({
   declaration: Declaration
   value: unknown
   scope: readonly ScopeEntry[]
+  readOnly: boolean
   highlighted: boolean
   problems: readonly Diagnostic[] | undefined
   onChange: (next: string) => void
@@ -547,6 +565,7 @@ function Argument({
         value={typeof value === 'string' ? value : ''}
         scope={scope}
         expectedType={declaration.t}
+        disabled={readOnly}
         onCommit={onChange}
       />
       {/* The declared type, because nothing else on the row says what the

@@ -52,6 +52,7 @@ import { Button } from '../primitives/Button'
 import { cx } from '../primitives/classNames'
 import { Select } from '../primitives/Select'
 import { useEditingStore, useManifestStore, useValidationStore } from '../theme/HatuaProvider'
+import { useReadOnly } from '../theme/readOnly'
 import { RemoveButton } from '../units/RemoveButton'
 import { CommittedInput, Fields, splitByField } from './Fields'
 import styles from './Workflow.module.css'
@@ -506,6 +507,7 @@ function RowCard({
   onRemove: () => void
   children?: ReactNode
 }) {
+  const readOnly = useReadOnly()
   const [open, setOpen] = useState(true)
   const bodyId = useId()
 
@@ -551,7 +553,10 @@ function RowCard({
         {/* On the header's line rather than beside the box below, so the box
             keeps the whole width — a key, a Template and a friendly name each
             need it, and a bin in a second column takes 32px off every one. */}
-        <RemoveButton label={removeLabel} onClick={onRemove} />
+        {/* Not drawn once the session has ended: a bin exists only to change
+            the document, so an inert one is a control with nothing behind it.
+            What it would have removed stays readable. */}
+        {readOnly ? null : <RemoveButton label={removeLabel} onClick={onRemove} />}
       </div>
       {typeof note === 'function' ? note(open) : note}
       {open ? (
@@ -639,6 +644,7 @@ function NameInput({
   label: string
   mono?: boolean
 } & Omit<ComponentPropsWithRef<'input'>, 'value' | 'onChange' | 'onBlur'>) {
+  const readOnly = useReadOnly()
   const [clash, setClash] = useState<string | null>(null)
   const noteId = useId()
 
@@ -649,6 +655,7 @@ function NameInput({
     <div className={cx(styles.unique, className)}>
       <CommittedInput
         {...rest}
+        disabled={readOnly}
         // `aria-describedby` only while there is something to describe:
         // pointing at an element that is not rendered describes nothing and
         // gives a screen reader a dangling reference.
@@ -706,6 +713,7 @@ function Identity({
   onName: (next: string) => void
   onSlug: (next: string) => void
 }) {
+  const readOnly = useReadOnly()
   const nameId = useId()
   const slugId = useId()
 
@@ -720,6 +728,7 @@ function Identity({
           label="Name"
           value={name}
           placeholder={namePlaceholder}
+          disabled={readOnly}
           onCommit={onName}
         />
       </div>
@@ -823,6 +832,7 @@ function AddTrigger({
   addable: readonly Manifest[]
   onAdd: (manifest: Manifest) => void
 }) {
+  const readOnly = useReadOnly()
   const [use, setUse] = useState('')
   const pickerId = useId()
 
@@ -860,6 +870,7 @@ function AddTrigger({
       <Select
         id={pickerId}
         value={chosen?.use ?? ''}
+        disabled={readOnly}
         onChange={(event) => setUse(event.target.value)}
       >
         {addable.map((manifest) => (
@@ -868,7 +879,12 @@ function AddTrigger({
           </option>
         ))}
       </Select>
-      <Button className={styles.addAction} size="sm" onClick={() => chosen && onAdd(chosen)}>
+      <Button
+        className={styles.addAction}
+        size="sm"
+        disabled={readOnly}
+        onClick={() => chosen && onAdd(chosen)}
+      >
         Add trigger
       </Button>
     </div>
@@ -896,6 +912,7 @@ function TriggerCard({
   onField: (id: string, key: string, value: string | number | boolean) => void
   onDeclareConnection: (triggerId: string, key: string, name: string, ref: string) => void
 }) {
+  const readOnly = useReadOnly()
   const values = (trigger.with ?? {}) as Record<string, unknown>
   /*
    * A diagnostic that names a field is drawn under that field's control, and
@@ -922,6 +939,7 @@ function TriggerCard({
         <CommittedInput
           label={`Name of ${trigger.name || trigger.id}`}
           value={trigger.name ?? ''}
+          disabled={readOnly}
           placeholder={manifest?.name ?? trigger.use}
           onCommit={(next) => onName(trigger.id, next)}
         />
@@ -961,6 +979,7 @@ function TriggerCard({
           values={values}
           connections={connections}
           scope={scope}
+          readOnly={readOnly}
           problems={byField}
           onChange={(key, next) => onField(trigger.id, key, next)}
           onDeclareConnection={(key, name, ref) => onDeclareConnection(trigger.id, key, name, ref)}
@@ -1056,6 +1075,7 @@ function Contract({
   onLabel: (side: ContractSide, k: string, label: string) => void
   onType: (side: ContractSide, k: string, t: string) => void
 }) {
+  const readOnly = useReadOnly()
   return (
     <Section heading="Contract">
       <p className={styles.blurb}>
@@ -1093,6 +1113,7 @@ function Contract({
 
             <Button
               size="sm"
+              disabled={readOnly}
               onClick={() => {
                 const k = mintKey(seed, keys)
                 onAdd(side, { k, label: labelFor(k), t: 'text' })
@@ -1137,6 +1158,7 @@ function DeclarationRow({
   onLabel: (label: string) => void
   onType: (t: string) => void
 }) {
+  const readOnly = useReadOnly()
   return (
     <RowCard
       title={declaration.k}
@@ -1148,6 +1170,7 @@ function DeclarationRow({
         <CommittedInput
           label={`Name of ${declaration.k}`}
           value={declaration.label}
+          disabled={readOnly}
           onCommit={(next) => next && onLabel(next)}
         />
       }
@@ -1167,6 +1190,7 @@ function DeclarationRow({
           aria-label={`Type of ${declaration.k}`}
           className={styles.control}
           value={declaration.t}
+          disabled={readOnly}
           onChange={(event) => onType(event.target.value)}
         >
           {DECLARED_TYPES.map((t) => (
@@ -1231,6 +1255,7 @@ function Variables({
   onType: (key: string, t: string) => void
   onValue: (key: string, value: string) => void
 }) {
+  const readOnly = useReadOnly()
   return (
     <Section heading="Variables">
       <p className={styles.blurb}>
@@ -1273,6 +1298,7 @@ function Variables({
                   aria-label={`Type of ${variable.key}`}
                   className={styles.control}
                   value={variable.t}
+                  disabled={readOnly}
                   onChange={(event) => onType(variable.key, event.target.value)}
                 >
                   {DECLARED_TYPES.map((t) => (
@@ -1298,6 +1324,7 @@ function Variables({
                   // what lets the picker rail a row at all, where before it
                   // could rail none.
                   expectedType={variable.t}
+                  disabled={readOnly}
                   onCommit={(next) => onValue(variable.key, next)}
                 />
               </RowField>
@@ -1306,7 +1333,7 @@ function Variables({
         </ul>
       ) : null}
 
-      <Button size="sm" onClick={onAdd}>
+      <Button size="sm" disabled={readOnly} onClick={onAdd}>
         Add variable
       </Button>
     </Section>

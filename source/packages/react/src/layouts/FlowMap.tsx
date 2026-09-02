@@ -58,6 +58,7 @@ import {
 } from 'react'
 import { cx } from '../primitives/classNames'
 import { useEditingStore, useManifestStore, useValidationStore } from '../theme/HatuaProvider'
+import { useReadOnly } from '../theme/readOnly'
 import { type BoardTab, BoardTabs } from '../units/BoardTabs'
 import { CanvasControls } from '../units/CanvasControls'
 import { Connectors } from '../units/Connectors'
@@ -989,6 +990,7 @@ function Canvas({
   onDragIn: () => void
   onDragOut: () => void
 }) {
+  const readOnly = useReadOnly()
   // Bare ids, because a Board is already `layout`'s argument. This is where a
   // set that spans Boards becomes the set for one of them, and it is the only
   // place the two spellings meet.
@@ -1158,8 +1160,11 @@ function Canvas({
           buttons whose relationship is drawn and nothing else.
         */}
         <ul className={styles.cards} aria-label="Steps">
+          {/* No insert points once the session has ended. The tree is still
+              drawn in full — it is what the workflow IS — but a `+` that adds
+              nothing is a control with nothing behind it. */}
           {map.links.map((link, index) =>
-            link.at && link.dotAt ? (
+            link.at && link.dotAt && !readOnly ? (
               <InsertDot
                 // biome-ignore lint/suspicious/noArrayIndexKey: a gap is identified by where it is in the emitted order — a link has no identity of its own.
                 key={`gap:${index}`}
@@ -1214,7 +1219,9 @@ function Canvas({
         </ul>
       </div>
 
-      {selectedCount > 0 ? (
+      {/* The bar acts on the selection, and both its actions write. Selecting
+          still works, because reading which Steps are which is not editing. */}
+      {selectedCount > 0 && !readOnly ? (
         <SegmentBar
           count={selectedCount}
           onExtract={onExtractSelection}

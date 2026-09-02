@@ -13,8 +13,18 @@ import type {
 } from '@hatua/services'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { HatuaProvider } from '../theme/HatuaProvider'
+import { HatuaProvider, useEditingStore } from '../theme/HatuaProvider'
 import { Inspector } from './Inspector'
+
+/** A Host's own control, ending the session without going through a toolbar. */
+function Ends() {
+  const store = useEditingStore()
+  return (
+    <button type="button" onClick={() => void store?.release()}>
+      end it
+    </button>
+  )
+}
 
 /**
  * The step editor against a Host's ports.
@@ -569,5 +579,42 @@ describe('the name field', () => {
     const box = await screen.findByDisplayValue('Fetch the mail')
     expect(box.getAttribute('aria-label')).toBe('Name')
     expect(screen.getByLabelText('Name')).toBe(box)
+  })
+})
+
+describe('once the session has ended', () => {
+  /*
+   * The store refuses commands with no claim behind them, and a form that still
+   * looked editable would be one whose every keystroke was dropped without a
+   * word. What a Step declares stays on screen in full — most of what a Step
+   * DOES is what its fields say, so emptying the panel would answer "what is
+   * this workflow" with nothing.
+   */
+  it('shows every parameter, and lets none of them be edited', async () => {
+    const source = host()
+    render(
+      <HatuaProvider
+        ports={{ workflows: source.port, manifests: serving(CATALOGUE) }}
+        workflowId="wf_morning"
+      >
+        <Ends />
+        <Inspector selected={{ board: null, steps: ['s1'] }} />
+      </HatuaProvider>,
+    )
+
+    // Editable while the Draft is claimed.
+    const name = await screen.findByLabelText('Name')
+    expect((name as HTMLInputElement).disabled).toBe(false)
+
+    fireEvent.click(screen.getByRole('button', { name: 'end it' }))
+
+    await waitFor(() =>
+      expect((screen.getByLabelText('Name') as HTMLInputElement).disabled).toBe(true),
+    )
+    // The value is still there to read.
+    expect((screen.getByLabelText('Name') as HTMLInputElement).value).not.toBe('')
+    for (const field of screen.getAllByRole('textbox')) {
+      expect((field as HTMLInputElement).disabled).toBe(true)
+    }
   })
 })
