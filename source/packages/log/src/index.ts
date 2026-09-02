@@ -76,24 +76,52 @@ const consoleSink: Sink = ({ level, category, message, detail }) => {
   else say(head, detail)
 }
 
-let levels: Record<string, Level> = { ...DEFAULT_LEVELS }
-let sink: Sink = consoleSink
+/**
+ * The settings, held on the global rather than in this module.
+ *
+ * A module holds its state once per instance, and there is no promise that this
+ * module is instantiated once. A dev server resolving symlinked workspace
+ * packages, a Host bundling `@hatua/react` while its own code imports
+ * `@hatua/log`, two copies at different versions in one tree — each gives the
+ * app one table and the packages another, so turning a category up changes a
+ * table nothing reads and the switch appears to do nothing at all.
+ *
+ * A symbol on `globalThis` is the one place every instance can agree on. It is
+ * what the settings are ABOUT — one page, one answer to "what is Hatua writing"
+ * — so sharing them there is the shape of the thing rather than a workaround
+ * for the bundler.
+ */
+interface Settings {
+  levels: Record<string, Level>
+  sink: Sink
+}
+
+const SETTINGS = Symbol.for('hatua.log.settings')
+
+const held = globalThis as unknown as { [SETTINGS]?: Settings }
+
+const settings = (): Settings => {
+  held[SETTINGS] ??= { levels: { ...DEFAULT_LEVELS }, sink: consoleSink }
+  return held[SETTINGS]
+}
 
 /**
  * Turn categories up or down, or send lines somewhere else.
  *
  * Merged into what is already set rather than replacing it, so turning one
- * category up does not silently reset the rest.
+ * category up does not silently reset the rest. Returns what is in force, so a
+ * console can show whether the call took.
  */
-export function configureLogging(config: LogConfig): void {
-  if (config.levels) levels = { ...levels, ...config.levels }
-  if (config.sink) sink = config.sink
+export function configureLogging(config: LogConfig): Readonly<Settings> {
+  const current = settings()
+  if (config.levels) current.levels = { ...current.levels, ...config.levels }
+  if (config.sink) current.sink = config.sink
+  return { levels: { ...current.levels }, sink: current.sink }
 }
 
 /** Back to silent-unless-asked, and back to the console. What a test resets to. */
 export function resetLogging(): void {
-  levels = { ...DEFAULT_LEVELS }
-  sink = consoleSink
+  held[SETTINGS] = { levels: { ...DEFAULT_LEVELS }, sink: consoleSink }
 }
 
 /**
@@ -104,6 +132,7 @@ export function resetLogging(): void {
  * set and the more specific one wins whichever order they were written in.
  */
 const levelFor = (category: string): Level => {
+  const { levels } = settings()
   let best = levels['*'] ?? 'warn'
   let longest = -1
   for (const [prefix, level] of Object.entries(levels)) {
@@ -137,7 +166,7 @@ export interface Logger {
 export function logger(category: string): Logger {
   const write = (level: Level, message: string, detail?: Record<string, unknown>) => {
     if (RANK[level] > RANK[levelFor(category)]) return
-    sink({ level, category, message, ...(detail === undefined ? {} : { detail }) })
+    settings().sink({ level, category, message, ...(detail === undefined ? {} : { detail }) })
   }
 
   return {
