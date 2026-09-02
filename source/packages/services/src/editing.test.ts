@@ -2496,6 +2496,50 @@ describe('a renewal that never comes back', () => {
     expect(asks).toBeGreaterThan(1)
   })
 
+  /*
+   * A bare flag is cleared by whoever finishes last. The abandoned call returns,
+   * clears it, and the live session's renewal — still in the air — is no longer
+   * protected: the next press issues a second concurrent renewal on the same
+   * token, which is the overlap the guard exists to prevent, reached from
+   * underneath it.
+   */
+  it('does not let an abandoned renewal unguard the session that replaced it', async () => {
+    const asks: ((lease: Lease) => void)[] = []
+    const host = recorder({ lease: leaseFor(0.05) })
+    host.port.renewLease = () =>
+      new Promise<Lease>((resolve) => {
+        asks.push(resolve)
+      })
+    host.port.saveDraft = async () => {
+      throw new Error('The workflow service is unreachable.')
+    }
+
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+    // Session A's renewal fires and hangs.
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(asks).toHaveLength(1)
+
+    store.reopen()
+    await settle()
+    // Session B's own renewal is now outstanding.
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(asks).toHaveLength(2)
+
+    // A finally answers, into a session that has moved on.
+    asks[0]?.(leaseFor(30))
+    await settle()
+
+    // A press must not start a third while B's is still in the air.
+    store.apply(removeStep({ board: null, id: 's1' }))
+    await vi.advanceTimersByTimeAsync(200)
+    store.resumeSaving()
+    await settle()
+
+    expect(asks).toHaveLength(2)
+  })
+
   it('keeps a renewal armed when one it asked for is still outstanding', async () => {
     // The timer that reached the guard has already dropped its handle, so
     // leaving without re-arming loses the renewal altogether.
