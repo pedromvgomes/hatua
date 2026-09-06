@@ -5,6 +5,7 @@ import type { WorkflowDefinition } from '@hatua/schema'
 import type { EditCommand } from './command'
 import type { EditToken, Lease, PublishedVersion, WorkflowStore } from './ports'
 import type { Store } from './store'
+import { restoreContent } from './workflow'
 
 /**
  * The Draft being edited, and the autosave that keeps the Host's copy level
@@ -93,6 +94,24 @@ export class PublishBlocked extends Error {
   }
 }
 
+/**
+ * How an editing session ended, for the surface that has to report it.
+ *
+ * Recorded here rather than by whatever pressed the button, because `finish()`
+ * is the only thing that sees every ending: a **Host** may call `release()` on
+ * this store with no toolbar mounted at all (ADR-0023), and a bar reconstructing
+ * the outcome from a claim it watched disappear cannot tell which of the three
+ * happened — so it falls back to the one sentence that fits all of them and the
+ * three outcomes read alike.
+ *
+ * Null after a `dispose()`, which also ends the session and is not an ending
+ * anybody chose: a closed tab has no outcome to report.
+ */
+export type Ended =
+  | { how: 'published'; version: number }
+  | { how: 'released' }
+  | { how: 'discarded' }
+
 export interface EditingSnapshot {
   /** The source of truth. Mutated only through `apply`. */
   document: WorkflowDocument
@@ -140,9 +159,36 @@ export interface EditingSnapshot {
    * a second field on `SaveState` that means the same thing in one of its arms.
    */
   claimed: boolean
+  /**
+   * Which version is on screen instead of the **Draft**, or null when the
+   * **Draft** itself is.
+   *
+   * `document`, `text` and `definition` above describe THAT version while this
+   * is set, which is what lets every region show a **Preview** without being
+   * taught anything about one (ADR-0024). What does not change is `claimed`:
+   * the claim is still held, the lease still renewing and the **Draft** still
+   * autosaving, because a preview is a way of looking rather than a way of
+   * stopping.
+   *
+   * Nothing may be edited while it is set. `apply()` refuses, and `useReadOnly`
+   * reads this beside `claimed` — a **Published Version** is immutable by
+   * definition (ADR-0005), and a command that landed on the **Draft** while the
+   * screen showed something else would be an edit the user never sees.
+   */
+  previewing: number | null
+  /**
+   * How this session ended, or null while one is live — and after a `dispose()`,
+   * which ends the session without anybody having chosen an outcome.
+   */
+  ended: Ended | null
   lease: Lease
   save: SaveState
-  /** What `undo()` would undo, and `redo()` redo. Null when the stack is empty. */
+  /**
+   * What `undo()` would undo, and `redo()` redo. Null when the stack is empty,
+   * and null throughout a **Preview**: the stack belongs to the **Draft**, and
+   * offering to undo an edit to a document that is not on screen names a change
+   * the reader cannot see.
+   */
   undoLabel: string | null
   redoLabel: string | null
 }
@@ -200,6 +246,41 @@ export interface EditingStore extends Store<EditingState> {
   publish(): Promise<PublishedVersion>
   release(): Promise<void>
   discard(): Promise<void>
+
+  /**
+   * Show a version other than the **Draft** on the whole screen, read-only.
+   *
+   * Rejects rather than entering when the version cannot be read: a **Preview**
+   * that opened onto an unparseable document would replace a working screen
+   * with an error and leave the reader no way to say what they meant. The
+   * screen does not move, and the caller reports why.
+   *
+   * Needs no claim. The version list answers while nothing is claimed and while
+   * the **Draft** does not project, and this is the same question about the same
+   * workflow — someone who has just discarded a draft is exactly who wants to
+   * look at what the last **Published Version** held.
+   */
+  preview(version: number): Promise<void>
+
+  /** Put the **Draft** back on screen. A no-op when it already is. */
+  exitPreview(): void
+
+  /**
+   * Replace the **Draft**'s content with an earlier version's, as one undoable
+   * edit that autosaves like any other.
+   *
+   * Not a version decision, so it is not beside Publish, Release and Discard in
+   * spirit even though it is in this list: the **Draft**'s own `id`, `version`
+   * and `status` are left alone, and what changes is the content of a document
+   * that goes on being the draft it was.
+   *
+   * Opens a **Draft** first when there is none — at `base + 1`, the only place a
+   * draft can be — because "restore this into what I am editing" has to mean
+   * something when the last session ended. Rejects if that open fails, and a
+   * **Preview** is left behind either way: what the reader asked to see is now
+   * the thing they are editing.
+   */
+  restoreVersion(version: number): Promise<void>
 
   /**
    * Cancel the pending write and the lease renewal.
@@ -281,6 +362,17 @@ export function createEditingStore(
   // same guard manifests.ts carries, and it matters more here because the loser
   // would be holding a token for a lease the winner has replaced.
   let generation = 0
+  /*
+   * Bumped only when a claim is TAKEN, which `generation` cannot say on its own:
+   * `finish()` bumps that too, so a guard written against it treats a **Release**
+   * as a reason to abandon work that a release does not invalidate.
+   *
+   * A **Preview** is the case that needs the distinction. It needs no claim at
+   * all — the history is about the workflow — so a session ending underneath a
+   * `loadVersion` is no reason to drop it, while a session BEGINNING is: a new
+   * Draft on screen is what `openDraft` clears the preview for.
+   */
+  let opens = 0
   let started = false
   let disposed = false
 
@@ -290,6 +382,19 @@ export function createEditingStore(
   let resumed = false
   let refused: Error | null = null
   let save: SaveState = SAVED
+
+  /*
+   * The version being looked at instead of the Draft, held BESIDE the draft's
+   * document rather than written into it.
+   *
+   * Swapping the draft's contents to show a preview would put the previewed
+   * bytes on the autosave path: the next quiet 800ms writes them to the Draft,
+   * and looking at version 3 has silently restored it. `dirty()`, `write()`,
+   * `publish()` and the undo stack all go on reading `document`, which is the
+   * Draft, because that is what every one of them is about.
+   */
+  let previewed: { version: number; document: WorkflowDocument } | null = null
+  let ended: Ended | null = null
 
   /*
    * Undo by restoring text, not by replaying an inverse.
@@ -397,12 +502,23 @@ export function createEditingStore(
    */
   const commit = () => {
     if (!document || !lease) return
-    const projection = document.validate()
+    /*
+     * Whichever version is on screen, which is the Draft unless a Preview says
+     * otherwise (ADR-0024).
+     *
+     * Asked once, here, so "the whole screen follows a preview" is a property of
+     * this function rather than a rule six regions each have to remember. The
+     * fields the Draft owns — `save`, `claimed`, `lease` — are unaffected,
+     * because they are facts about the session and not about the document being
+     * read.
+     */
+    const shown = previewed?.document ?? document
+    const projection = shown.validate()
     publishState({
       status: 'ready',
       workflow: {
-        document,
-        text: document.toString(),
+        document: shown,
+        text: shown.toString(),
         definition: projection.success ? projection.data : null,
         invalid: projection.success
           ? null
@@ -410,10 +526,12 @@ export function createEditingStore(
         refused,
         resumed,
         claimed: token !== null,
+        previewing: previewed?.version ?? null,
+        ended,
         lease,
         save,
-        undoLabel: history.at(-1)?.label ?? null,
-        redoLabel: future.at(-1)?.label ?? null,
+        undoLabel: previewed ? null : (history.at(-1)?.label ?? null),
+        redoLabel: previewed ? null : (future.at(-1)?.label ?? null),
       },
     })
   }
@@ -431,7 +549,7 @@ export function createEditingStore(
    * The text is unchanged, so nothing downstream sees an edit: what changes is
    * that the object under it is the one the text describes.
    */
-  const restore = (text: string) => {
+  const revert = (text: string) => {
     try {
       document = parseWorkflow(text)
     } catch {
@@ -691,92 +809,119 @@ export function createEditingStore(
     }
   }
 
-  const openDraft = () => {
-    started = true
-    disposed = false
-    const mine = ++generation
+  /**
+   * Resolves when the open has settled, either way.
+   *
+   * Awaitable because `restoreVersion` has to know whether a claim was actually
+   * taken before it applies anything: with no Draft open there is nothing for a
+   * command to land on, and `apply()` drops one silently. A caller with no such
+   * question may ignore the promise — the whole of the reset below runs
+   * synchronously, so `open()` has published `opening` by the time it returns.
+   */
+  const openDraft = (): Promise<void> =>
+    new Promise<void>((settled) => {
+      started = true
+      disposed = false
+      opens++
+      const mine = ++generation
 
-    cancelSave()
-    if (leaseTimer !== undefined) clearTimeout(leaseTimer)
-    leaseTimer = undefined
+      cancelSave()
+      if (leaseTimer !== undefined) clearTimeout(leaseTimer)
+      leaseTimer = undefined
 
-    document = null
-    token = null
-    lease = null
-    refused = null
-    history = []
-    future = []
-    save = SAVED
-    savedText = ''
-    /*
-     * The press that asked for saving to resume belonged to the session being
-     * replaced. Carried across, a renewal in the NEXT session reads it, clears a
-     * halt nobody asked it to clear, and reschedules the write — which is
-     * precisely the automatic retry ADR-0005 refuses, arrived at through a flag
-     * rather than a timer. A renewal abandoned by a dispose or a generation bump
-     * returns before it can clear this itself.
-     */
-    resumeWanted = false
-    /*
-     * And whether one is outstanding, which is a fact about the session being
-     * replaced. A renewal that never settles — a fetch with no timeout is all it
-     * takes — would otherwise leave this set for the life of the store, and
-     * every renewal after it returns at the guard: the new session's claim
-     * lapses, its writes are refused, and autosave halts on work the reader
-     * believes is being saved.
-     */
-    renewingFor = null
-    // Abandoned along with everything else this generation held. A Host whose
-    // `saveDraft` never settles — a fetch with no timeout is all it takes —
-    // would otherwise leave this set for the life of the store, and every
-    // write after it would return at the guard above: autosave dead for good,
-    // the panel stuck on `pending`, and reopening no help at all. The
-    // abandoned call belongs to a token this session no longer holds, so
-    // whatever it eventually does is the Host's business.
-    queue = Promise.resolve()
+      document = null
+      token = null
+      lease = null
+      refused = null
+      /*
+       * A claim about to be taken is a Draft about to be on screen, so a Preview
+       * carried across would leave the bar offering to edit a document nobody is
+       * looking at — and `commit()` would go on describing the old version while
+       * `claimed` said the new session was live.
+       */
+      previewed = null
+      // And how the LAST session ended, which is not how this one is going.
+      ended = null
+      history = []
+      future = []
+      save = SAVED
+      savedText = ''
+      /*
+       * The press that asked for saving to resume belonged to the session being
+       * replaced. Carried across, a renewal in the NEXT session reads it, clears a
+       * halt nobody asked it to clear, and reschedules the write — which is
+       * precisely the automatic retry ADR-0005 refuses, arrived at through a flag
+       * rather than a timer. A renewal abandoned by a dispose or a generation bump
+       * returns before it can clear this itself.
+       */
+      resumeWanted = false
+      /*
+       * And whether one is outstanding, which is a fact about the session being
+       * replaced. A renewal that never settles — a fetch with no timeout is all it
+       * takes — would otherwise leave this set for the life of the store, and
+       * every renewal after it returns at the guard: the new session's claim
+       * lapses, its writes are refused, and autosave halts on work the reader
+       * believes is being saved.
+       */
+      renewingFor = null
+      // Abandoned along with everything else this generation held. A Host whose
+      // `saveDraft` never settles — a fetch with no timeout is all it takes —
+      // would otherwise leave this set for the life of the store, and every
+      // write after it would return at the guard above: autosave dead for good,
+      // the panel stuck on `pending`, and reopening no help at all. The
+      // abandoned call belongs to a token this session no longer holds, so
+      // whatever it eventually does is the Host's business.
+      queue = Promise.resolve()
 
-    if (state.status !== 'opening') publishState(OPENING)
+      if (state.status !== 'opening') publishState(OPENING)
 
-    const settle = (cause: unknown) => {
-      if (mine === generation) publishState({ status: 'failed', error: asError(cause) })
-    }
+      const settle = (cause: unknown) => {
+        if (mine === generation) publishState({ status: 'failed', error: asError(cause) })
+        settled()
+      }
 
-    // The try/catch is not redundant with the rejection handler: `openDraft` is
-    // a plain method on the Host's object and nothing obliges it to be `async`,
-    // so one that throws synchronously would throw straight back out of
-    // `open()` — which a region calls inside an effect and a Retry button calls
-    // from a click handler. The same reasoning manifests.ts spells out.
-    try {
-      port.openDraft(workflowId).then((session) => {
-        if (mine !== generation || disposed) return
-        try {
-          document = parseWorkflow(session.yaml)
-        } catch (cause) {
-          // Unparseable YAML, or a multi-document file @hatua/document refuses.
-          // There is no editing this: every command reaches through the AST,
-          // and there is no AST. A document that parses but does not VALIDATE
-          // is the opposite case and opens normally — see `definition`.
-          settle(cause)
-          return
-        }
-        token = session.token
-        lease = session.lease
-        resumed = session.resumed
-        savedText = document.toString()
-        save = SAVED
-        commit()
-        scheduleRenewal()
-      }, settle)
-    } catch (cause) {
-      settle(cause)
-    }
-  }
+      // The try/catch is not redundant with the rejection handler: `openDraft` is
+      // a plain method on the Host's object and nothing obliges it to be `async`,
+      // so one that throws synchronously would throw straight back out of
+      // `open()` — which a region calls inside an effect and a Retry button calls
+      // from a click handler. The same reasoning manifests.ts spells out.
+      try {
+        port.openDraft(workflowId).then((session) => {
+          if (mine !== generation || disposed) {
+            settled()
+            return
+          }
+          try {
+            document = parseWorkflow(session.yaml)
+          } catch (cause) {
+            // Unparseable YAML, or a multi-document file @hatua/document refuses.
+            // There is no editing this: every command reaches through the AST,
+            // and there is no AST. A document that parses but does not VALIDATE
+            // is the opposite case and opens normally — see `definition`.
+            settle(cause)
+            return
+          }
+          token = session.token
+          lease = session.lease
+          resumed = session.resumed
+          savedText = document.toString()
+          save = SAVED
+          commit()
+          scheduleRenewal()
+          settled()
+        }, settle)
+      } catch (cause) {
+        settle(cause)
+      }
+    })
 
   /** Restore a revision, keeping the counterpart stack in step. */
   const travel = (from: Revision[], to: Revision[]) => {
     // No claim, no edits — undo and redo change the document exactly as a
-    // command does, and land in the same place: nowhere.
-    if (!document || !token) return
+    // command does, and land in the same place: nowhere. A Preview is refused
+    // for the sharper reason `apply` gives: the stack is the Draft's, so an undo
+    // would take back an edit to a document that is not on screen.
+    if (!document || !token || previewed) return
     const revision = from.pop()
     if (!revision) return
 
@@ -839,7 +984,21 @@ export function createEditingStore(
    * is immutable by definition. The document stays, and stays editable; it is
    * simply no longer being saved anywhere, which is the truth.
    */
-  const finish = () => {
+  const finish = (how?: Ended) => {
+    /*
+     * Stamped here rather than by whoever pressed a button, because this is the
+     * only place every ending passes through — including one a Host drives by
+     * calling `release()` on the store with no toolbar mounted (ADR-0023). A
+     * surface watching a claim disappear cannot tell which of the three it was.
+     *
+     * `dispose()` passes nothing and stamps nothing: a page closing is not an
+     * outcome anybody chose, and captioning it "your draft is kept" would report
+     * a decision the user never made. It does not CLEAR one either — a dispose
+     * following a Publish would otherwise erase the version that publish
+     * produced, and the next session is where a stale outcome is cleared, which
+     * `openDraft` does.
+     */
+    if (how) ended = how
     cancelSave()
     if (leaseTimer !== undefined) clearTimeout(leaseTimer)
     leaseTimer = undefined
@@ -873,7 +1032,7 @@ export function createEditingStore(
     commit()
   }
 
-  return {
+  const store: EditingStore = {
     getSnapshot: () => state,
     subscribe(listener) {
       listeners.add(listener)
@@ -909,6 +1068,23 @@ export function createEditingStore(
        */
       if (!token) {
         log.debug('command dropped: the session has ended', { command: command.label })
+        return
+      }
+
+      /*
+       * A Preview takes no edits either, and this guard is a correctness one
+       * rather than an affordance.
+       *
+       * The command would SUCCEED: the token is held, the Draft is open, and
+       * `document` is the Draft — so the edit lands, autosaves, and is invisible,
+       * because what the reader is looking at is a Published Version that is
+       * immutable by definition (ADR-0005). Every control that could send one is
+       * disabled through `useReadOnly`, and this is the floor under all of them,
+       * for the same reason ADR-0023 puts the publish gate in the store: a rule
+       * that lives in a control is a rule the next control forgets.
+       */
+      if (previewed) {
+        log.debug('command dropped: a version is being previewed', { command: command.label })
         return
       }
 
@@ -962,7 +1138,7 @@ export function createEditingStore(
         // respond.
         refused = asError(cause)
         log.debug('command refused', { command: command.label, why: refused.message })
-        restore(before)
+        revert(before)
         return
       }
 
@@ -992,7 +1168,7 @@ export function createEditingStore(
           'That change would leave the workflow in a state it cannot be saved in, so it was not made.',
         )
         log.debug('command refused: it would break the projection', { command: command.label })
-        restore(before)
+        revert(before)
         return
       }
 
@@ -1088,6 +1264,29 @@ export function createEditingStore(
       }
 
       /*
+       * And the floor's other half: the gate cannot answer about the Draft while
+       * a **Preview** is on screen.
+       *
+       * `createValidationStore` reads its document from THIS store's snapshot,
+       * which describes the previewed version (ADR-0024) — so a publish issued
+       * now sends the Draft's bytes past a checker that judged something else. A
+       * Draft carrying blocking diagnostics would publish because the previewed
+       * version is clean, and a clean Draft would be refused because it is not.
+       *
+       * Refused rather than worked around, and refused HERE rather than in the
+       * toolbar. The bar never offers Publish during a preview, but ADR-0023's
+       * whole argument is that an affordance can be absent while the document
+       * must still be safe: `createEditingStore` is one import away from any Host.
+       * Leaving the preview is the way through, and it costs nothing.
+       */
+      if (previewed) {
+        throw new PublishBlocked(
+          [],
+          'A version is being shown instead of the draft, so nothing can be published yet. Go back to the draft first.',
+        )
+      }
+
+      /*
        * Then what the checker says, if anything can say it.
        *
        * Awaited, because the answer may not have arrived: ADR-0023's table says
@@ -1137,6 +1336,14 @@ export function createEditingStore(
           still.error.issues[0]?.message ?? 'This is not a valid workflow yet.',
         )
       }
+      // A preview entered during that wait makes the answer just received an
+      // answer about another document, for the reason above.
+      if (previewed) {
+        throw new PublishBlocked(
+          [],
+          'A version is being shown instead of the draft, so nothing can be published yet. Go back to the draft first.',
+        )
+      }
 
       // The current text rather than the last text the Host accepted, and read
       // after the gate rather than before it. Autosave may still have been
@@ -1166,7 +1373,7 @@ export function createEditingStore(
        *
        * The version is still returned, because the Host really did publish it.
        */
-      if (mine === generation && !disposed) finish()
+      if (mine === generation && !disposed) finish({ how: 'published', version: published.version })
       return published
     },
 
@@ -1265,14 +1472,144 @@ export function createEditingStore(
        */
       if (mine !== generation || disposed) return
 
-      finish()
+      finish({ how: 'released' })
       return port.releaseDraft(spent)
     },
 
     async discard() {
       const held = requireToken()
-      finish()
+      finish({ how: 'discarded' })
       return port.discardDraft(held)
+    },
+
+    async preview(version) {
+      if (disposed) return
+      const mine = opens
+
+      const yaml = await port.loadVersion(workflowId, version)
+
+      /*
+       * A Draft claimed inside that wait is a Draft now on screen, and
+       * `openDraft` clears the preview for exactly that reason — so setting one
+       * afterwards would put a version over a session `claimed` says is live.
+       *
+       * Asked of `opens` rather than of `generation`, because a session ENDING
+       * is not a reason to drop a preview: it needs no claim, and the reader who
+       * has just discarded a draft is the one most likely to be looking.
+       *
+       * Reported rather than dropped quietly. Resolving either way leaves the
+       * caller unable to tell "shown" from "abandoned", so the bar closes the
+       * list and reports success for a version that never reached the screen. A
+       * `dispose()` is the one silent case, because the page it would report to
+       * is going.
+       */
+      if (disposed) return
+      if (mine !== opens) {
+        throw new Error(
+          'This workflow was opened again while that version was loading, so it was not shown. Try again.',
+        )
+      }
+
+      /*
+       * And there has to be a session on screen to put it over. `commit()`
+       * returns without publishing while the open is still in flight, so a
+       * preview set here would be retained silently and then surface over the
+       * Draft that open goes on to claim — a caller told nothing had failed and
+       * a screen that moves later for no reason the reader can see.
+       */
+      if (state.status !== 'ready') {
+        throw new Error('This workflow is not open yet, so no version can be shown.')
+      }
+
+      /*
+       * Parsed BEFORE the screen moves, so a version the Host cannot serve as a
+       * single YAML document leaves the screen exactly as it was and this
+       * rejects. Entering the preview first and reporting the failure inside it
+       * would replace something readable with an error, and the reader's way out
+       * of a preview is a control that preview draws.
+       */
+      previewed = { version, document: parseWorkflow(yaml) }
+      commit()
+    },
+
+    exitPreview() {
+      if (!previewed) return
+      previewed = null
+      commit()
+    },
+
+    async restoreVersion(version) {
+      if (disposed) return
+      const mine = opens
+
+      const yaml = await port.loadVersion(workflowId, version)
+      /*
+       * A session claimed inside that wait is a different Draft from the one
+       * this restore was asked for, and filling it would be an edit nobody
+       * asked for. A session ENDING inside it is not the same thing: the branch
+       * below opens a Draft precisely for that case.
+       *
+       * Reported, for the reason `preview` reports it: a caller that cannot tell
+       * "restored" from "abandoned" closes its dialog, says nothing, and leaves
+       * a Draft the reader believes was replaced.
+       */
+      if (disposed) return
+      if (mine !== opens) {
+        throw new Error(
+          'This workflow was opened again while that version was loading, so nothing was restored. Try again.',
+        )
+      }
+
+      /*
+       * With no claim there is nothing for a command to land on: `apply()` drops
+       * one silently, so restoring into an ended session would report success
+       * and change nothing. The Draft opened here is the ordinary one — the Host
+       * mints it at `base + 1` — and it is opened AFTER the load, so a version
+       * that cannot be read does not cost a claim.
+       */
+      if (!token) {
+        await openDraft()
+        if (disposed) return
+        if (!token) {
+          throw new Error(
+            state.status === 'failed'
+              ? state.error.message
+              : 'The workflow could not be opened for editing, so nothing was restored.',
+          )
+        }
+      }
+
+      /*
+       * And the preview goes, because what was being looked at is now what is
+       * being edited. Cleared before the command so `apply()` is not refused by
+       * its own preview guard.
+       *
+       * **Published here rather than left to `apply()`.** A command that changes
+       * nothing returns without committing, so a restore of the version the
+       * Draft already matches would leave the snapshot saying `previewing` while
+       * this store held no preview — `useReadOnly` still true, `exitPreview()` a
+       * no-op against its own `previewed` check, and the screen read-only with no
+       * way out. `apply()` also reads `projected` off the last published
+       * snapshot, which until this commit describes the PREVIEW: ADR-0019's
+       * backstop would then judge the restore against the wrong document.
+       */
+      previewed = null
+      commit()
+
+      /*
+       * `apply` reports a refusal through `refused` rather than by throwing, so
+       * the snapshot is what says whether this took — a version whose YAML is
+       * not a single document is refused there, and the Draft is left untouched.
+       *
+       * Compared by identity against what was already there, because `refused`
+       * outlives the command that set it: a command refused earlier in the
+       * session is still on the snapshot, and a restore that changed nothing
+       * clears nothing. Only a refusal this call PRODUCED is this call's to
+       * report.
+       */
+      const before = refused
+      store.apply(restoreContent(version, yaml))
+      if (refused && refused !== before) throw refused
     },
 
     dispose() {
@@ -1284,4 +1621,6 @@ export function createEditingStore(
       finish()
     },
   }
+
+  return store
 }
