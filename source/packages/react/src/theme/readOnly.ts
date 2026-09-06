@@ -4,10 +4,19 @@ import { useEditingStore } from './HatuaProvider'
 /**
  * Whether the document on screen may still be changed.
  *
- * False while a Draft is claimed, true once **Publish**, **Release** or
- * **Discard** has ended the session — at which point the store refuses commands
- * outright, because there is no claim to write them under and, after a discard,
- * no Draft on the Host to write them to.
+ * False while a Draft is claimed and on screen. True in two cases, which are one
+ * question — *is what I am looking at mine to edit?* — asked of the two things
+ * that can answer no.
+ *
+ * **The session has ended.** **Publish**, **Release** or **Discard** has dropped
+ * the claim, and the store refuses commands outright: there is no claim to write
+ * them under and, after a discard, no Draft on the Host to write them to.
+ *
+ * **A version is being previewed.** The claim is still held and the Draft is
+ * still autosaving, but what is on screen is a **Published Version**, which
+ * ADR-0005 makes immutable by definition. A command sent here would land on the
+ * Draft — which is not what the reader can see — so `apply()` refuses it and
+ * this is what keeps the controls from offering in the first place.
  *
  * Everything stays on screen either way. A Step is mostly what its fields say,
  * so a panel that emptied itself would answer "what is this workflow" with
@@ -35,7 +44,8 @@ export function useReadOnly(): boolean {
 
 type Snapshot = ReturnType<NonNullable<ReturnType<typeof useEditingStore>>['getSnapshot']>
 
-const refuses = (state: Snapshot): boolean => state.status === 'ready' && !state.workflow.claimed
+const refuses = (state: Snapshot): boolean =>
+  state.status === 'ready' && (!state.workflow.claimed || state.workflow.previewing !== null)
 
 // Module-level and therefore stable: `useSyncExternalStore` re-subscribes
 // whenever `subscribe` changes identity.

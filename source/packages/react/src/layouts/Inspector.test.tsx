@@ -16,6 +16,16 @@ import { describe, expect, it } from 'vitest'
 import { HatuaProvider, useEditingStore } from '../theme/HatuaProvider'
 import { Inspector } from './Inspector'
 
+/** A Host's own control, putting an earlier version on screen without a toolbar. */
+function Shows() {
+  const store = useEditingStore()
+  return (
+    <button type="button" onClick={() => void store?.preview(1)}>
+      show version 1
+    </button>
+  )
+}
+
 /** A Host's own control, ending the session without going through a toolbar. */
 function Ends() {
   const store = useEditingStore()
@@ -628,6 +638,38 @@ describe('once the session has ended', () => {
     )
     // The value is still there to read.
     expect((screen.getByLabelText('Name') as HTMLInputElement).value).not.toBe('')
+    for (const field of screen.getAllByRole('textbox')) {
+      expect((field as HTMLInputElement).disabled).toBe(true)
+    }
+  })
+
+  it('stops writing while a version is shown, even though the claim is held', async () => {
+    /*
+     * The other half of the same question. A Preview leaves the claim in place —
+     * the lease renews and the Draft still autosaves — so a panel that asks
+     * "is this session mine" instead of "may what I am looking at be changed"
+     * renders every field editable and has each keystroke dropped by the store
+     * without a word.
+     */
+    const source = host()
+    render(
+      <HatuaProvider
+        ports={{ workflows: source.port, manifests: serving(CATALOGUE) }}
+        workflowId="wf_morning"
+      >
+        <Shows />
+        <Inspector selected={{ board: null, steps: ['s1'] }} />
+      </HatuaProvider>,
+    )
+
+    const name = await screen.findByLabelText('Name')
+    expect((name as HTMLInputElement).disabled).toBe(false)
+
+    fireEvent.click(screen.getByRole('button', { name: 'show version 1' }))
+
+    await waitFor(() =>
+      expect((screen.getByLabelText('Name') as HTMLInputElement).disabled).toBe(true),
+    )
     for (const field of screen.getAllByRole('textbox')) {
       expect((field as HTMLInputElement).disabled).toBe(true)
     }

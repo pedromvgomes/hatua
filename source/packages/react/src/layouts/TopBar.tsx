@@ -1,6 +1,7 @@
 import type { Diagnostic } from '@hatua/model'
 import {
   type EditingState,
+  type Ended,
   PublishBlocked,
   unchecked,
   type ValidationState,
@@ -126,14 +127,34 @@ type Layer = { kind: 'versions' | 'problems'; anchor: HTMLElement } | null
  * that button is not a thing to render. No **Build / Runs** segmented control:
  * `ExecutionSource` says "omit entirely and the Runs view is hidden", no Host
  * can wire one, and a control that switches to nothing is worse than no
- * control. Version rows do not select: read-only mode is a state of the canvas,
- * the step editor and the Workflow tab together rather than of this bar, which
- * ADR-0011's scope now says.
+ * control.
+ *
+ * ## Three clusters, not two
+ *
+ * The right-hand side is drawn from what the session is doing rather than from
+ * a mode this bar holds. **Editing** is Publish, Release and Discard. **A
+ * Preview** replaces all three with Restore and a way back, because all three
+ * are about the Draft and the Draft is not what is on screen (ADR-0024).
+ * **Ended** is a sentence saying what became of the draft, and Edit.
  */
 export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...rest }: TopBarProps) {
   const store = useEditingStore()
   const validation = useValidationStore()
   const versions = useVersionStore()
+
+  /*
+   * The history, read here as well as in the panel, because whether a **Draft**
+   * exists is a question only this list can answer — and **Restore** has to ask
+   * it before it can say what a restore would cost.
+   *
+   * Cheap: nothing is fetched that the panel has not already fetched, and the
+   * store publishes a new snapshot only when a page arrives.
+   */
+  const history = useSyncExternalStore<VersionsState>(
+    versions ? versions.subscribe : subscribeToNothing,
+    versions ? versions.getSnapshot : readVersionsLoading,
+    readVersionsLoading,
+  )
 
   // Idempotent, so every region that mounts may call it and only the first
   // opens the Draft. The version list is NOT loaded here: nothing is fetched
@@ -181,8 +202,28 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
    */
   const [busy, setBusy] = useState(false)
   const [confirming, setConfirming] = useState(false)
-  /** What the last **Publish** produced, so the ended session can say what ended it. */
-  const [published, setPublished] = useState<number | null>(null)
+  /**
+   * Which version a **Restore** is waiting to be confirmed for, and the control
+   * it was pressed from — or null.
+   *
+   * Asked whenever a **Draft** exists, because its content is replaced and there
+   * is nothing on screen to take it back with: `undoLabel` is on the snapshot and
+   * no region draws an undo control, so "it is one undoable edit" is true of the
+   * store and not of the reader.
+   *
+   * **Whether one exists is not what the claim says.** `releaseDraft` keeps the
+   * Draft for whoever picks it up next and `openDraft` is create-OR-RESUME, so an
+   * unclaimed session may still have one to lose; a **Publish** or a **Discard**
+   * leaves none, so a session that has just ended may have nothing. `replaceable`
+   * reads the history, which is the only thing that knows.
+   *
+   * The control comes with it because the dialog outlives the press: a refused
+   * restore has to be reported against something still on the page, and the
+   * button that opened this may have gone by then.
+   */
+  const [restoring, setRestoring] = useState<{ version: number; from: HTMLElement | null } | null>(
+    null,
+  )
   /*
    * Where focus goes when the controls a discard was confirmed from disappear.
    *
@@ -194,6 +235,14 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
    */
   const editButton = useRef<HTMLButtonElement>(null)
   const [handOver, setHandOver] = useState(false)
+  /*
+   * The same hand-over for a confirmed **Restore**, which lands in the same
+   * hole: `ConfirmDialog` restores focus to the control it was opened from, and
+   * that control is `disabled={busy}` on the commit that closes the dialog — a
+   * disabled button cannot take focus, so it goes to <body> and the next Tab
+   * restarts at the top of the Host's page.
+   */
+  const [handBack, setHandBack] = useState(false)
 
   /*
    * The count, so it can tell its own panel from Publish's.
@@ -204,6 +253,14 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
    * close a panel that is not theirs instead of opening one that is.
    */
   const countButton = useRef<HTMLButtonElement>(null)
+
+  /*
+   * The version button, so a preview that could not be loaded has something to
+   * report against. The press that asked for it came from a row inside a panel
+   * this bar closes on the way, and a message anchored to a node that has left
+   * the page places itself in the corner of the viewport attached to nothing.
+   */
+  const versionButton = useRef<HTMLButtonElement>(null)
 
   const workflow = state.status === 'ready' ? state.workflow : null
   const definition = workflow?.definition ?? null
@@ -232,17 +289,58 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
     if (layer && !layer.anchor.isConnected) setLayer(null)
   })
 
-  /*
-   * A version number belongs to the session it ended, and to no later one.
-   *
-   * Cleared whenever a claim is taken, which is the only moment a new session
-   * begins — so it cannot outlive one however that session is ended. Clearing it
-   * in the handlers instead only covers the endings this bar performs, and
-   * ADR-0023 is explicit that nothing about the store requires a toolbar: a Host
-   * calling `release()` itself would otherwise caption its release with the
-   * version some earlier Publish produced.
-   */
   const claimed = workflow?.claimed ?? false
+  /*
+   * Which version is on screen instead of the Draft, and how the session ended
+   * — both read off the snapshot rather than tracked here.
+   *
+   * The store stamps `ended` in `finish()`, which is the only place every ending
+   * passes through. Reconstructing it here from a claim disappearing cannot tell
+   * Release from Discard, and cannot see an ending a Host drove through the
+   * store with no toolbar mounted at all (ADR-0023) — the case that made every
+   * ending read alike.
+   */
+  const previewing = workflow?.previewing ?? null
+  const ended = workflow?.ended ?? null
+
+  /*
+   * Whether a **Restore** has anything to overwrite.
+   *
+   * The claim cannot answer this. A **Release** keeps the Draft for whoever
+   * picks it up next, so an unclaimed session may still have one — and a
+   * **Publish** or a **Discard** leaves none, so a claimed session that has just
+   * ended has nothing to lose. The list is where the answer actually is.
+   *
+   * Unknown counts as yes. A history that failed or has not arrived cannot show
+   * that nothing would be lost, and the cost of asking when there was nothing to
+   * lose is one dialog; the cost of not asking when there was is the user's
+   * work.
+   */
+  const replaceable =
+    history.status !== 'ready' || history.versions.some((one) => one.status === 'draft')
+
+  /*
+   * Which version the document on screen IS, when it is one — the row the list
+   * must not offer, because pressing it goes nowhere.
+   *
+   * A claim makes this the **Draft**. Without one it depends on how the session
+   * ended, which is why `ended` carries the version a **Publish** produced: after
+   * publishing, what is in memory is that new **Published Version**, and a list
+   * that let the reader "open" it would answer with a preview of the thing
+   * already in front of them — captioned as some other version.
+   *
+   * A **Release** keeps the **Draft**, so its row is still the one on screen. A
+   * **Discard** frees the number outright, so nothing matches and nothing is
+   * marked.
+   */
+  const onScreen =
+    claimed && definition
+      ? definition.version
+      : ended?.how === 'published'
+        ? ended.version
+        : ended?.how === 'released' && definition
+          ? definition.version
+          : null
 
   /*
    * `busy` is the dependency, because neither the button nor its ability to take
@@ -256,6 +354,18 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
     editButton.current.focus()
     setHandOver(false)
   }, [handOver, busy])
+
+  /*
+   * `busy` again, for the same reason: the restore is in flight when the dialog
+   * closes, so every control it could go to is disabled until the Host answers.
+   * The version button is what survives a restore in every case — the preview
+   * cluster is replaced by the claimed one, and the identity cluster is not.
+   */
+  useEffect(() => {
+    if (!handBack || busy || !versionButton.current) return
+    versionButton.current.focus()
+    setHandBack(false)
+  }, [handBack, busy])
 
   /*
    * An ending nothing in this bar asked for takes its messages with it.
@@ -277,10 +387,9 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
 
   useEffect(() => {
     if (!claimed) return
-    setPublished(null)
-    // `attempt` too, and for the same reason. A rejected Publish whose panel the
-    // reader dismissed leaves a real message behind, and a Host ending the next
-    // session through the store would otherwise have that message caption it.
+    // A rejected Publish whose panel the reader dismissed leaves a real message
+    // behind, and a Host ending the next session through the store would
+    // otherwise have that message caption it.
     setAttempt(null)
     /*
      * And the history is a version out of date, because `openDraft` is what
@@ -331,13 +440,7 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
     if (!store) return
     setBusy(true)
     try {
-      const result = await store.publish()
-      // Only when this publish is what ended the session. `publish()` skips
-      // `finish()` when the session moved on beneath the Host's call, and the
-      // claim then never transitions — so nothing would clear a version number
-      // set here, and it would surface later captioning somebody else's ending.
-      const after = store.getSnapshot()
-      if (after.status === 'ready' && !after.workflow.claimed) setPublished(result.version)
+      await store.publish()
       setAttempt(null)
       setLayer(null)
       // The list the bar can open is now a version out of date — but only worth
@@ -383,9 +486,6 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
      * `attempt` left standing from the problems panel captions the ending with a
      * publish error — or, when the panel was opened from the count, with the
      * empty string that carries no message at all.
-     *
-     * `published` needs no clearing here: taking a claim clears it, and this
-     * session took one.
      */
     setAttempt(null)
     try {
@@ -402,6 +502,71 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
        * there to anchor to.
        */
       if (from?.isConnected) setLayer({ kind: 'problems', anchor: from })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /**
+   * Show a version instead of the Draft.
+   *
+   * The list is closed first: the panel hangs off the version button, whose
+   * label changes to that version the moment the preview lands, so a panel left
+   * open would be a list of versions anchored to a control that now says it is
+   * showing one of them.
+   */
+  const showVersion = async (version: number) => {
+    if (!store) return
+    setBusy(true)
+    setLayer(null)
+    setAttempt(null)
+    try {
+      await store.preview(version)
+    } catch (cause) {
+      // The screen has not moved — `preview()` parses before it commits — so
+      // this is a message about a version the reader asked for and did not get,
+      // and it belongs beside the control they pressed. That control is the
+      // version button, which is still there.
+      setAttempt({ kind: 'rejected', message: messageOf(cause) })
+      if (versionButton.current) {
+        setLayer({ kind: 'problems', anchor: versionButton.current })
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const beginRestore = (version: number, from: HTMLElement | null) => {
+    // Nothing to replace, so nothing to warn about: the restore opens a Draft
+    // at `base + 1` and fills it, and a dialog would be a question about a loss
+    // that cannot happen.
+    if (!replaceable) return runRestore(version, from)
+    setRestoring({ version, from })
+  }
+
+  const runRestore = async (version: number, from: HTMLElement | null) => {
+    if (!store) return
+    setBusy(true)
+    setLayer(null)
+    setAttempt(null)
+    try {
+      await store.restoreVersion(version)
+      // The Draft is a version newer than the list knows about when this had to
+      // open one, and unchanged when it did not — `invalidate()` costs nothing
+      // in the second case, because a list nobody opened is still not fetched.
+      versions?.invalidate()
+    } catch (cause) {
+      setAttempt({ kind: 'rejected', message: messageOf(cause) })
+      /*
+       * Anchored to the version button when the control that was pressed has
+       * gone, which it has whenever the restore was confirmed through the
+       * dialog: `restoreVersion` clears the preview before it applies, so the
+       * cluster holding that button is replaced before this runs. Without a
+       * fallback the message is set and drawn nowhere, and the press answers
+       * with silence.
+       */
+      const anchor = from?.isConnected ? from : versionButton.current
+      if (anchor) setLayer({ kind: 'problems', anchor })
     } finally {
       setBusy(false)
     }
@@ -487,9 +652,24 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
                    * more — so the readout stops asserting and the control keeps
                    * doing the other half of its job, which is opening a list
                    * that is about the WORKFLOW and stays true either way.
+                   *
+                   * A Preview asserts again, claim or no claim, and this is the
+                   * one place the two conditions come apart. What is on screen
+                   * IS a version the Host holds, so `v3 · Published` is the
+                   * plain truth and the only thing on the bar naming which
+                   * version is being read.
+                   *
+                   * The NUMBER comes from `previewing` rather than from the
+                   * document, because the document's `version:` is whatever the
+                   * Host stored: `publish()` sends the Draft's own bytes, which
+                   * still say `status: draft` and the draft's number, so a Host
+                   * that keeps them verbatim serves version 6 saying `version:
+                   * 5`. `previewing` is what was asked for and cannot disagree
+                   * with the row that was pressed.
                    */}
                   <button
                     type="button"
+                    ref={versionButton}
                     className={styles.version}
                     aria-haspopup="dialog"
                     aria-expanded={layer?.kind === 'versions'}
@@ -502,9 +682,11 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
                       setLayer({ kind: 'versions', anchor: event.currentTarget })
                     }}
                   >
-                    {claimed
-                      ? `v${String(definition.version)} · ${statusLabel(definition.status)}`
-                      : 'Versions'}
+                    {previewing !== null
+                      ? `v${String(previewing)} · ${statusLabel(definition.status)}`
+                      : claimed
+                        ? `v${String(definition.version)} · ${statusLabel(definition.status)}`
+                        : 'Versions'}
                   </button>
                 </>
               ) : (
@@ -521,7 +703,64 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
             </div>
 
             <div className={styles.actions}>
-              {workflow.claimed ? (
+              {/*
+               * Before the clusters, because a halt belongs to the SESSION and
+               * every cluster below is about what is on screen.
+               *
+               * Autosave goes on running against the Draft through a Preview, so
+               * a renewal refused while a version is up halts it — and drawn
+               * inside the claimed cluster the notice is replaced along with it,
+               * leaving the reader looking at v3 while their work quietly stops
+               * being saved. The three version decisions are correctly dropped
+               * during a preview because they are decisions; this is a failure
+               * to act on.
+               */}
+              {workflow.claimed && workflow.save.state === 'halted' ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className={styles.halted}
+                  onClick={() => store?.resumeSaving()}
+                >
+                  Saving stopped — try again
+                </Button>
+              ) : null}
+
+              {previewing !== null ? (
+                /*
+                 * Publish, Release and Discard are all about the Draft, and the
+                 * Draft is not what is on screen — so a Publish pressed here
+                 * would promote a document the reader is not looking at. They
+                 * are not drawn, and neither is the problem count, which counts
+                 * the Draft's problems. What is offered is the two things that
+                 * are about the version in front of them.
+                 *
+                 * The store guards none of these: publishing the Draft is safe
+                 * whatever is on screen, so there is nothing for a guarantee to
+                 * protect and this is an affordance. `apply()` is the one that
+                 * refuses, because a lost edit is a correctness bug (ADR-0024).
+                 */
+                <>
+                  {/* Not "an earlier version": any row can be picked, including
+                      the newest, the live **Published Version**, and — once a
+                      session has ended — a **Draft** still waiting to be picked
+                      up. The readout beside the name already says WHICH version
+                      this is; what this sentence is for is why the editing
+                      controls are gone. */}
+                  <p className={styles.muted}>You are viewing this version, not editing it.</p>
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    disabled={busy}
+                    onClick={(event) => beginRestore(previewing, event.currentTarget)}
+                  >
+                    Restore this version
+                  </Button>
+                  <Button size="sm" disabled={busy} onClick={() => store?.exitPreview()}>
+                    {claimed ? 'Back to the draft' : 'Back'}
+                  </Button>
+                </>
+              ) : workflow.claimed ? (
                 <>
                   {/*
                    * Shown only while a write is outstanding, and nothing at
@@ -541,17 +780,6 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
                    */}
                   {workflow.save.state === 'pending' || workflow.save.state === 'saving' ? (
                     <p className={styles.muted}>Saving…</p>
-                  ) : null}
-
-                  {workflow.save.state === 'halted' ? (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className={styles.halted}
-                      onClick={() => store?.resumeSaving()}
-                    >
-                      Saving stopped — try again
-                    </Button>
                   ) : null}
 
                   {blocking && blocking.length > 0 ? (
@@ -627,11 +855,7 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
                   {attempt && attempt.message !== '' ? (
                     <p className={styles.problem}>{attempt.message}</p>
                   ) : (
-                    <p className={styles.ended}>
-                      {published === null
-                        ? 'You are no longer editing this workflow.'
-                        : `Published as version ${published}.`}
-                    </p>
+                    <p className={styles.ended}>{endedLabel(ended)}</p>
                   )}
                   <Button
                     ref={editButton}
@@ -655,13 +879,22 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
           open over a detached anchor focuses nothing on Escape, dropping the
           next Tab back to the top of the Host's page. */}
       {layer?.kind === 'versions' && versions && definition ? (
-        <VersionLayer anchor={layer.anchor} store={versions} onClose={closeLayer} />
+        <VersionLayer
+          anchor={layer.anchor}
+          store={versions}
+          current={previewing ?? onScreen}
+          busy={busy}
+          onSelect={(version) => void showVersion(version)}
+          onClose={closeLayer}
+        />
       ) : null}
 
-      {/* Only while the claim is held. Every control that can anchor this panel
-          lives in the cluster that goes away with the session, so a panel
-          outliving them would have nothing to hang from. */}
-      {layer?.kind === 'problems' && workflow?.claimed ? (
+      {/* Only while its anchor is still on the page. The claim is the wrong
+          question: the version button anchors this too and outlives the session,
+          so a failed preview or restore reported while unclaimed would set a
+          layer nothing draws. The effect above closes it the moment the anchor
+          leaves the document. */}
+      {layer?.kind === 'problems' && layer.anchor.isConnected ? (
         <ProblemLayer
           anchor={layer.anchor}
           attempt={attempt}
@@ -670,6 +903,38 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
           onClose={closeProblems}
         />
       ) : null}
+
+      {/* Tone is `danger` for what it destroys and not for how final it is: the
+          version being restored FROM is untouched and still in the list, which
+          is what separates this from a Discard. The copy says so rather than
+          leaning on the tone to imply it.
+
+          The description does not promise the draft is OPEN, because after a
+          Release it is not — it is waiting for whoever picks it up next, and
+          this replaces that. What it does promise is that a draft exists at all,
+          which `replaceable` is what establishes: with none, this dialog is
+          never drawn. */}
+      <ConfirmDialog
+        open={restoring !== null}
+        tone="danger"
+        title={
+          restoring === null ? '' : `Replace the draft with version ${String(restoring.version)}?`
+        }
+        description={
+          restoring === null
+            ? undefined
+            : `Everything the draft holds is replaced by what this version holds. Version ${String(restoring.version)} itself is not changed.`
+        }
+        confirmLabel="Replace draft"
+        onCancel={() => setRestoring(null)}
+        onConfirm={() => {
+          const asked = restoring
+          setRestoring(null)
+          if (!asked) return
+          setHandBack(true)
+          void runRestore(asked.version, asked.from)
+        }}
+      />
 
       <ConfirmDialog
         open={confirming}
@@ -691,18 +956,31 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
 /**
  * The workflow's versions, newest first, a page at a time.
  *
- * No row selects. ADR-0011 describes loading one through `loadVersion` and
- * putting the screen in a read-only mode, and that is a state of the canvas, the
- * step editor and the Workflow tab together — a row that highlighted and changed
- * nothing would claim a destination that does not exist.
+ * Every row selects except the one already on screen, which is drawn as current
+ * and is not a button at all. That is where "offer nothing that does not go
+ * anywhere" lands once selecting a version does something: a workflow with a
+ * single version opens a list of one unselectable row, which is the honest
+ * picture of a history with nowhere to go.
+ *
+ * The button that opens this is not hidden on that account. Its other job is the
+ * readout, and `listVersions` is not fetched until this panel is opened — so a
+ * bar that hid itself would have to pay for that request on every mount, on
+ * every screen carrying the toolbar, for every user who never opens the list.
  */
 function VersionLayer({
   anchor,
   store,
+  current,
+  busy,
+  onSelect,
   onClose,
 }: {
   anchor: HTMLElement
   store: NonNullable<ReturnType<typeof useVersionStore>>
+  /** The version on screen, or null when what is on screen is no version at all. */
+  current: number | null
+  busy: boolean
+  onSelect: (version: number) => void
   onClose: () => void
 }) {
   const state = useSyncExternalStore<VersionsState>(
@@ -733,13 +1011,43 @@ function VersionLayer({
             <p className={styles.muted}>There are no versions yet.</p>
           ) : (
             <ul className={styles.versions}>
-              {state.versions.map((version) => (
-                <li key={version.version} className={styles.versionRow}>
-                  <span className={styles.versionNumber}>v{version.version}</span>
-                  <span className={styles.versionStatus}>{version.status}</span>
-                  <span className={styles.versionDate}>{dateOf(version)}</span>
-                </li>
-              ))}
+              {state.versions.map((version) => {
+                const body = (
+                  <>
+                    <span className={styles.versionNumber}>v{version.version}</span>
+                    <span className={styles.versionStatus}>{version.status}</span>
+                    <span className={styles.versionDate}>{dateOf(version)}</span>
+                  </>
+                )
+
+                return (
+                  <li key={version.version} className={styles.versionRow}>
+                    {version.version === current ? (
+                      /*
+                       * Not a button, and not a disabled one. There is nothing
+                       * to explain here — the reader is looking at this version
+                       * — so the argument `units/SegmentBar` makes for
+                       * `aria-disabled` over `disabled` does not apply: that one
+                       * is about a control whose refusal needs saying. `current`
+                       * is said in words rather than by styling alone.
+                       */
+                      <span className={cx(styles.versionPick, styles.versionCurrent)}>
+                        {body}
+                        <span className={styles.versionCurrentMark}>current</span>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        className={styles.versionPick}
+                        disabled={busy}
+                        onClick={() => onSelect(version.version)}
+                      >
+                        {body}
+                      </button>
+                    )}
+                  </li>
+                )
+              })}
             </ul>
           )}
 
@@ -984,6 +1292,32 @@ function Layer({
     </div>,
     container,
   )
+}
+
+/**
+ * What became of the draft, for a session that is over.
+ *
+ * The three endings share their first sentence because they are three outcomes
+ * of one thing — the session is over however it ended — and differ in the half
+ * that actually differs: whether the draft is still there. **Publish** says the
+ * number instead, because a published version is a thing the reader can go and
+ * look at and "your draft is gone" is the least of what happened.
+ *
+ * Null is not a fourth outcome. `dispose()` ends a session without anybody
+ * choosing to, so the shared sentence alone is the whole of what can honestly be
+ * said — and it is also what a Host gets if it ever ends one by some route the
+ * store does not stamp.
+ */
+const endedLabel = (ended: Ended | null): string => {
+  if (ended === null) return 'You are no longer editing this workflow.'
+  switch (ended.how) {
+    case 'published':
+      return `Published as version ${String(ended.version)}.`
+    case 'released':
+      return 'You are no longer editing this workflow. Your draft is kept.'
+    case 'discarded':
+      return 'You are no longer editing this workflow. Your draft was discarded.'
+  }
 }
 
 /**

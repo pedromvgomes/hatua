@@ -36,6 +36,7 @@ import { TemplateInput } from '../compounds/TemplateInput'
 import { Button } from '../primitives/Button'
 import { cx } from '../primitives/classNames'
 import { useEditingStore, useManifestStore, useValidationStore } from '../theme/HatuaProvider'
+import { useReadOnly } from '../theme/readOnly'
 import { CommittedInput, Fields, splitByField } from './Fields'
 import styles from './Inspector.module.css'
 import css from './Inspector.module.css?inline'
@@ -171,8 +172,13 @@ export function Inspector({
    * workflow" with nothing. What goes is the writing, and the store refuses it
    * anyway: a form that still looked editable would be one whose every
    * keystroke was dropped without a word.
+   *
+   * Asked through the hook rather than computed here. There are two reasons the
+   * document on screen may not be edited — the session has ended, and a version
+   * other than the Draft is being shown — and a region that derives one of them
+   * from the snapshot itself gets the other wrong the day it is added.
    */
-  const readOnly = workflow !== null && !workflow.claimed
+  const readOnly = useReadOnly()
   const entries = catalogue.status === 'ready' ? catalogue.manifests : NO_ENTRIES
   const served = useMemo(() => manifestsIn(entries), [entries])
   const context = useMemo(() => contextKeysIn(entries), [entries])

@@ -216,6 +216,57 @@ function Edits({ children }: { children: ReactNode }) {
   return children
 }
 
+/**
+ * Runs one thing against the store once the Draft is open.
+ *
+ * `Presses` reaches controls by walking the DOM, and the version list and the
+ * confirm dialogs are portalled into the provider's container — outside the
+ * subtree it walks. Asking the store is also the honest way to reach a state a
+ * Host can put the bar in without anybody pressing anything, which is most of
+ * why `ended` lives on the snapshot at all.
+ */
+function Drives({
+  run,
+  children,
+}: {
+  run: (store: NonNullable<ReturnType<typeof useEditingStore>>) => void
+  children: ReactNode
+}) {
+  const store = useEditingStore()
+
+  // A ref, so the effect below does not re-run when a caller passes an inline
+  // arrow — which every one of them does.
+  const latest = useRef(run)
+  latest.current = run
+
+  useEffect(() => {
+    if (!store) return
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout>
+
+    const tick = () => {
+      if (cancelled) return
+      if (store.getSnapshot().status === 'ready') {
+        // Once. `release()` on a session that has already ended rejects, and
+        // StrictMode runs an effect's cleanup and then the effect again on the
+        // same mount.
+        cancelled = true
+        latest.current(store)
+        return
+      }
+      timer = setTimeout(tick, 25)
+    }
+
+    tick()
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [store])
+
+  return children
+}
+
 const meta = {
   title: 'Layouts/TopBar',
   component: TopBar,
@@ -402,17 +453,113 @@ export const PublishedNoDraft: Story = {
 }
 
 /**
- * The session is over — released, here, but publishing and discarding end it
- * the same way. A screen that still looked live would be one whose next
- * keystroke went nowhere, so the bar says so and offers the way back in.
+ * Released: the session is over and the Draft is still there, for whoever picks
+ * it up next. A screen that still looked live would be one whose next keystroke
+ * went nowhere, so the bar says so and offers the way back in.
  */
-export const SessionEnded: Story = {
+export const SessionReleased: Story = {
   parameters: wired(serving(SOURCE)),
   decorators: [
     (Story) => (
-      <Presses label={/^Release$/}>
+      <Drives run={(store) => void store.release()}>
         <Story />
-      </Presses>
+      </Drives>
+    ),
+  ],
+}
+
+/**
+ * Discarded, beside the one above. The two clusters differ by one sentence and
+ * that is the point: both end the session, and only one of them still has the
+ * user's work in it.
+ */
+export const SessionDiscarded: Story = {
+  parameters: wired(serving(SOURCE)),
+  decorators: [
+    (Story) => (
+      <Drives run={(store) => void store.discard()}>
+        <Story />
+      </Drives>
+    ),
+  ],
+}
+
+/**
+ * Reading version 4 with the Draft still claimed underneath.
+ *
+ * The whole screen follows in a real embedding — the canvas, the step editor
+ * and the Workflow tab all read this version (ADR-0024) — and what the bar shows
+ * of it is the readout naming the version, and a cluster with none of the three
+ * decisions in it. Publish, Release and Discard are about the Draft, and the
+ * Draft is not what is on screen.
+ */
+export const ViewingAVersion: Story = {
+  parameters: wired(
+    serving(SOURCE, {
+      async loadVersion() {
+        return PUBLISHED
+      },
+    }),
+  ),
+  decorators: [
+    (Story) => (
+      <Drives run={(store) => void store.preview(4)}>
+        <Story />
+      </Drives>
+    ),
+  ],
+}
+
+/**
+ * The same, over a session that has already ended. The history is about the
+ * workflow rather than about the claim, so it still answers — which is what
+ * somebody who has just discarded a draft is looking for.
+ */
+export const ViewingAVersionAfterEnding: Story = {
+  parameters: wired(
+    serving(SOURCE, {
+      async loadVersion() {
+        return PUBLISHED
+      },
+    }),
+  ),
+  decorators: [
+    (Story) => (
+      <Drives
+        run={(store) => {
+          void store.discard()
+          void store.preview(4)
+        }}
+      >
+        <Story />
+      </Drives>
+    ),
+  ],
+}
+
+/**
+ * What **Restore** asks before it replaces the Draft.
+ *
+ * It asks because the draft's content goes and nothing on screen takes it back:
+ * the edit is undoable in the store, and no region draws an undo control. The
+ * copy says the version being restored from is kept, which is what separates
+ * this from a **Discard** — the danger tone alone would imply otherwise.
+ */
+export const RestoreAsksFirst: Story = {
+  parameters: wired(
+    serving(SOURCE, {
+      async loadVersion() {
+        return PUBLISHED
+      },
+    }),
+  ),
+  decorators: [
+    (Story) => (
+      <Drives run={(store) => void store.preview(4)}>
+        <Presses label={/^Restore this version$/}>
+          <Story />
+        </Presses>
+      </Drives>
     ),
   ],
 }
