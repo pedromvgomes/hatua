@@ -11,7 +11,7 @@ import type {
   WorkflowStore,
 } from '@hatua/services'
 import { setStepField, setWorkflowName } from '@hatua/services'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useEffect } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { HatuaProvider, useEditingStore } from '../theme/HatuaProvider'
@@ -1171,5 +1171,381 @@ describe('the count opens a list and writes nothing', () => {
     fireEvent.click(await screen.findByRole('button', { name: '1 problem' }))
 
     expect(await screen.findByText('To is required.')).toBeDefined()
+  })
+})
+
+/** An earlier version, with its own name so the screen can be seen to follow it. */
+const EARLIER = `id: wf_morning
+name: "Overnight triage"
+version: 4
+status: published
+
+steps:
+  - id: s1
+    use: component.email.send
+    with:
+      to: "ops@example.com"
+`
+
+const serveVersion = (yaml = EARLIER, overrides: Partial<WorkflowStore> = {}) =>
+  host(VALID, {
+    async loadVersion() {
+      return yaml
+    },
+    ...overrides,
+  })
+
+const openVersions = async () => {
+  fireEvent.click(await screen.findByRole('button', { name: /v5 · Draft/ }))
+  return screen.findByRole('dialog', { name: 'Versions' })
+}
+
+describe('picking a version out of the list', () => {
+  it('does not offer the one already on screen, because it goes nowhere', async () => {
+    mount(serveVersion())
+    const list = await openVersions()
+
+    // Asked of the list, because the identity cluster carries a control reading
+    // `v5 · Draft` too — and that one is the button that OPENED this.
+    const rows = within(list)
+    expect(rows.queryByRole('button', { name: /^v5/ })).toBeNull()
+    expect(list.textContent).toContain('current')
+    // The other two do.
+    expect(rows.getByRole('button', { name: /^v4/ })).toBeDefined()
+    expect(rows.getByRole('button', { name: /^v3/ })).toBeDefined()
+  })
+
+  it('puts the version on screen, and says which one it is', async () => {
+    mount(serveVersion())
+    await openVersions()
+
+    fireEvent.click(screen.getByRole('button', { name: /^v4/ }))
+
+    // The identity cluster reads the previewed version, because the snapshot
+    // describes it (ADR-0024).
+    expect(await screen.findByText('Overnight triage')).toBeDefined()
+    expect(screen.getByRole('button', { name: /v4 · Published/ })).toBeDefined()
+  })
+
+  it('offers Restore and a way back, and none of the three that act on the draft', async () => {
+    mount(serveVersion())
+    await openVersions()
+    fireEvent.click(screen.getByRole('button', { name: /^v4/ }))
+
+    expect(await screen.findByRole('button', { name: 'Back to the draft' })).toBeDefined()
+    expect(screen.getByRole('button', { name: 'Restore this version' })).toBeDefined()
+    // A Publish pressed here would promote the Draft, which is not what the
+    // reader is looking at.
+    expect(screen.queryByRole('button', { name: 'Publish' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Release' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Discard' })).toBeNull()
+  })
+
+  it('goes back to the draft, with the claim never having been given up', async () => {
+    const source = serveVersion()
+    mount(source)
+    await openVersions()
+    fireEvent.click(screen.getByRole('button', { name: /^v4/ }))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Back to the draft' }))
+
+    expect(await screen.findByRole('button', { name: 'Publish' })).toBeDefined()
+    expect(screen.getByText('Morning inbox triage')).toBeDefined()
+    expect(source.released).toBe(0)
+  })
+
+  it('leaves the screen where it was when the version cannot be read', async () => {
+    const source = serveVersion(EARLIER, {
+      async loadVersion(): Promise<string> {
+        throw new Error('That version could not be read.')
+      },
+    })
+    mount(source)
+    await openVersions()
+
+    fireEvent.click(screen.getByRole('button', { name: /^v4/ }))
+
+    expect(await screen.findByText('That version could not be read.')).toBeDefined()
+    // Still the Draft, still editable.
+    expect(screen.getByRole('button', { name: 'Publish' })).toBeDefined()
+    expect(screen.getByText('Morning inbox triage')).toBeDefined()
+  })
+})
+
+describe('restoring a version into the draft', () => {
+  it('asks first, because the draft is replaced and nothing on screen takes it back', async () => {
+    const source = serveVersion()
+    mount(source)
+    await openVersions()
+    fireEvent.click(screen.getByRole('button', { name: /^v4/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Restore this version' }))
+
+    expect(await screen.findByText('Replace the draft with version 4?')).toBeDefined()
+    // The version restored FROM is untouched, and the copy says so rather than
+    // leaving the danger tone to imply otherwise.
+    expect(screen.getByText(/Version 4 itself is not changed/)).toBeDefined()
+  })
+
+  it('keeps the draft when the question is answered no', async () => {
+    mount(serveVersion())
+    await openVersions()
+    fireEvent.click(screen.getByRole('button', { name: /^v4/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Restore this version' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }))
+
+    expect(await screen.findByRole('button', { name: 'Restore this version' })).toBeDefined()
+    expect(screen.getByRole('button', { name: /v4 · Published/ })).toBeDefined()
+  })
+
+  it('fills the draft with the version, and goes back to editing it', async () => {
+    const source = serveVersion()
+    mount(source)
+    await openVersions()
+    fireEvent.click(screen.getByRole('button', { name: /^v4/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Restore this version' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Replace draft' }))
+
+    // Editing again, on a draft that is still v5 — the restored version's own
+    // number and status do not come across (ADR-0005).
+    expect(await screen.findByRole('button', { name: 'Publish' })).toBeDefined()
+    expect(await screen.findByRole('button', { name: /v5 · Draft/ })).toBeDefined()
+    expect(screen.getByText('Overnight triage')).toBeDefined()
+  })
+})
+
+describe('the version already on screen', () => {
+  it('is not offered again once a publish has ended the session', async () => {
+    // What is in memory after a publish IS that new Published Version, so a row
+    // offering to "open" it would answer with a preview of the thing already in
+    // front of the reader — captioned as some other version.
+    const source = host(VALID, {
+      async publish(): Promise<PublishedVersion> {
+        return { version: 4, publishedAt: '2026-03-05T09:00:00.000Z' }
+      },
+    })
+    mount(source)
+    fireEvent.click(await screen.findByRole('button', { name: 'Publish' }))
+    await screen.findByText('Published as version 4.')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Versions' }))
+    const list = await screen.findByRole('dialog', { name: 'Versions' })
+    const rows = within(list)
+
+    expect(rows.queryByRole('button', { name: /^v4/ })).toBeNull()
+    expect(list.textContent).toContain('current')
+    // The others still go somewhere.
+    expect(rows.getByRole('button', { name: /^v3/ })).toBeDefined()
+  })
+
+  it('says what a preview is for rather than asserting the version is older', async () => {
+    // Any row can be picked, the newest included, so "an earlier version" is a
+    // claim the bar cannot make. What the sentence has to explain is why the
+    // editing controls are gone.
+    mount(serveVersion())
+    await openVersions()
+    fireEvent.click(screen.getByRole('button', { name: /^v4/ }))
+
+    expect(await screen.findByText(/You are viewing this version, not editing it/)).toBeDefined()
+    expect(screen.queryByText(/earlier version/)).toBeNull()
+  })
+})
+
+describe('restoring when there is no draft to replace', () => {
+  /** A workflow nobody is drafting: one live version and one archived. */
+  const NO_DRAFT: VersionSummary[] = [
+    { version: 4, status: 'published', updatedAt: '2026-02-02T09:00:00.000Z' },
+    { version: 3, status: 'archived', updatedAt: '2026-01-01T09:00:00.000Z' },
+  ]
+
+  const withoutADraft = () =>
+    host(VALID, {
+      async listVersions(): Promise<Cursor<VersionSummary>> {
+        return { items: NO_DRAFT }
+      },
+      async loadVersion() {
+        return EARLIER
+      },
+    })
+
+  it('does not ask, because nothing is replaced — a draft is created', async () => {
+    // The question the dialog asks is about a draft's contents. With no draft
+    // there are none, and the restore opens one at base + 1 and fills it.
+    const source = withoutADraft()
+    mount(source)
+    fireEvent.click(await screen.findByRole('button', { name: /v5 · Draft|Versions/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /^v3/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Restore this version' }))
+
+    expect(screen.queryByText(/Replace the draft/)).toBeNull()
+    expect(await screen.findByRole('button', { name: 'Publish' })).toBeDefined()
+  })
+})
+
+describe('restoring after the session has ended', () => {
+  it('still asks, because a released draft is a draft there is something to lose', async () => {
+    // `releaseDraft` keeps the draft for whoever picks it up next, and
+    // `openDraft` is create-OR-RESUME — so this replaces exactly the work the
+    // release preserved. The claim says who holds the edit, not whether there
+    // is one.
+    const source = serveVersion()
+    mount(source)
+    fireEvent.click(await screen.findByRole('button', { name: 'Release' }))
+    await waitFor(() => expect(source.released).toBe(1))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Versions' }))
+    fireEvent.click(await screen.findByRole('button', { name: /^v4/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Restore this version' }))
+
+    expect(await screen.findByText('Replace the draft with version 4?')).toBeDefined()
+  })
+})
+
+describe('a restore the Host refused', () => {
+  /** Serves the preview, then refuses the load the restore makes. */
+  const refusingTheSecondLoad = () => {
+    let loads = 0
+    return host(VALID, {
+      async loadVersion(): Promise<string> {
+        loads += 1
+        if (loads > 1) throw new Error('That version could not be read.')
+        return EARLIER
+      },
+    })
+  }
+
+  it('says so, rather than answering the press with silence', async () => {
+    mount(refusingTheSecondLoad())
+    await openVersions()
+    fireEvent.click(screen.getByRole('button', { name: /^v4/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Restore this version' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Replace draft' }))
+
+    // The control the restore was pressed from goes with the preview cluster,
+    // so the message is anchored to the version button instead of nowhere.
+    expect(await screen.findByText('That version could not be read.')).toBeDefined()
+  })
+
+  it('leaves the reader where they were, on the version they asked to restore', async () => {
+    mount(refusingTheSecondLoad())
+    await openVersions()
+    fireEvent.click(screen.getByRole('button', { name: /^v4/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Restore this version' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Replace draft' }))
+
+    await screen.findByText('That version could not be read.')
+    // The load failed before the preview was cleared, so nothing moved: the
+    // version is still on screen and Restore can be pressed again.
+    expect(screen.getByText('Overnight triage')).toBeDefined()
+    expect(screen.getByRole('button', { name: 'Restore this version' })).toBeDefined()
+  })
+})
+
+describe('one decision at a time, on the preview cluster too', () => {
+  it('takes Restore and Back down while a restore is waiting on the Host', async () => {
+    let release: (() => void) | undefined
+    let loads = 0
+    const source = host(VALID, {
+      async loadVersion(): Promise<string> {
+        loads += 1
+        if (loads > 1)
+          await new Promise<void>((go) => {
+            release = go
+          })
+        return EARLIER
+      },
+    })
+    mount(source)
+    await openVersions()
+    fireEvent.click(screen.getByRole('button', { name: /^v4/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Restore this version' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Replace draft' }))
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Restore this version' })).toHaveProperty(
+        'disabled',
+        true,
+      ),
+    )
+    expect(screen.getByRole('button', { name: 'Back to the draft' })).toHaveProperty(
+      'disabled',
+      true,
+    )
+
+    release?.()
+    expect(await screen.findByRole('button', { name: 'Publish' })).toBeDefined()
+  })
+})
+
+describe('autosave stopping while a version is on screen', () => {
+  it('says so, because a halt is a failure to act on rather than a decision', async () => {
+    // Autosave keeps running against the Draft through a preview, so a refused
+    // renewal halts it — and a notice drawn inside the cluster the preview
+    // replaces would leave the work quietly unsaved.
+    vi.useFakeTimers()
+    try {
+      const soon: Lease = { token, expiresAt: new Date(Date.now() + 2000).toISOString() }
+      const source = host(VALID, {
+        async openDraft(): Promise<DraftSession> {
+          return { token, lease: soon, yaml: VALID, resumed: false }
+        },
+        async renewLease(): Promise<Lease> {
+          throw new Error('Your lease on this workflow expired.')
+        },
+        async loadVersion() {
+          return EARLIER
+        },
+      })
+      mount(source)
+      await vi.advanceTimersByTimeAsync(0)
+
+      fireEvent.click(screen.getByRole('button', { name: /v5 · Draft/ }))
+      await vi.advanceTimersByTimeAsync(0)
+      fireEvent.click(screen.getByRole('button', { name: /^v4/ }))
+      await vi.advanceTimersByTimeAsync(0)
+      expect(screen.getByRole('button', { name: 'Restore this version' })).toBeDefined()
+
+      // Renewal is scheduled at the halfway mark of a two-second lease.
+      await vi.advanceTimersByTimeAsync(1200)
+      expect(screen.getByRole('button', { name: /Saving stopped/ })).toBeDefined()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
+describe('what became of the draft', () => {
+  it('says a release kept it', async () => {
+    const source = host(VALID)
+    mount(source)
+    fireEvent.click(await screen.findByRole('button', { name: 'Release' }))
+
+    await waitFor(() => expect(source.released).toBe(1))
+    expect(await screen.findByText(/Your draft is kept/)).toBeDefined()
+  })
+
+  it('says a discard threw it away', async () => {
+    const source = host(VALID)
+    mount(source)
+    fireEvent.click(await screen.findByRole('button', { name: 'Discard' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Discard draft' }))
+
+    await waitFor(() => expect(source.discarded).toBe(1))
+    expect(await screen.findByText(/Your draft was discarded/)).toBeDefined()
+  })
+
+  it('tells the two apart, which is the whole point of saying either', async () => {
+    const released = host(VALID)
+    const { unmount } = mount(released)
+    fireEvent.click(await screen.findByRole('button', { name: 'Release' }))
+    const first = (await screen.findByText(/no longer editing/)).textContent
+    unmount()
+
+    const discarded = host(VALID)
+    mount(discarded)
+    fireEvent.click(await screen.findByRole('button', { name: 'Discard' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Discard draft' }))
+    const second = (await screen.findByText(/no longer editing/)).textContent
+
+    expect(first).not.toBe(second)
   })
 })

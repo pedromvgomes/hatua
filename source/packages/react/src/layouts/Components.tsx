@@ -30,6 +30,7 @@ import { ConfirmDialog } from '../primitives/ConfirmDialog'
 import { cx } from '../primitives/classNames'
 import { Input } from '../primitives/Input'
 import { useEditingStore, useManifestStore, useValidationStore } from '../theme/HatuaProvider'
+import { useReadOnly } from '../theme/readOnly'
 import { setDragChip } from '../units/dragChip'
 import { IconCoin } from '../units/IconCoin'
 import { RemoveButton } from '../units/RemoveButton'
@@ -149,6 +150,20 @@ export function Components({
   const store = useManifestStore()
   const editing = useEditingStore()
   const validation = useValidationStore()
+  const readOnly = useReadOnly()
+  /*
+   * Withheld rather than disabled, which is this region's own rule: "a card is a
+   * button only when something happens on click", so a catalogue with no handler
+   * renders as a list. Nothing happens on click here — the store refuses a
+   * command once the session has ended or while a version is being previewed —
+   * and a card that stayed pressable would take a tab stop, say "button" to a
+   * screen reader, and answer a click by doing nothing.
+   *
+   * The Library is still worth reading either way, which is why the cards stay
+   * on screen: what a Step IS comes from this catalogue, and a panel that
+   * emptied itself would answer "what could go here" with nothing.
+   */
+  const picking = readOnly ? undefined : onSelect
   const [query, setQuery] = useState(defaultQuery)
   /** The Block a confirmation is standing in front of, and what it costs. */
   const [confirming, setConfirming] = useState<Cost | null>(null)
@@ -161,6 +176,19 @@ export function Components({
     store?.load()
     editing?.open()
   }, [store, editing])
+
+  /*
+   * A question nobody can answer any more is withdrawn, not left standing.
+   *
+   * The document can stop being writable while the dialog is open — a Host
+   * calling `release()` on the store, or a version put on screen from the bar —
+   * and neither goes through this region. Left open, its Confirm applies a
+   * command the store drops silently, and the dialog closes as though the Block
+   * had been deleted.
+   */
+  useEffect(() => {
+    if (readOnly) setConfirming(null)
+  }, [readOnly])
 
   const state = useSyncExternalStore<CatalogueState>(
     store ? store.subscribe : subscribeToNothing,
@@ -390,9 +418,9 @@ export function Components({
                       block={block}
                       problems={problems.get(block.id)}
                       troubled={troubled.has(block.id)}
-                      onSelect={onSelect}
+                      onSelect={picking}
                       onOpen={onBoardOpen && (() => onBoardOpen(block.id))}
-                      onRemove={() => remove(block)}
+                      {...(readOnly ? {} : { onRemove: () => remove(block) })}
                     />
                   ))}
                 </ul>
@@ -401,7 +429,7 @@ export function Components({
               {/* Not while filtering. A list narrowed to nothing still offers
                   this, and a Block declared out of a search reads as the thing
                   that was searched for. */}
-              {searching ? null : (
+              {searching || readOnly ? null : (
                 <div className={styles.action}>
                   <Button size="sm" onClick={declare}>
                     New block
@@ -420,7 +448,7 @@ export function Components({
                   // an entry the Host malformed badly enough to have none,
                   // where its place in the group is the only identity there is.
                   <li key={textOf(manifest.use) ?? `${group.name}:${index}`}>
-                    <Card manifest={manifest} onSelect={onSelect} />
+                    <Card manifest={manifest} onSelect={picking} />
                   </li>
                 ))}
               </ul>
@@ -436,7 +464,7 @@ export function Components({
         that, not a repair mechanism standing in for it.
       */}
       <ConfirmDialog
-        open={confirming !== null}
+        open={confirming !== null && !readOnly}
         tone="danger"
         title={confirming ? `Delete “${confirming.name}”?` : ''}
         description={confirming ? costLine(confirming) : undefined}
@@ -516,7 +544,8 @@ function BlockRow({
   onSelect?: (component: ComponentDrag) => void
   /** Absent when the caller holds no Board, which is when there is nowhere to go. */
   onOpen?: () => void
-  onRemove: () => void
+  /** Absent when the document may not be changed, the way `onSelect` is. */
+  onRemove?: () => void
 }) {
   const name = block.name || block.id
   /*
@@ -556,7 +585,7 @@ function BlockRow({
           Open
         </button>
       ) : null}
-      <RemoveButton label={`Delete ${name}`} onClick={onRemove} />
+      {onRemove ? <RemoveButton label={`Delete ${name}`} onClick={onRemove} /> : null}
 
       {/*
         Recursion, a duplicate id, a Board that promises an output and has a

@@ -10,9 +10,9 @@ import type {
   WorkflowStore,
 } from '@hatua/services'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import type { ReactElement } from 'react'
+import { type ReactElement, useEffect } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { HatuaProvider } from '../theme/HatuaProvider'
+import { HatuaProvider, useEditingStore } from '../theme/HatuaProvider'
 import { Components } from './Components'
 import { COMPONENT_MIME } from './dragging'
 
@@ -789,5 +789,81 @@ describe('deleting one', () => {
       expect(written).toContain('use: block.archive_entry')
       expect(written).not.toContain('id: archive_entry')
     }, AUTOSAVED)
+  })
+})
+
+describe('a catalogue the document cannot be added to', () => {
+  /**
+   * Drives the store to a state where nothing may be written — the two the
+   * screen has: the session is over, or a version is being read instead of the
+   * Draft.
+   */
+  function Ends({ how }: { how: 'release' | 'preview' }) {
+    const store = useEditingStore()
+
+    useEffect(() => {
+      if (!store) return
+      // Once. Both calls commit, which notifies — so a subscriber that acted on
+      // every notification would drive itself round for ever.
+      let acted = false
+      const act = () => {
+        if (acted || store.getSnapshot().status !== 'ready') return
+        acted = true
+        if (how === 'release') void store.release()
+        else void store.preview(1)
+      }
+      act()
+      return store.subscribe(act)
+    }, [store, how])
+
+    return null
+  }
+
+  it('lists the Components and offers none of them once the session has ended', async () => {
+    const onSelect = vi.fn()
+    withDocument(
+      <>
+        <Ends how="release" />
+        <Components onSelect={onSelect} />
+      </>,
+    )
+
+    // Still readable: what a Step IS comes from this catalogue, so the cards
+    // stay. What goes is the writing.
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /Archive an entry/ })).toBeNull(),
+    )
+    expect(screen.getByText('Archive an entry')).toBeDefined()
+  })
+
+  it('offers none of them while a version is being previewed either', async () => {
+    const onSelect = vi.fn()
+    withDocument(
+      <>
+        <Ends how="preview" />
+        <Components onSelect={onSelect} />
+      </>,
+    )
+
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /Archive an entry/ })).toBeNull(),
+    )
+  })
+
+  it('withdraws New block and the bins, which write to the document too', async () => {
+    withDocument(
+      <>
+        <Ends how="release" />
+        <Components />
+      </>,
+    )
+
+    // The Blocks are on screen first, so the assertions below are about
+    // controls that are absent rather than about a panel that has not drawn yet.
+    await screen.findByText('Archive an entry')
+    await waitFor(() =>
+      expect(screen.queryAllByRole('button', { name: /^Delete / })).toHaveLength(0),
+    )
+    expect(screen.queryByRole('button', { name: 'New block' })).toBeNull()
   })
 })

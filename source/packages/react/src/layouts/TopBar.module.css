@@ -195,13 +195,53 @@
   }
 
   .versionRow {
+    font-size: 0.8125rem;
+  }
+
+  /*
+   * The grid is on the pressable element rather than on the row, so the columns
+   * line up between a row that selects and the one that does not — a button
+   * inside a grid cell would be one column wide and its three spans would stack.
+   */
+  .versionPick {
     display: grid;
     grid-template-columns: 3.5rem 1fr auto;
     gap: 8px;
     align-items: baseline;
+    inline-size: 100%;
+    text-align: start;
     padding: 4px 6px;
+    border: 0;
     border-radius: var(--hatua-radius-sm);
-    font-size: 0.8125rem;
+    background: none;
+    font: inherit;
+    color: var(--hatua-text-primary);
+    cursor: pointer;
+  }
+
+  .versionPick:hover:not(:disabled) {
+    background: var(--hatua-surface-sunken);
+  }
+
+  .versionPick:disabled {
+    cursor: default;
+  }
+
+  /*
+   * The row for the document already on screen. Four columns rather than three,
+   * because the word is what says it is current — colour alone would leave the
+   * one unpressable row looking like the others to anyone not seeing the
+   * difference, and it is the row that most needs explaining.
+   */
+  .versionCurrent {
+    grid-template-columns: 3.5rem 1fr auto auto;
+    cursor: default;
+    background: var(--hatua-surface-sunken);
+  }
+
+  .versionCurrentMark {
+    color: var(--hatua-text-muted);
+    font-size: 0.75rem;
   }
 
   .versionNumber {
