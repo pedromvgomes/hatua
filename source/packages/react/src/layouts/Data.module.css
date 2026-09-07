@@ -4,7 +4,60 @@
     flex-direction: column;
     block-size: 100%;
     min-block-size: 0;
-    overflow-y: auto;
     background: var(--hatua-surface-card);
+  }
+
+  /* Which position the rows below are answering about, kept out of the scroll:
+     a tree of forty leaves says nothing without it. */
+  .head {
+    flex: none;
+    padding: 10px 12px;
+    border-block-end: 1px solid var(--hatua-border-subtle);
+  }
+
+  .title {
+    margin: 0;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--hatua-text-primary);
+    text-wrap: pretty;
+  }
+
+  .said {
+    margin: 4px 0 0;
+    font-size: 0.6875rem;
+    color: var(--hatua-text-muted);
+  }
+
+  /*
+   * Hidden from sight and not from the accessibility tree. `display: none` on a
+   * live region stops it announcing at all, which is the whole reason it is
+   * mounted for the life of the panel.
+   */
+  .silent {
+    visibility: hidden;
+  }
+
+  .body {
+    min-block-size: 0;
+    overflow-y: auto;
+    /* Inset by a focus ring's width and pulled back out, so a row flush against
+       the scroll container's edge does not have its ring clipped. */
+    padding: 12px 15px;
+    margin-inline: -3px;
+  }
+
+  .note {
+    margin: 0 0 10px;
+    font-size: 0.75rem;
+    line-height: 1.5;
+    color: var(--hatua-text-secondary);
+    text-wrap: pretty;
+  }
+
+  .code {
+    font-family: var(--hatua-font-mono);
+    font-size: 0.6875rem;
+    overflow-wrap: anywhere;
   }
 }

@@ -362,3 +362,39 @@ describe('the in-memory store', () => {
     await expect(store.discardDraft(token)).resolves.toBeUndefined()
   })
 })
+
+/*
+ * localStorage outlives the source tree. A history kept across a change to the
+ * seed is a document written against a catalogue the page no longer serves —
+ * every card reporting an unknown component with no fields to edit, which reads
+ * as a broken build rather than as stale data.
+ */
+describe('a history from another seed', () => {
+  it('is discarded, so the page opens the seed it ships with', async () => {
+    const first = createLocalWorkflowStore({
+      seed: 'id: wf\nname: old\nversion: 1\nstatus: draft\nsteps: []\n',
+    })
+    const held = await first.openDraft(WORKFLOW)
+    expect(held.yaml).toContain('name: old')
+    await first.saveDraft(held.token, `${held.yaml}# edited\n`)
+    await first.releaseDraft(held.token)
+
+    const second = createLocalWorkflowStore({
+      seed: 'id: wf\nname: new\nversion: 1\nstatus: draft\nsteps: []\n',
+    })
+    const opened = await second.openDraft(WORKFLOW)
+    expect(opened.yaml).toContain('name: new')
+    expect(opened.resumed).toBe(false)
+  })
+
+  it('keeps a Draft across two stores built from the SAME seed', async () => {
+    const seed = 'id: wf\nname: same\nversion: 1\nstatus: draft\nsteps: []\n'
+    const first = createLocalWorkflowStore({ seed })
+    const held = await first.openDraft(WORKFLOW)
+    await first.saveDraft(held.token, `${held.yaml}# edited\n`)
+    await first.releaseDraft(held.token)
+
+    const opened = await createLocalWorkflowStore({ seed }).openDraft(WORKFLOW)
+    expect(opened.yaml).toContain('# edited')
+  })
+})

@@ -998,7 +998,25 @@ one place to change a thing, one place to use it.
 
 While it is open, leaves already referenced by the Step being edited are marked, and hovering a leaf
 highlights the fields using it. Both are derivable from what exists: parse each Slot's Template, take
-`referencePath()` over the AST, intersect with the scope paths.
+`referencePath()` over the AST, intersect with the scope paths. The highlight follows **focus** as
+well as the pointer, because it is the only thing tying a leaf to the fields that read it and drag
+has no keyboard equivalent.
+
+**Clicking a leaf copies its token.** A row is a `<button>`, and a control that is live and does
+nothing reads as a fault — the argument `CanvasControls` makes about the ends of the zoom range. Copy
+is the one action that fits a panel nothing is edited in: it writes to no document, and it works from
+the keyboard, which is the same gap the catalogue's click path exists to fill for the canvas. The
+clipboard is unavailable in plenty of ordinary places — an insecure origin, a permission refused — so
+the failure is said rather than swallowed.
+
+**Its column has no width until it is open**, so the canvas keeps the room the rest of the time. The
+step editor owns the control that asks for it and the composition root places both regions; neither
+mounts the other, which is what keeps each one mountable alone.
+
+**The control and the landmark both say References** — the word the glossary defines and the picker's
+own tab already carries, because every row in either is a Reference. One label in both states, with
+`aria-pressed` saying which one it is in: a button that swaps its verb *and* reports pressed announces
+the state twice. *Data* is the region's file name and reaches no screen.
 
 This is what answers the original handoff's real weakness — that the reference tree sat in the left
 panel while the fields it fills sit on the far right, a full canvas apart, with no visible

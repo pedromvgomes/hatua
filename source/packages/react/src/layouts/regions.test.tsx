@@ -54,7 +54,16 @@ const REGIONS = [
     label: 'Flow map',
     href: 'hatua-flow-map',
   },
-  { name: 'Data', element: <Data />, role: 'region', label: 'Data', href: 'hatua-data' },
+  {
+    // The region is imported as <Data> and ANNOUNCES itself as References: the
+    // export is a file name and the label is user-facing copy, and the second
+    // has to match the control that opens it.
+    name: 'Data',
+    element: <Data />,
+    role: 'region',
+    label: 'References',
+    href: 'hatua-data',
+  },
   {
     name: 'Inspector',
     element: <Inspector />,

@@ -6,6 +6,14 @@ it opens.
 **Rule:** may import domain *types*, but not `@hatua/services`. Props in, events
 out. Enforced by `noRestrictedImports` in the workspace `biome.json`.
 
+`ReferenceTree` is where it earns its keep. A popover over a field and a column
+standing open beside the step editor are different places asking the same
+question, and a second implementation would be a second answer about what is
+readable and what a row's rail means. What differs between the two is expressed
+as props — the column marks the leaves already read and reports the one being
+pointed at; the popover does neither — so `layouts/Data` supplies the stores and
+this stays a component that reads none.
+
 That rule is the load-bearing part here rather than a tidiness one. Scope, the
 declared type and the Functions all arrive as props; nothing in this directory
 reads a store or fetches anything. It is what lets the same input serve a
@@ -18,6 +26,7 @@ written by hand.
 | `TemplateInput` | The widget. A transparent field over a mirror that paints the holes, plus signature help and the ⚡ button. |
 | `CompletionList` | The caret-anchored list: 30px rows, the typed prefix accented, the type at the right, a docstring strip under it. |
 | `ExpressionPicker` | The 392px browsable panel — **Reference** and **Function** tabs, and the inserter behind the second. |
+| `ReferenceTree` | The scope as browsable rows, and the source `<select>` over them. Mounted twice: by the picker's **Reference** tab, and by the `Data` region beside the step editor. |
 | `candidates.ts` | The scope and the declared Functions as rows. Pure, and the reason "two surfaces, one set of candidates" is a fact rather than an intention. |
 | `insertion.ts` | Where the caret is, what an insertion there has to produce, and what a drag carries. |
 | `templateSpans.ts` | Where each `{{ … }}` sits, derived from the parse. |

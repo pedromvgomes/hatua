@@ -13,13 +13,18 @@
     overflow-y: hidden;
   }
 
+  /*
+   * Four columns, and the third has no width until the Data panel is open.
+   *
+   * `grid-template-areas` cannot name a column that is sometimes absent, so the
+   * areas are placed by line instead: the panel's column collapses to zero and
+   * the canvas takes the room back, rather than the whole screen widening by
+   * 304px every time the panel is asked for.
+   */
   .build {
     display: grid;
-    grid-template-columns: 304px minmax(0, 1fr) 404px;
+    grid-template-columns: 304px minmax(0, 1fr) auto 404px;
     grid-template-rows: auto minmax(0, 1fr);
-    grid-template-areas:
-      "bar bar bar"
-      "side map aside";
     min-inline-size: 1240px;
     block-size: 100%;
     min-block-size: 0;
@@ -27,7 +32,8 @@
   }
 
   .bar {
-    grid-area: bar;
+    grid-row: 1;
+    grid-column: 1 / -1;
     min-inline-size: 0;
   }
 
@@ -38,20 +44,33 @@
    * border-inline-start is a line down the middle of nothing.
    */
   .side {
-    grid-area: side;
+    grid-row: 2;
+    grid-column: 1;
     min-inline-size: 0;
     min-block-size: 0;
     border-inline-end: 1px solid var(--hatua-border-subtle);
   }
 
   .map {
-    grid-area: map;
+    grid-row: 2;
+    grid-column: 2;
     min-inline-size: 0;
     min-block-size: 0;
   }
 
+  /* The step editor's left extension. It draws the divider between itself and
+     the canvas; the editor beside it draws its own. */
+  .data {
+    grid-row: 2;
+    grid-column: 3;
+    inline-size: 304px;
+    min-block-size: 0;
+    border-inline-start: 1px solid var(--hatua-border-subtle);
+  }
+
   .aside {
-    grid-area: aside;
+    grid-row: 2;
+    grid-column: 4;
     min-inline-size: 0;
     min-block-size: 0;
     border-inline-start: 1px solid var(--hatua-border-subtle);
