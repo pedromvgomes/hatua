@@ -1,0 +1,6 @@
+{
+  "//": "Not a project — there is nothing to install here. `pnpm/action-setup` resolves its version from the repository ROOT's `packageManager`, and every Node project in this repository lives one level down (source/, brand/), so without this file the security scan fails at setup with \"No pnpm version is specified\". Keep the version in step with source/package.json and brand/package.json; the scan reads this one.",
+  "name": "@hatua/repository",
+  "private": true,
+  "packageManager": "pnpm@11.9.0"
+}
