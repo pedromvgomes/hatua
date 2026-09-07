@@ -81,7 +81,10 @@ steps:
     name: "How much came in?"
     branches:
       - label: A lot
-        when: "{{ steps.s1.result }}"
+        # A condition is a boolean and the agent's \`result\` is text, so it is
+        # compared rather than read straight in. Text where a boolean belongs
+        # is a design-time error, not a run-time surprise.
+        when: '{{ steps.s1.result == "a lot" }}'
         steps:
           - id: s3
             use: component.email.send

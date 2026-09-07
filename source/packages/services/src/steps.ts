@@ -111,12 +111,19 @@ function listPathOf(document: WorkflowDocument, point: InsertPoint): Path {
 }
 
 /**
+ * The id the next Step on this Board would be written under.
+ *
  * Ids are minted rather than random, so the same edits produce the same
  * document twice — which is what makes the round-trip tests assertable and
  * keeps a diff in the Host's repository readable. `s1`, `s2`… matching the
  * convention the fixtures and the design handoff both use.
+ *
+ * Exported for the reason `nextBlockId` is: a command that writes a Step and
+ * then has to say which one — extraction's call site is the case — cannot ask
+ * `addStep`, which reports nothing back. Asking here keeps one minting rule
+ * rather than a second copy that agrees by inspection.
  */
-function mintId(document: WorkflowDocument, board: BoardId | undefined): string {
+export function nextStepId(document: WorkflowDocument, board: BoardId | undefined): string {
   const root = boardPath(document, board)
   const taken = new Set<string>()
   // Ids are Board-local, so only this Board's are taken. Minting against the
@@ -143,7 +150,7 @@ export function addStep(step: NewStep, at: InsertPoint): EditCommand {
     label: `Add ${step.name ?? step.use}`,
     apply(document) {
       const listPath = listPathOf(document, at)
-      const id = step.id ?? mintId(document, at.board)
+      const id = step.id ?? nextStepId(document, at.board)
 
       // Written key by key rather than spread from an object literal so the
       // order in the file is the order the schema documents — `id`, `use`,

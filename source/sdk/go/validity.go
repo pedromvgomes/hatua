@@ -82,10 +82,18 @@ func raise(code DefinitionCode, subject Diagnostic, fields map[string]string) Di
 // Manifests are indexed by Use. A runner holding no manifests still gets the
 // structural and block rules; the two that read a manifest report nothing
 // rather than guessing.
-func ValidateDefinition(doc Definition, manifests []Manifest) Validity {
+func ValidateDefinition(doc Definition, manifests []Manifest, context ...[]ContextKey) Validity {
 	byUse := make(map[string]Manifest, len(manifests))
 	for _, manifest := range manifests {
 		byUse[manifest.Use] = manifest
+	}
+
+	// Variadic so a runner that holds no Run Context keys calls this unchanged.
+	// The keys are scope rather than a verb: `run.*` is on every Board, and a
+	// checker that was not given them would report every one as naming nothing.
+	var keys []ContextKey
+	if len(context) > 0 {
+		keys = context[0]
 	}
 
 	all := []Diagnostic{}
@@ -93,6 +101,7 @@ func ValidateDefinition(doc Definition, manifests []Manifest) Validity {
 	all = append(all, MissingRequiredFields(doc, byUse)...)
 	all = append(all, MalformedContainers(doc, manifests)...)
 	all = append(all, BlockRules(doc)...)
+	all = append(all, ExpressionRules(doc, manifests, keys)...)
 
 	found := Validity{
 		ByStep:    map[string][]Diagnostic{},
@@ -657,5 +666,103 @@ func BlockRules(doc Definition) []Diagnostic {
 		}
 	}
 
+	return out
+}
+
+// coreDeclarations is Hatua's own functions, as declarations without
+// implementations.
+//
+// The default a checker uses when the caller supplies none. Built from
+// CoreFunctionSpecs rather than CoreFunctions(), which pairs each declaration
+// with the code that runs it: checking reads a spec for arity and argument
+// types and never calls one, so a builder validating a document has no use for
+// the implementations.
+//
+// A HOST's functions are absent because there is nowhere to declare one — a
+// manifest is a component, a trigger or a run context, and no kind carries a
+// function signature. So no Host-declared call can reach here to be reported
+// unknown.
+func coreDeclarations() expressions.Registry {
+	registry := expressions.Registry{}
+	for _, spec := range expressions.CoreFunctionSpecs {
+		registry[spec.Qualified] = expressions.RegisteredFunction{Spec: spec}
+	}
+	return registry
+}
+
+// ExpressionRules checks every Template on every Board against the type its
+// field declares and the scope its step can see.
+//
+// The rule family that reaches into the expressions package: that package owns
+// the grammar and the checking, and this owns the walk — "which Templates are
+// there, and what may each of them address" is a question about a Workflow
+// Definition.
+//
+// Errors only. An expression diagnostic carries a severity, and a warning
+// informs without blocking anything; a Diagnostic here carries Blocks instead,
+// whose two values both block something, so a warning has nothing to become.
+//
+// Steps only. A trigger's fields and a variable's initial value are Templates
+// too, and neither has a scope anyone has defined — ScopeFor takes a StepRef
+// because a scope is a position in a tree, and a trigger is upstream of every
+// position.
+func ExpressionRules(doc Definition, manifests []Manifest, context []ContextKey) []Diagnostic {
+	byUse := make(map[string]Manifest, len(manifests))
+	for _, manifest := range manifests {
+		byUse[manifest.Use] = manifest
+	}
+	functions := coreDeclarations()
+
+	out := []Diagnostic{}
+	WalkDocument(doc, func(ref StepRef, step Step) {
+		var scope []expressions.ScopeEntry
+		built := false
+
+		check := func(slot expressions.Slot) {
+			// A blank Template is not a wrong one. Whether a field may be left
+			// empty is req:'s business, and whether a repeat may have no
+			// condition is RepeatHasNoCondition's — both already say so.
+			// Checking it too reports "blank is not a boolean" beside "this has
+			// no condition", which is one gap described twice.
+			if strings.TrimSpace(slot.Template) == "" {
+				return
+			}
+			if !built {
+				scope = ScopeFor(doc, ref, manifests, context)
+				built = true
+			}
+			for _, found := range expressions.Validate(slot.Template, slot.ExpectedType,
+				expressions.CheckContext{Scope: scope, Functions: functions}) {
+				if found.Severity != expressions.SeverityError {
+					continue
+				}
+				out = append(out, Diagnostic{
+					Code:     DefinitionCode(found.Code),
+					Message:  found.Message,
+					Blocks:   BlocksPublish,
+					StepID:   step.ID,
+					BlockID:  ref.Board,
+					FieldKey: slot.Name,
+				})
+			}
+		}
+
+		for _, slot := range SlotsForStep(doc, ref.Board, step, byUse[step.Use]) {
+			check(slot)
+		}
+
+		// A branch's condition and a loop's termination test sit beside Steps
+		// rather than under With, which is what lets them be boolean at all —
+		// FieldKindTypes has no mappable boolean. So no manifest names them and
+		// SlotsForStep cannot yield them.
+		for _, branch := range step.Branches {
+			if branch.When != "" {
+				check(WhenSlot(branch.When))
+			}
+		}
+		if step.Until != "" {
+			check(RepeatSlot(step.Until))
+		}
+	})
 	return out
 }

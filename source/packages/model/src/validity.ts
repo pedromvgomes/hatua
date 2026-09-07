@@ -1,10 +1,33 @@
-import { sourceReference, type TypeNode } from '@hatua/expressions'
-import type { Block, Declaration, Manifest, Step, WorkflowDefinition } from '@hatua/schema'
+import {
+  CORE_FUNCTIONS,
+  type FunctionDeclarations,
+  type ScopeEntry,
+  type Slot,
+  sourceReference,
+  type TypeNode,
+  validate,
+} from '@hatua/expressions'
+import type {
+  Block,
+  ContextKey,
+  Declaration,
+  Manifest,
+  Step,
+  WorkflowDefinition,
+} from '@hatua/schema'
 import { blockIdOf, blockOf, cyclicBlocks, RETURN_VERB } from './blocks'
 import type { Diagnostic } from './connections'
 import { DEFINITION_DIAGNOSTICS, type DefinitionCode } from './generated/diagnostics'
-import { scopeFor, typeAtPath } from './scope'
-import { FOR_EACH_LIST_FIELD, FOR_EACH_VERB, FORK_VERB, SET_VAR_VERB } from './slots'
+import { newScopeMemo, scopeFor, typeAtPath } from './scope'
+import {
+  FOR_EACH_LIST_FIELD,
+  FOR_EACH_VERB,
+  FORK_VERB,
+  repeatSlot,
+  SET_VAR_VERB,
+  slotsForStep,
+  whenSlot,
+} from './slots'
 import {
   type BoardId,
   boards,
@@ -624,12 +647,98 @@ export interface Validity {
   all: readonly Diagnostic[]
 }
 
-export function validateDefinition(doc: WorkflowDefinition, manifests: ManifestIndex): Validity {
+/**
+ * Every Template on every Board, checked against the type its field declares
+ * and the scope its Step can see.
+ *
+ * The fifth rule family, and the one that reaches into a different package:
+ * `@hatua/expressions` owns the grammar and the checking, and has done since
+ * before anything called it. What was missing was the walk — "which Templates
+ * are there, and what may each of them address" is a question about a Workflow
+ * Definition, which is this package's subject and not that one's.
+ *
+ * **Errors only.** An expression diagnostic carries a severity, and a warning
+ * informs without blocking anything (ADR-0009's gradual typing: an unprovable
+ * type defers to run time). A `Diagnostic` here carries `blocks` instead, whose
+ * two values both block something, so a warning has nothing to become. The
+ * Inspector calls `validate` itself and renders every severity; this pass exists
+ * to mark cards and gate Publish, and neither is a warning's business.
+ *
+ * **Steps only.** A Trigger's fields and a Variable's initial value are
+ * Templates too, and neither has a scope anyone has defined — `scopeFor` takes a
+ * `StepRef` because a scope is a position in a tree, and a Trigger is upstream
+ * of every position. Checking them against a scope invented here would be a
+ * second answer to a question the model has not been asked yet.
+ */
+export function expressionRules(
+  doc: WorkflowDefinition,
+  manifests: ManifestIndex,
+  context: readonly ContextKey[] = [],
+  functions: FunctionDeclarations = CORE_DECLARATIONS,
+): Diagnostic[] {
+  const out: Diagnostic[] = []
+  const catalogue = [...manifests.values()]
+  // One memo for the whole document. A scope is positional, so every Step's
+  // names each Step upstream of it — recomputing those per Step is what makes a
+  // pass over a thousand Steps cost a second rather than a millisecond, and
+  // this runs on every keystroke.
+  const memo = newScopeMemo()
+
+  for (const { step, board } of walkDocument(doc)) {
+    const subject: Partial<Diagnostic> = { stepId: step.id, ...boardOn(board) }
+    // Built once per Step and shared by every Slot on it: a Step's scope is a
+    // fact about where it sits, and a `with:` map of ten fields is ten Templates
+    // resolved against one answer.
+    let scope: ScopeEntry[] | undefined
+
+    const check = (slot: Slot) => {
+      // A blank Template is not a wrong one. Whether a field may be left empty
+      // is `req:`'s business, and whether a repeat may have no condition is
+      // REPEAT_HAS_NO_CONDITION's — both already say so. Type-checking it too
+      // reports "blank is not a boolean" beside "this has no condition", which
+      // is one gap described twice. Whitespace and not just `''`, because the
+      // rules that own the question all trim and two spellings of empty would
+      // put the second sentence back for a field holding a space.
+      if (slot.template.trim() === '') return
+      scope ??= scopeFor(doc, { board, id: step.id }, catalogue, context, memo)
+      for (const found of validate(slot.template, slot.expectedType, { scope, functions })) {
+        if (found.severity !== 'error') continue
+        out.push({
+          code: found.code,
+          message: found.message,
+          blocks: 'publish',
+          fieldKey: slot.name,
+          ...subject,
+        })
+      }
+    }
+
+    for (const slot of slotsForStep(doc, board, step, manifests.get(step.use))) check(slot)
+
+    // A Branch's condition and a loop's termination test sit beside `steps:`
+    // rather than under `with:`, which is what lets them be boolean at all —
+    // `FIELD_KIND_TYPES` has no mappable boolean. So no manifest names them and
+    // `slotsForStep` cannot yield them.
+    for (const branch of step.branches ?? []) {
+      if (branch.when !== undefined) check(whenSlot(branch.when))
+    }
+    if (typeof step.until === 'string') check(repeatSlot(step.until))
+  }
+
+  return out
+}
+
+export function validateDefinition(
+  doc: WorkflowDefinition,
+  manifests: ManifestIndex,
+  context: readonly ContextKey[] = [],
+): Validity {
   const all = [
     ...unknownComponents(doc, manifests),
     ...missingRequiredFields(doc, manifests),
     ...malformedContainers(doc, manifests),
     ...blockRules(doc),
+    ...expressionRules(doc, manifests, context),
   ]
 
   const byStep = new Map<string, Diagnostic[]>()
@@ -654,3 +763,22 @@ export function validateDefinition(doc: WorkflowDefinition, manifests: ManifestI
   }
   return { byStep, byTrigger, byBlock, all }
 }
+
+/**
+ * Hatua's own functions, as declarations without implementations.
+ *
+ * The default a checker uses when the caller supplies none. Built from
+ * `CORE_FUNCTIONS` rather than `coreFunctions()`, which pairs each declaration
+ * with the code that runs it: a builder validating a document never calls one,
+ * and reaching for the registry would put all thirty-four implementations in
+ * every Host's bundle to answer questions about arity.
+ *
+ * A **Host's** functions are absent because there is nowhere to declare one —
+ * `ManifestEntry` is a Component, a Trigger or a Run Context, and no manifest
+ * kind carries a function signature. So no Host-declared call can reach here to
+ * be reported unknown, and the parameter is what the port will thread through
+ * when it exists.
+ */
+const CORE_DECLARATIONS: FunctionDeclarations = new Map(
+  CORE_FUNCTIONS.map((spec) => [spec.qualified, { spec }]),
+)

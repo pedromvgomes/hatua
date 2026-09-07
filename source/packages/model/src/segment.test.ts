@@ -1,3 +1,4 @@
+import type { Step } from '@hatua/schema'
 import { describe, expect, it } from 'vitest'
 import { DOC } from './fixtures'
 import {
@@ -5,6 +6,7 @@ import {
   segmentBetween,
   segmentHolds,
   segmentOf,
+  segmentReturns,
   segmentSteps,
   siblingFrom,
   siblingsOf,
@@ -130,5 +132,47 @@ describe('siblingFrom', () => {
 describe('segmentOf', () => {
   it('is the one-Step Segment a plain click makes', () => {
     expect(segmentOf({ board: 'blk', id: 'ret' })).toEqual({ board: 'blk', steps: ['ret'] })
+  })
+})
+
+/**
+ * What extraction refuses (ADR-0018). A Return moved onto a new Board binds to
+ * ITS outputs and ends a Block the author did not mean to end.
+ */
+describe('segmentReturns', () => {
+  const send = (id: string): Step => ({ id, use: 'component.email.send' }) as Step
+  const ret = (id: string): Step => ({ id, use: 'core.return' }) as Step
+
+  it('is false for a selection of ordinary Steps', () => {
+    expect(segmentReturns([send('a'), send('b')])).toBe(false)
+  })
+
+  it('is true when a selected Step is itself a Return', () => {
+    expect(segmentReturns([send('a'), ret('r')])).toBe(true)
+  })
+
+  /*
+   * The case a check of the Segment's own Steps misses. A Return inside a Fork
+   * branch inside the selection moves with it and binds exactly the same way,
+   * so a rule that looked only at the top level would offer the gesture on the
+   * one shape it exists to refuse.
+   */
+  it('is true for a Return nested inside a selected container', () => {
+    const fork = {
+      id: 'f',
+      use: 'core.fork',
+      branches: [
+        { label: 'A', steps: [ret('r')] },
+        { label: 'B', steps: [send('b')] },
+      ],
+    } as unknown as Step
+    expect(segmentReturns([fork])).toBe(true)
+  })
+
+  it('is true for a Return inside a loop body and inside a handler', () => {
+    const loop = { id: 'l', use: 'core.for_each', steps: [ret('r')] } as unknown as Step
+    const guarded = { id: 't', use: 'core.try', steps: [], handler: [ret('r')] } as unknown as Step
+    expect(segmentReturns([loop])).toBe(true)
+    expect(segmentReturns([guarded])).toBe(true)
   })
 })

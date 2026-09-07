@@ -59,15 +59,32 @@ because a second reader appeared: `views/Build` wiring the Flow tab to the canva
 tab to an insert point. Nothing reads a viewport. So `<FlowMap>` holds it and offers two props and
 not three:
 
-- `defaultViewport` — an uncontrolled initial value, read once on mount
+- `defaultViewports` — uncontrolled initial values, read once on mount
 - `onViewportChange` — an observer
 
 That is enough for a Host to save where somebody was and put them back there next time, and not
 enough for anyone to drive the canvas into a state it cannot get itself out of. Observation alone
 would have been half a feature: a Host could record a viewport and never restore one.
 
-Opening a Block's Board resets it, because coordinates are Board-local and carrying a pan across
-Boards lands in empty space.
+## A viewport is per Board, so both halves are
+
+Coordinates are **Board-local**, so a pan carried across Boards lands in empty space and a pan
+carried back to the Board it was made on lands exactly where it was left. The canvas therefore keeps
+one viewport per Board (ADR-0017), and the two props are keyed the same way: `defaultViewports` is a
+`Map` from **Board** — `null` for the root — to where that Board opens, and `onViewportChange` says
+which Board each report belongs to.
+
+Reporting without saying which Board is the failure this shape exists to prevent, and it is a subtler
+one than it looks: the Host is not merely under-informed, it is *misinformed*. Every Board's moves
+arrive on one channel, so the last one wins whatever Board it came from — a Host doing the obvious
+thing with what it was handed records a Block's pan and restores it as the root's, landing the user
+in empty space on a Board they never panned.
+
+A `Map` rather than an object keyed by string, because the root Board is `null`. An object would need
+an agreed spelling for it that a Host has to know and Hatua has to keep stable; how a Board becomes a
+key is this region's own business.
+
+A Board with no entry is fitted to its content, which is what an unopened Board should do.
 
 ## What it costs, and what pays for it
 

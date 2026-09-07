@@ -124,6 +124,21 @@ export const Invalid: Story = {
   },
 }
 
+/**
+ * A call whose Block will not run, with nothing wrong on this card at all.
+ *
+ * The same marker for a different reason: the distinction matters to whoever
+ * fixes it and not to whoever is reading the Board, and a call that looks
+ * finished on a workflow that cannot run is what this exists to end.
+ */
+export const CallIntoTrouble: Story = {
+  args: {
+    step: { id: 's5', use: 'block.archive_entry', name: 'Archive one', with: {} },
+    opens: 'archive_entry',
+    callsBrokenBlock: true,
+  },
+}
+
 /** No manifest: the neutral coin, and no row, whatever the Step's `with:` holds. */
 export const NoCatalogue: Story = {
   args: { step: { ...LEAF, with: { query: 'is:unread' } } },

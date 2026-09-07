@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import styles from './SegmentBar.module.css'
 import css from './SegmentBar.module.css?inline'
 
@@ -22,13 +23,28 @@ export interface SegmentBarProps {
   /**
    * Turn the selected Steps into a Block (ADR-0018).
    *
-   * The reason this unit takes its actions as separate optional props rather
-   * than drawing a fixed row: extraction arrives without changing anything
-   * here. A control drawn now and disabled would read as broken rather than as
-   * absent, which is the distinction `CanvasControls` draws when it greys out
-   * the end of the zoom range and keeps it on screen.
+   * Optional for the reason `onRemove` is: this unit takes its actions
+   * separately rather than drawing a fixed row, so a surface offering one and
+   * not the other says so by what it hands over.
    */
   onExtract?: () => void
+  /**
+   * Whether the selection holds a **Return**, which extraction refuses.
+   *
+   * Refused and not absent: the control stays on screen and is announced as
+   * disabled, carrying the reason. A control that vanished as the selection
+   * grew past a Return would leave the reader with no way to learn what they
+   * did, and no way to learn it by undoing — the selection is still there.
+   * `CanvasControls` makes the same call at the end of the zoom range, and the
+   * difference is that a zoom limit is self-evident from the readout beside it
+   * while this is not, so the reason has to be said rather than implied.
+   *
+   * `aria-disabled` and not `disabled`, because a `disabled` button is not
+   * focusable and therefore cannot be reached to hear why: the explanation
+   * would exist for everyone except the readers who most need it. The click
+   * handler is withheld instead, so the control is inert either way.
+   */
+  holdsReturn?: boolean
 }
 
 /**
@@ -56,7 +72,8 @@ export interface SegmentBarProps {
  * denying that, and it would leave the canvas with no way to remove a Step at
  * all.
  */
-export function SegmentBar({ count, onRemove, onExtract }: SegmentBarProps) {
+export function SegmentBar({ count, onRemove, onExtract, holdsReturn }: SegmentBarProps) {
+  const reasonId = useId()
   return (
     <>
       <style href="hatua-segment-bar" precedence="hatua">
@@ -76,12 +93,20 @@ export function SegmentBar({ count, onRemove, onExtract }: SegmentBarProps) {
         {onExtract ? (
           <button
             type="button"
-            className={styles.action}
+            className={`${styles.action}${holdsReturn ? ` ${styles.refused}` : ''}`}
             aria-label={`Make a block from ${countLabel(count)}`}
-            onClick={onExtract}
+            aria-disabled={holdsReturn || undefined}
+            aria-describedby={holdsReturn ? reasonId : undefined}
+            title={holdsReturn ? RETURN_REFUSAL : undefined}
+            onClick={holdsReturn ? undefined : onExtract}
           >
             Make a block
           </button>
+        ) : null}
+        {onExtract && holdsReturn ? (
+          <span id={reasonId} className={styles.offscreen}>
+            {RETURN_REFUSAL}
+          </span>
         ) : null}
         {onRemove ? (
           <button
@@ -114,3 +139,17 @@ const selectedLabel = (count: number): string => `${countLabel(count)} selected`
 
 /** "1 step" / "3 steps", so a name reading it need not repeat the arithmetic. */
 const countLabel = (count: number): string => `${count} ${count === 1 ? 'step' : 'steps'}`
+
+/**
+ * Why a selection holding a Return cannot become a Block.
+ *
+ * A Return ends the Block it is on and publishes what that Block declares.
+ * Moved onto a new one it would end THAT instead, which changes what the
+ * workflow does while leaving nothing malformed for a marker to point at — so
+ * the action is refused rather than repaired (ADR-0018).
+ *
+ * Says "Return" because that is the Component's own name on screen, and says
+ * nothing about `outputs:` or a Board, which are spellings the reader has no
+ * way to act on.
+ */
+const RETURN_REFUSAL = 'These steps include a Return, which ends the block it is on.'

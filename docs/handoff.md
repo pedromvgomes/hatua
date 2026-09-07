@@ -397,9 +397,15 @@ zoom back in.
 **Where somebody is looking is chrome**, one level out from the node positions ADR-0001 keeps out of
 the document: a viewport in the file is a diff in the Host's repository every time anyone scrolls. It
 is not a controlled prop either. `<FlowMap>` holds it and offers **two** props and not three —
-`defaultViewport`, read once on mount, and `onViewportChange`, an observer. That is enough for a Host
+`defaultViewports`, read once on mount, and `onViewportChange`, an observer. That is enough for a Host
 to put somebody back where they were and not enough for a caller to drive the canvas into a state it
-cannot get itself out of. Opening a Block's Board resets it, because coordinates are Board-local.
+cannot get itself out of.
+
+Both halves are **per Board**, keyed by **Board** with `null` for the root, because coordinates are
+Board-local: a pan carried across Boards lands in empty space. A contract that reported every Board's
+viewport while accepting only one told a Host to write down something it could never give back — the
+last report won whatever Board it came from, so a **Block**'s pan came back as the root's. A Board
+with no entry is fitted to its content, which is what an unopened one should do.
 
 **Anything that takes focus pans the view to it.** That is not an enhancement: a scroll container
 brought a focused child into view for free, a transform inside a clipped box has nothing to scroll,
@@ -1015,6 +1021,24 @@ so a canvas that can only build Segments is one where no action has to refuse wh
 
 The actions over it float at the lower start of the canvas, opposite the zoom toolbar, and appear for
 a Segment of one — which is a Segment, and is also the only way to remove a Step from the canvas.
+
+**Make a block** moves the Segment onto a new **Block**'s **Board** and leaves a call where it was.
+It writes no contract and rewrites no **Template** (ADR-0018): the Block declares nothing, every
+Template travels as the author wrote it, and what the Segment used to read from around it now names
+nothing — which the Board says, because a **Reference** naming nothing is `EXPR_UNKNOWN_REFERENCE`
+on the card that holds it. What moved together still resolves, because ids are Board-local and a
+Segment moves as a set. The Block's id is minted and its tab opens, the call the New block button
+already makes, and here the new Board is also where the author's work is.
+
+A Segment holding a **Return** is refused: moved, it would end the Block it landed on. The control
+stays and is announced as disabled with the reason, rather than vanishing as the selection grows.
+
+**A call says when what it opens will not run.** A call is a doorway and a doorway shows nothing of
+what is behind it, so a Board holding a clean-looking call could be one that cannot run — the
+invisibility a Reference naming nothing had, one level of nesting up. `troubledBlocks` answers which
+Blocks are affected, transitively, and the call card, the **Step** list's row and the catalogue's
+entry all draw it. It is **derived and never a diagnostic**: the problem is already reported on the
+Board that holds it, and raising a second one per call site would count one fault once per doorway.
 
 No selection context. A second mechanism for one piece of chrome state is how the parts stop being
 independently mountable, and every region must mount alone — `layouts/regions.test.tsx` renders each

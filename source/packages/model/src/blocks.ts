@@ -1,5 +1,6 @@
 import type { Slot } from '@hatua/expressions'
 import type { Block, Declaration, Step, WorkflowDefinition } from '@hatua/schema'
+import type { Diagnostic } from './connections'
 import { own, regionsOf, type StepRef, walkDocument } from './tree'
 
 /**
@@ -209,4 +210,65 @@ export const contractSummary = (block: Block | undefined): string => {
   const params = block?.params?.length ?? 0
   const outputs = block?.outputs?.length ?? 0
   return `${params} ${params === 1 ? 'param' : 'params'} · ${outputs} ${outputs === 1 ? 'output' : 'outputs'}`
+}
+
+/**
+ * Every Block that will not run: one with a diagnostic on its own Board, and
+ * one that calls another such Block, however far down.
+ *
+ * A call is a **doorway** (ADR-0013), and a doorway says nothing about what is
+ * behind it. So a Board holding nothing but a clean-looking call can be a Board
+ * that cannot run, and the only way to find out is to walk through — which
+ * nobody does, because there is nothing on screen suggesting they should. That
+ * is the same invisibility a Reference naming nothing had before
+ * `validateDefinition` grew its expression family, one level of nesting up.
+ *
+ * **Derived, and never a diagnostic.** Every problem here is already reported,
+ * on the Board that holds it and by the rule that found it. Raising a second one
+ * at each call site would report one problem twice — so a Publish gate counting
+ * what it found would count the same fault once per doorway, and a Block called
+ * from five places would look five times as broken as one called from one.
+ * This says which Blocks are affected; the surfaces decide what to draw.
+ *
+ * **Transitive**, because the alternative is not honest. A Block whose own
+ * Steps are all fine but which calls a broken one is a Block that does not run,
+ * and marking only the immediate caller leaves every Board above it clean —
+ * with nothing to suggest walking down to the level that says so.
+ *
+ * Terminates on a document whose Blocks call each other, because a caller
+ * already in the set is not queued again. Such a document also has
+ * `BLOCK_RECURSION` against every Block on the cycle, so they are seeded here
+ * in any case.
+ */
+export function troubledBlocks(
+  doc: WorkflowDefinition,
+  diagnostics: readonly Diagnostic[],
+): ReadonlySet<string> {
+  const troubled = new Set<string>()
+  // `blockId` is set alongside `stepId` for a Step on a Block's Board, and on
+  // its own when the subject is the Block itself. Both say the same thing here.
+  for (const one of diagnostics) {
+    if (one.blockId) troubled.add(one.blockId)
+  }
+
+  // Reversed, because the question is "who reaches this", and the edges the
+  // document holds point the other way.
+  const callers = new Map<string, string[]>()
+  for (const block of doc.blocks ?? []) {
+    for (const called of callsOf(block.steps)) {
+      const held = callers.get(called)
+      if (held) held.push(block.id)
+      else callers.set(called, [block.id])
+    }
+  }
+
+  const queue = [...troubled]
+  for (let next = queue.pop(); next !== undefined; next = queue.pop()) {
+    for (const caller of callers.get(next) ?? []) {
+      if (troubled.has(caller)) continue
+      troubled.add(caller)
+      queue.push(caller)
+    }
+  }
+  return troubled
 }

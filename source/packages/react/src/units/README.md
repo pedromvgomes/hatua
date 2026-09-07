@@ -41,9 +41,14 @@ arithmetic.
 two cannot collide on the narrowest embed. It is handed a count rather than a
 **Segment**: what a selection resolves to on the Board being drawn is the
 canvas's question, and this draws what it is told. Its actions are separate
-optional props, each drawing nothing when absent — which is how extraction's
-place is reserved without shipping a control that has nothing behind it and
-reads as broken (ADR-0018). It claims no ARIA role, for the reason
+optional props, each drawing nothing when absent, so a surface offering one and
+not the other says so by what it hands over. **Make a block** is the exception
+that proves it: a selection holding a **Return** cannot become one (ADR-0018),
+and there the control stays and is announced as disabled rather than
+disappearing — a control that vanished as the selection grew past a Return would
+leave the reader with no way to learn what they did. It is `aria-disabled` and
+not `disabled`, because a disabled button cannot be focused and therefore cannot
+be reached to hear why. It claims no ARIA role, for the reason
 `CanvasControls` claims none: `role="toolbar"` promises the arrow keys move
 between its items, and on this canvas the arrows with `Shift` held extend the
 selection instead.

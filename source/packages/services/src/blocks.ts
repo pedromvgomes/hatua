@@ -1,6 +1,6 @@
 import type { WorkflowDocument } from '@hatua/document'
 import { renamePath } from '@hatua/expressions'
-import { BLOCK_PREFIX, type BoardId } from '@hatua/model'
+import { BLOCK_PREFIX, type BoardId, RETURN_VERB, type Segment } from '@hatua/model'
 import type { Declaration } from '@hatua/schema'
 import {
   asObject,
@@ -22,7 +22,7 @@ import {
 } from './ast'
 import type { EditCommand } from './command'
 import { requireUsableName } from './names'
-import { boardPath } from './steps'
+import { boardPath, nextStepId } from './steps'
 
 /**
  * The commands that address a Block: its declaration, its contract, and its
@@ -31,9 +31,9 @@ import { boardPath } from './steps'
  * A Block's *steps* are addressed by `steps.ts` like any other Board's, because
  * they are: an `InsertPoint` carries a board, and every path is rooted there
  * rather than at `['steps']`. That is what makes an edit inside a Block the same
- * command as an edit at the root, which is what the extract-into-a-block gesture
- * will compose from — and what keeps a Block built on the canvas and one written
- * by hand in Text Mode the same document.
+ * command as an edit at the root, which is what `extractBlock` rests on — and
+ * what keeps a Block built on the canvas and one written by hand in Text Mode
+ * the same document.
  */
 
 /** Enough to declare a Block; its contract and its steps are filled in after. */
@@ -412,3 +412,133 @@ export function setDeclarationType(
     },
   }
 }
+
+/**
+ * Move a **Segment** onto a new Block's Board, and leave a call where it was
+ * (ADR-0018).
+ *
+ * **It moves and it calls. It does not invent a contract.** The new Block
+ * declares no parameters and no outputs, and every Template travels exactly as
+ * the author wrote it. What the Segment read from around it now names nothing
+ * on the Board it landed on, and the author declares the parameter, points the
+ * Template at it, and fills it at the call site — with the expression still on
+ * screen to read, because nothing rewrote it.
+ *
+ * What survives the move costs nothing: Step ids are Board-local and a Segment
+ * moves as a set, so `{{ steps.X.y }}` naming an `X` that moved keeps resolving.
+ * That is most of what a cohesive stretch of Steps reads, and it is why
+ * extracting one is nearly free while extracting an arbitrary one is not.
+ *
+ * The NODES are moved rather than rebuilt from their projection, the way
+ * `moveStep` moves one: a node carries the user's comments, key order and
+ * quoting, and a rebuilt one would not (ADR-0001).
+ *
+ * One command rather than a `sequence()`, because there is one gesture and one
+ * moment. `EditingStore.apply` restores the document's previous text when a
+ * command throws, so the whole move is already all-or-nothing, and it is one
+ * entry on the undo stack.
+ */
+export function extractBlock(segment: Segment, block: NewBlock = {}): EditCommand {
+  return {
+    label: 'Make a block',
+    apply(document) {
+      const root = boardPath(document, segment.board)
+      const held = readAt(document, root)
+
+      // Located before anything moves, because every index below is an index
+      // into the document as it is now.
+      const found = new Map<string, { listPath: Path; index: number; step: StepEntry }>()
+      for (const entry of stepEntriesIn(held, root)) {
+        const id = entry.step.id
+        if (typeof id === 'string' && segment.steps.includes(id) && !found.has(id)) {
+          found.set(id, { listPath: entry.listPath, index: entry.index, step: entry.step })
+        }
+      }
+      if (found.size !== segment.steps.length) {
+        throw new Error('The selected Steps are not all on this board')
+      }
+
+      const taken = [...found.values()]
+      const [first, ...rest] = taken
+      if (!first) throw new Error('Nothing to extract')
+
+      /*
+       * Contiguous siblings by construction (ADR-0020), and checked anyway
+       * because a Segment reaches here from a caller rather than only from the
+       * canvas: `selected` is a prop a Host may set to anything, and a Segment
+       * held across an edit is reconciled by id, so a Step inserted between its
+       * members leaves a gap that `segmentSteps` cannot see.
+       *
+       * BOTH halves, because either one alone reorders execution — the one
+       * thing this gesture must not do. Two different lists is the obvious
+       * case; a gap is the quiet one. Extracting `s2` and `s4` out of
+       * `s1 s2 s3 s4` leaves `s1`, the call, `s3` — and `s4` now runs BEFORE
+       * `s3` rather than after it, in a document that still projects and still
+       * validates, from a gesture that promises to change only where Steps are
+       * written.
+       */
+      if (rest.some((one) => !samePath(one.listPath, first.listPath))) {
+        throw new Error('The selected Steps are not siblings')
+      }
+      if (rest.some((one, at) => one.index !== first.index + at + 1)) {
+        throw new Error('The selected Steps are not next to each other')
+      }
+
+      // A return moved onto the new Board binds to ITS outputs and ends a Block
+      // the author did not mean to end. Nothing malformed results, so no rule
+      // reports it — the gesture is refused instead.
+      if (taken.some((one) => holdsReturn(one.step))) {
+        throw new Error('A selection that returns cannot become a block')
+      }
+
+      // Minted while the Steps are still here, so the call cannot be handed the
+      // id of a Step that is about to move onto another Board — a diff in which
+      // `s2` becomes a call to a block containing `s2` reads as a mistake.
+      const callId = nextStepId(document, segment.board ?? undefined)
+
+      const id = block.id ?? nextBlockId(document)
+      addBlock({ ...block, id }).apply(document)
+      // Resolved after the declaration, because it is the block that was just
+      // written and `blocks:` may not have existed a moment ago.
+      const onto = [...blockPath(document, id), 'steps']
+
+      // Highest index first, so detaching one does not move the next out from
+      // under the index already read for it.
+      const indices = taken.map((one) => one.index).sort((a, b) => b - a)
+      const nodes = indices.map((index) => detachNode(document, first.listPath, index))
+
+      // `nodes` came off in reverse, so it goes on in reverse to land in
+      // document order.
+      nodes.reverse()
+      for (let at = 0; at < nodes.length; at++) insertNode(document, onto, at, nodes[at])
+
+      insertNode(
+        document,
+        first.listPath,
+        first.index,
+        document.ast.createNode({ id: callId, use: `${BLOCK_PREFIX}${id}` }),
+      )
+    },
+  }
+}
+
+type StepEntry = Record<string, unknown>
+
+/**
+ * Whether a Step, or anything nested inside it, is a `core.return`.
+ *
+ * The AST-walking half of `segmentReturns`, which is the same question asked of
+ * the typed tree. Two of them because a command runs against a document that
+ * does not project (ADR-0001), so the model's answer is unavailable here — and
+ * they agree only while `stepEntriesIn` and `regionsOf` enumerate the same
+ * regions. A region kind added to one and not the other leaves the canvas
+ * offering an action this refuses.
+ */
+const holdsReturn = (step: StepEntry): boolean => {
+  for (const { step: one } of stepEntriesIn([step], [])) {
+    if (one.use === RETURN_VERB) return true
+  }
+  return false
+}
+
+const samePath = (a: Path, b: Path) => a.length === b.length && a.every((part, i) => part === b[i])

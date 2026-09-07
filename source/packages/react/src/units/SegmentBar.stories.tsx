@@ -45,11 +45,28 @@ export const OneStep: Story = { args: { count: 1 } }
  * what the count is for. */
 export const Many: Story = { args: { count: 12 } }
 
-/**
- * Extraction's place, reserved rather than stubbed: the action arrives by being
- * passed in, and this unit does not change when it does (ADR-0018).
- */
+/** Both actions, which is what the canvas draws for an ordinary selection. */
 export const WithExtract: Story = { args: { onExtract: () => {} } }
+
+/**
+ * A selection holding a **Return**, which extraction refuses (ADR-0018).
+ *
+ * The control stays and is announced as disabled rather than disappearing: a
+ * control that vanished as the selection grew past a Return would leave the
+ * reader with no way to learn what they did. The reason rides on the button as
+ * its description and as a tooltip.
+ */
+export const ExtractRefused: Story = {
+  args: { onExtract: () => {}, holdsReturn: true },
+}
+
+/**
+ * The refusal on a Segment of one, where the whole selection is the Return —
+ * the shape the canvas produces from a single click on a Return card.
+ */
+export const ExtractRefusedOneStep: Story = {
+  args: { count: 1, onExtract: () => {}, holdsReturn: true },
+}
 
 /**
  * Every action absent. The bar still says how many Steps are selected, which is
