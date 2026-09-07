@@ -72,6 +72,11 @@ interface Recorder {
   published: string[]
   released: number
   discarded: number
+  loads: number[]
+  /** Refuse the NEXT open only, so a session can end and then fail to reopen. */
+  failNextOpen: boolean
+  /** Let the pending open finish, for a test that needs one still in flight. */
+  finishOpen: () => void
 }
 
 /**
@@ -91,6 +96,11 @@ function recorder(
     rejectRenew?: Error
     rejectOpen?: unknown
     throwOnOpen?: unknown
+    /** What `loadVersion` serves, for the Preview and Restore paths. */
+    versionYaml?: string
+    rejectLoad?: Error
+    /** Hold `openDraft` open until `finishOpen()` is called. */
+    deferOpen?: boolean
   } = {},
 ): Recorder {
   const state: Recorder = {
@@ -100,11 +110,23 @@ function recorder(
     published: [],
     released: 0,
     discarded: 0,
+    loads: [],
+    failNextOpen: false,
+    finishOpen: () => {},
     port: undefined as unknown as WorkflowStore,
   }
 
   const opened = async (): Promise<DraftSession> => {
+    if (options.deferOpen) {
+      await new Promise<void>((go) => {
+        state.finishOpen = go
+      })
+    }
     if (options.throwOnOpen) throw options.throwOnOpen
+    if (state.failNextOpen) {
+      state.failNextOpen = false
+      return Promise.reject(options.rejectOpen ?? new Error('The workflow could not be opened.'))
+    }
     if (options.rejectOpen) return Promise.reject(options.rejectOpen)
     return {
       token,
@@ -146,8 +168,10 @@ function recorder(
     async listVersions(): Promise<Cursor<VersionSummary>> {
       return { items: [] }
     },
-    async loadVersion() {
-      return SOURCE
+    async loadVersion(_workflowId: string, version: number) {
+      state.loads.push(version)
+      if (options.rejectLoad) throw options.rejectLoad
+      return options.versionYaml ?? SOURCE
     },
   }
 
@@ -2711,5 +2735,435 @@ describe('a command that is refused', () => {
 
     expect(ready(store).refused?.message).toMatch(/cannot be saved/)
     expect(ready(store).definition).not.toBeNull()
+  })
+})
+
+/**
+ * An earlier version, written the way one is: a different name, a different
+ * shape, and its OWN `version`/`status`, which are the two keys a Restore must
+ * not bring across.
+ */
+const VERSION_TWO = `# The first pass, before the fork.
+id: wf_morning
+name: "Overnight triage"
+version: 2
+status: published
+
+steps:
+  - id: s1
+    use: component.email.fetch
+    name: "Fetch mail"
+`
+
+describe('previewing a version', () => {
+  it('describes the previewed version, so every region follows without being told', async () => {
+    const host = recorder({ versionYaml: VERSION_TWO })
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+
+    await store.preview(2)
+
+    const shown = ready(store)
+    expect(shown.previewing).toBe(2)
+    expect(shown.definition?.name).toBe('Overnight triage')
+    expect(shown.text).toContain('The first pass, before the fork.')
+  })
+
+  it('keeps the claim, because a preview is a way of looking and not a way of stopping', async () => {
+    const host = recorder({ versionYaml: VERSION_TWO })
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+
+    await store.preview(2)
+
+    // The lease is still renewing and the Draft is still the thing being saved.
+    // Dropping this to false would make the toolbar report a session that has
+    // not ended, and take Release and Discard off screen with it.
+    expect(ready(store).claimed).toBe(true)
+  })
+
+  it('refuses a command, because it would land on a Draft that is not on screen', async () => {
+    const host = recorder({ versionYaml: VERSION_TWO })
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+    await store.preview(2)
+
+    store.apply(setWorkflowName('Renamed'))
+    await vi.advanceTimersByTimeAsync(2000)
+
+    expect(ready(store).definition?.name).toBe('Overnight triage')
+    // And nothing reached the Host either: the edit is not merely hidden, it
+    // never happened.
+    expect(host.writes).toEqual([])
+  })
+
+  it('refuses an undo, because the stack belongs to the Draft', async () => {
+    const host = recorder({ versionYaml: VERSION_TWO })
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+    store.apply(setWorkflowName('Renamed'))
+    await vi.advanceTimersByTimeAsync(2000)
+    host.writes.length = 0
+    await store.preview(2)
+
+    expect(ready(store).undoLabel).toBeNull()
+    store.undo()
+
+    /*
+     * Asked of the DRAFT, not of the snapshot. `commit()` reports `undoLabel` as
+     * null and shows the preview's document whenever one is set, both of which
+     * hold whether or not `travel()` refused — so a test that only reads the
+     * snapshot passes with the guard deleted, and the undo it was meant to catch
+     * pops the stack and rewrites the Draft unseen.
+     */
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(host.writes).toEqual([])
+
+    store.exitPreview()
+    expect(ready(store).definition?.name).toBe('Renamed')
+    expect(ready(store).undoLabel).toBe('Rename the workflow')
+  })
+
+  it('leaves the Draft on screen when the version cannot be read', async () => {
+    const host = recorder({ rejectLoad: new Error('That version could not be read.') })
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+
+    await expect(store.preview(2)).rejects.toThrow('That version could not be read.')
+
+    // A preview that opened onto an error would replace something readable with
+    // nothing, and the way out of a preview is a control a preview draws.
+    expect(ready(store).previewing).toBeNull()
+    expect(ready(store).definition?.name).toBe('Morning inbox triage')
+  })
+
+  it('leaves the Draft on screen when the version is not a single YAML document', async () => {
+    const host = recorder({ versionYaml: 'id: one\n---\nid: two\n' })
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+
+    await expect(store.preview(2)).rejects.toThrow(/single YAML document/)
+    expect(ready(store).previewing).toBeNull()
+  })
+
+  it('refuses a Publish, because the checker is judging the version on screen', async () => {
+    // `createValidationStore` reads its document from this store's snapshot,
+    // which describes the preview — so a publish now would send the Draft's
+    // bytes past a gate that judged something else.
+    const host = recorder({ versionYaml: VERSION_TWO })
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+    await store.preview(2)
+
+    await expect(store.publish()).rejects.toThrow(PublishBlocked)
+    await expect(store.publish()).rejects.toThrow(/Go back to the draft/)
+    expect(host.published).toEqual([])
+
+    // And it publishes again once the Draft is what is on screen.
+    store.exitPreview()
+    await expect(store.publish()).resolves.toEqual({
+      version: 5,
+      publishedAt: '2026-01-01T00:00:00.000Z',
+    })
+  })
+
+  it('puts the Draft back', async () => {
+    const host = recorder({ versionYaml: VERSION_TWO })
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+    await store.preview(2)
+
+    store.exitPreview()
+
+    expect(ready(store).previewing).toBeNull()
+    expect(ready(store).definition?.name).toBe('Morning inbox triage')
+  })
+
+  it('is cleared by a reopen, which puts a real Draft on screen', async () => {
+    const host = recorder({ versionYaml: VERSION_TWO })
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+    await store.preview(2)
+
+    store.reopen()
+    await settle()
+
+    expect(ready(store).previewing).toBeNull()
+    expect(ready(store).claimed).toBe(true)
+  })
+
+  it('refuses while the workflow is still opening, rather than surfacing later', async () => {
+    const host = recorder({ versionYaml: VERSION_TWO, deferOpen: true })
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+
+    // `commit()` cannot publish before the open lands, so a preview accepted
+    // here would be held silently and then appear over the Draft the open goes
+    // on to claim.
+    await expect(store.preview(2)).rejects.toThrow(/not open yet/)
+
+    host.finishOpen()
+    await settle()
+    expect(ready(store).previewing).toBeNull()
+    expect(ready(store).definition?.name).toBe('Morning inbox triage')
+  })
+
+  it('survives a session ending under it, because it never needed the claim', async () => {
+    const host = recorder({ versionYaml: VERSION_TWO })
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+
+    const showing = store.preview(2)
+    await store.release()
+    await showing
+
+    expect(ready(store).previewing).toBe(2)
+    expect(ready(store).claimed).toBe(false)
+  })
+
+  it('is dropped by a claim taken under it, which puts a Draft on screen', async () => {
+    const host = recorder({ versionYaml: VERSION_TWO })
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+
+    const showing = store.preview(2)
+    store.reopen()
+    await settle()
+
+    // Said, not swallowed: a caller that cannot tell this from success closes
+    // its list and reports a version that never reached the screen.
+    await expect(showing).rejects.toThrow(/opened again/)
+    expect(ready(store).previewing).toBeNull()
+    expect(ready(store).claimed).toBe(true)
+  })
+
+  it('opens on a session that has ended, because the history is about the workflow', async () => {
+    const host = recorder({ versionYaml: VERSION_TWO })
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+    await store.release()
+
+    await store.preview(2)
+
+    expect(ready(store).previewing).toBe(2)
+    expect(ready(store).claimed).toBe(false)
+  })
+})
+
+describe('restoring a version', () => {
+  it('takes the content and leaves the Draft its own identity', async () => {
+    const host = recorder({ versionYaml: VERSION_TWO })
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+
+    await store.restoreVersion(2)
+
+    const shown = ready(store)
+    expect(shown.definition?.name).toBe('Overnight triage')
+    expect(shown.definition?.steps).toHaveLength(1)
+    // The two keys ADR-0005 makes Hatua's. Carried across, the bar would read
+    // `v2 · Published` over a claimed Draft, and a Publish would promote a
+    // document claiming to be an older published version.
+    expect(shown.definition?.version).toBe(4)
+    expect(shown.definition?.status).toBe('draft')
+  })
+
+  it('is one entry on the undo stack, not a rewrite watched in pieces', async () => {
+    const host = recorder({ versionYaml: VERSION_TWO })
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+
+    await store.restoreVersion(2)
+
+    expect(ready(store).undoLabel).toBe('Restore version 2')
+    store.undo()
+    expect(ready(store).definition?.name).toBe('Morning inbox triage')
+  })
+
+  it('autosaves like any other edit', async () => {
+    const host = recorder({ versionYaml: VERSION_TWO })
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+
+    await store.restoreVersion(2)
+    await vi.advanceTimersByTimeAsync(2000)
+
+    expect(host.writes).toHaveLength(1)
+    expect(host.writes[0]).toContain('Overnight triage')
+    expect(host.writes[0]).toContain('version: 4')
+  })
+
+  it('opens a Draft first when the session has ended, so the edit lands somewhere', async () => {
+    const host = recorder({ versionYaml: VERSION_TWO })
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+    await store.discard()
+    expect(ready(store).claimed).toBe(false)
+
+    await store.restoreVersion(2)
+
+    expect(host.opens).toBe(2)
+    expect(ready(store).claimed).toBe(true)
+    expect(ready(store).definition?.name).toBe('Overnight triage')
+  })
+
+  it('does not spend a claim on a version it could not read', async () => {
+    const host = recorder({ rejectLoad: new Error('That version could not be read.') })
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+    await store.release()
+
+    await expect(store.restoreVersion(2)).rejects.toThrow('That version could not be read.')
+    expect(host.opens).toBe(1)
+  })
+
+  it('reports the refusal when the version is not a single YAML document', async () => {
+    const host = recorder({ versionYaml: 'id: one\n---\nid: two\n' })
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+
+    await expect(store.restoreVersion(2)).rejects.toThrow(/single YAML document/)
+    // Refused, so the Draft is untouched and nothing reached the undo stack.
+    expect(ready(store).definition?.name).toBe('Morning inbox triage')
+    expect(ready(store).undoLabel).toBeNull()
+  })
+
+  it('leaves the screen on the Draft even when the restore changes nothing', async () => {
+    // The version the Draft already matches. `apply` records no edit, so nothing
+    // else publishes — and a snapshot left saying `previewing` is a screen stuck
+    // read-only, with `exitPreview()` a no-op against a preview the store has
+    // already dropped.
+    const host = recorder()
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+    await store.preview(4)
+    expect(ready(store).previewing).toBe(4)
+
+    await store.restoreVersion(4)
+
+    expect(ready(store).previewing).toBeNull()
+    expect(ready(store).definition?.name).toBe('Morning inbox triage')
+  })
+
+  it('reports why the Draft could not be opened, rather than reporting a restore', async () => {
+    const host = recorder({ versionYaml: VERSION_TWO })
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+    // The open that RESTORE has to make is the one that fails, so the session
+    // can end and leave nothing for the command to land on.
+    host.failNextOpen = true
+    await store.release()
+
+    await expect(store.restoreVersion(2)).rejects.toThrow('could not be opened')
+    // The refused open is what the store reports; nothing claims a restore took.
+    expect(store.getSnapshot().status).toBe('failed')
+  })
+
+  it('drops a load abandoned by a reopen, however late the Host answers it', async () => {
+    const host = recorder({ versionYaml: VERSION_TWO })
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+
+    const restoring = store.restoreVersion(2)
+    store.reopen()
+    await settle()
+
+    await expect(restoring).rejects.toThrow(/nothing was restored/)
+    // The Draft on screen is the one the reopen claimed, not one this call filled.
+    expect(ready(store).definition?.name).toBe('Morning inbox triage')
+    expect(ready(store).undoLabel).toBeNull()
+  })
+
+  it('takes the preview off screen, because what was being read is now being edited', async () => {
+    const host = recorder({ versionYaml: VERSION_TWO })
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+    await store.preview(2)
+
+    await store.restoreVersion(2)
+
+    expect(ready(store).previewing).toBeNull()
+    expect(ready(store).claimed).toBe(true)
+  })
+})
+
+describe('how a session ended', () => {
+  it('says a publish, with the version it produced', async () => {
+    const host = recorder()
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+
+    await store.publish()
+
+    expect(ready(store).ended).toEqual({ how: 'published', version: 5 })
+  })
+
+  it('tells a release from a discard, which read alike from the outside', async () => {
+    const released = recorder()
+    const one = createEditingStore(released.port, 'wf_morning')
+    one.open()
+    await settle()
+    await one.release()
+
+    const discarded = recorder()
+    const two = createEditingStore(discarded.port, 'wf_morning')
+    two.open()
+    await settle()
+    await two.discard()
+
+    // Both drop the claim and both leave `save` reading the same thing, which is
+    // why a surface watching from outside cannot tell them apart.
+    expect(ready(one).claimed).toBe(false)
+    expect(ready(two).claimed).toBe(false)
+    expect(ready(one).ended).toEqual({ how: 'released' })
+    expect(ready(two).ended).toEqual({ how: 'discarded' })
+  })
+
+  it('records nothing for a dispose, which nobody chose', async () => {
+    const host = recorder()
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+
+    store.dispose()
+
+    expect(ready(store).ended).toBeNull()
+  })
+
+  it('is cleared by the next open, so it cannot caption a later session', async () => {
+    const host = recorder()
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+    await store.release()
+
+    store.reopen()
+    await settle()
+
+    expect(ready(store).ended).toBeNull()
   })
 })

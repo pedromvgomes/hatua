@@ -51,20 +51,31 @@ is free, and what replaces it is **Publish**.
 
 ## Scope
 
-The top bar carries the version and its status, and the list — paged, newest first, each row spelled
-as the schema spells it. It does **not** carry the read-only mode.
+The top bar carries the version and its status, the list — paged, newest first, each row spelled as
+the schema spells it — and what a row does when it is pressed.
 
-Selecting a version and loading it through `loadVersion` puts the *whole screen* into a state where
-the canvas, the step editor and the **Workflow** tab all read a document other than the **Draft**.
-That is a property of every region rather than of this bar, and it is the change that has to be
-designed before the control can mean anything. So the list is a history — which version is live,
-which are archived, whether a **Draft** is outstanding — and `loadVersion` remains on the port with
-no reader, the same rule every other port follows: a shape a screen forced, waiting for the screen.
+Selecting a version loads it through `loadVersion` and puts the *whole screen* into a state where the
+canvas, the step editor and the **Workflow** tab all read a document other than the **Draft**. That is
+a property of every region rather than of this bar, which is why it is decided in
+[ADR-0024](0024-the-editing-snapshot-describes-whichever-version-is-on-screen.md) and not here: the
+editing store's snapshot describes whichever version is on screen, so every region follows without
+being taught anything. What this bar owns is the list, the row, and the cluster that replaces
+**Publish**, **Release** and **Discard** while a **Preview** is up.
 
-Offering a selection that highlights a row and changes nothing would be worse than offering none. The
-control would claim a destination that does not exist, which is also why the **Build / Runs**
-segmented control is not drawn: `ExecutionSource` says "omit entirely and the Runs view is hidden",
-and there is no view to switch to.
+The escape from read-only is "edit", which means "open the **Draft**" — never "edit this version".
+Beside it sits **Restore**, which is the other thing a user wants from an old version and is not a
+version decision at all: it replaces the **Draft**'s content and autosaves like any other edit,
+leaving the **Draft**'s own `version` and `status` alone.
+
+**Nothing is offered that does not go anywhere.** The row for the document already on screen is drawn
+as current and does not select, so a workflow with one version opens a list of one unselectable row —
+the honest picture, rather than a control that highlights and changes nothing. The button itself stays
+whatever the history holds, because its other job is the readout, and because `listVersions` is not
+fetched until the list is opened: a bar that hid itself would have to pay for that request on every
+mount, on every screen carrying the toolbar, for every user who never opens it.
+
+The **Build / Runs** segmented control is still not drawn: `ExecutionSource` says "omit entirely and
+the Runs view is hidden", and there is no view to switch to.
 
 ## Three things in the design handoff our decisions have already overtaken
 

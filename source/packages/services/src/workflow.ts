@@ -1,9 +1,11 @@
-import type { WorkflowDocument } from '@hatua/document'
+import { parseWorkflow, type WorkflowDocument } from '@hatua/document'
 import {
   asObject,
   detachNode,
   entriesOf,
   insertNode,
+  KEY_ORDER,
+  readAt,
   setScalar,
   setScalarIn,
   TRIGGER_KEY_ORDER,
@@ -228,6 +230,75 @@ export function setTriggerField(
     label: `Edit ${id}`,
     apply(document) {
       setScalar(document, ['triggers', locateTrigger(document, id), 'with', key], value)
+    },
+  }
+}
+
+/**
+ * The keys that say WHICH document this is, as opposed to what is in it.
+ *
+ * ADR-0005 puts `version:` and `status:` in the YAML and makes them Hatua's,
+ * and the top bar reads both straight off the open document. `id` addresses the
+ * workflow on the port. None of the three is content a **Restore** may bring
+ * across.
+ */
+const IDENTITY = ['id', 'version', 'status'] as const
+
+/**
+ * Replace the **Draft**'s content with an earlier version's, keeping the
+ * **Draft**'s own identity.
+ *
+ * One command, so it is one entry on the undo stack and one autosave, rather
+ * than a rewrite the user watches happen in pieces.
+ *
+ * ## Why the identity keys do not come across
+ *
+ * `version:` and `status:` live in the YAML (ADR-0005) and the bar renders them
+ * as the readout, so a draft carrying version 3's copies says `v3 · Published`
+ * beside a list saying `v6 draft` — one screen disagreeing with itself about
+ * what is open. Worse, `publish()` sends the document's own bytes, so the
+ * promoted version would claim to be an older, already-published one. `id` is
+ * how the **Host** addresses the workflow, and a version that names a different
+ * one is a version served in error rather than a rename to honour.
+ *
+ * A key the **Draft** does not have is not invented: the restored document is
+ * left exactly as ill-formed as the one it replaced, because guessing an
+ * identity is how a wrong one gets written to a file Hatua does not own.
+ *
+ * ## Why the contents are swapped rather than merged
+ *
+ * A restore is not a diff. Merging would leave keys the earlier version had
+ * dropped — a Connection it no longer declares, a Trigger it retired — standing
+ * in a document that is meant to BE that version, which is neither the old one
+ * nor the new one and is what nobody asked for.
+ *
+ * The document-level comments travel with the contents for the same reason:
+ * they are that version's, and the ones they replace described steps that are
+ * no longer here.
+ */
+export function restoreContent(version: number, yaml: string): EditCommand {
+  return {
+    label: `Restore version ${version}`,
+    apply(document) {
+      // Parsed BEFORE anything is written, so a version the Host cannot serve
+      // as a single YAML document throws with the draft untouched — the store
+      // then restores nothing and reports the refusal, which is what every
+      // command here does when it cannot address what it was given.
+      const incoming = parseWorkflow(yaml)
+
+      const kept = IDENTITY.map((key) => [key, readAt(document, [key])] as const)
+
+      document.ast.contents = incoming.ast.contents
+      document.ast.comment = incoming.ast.comment
+      document.ast.commentBefore = incoming.ast.commentBefore
+
+      for (const [key, value] of kept) {
+        if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+          setScalarIn(document, [], key, KEY_ORDER, value)
+        } else {
+          document.ast.deleteIn([key])
+        }
+      }
     },
   }
 }

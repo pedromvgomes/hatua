@@ -280,6 +280,30 @@ version the draft branched from is no longer the live one. Conflict is detected 
 else, because only publish can collide.
 _Avoid_: commit, release, deploy, save
 
+**Release**:
+Ending an editing session and leaving the **Draft** where it is, for whoever picks it up next. The
+claim is given up; nothing about the workflow's versions changes.
+_Avoid_: publish, unlock, close, save and exit
+
+**Discard**:
+Ending an editing session by throwing the **Draft** away. What the workflow holds is then its live
+**Published Version** again, and the draft's number is freed, because a number only becomes
+permanent at **Publish**.
+_Avoid_: delete, revert, cancel, roll back
+
+**Restore**:
+Replacing the **Draft**'s content with an earlier version's. It is an *edit*, not a version
+decision: it autosaves like any other change, and it leaves the **Draft**'s own `version` and
+`status` alone, so a draft restored from version 3 is still the draft it was. With no **Draft**
+open, restoring opens one at `base + 1` first.
+_Avoid_: promote (that is **Publish**), revert, roll back, reset
+
+**Preview**:
+Reading a version other than the **Draft** on the whole screen, without editing it. Every region
+shows the previewed version and nothing accepts a change, because only the **Draft** is mutable. The
+session's claim is untouched — a preview is a way of looking, not a way of stopping.
+_Avoid_: view mode, read-only mode as a thing the user turns on, checkout
+
 **Trigger**:
 What starts a workflow. A **Trigger** is *not* a **Step** — it lives in its own section of the
 **Workflow Definition**, and its declared outputs are the workflow's parameter contract. A workflow
