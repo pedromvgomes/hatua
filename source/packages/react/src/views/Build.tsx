@@ -1,4 +1,4 @@
-import { type BoardId, boardKey, type Segment, type StepRef } from '@hatua/model'
+import { type BoardId, boardKey, type RegionRef, type Segment, type StepRef } from '@hatua/model'
 import { addStep, type InsertPoint, rootStepCount } from '@hatua/services'
 import { type ComponentPropsWithRef, useState } from 'react'
 import { Components } from '../layouts/Components'
@@ -89,6 +89,17 @@ export function Build({ className, ...rest }: BuildProps) {
   const [selectedOn, setSelectedOn] = useState<Readonly<Record<string, Segment>>>({})
   const [collapsed, setCollapsed] = useState<readonly StepRef[]>([])
   /*
+   * Which REGIONS are folded, held here for the reason the Board is.
+   *
+   * A fold is chrome and the canvas owns it — but folding is two axes, not one:
+   * `layout` hides a collapsed region's Steps exactly as it hides a collapsed
+   * container's, and a Step inside a folded branch is drawn by nothing. Left
+   * inside <FlowMap>, that axis is unreachable from here, so revealing a problem
+   * could unfold every container on the Board and still arrive at a Step nobody
+   * can see.
+   */
+  const [foldedRegions, setFoldedRegions] = useState<readonly RegionRef[]>([])
+  /*
    * Which Board is on screen, and the reason it is up here rather than inside
    * either region.
    *
@@ -147,7 +158,79 @@ export function Build({ className, ...rest }: BuildProps) {
       <div className={cx(styles.scroller, className)} {...rest}>
         <div className={styles.build}>
           <div className={styles.bar}>
-            <TopBar />
+            <TopBar
+              /*
+               * Where a blocking problem actually is.
+               *
+               * The bar knows what is wrong and nothing about Boards, tabs or
+               * selection; this view holds all three already, for the canvas and
+               * the list. So the bar emits the diagnostic and the translation
+               * lives here — the same shape as `onInsert` and `onSelect`, and
+               * the same reason: a region that reached for chrome would be a
+               * second answer to a question this view already answers.
+               *
+               * A diagnostic names a Board and, usually, a Step. What it never
+               * names is a tab, so the Workflow tab is opened only for a Trigger
+               * — a Trigger is not a Step and is edited there rather than in the
+               * step editor.
+               */
+              onRevealDiagnostic={(diagnostic) => {
+                const target: BoardId = diagnostic.blockId ?? null
+                setBoard(target)
+                // An insert point names a list on the Board it was made on, so
+                // it does not survive going to another one — the same rule the
+                // canvas's doorway and the tab strip both follow, and for the
+                // same reason: the next Component picked would land somewhere
+                // nobody chose, on a Board nobody is looking at.
+                setPending(null)
+                /*
+                 * And unfold the Board, or the reveal can arrive at something
+                 * nothing draws.
+                 *
+                 * `collapsed` is handed straight to `layout`, and a folded
+                 * container hides its descendants outright — so a bad `when:`
+                 * inside a collapsed Fork would select a Step that is not on
+                 * screen, and the row meant to be the way to the problem would
+                 * do nothing observable.
+                 *
+                 * The whole Board rather than the ancestors of the one Step:
+                 * nothing exported names a Step's ancestors, and inventing that
+                 * walk here would be a second answer to a question
+                 * `@hatua/model` owns. Unfolding more than strictly necessary is
+                 * visible and undoable; arriving at a blank canvas is neither.
+                 */
+                setCollapsed((held) =>
+                  held.filter((ref) => boardKey(ref.board) !== boardKey(target)),
+                )
+                setFoldedRegions((held) =>
+                  held.filter((ref) => boardKey(ref.board) !== boardKey(target)),
+                )
+
+                if (diagnostic.triggerId !== undefined) {
+                  setTab('workflow')
+                  return
+                }
+
+                const { stepId } = diagnostic
+                if (stepId === undefined) {
+                  /*
+                   * A Block's own problems — a duplicated id, the same parameter
+                   * declared twice — name no Step, and what they are about is
+                   * the Block's declarations, which the Workflow tab edits on
+                   * that Board. The canvas is always on screen, so opening the
+                   * tab costs a recursion or a missing return nothing while
+                   * putting the two that ARE edited there in front of the
+                   * reader.
+                   */
+                  setTab('workflow')
+                  return
+                }
+                setSelectedOn((held) => ({
+                  ...held,
+                  [boardKey(target)]: { board: target, steps: [stepId] },
+                }))
+              }}
+            />
           </div>
           <div className={styles.side}>
             <TabbedPanel
@@ -270,6 +353,8 @@ export function Build({ className, ...rest }: BuildProps) {
                 })
               }
               collapsed={collapsed}
+              collapsedRegions={foldedRegions}
+              onCollapsedRegionsChange={setFoldedRegions}
               onCollapseChange={setCollapsed}
             />
           </div>

@@ -1,3 +1,4 @@
+import { logger } from '@hatua/log'
 import {
   type Diagnostic,
   FIELD_KIND_TYPES,
@@ -62,6 +63,16 @@ export interface FieldsProps extends Omit<ComponentPropsWithRef<'div'>, 'onChang
    */
   scope?: readonly ScopeEntry[]
   /**
+   * Readable, and not writable.
+   *
+   * Every field stays on screen with its value in it — what a Step does is
+   * mostly what its fields say, and a form that emptied itself would answer
+   * "what is this workflow" with nothing. What goes is the writing: each
+   * control refuses, and the ones that exist only to change something are not
+   * drawn.
+   */
+  readOnly?: boolean
+  /**
    * Field keys to mark as reading whatever is being pointed at elsewhere.
    *
    * The Data panel is where a leaf is pointed at, and this is the other half of
@@ -95,6 +106,7 @@ export function Fields({
   values,
   connections,
   scope = NO_SCOPE,
+  readOnly = false,
   highlighted,
   problems,
   onChange,
@@ -145,6 +157,7 @@ export function Fields({
             value={values[field.k]}
             connections={connections}
             scope={scope}
+            readOnly={readOnly}
             highlighted={highlighted?.has(field.k) ?? false}
             problems={problemsFor(field, values[field.k])}
             established={established}
@@ -340,6 +353,7 @@ function FieldRow({
   value,
   connections,
   scope,
+  readOnly,
   highlighted,
   problems,
   established,
@@ -350,6 +364,7 @@ function FieldRow({
   value: unknown
   connections: readonly Connection[]
   scope: readonly ScopeEntry[]
+  readOnly: boolean
   /** Whether this field's Template reads whatever is being pointed at. */
   highlighted: boolean
   problems: readonly Diagnostic[] | undefined
@@ -398,6 +413,7 @@ function FieldRow({
         connections={connections}
         established={established}
         options={options}
+        readOnly={readOnly}
         onChange={onChange}
         onDeclare={onDeclareConnection}
       />
@@ -405,6 +421,7 @@ function FieldRow({
       <Toggle
         id={id}
         checked={value === true}
+        disabled={readOnly}
         onCheckedChange={onChange}
         aria-label={field.label}
       />
@@ -412,6 +429,7 @@ function FieldRow({
       <Select
         id={id}
         value={text}
+        disabled={readOnly}
         aria-label={field.label}
         className={cx(field.mono && styles.mono)}
         onChange={(event) => onChange(event.target.value)}
@@ -437,6 +455,7 @@ function FieldRow({
         // list — so a drop replaces rather than appends.
         single={field.kind === 'ref'}
         multiline={field.kind === 'textarea'}
+        disabled={readOnly}
         onCommit={(next) => onChange(numberIfAsked(field, next))}
       />
     ) : (
@@ -565,6 +584,8 @@ export function splitByField(problems: readonly Diagnostic[] | undefined): {
   return { byField, aboutTheSubject }
 }
 
+const log = logger('react.fields')
+
 const NO_SCOPE: readonly ScopeEntry[] = []
 
 /**
@@ -636,6 +657,7 @@ function ConnectionField({
   connections,
   established,
   options,
+  readOnly,
   onChange,
   onDeclare,
 }: {
@@ -647,6 +669,7 @@ function ConnectionField({
   connections: readonly Connection[]
   established: PickerState
   options: ReturnType<typeof connectionOptions>
+  readOnly: boolean
   onChange: (next: string) => void
   onDeclare?: (name: string, ref: string) => void
 }) {
@@ -657,10 +680,26 @@ function ConnectionField({
   const choose = (next: string) => {
     const binding = bindable.find((connection) => `+${connection.ref}` === next)
     if (!binding) {
+      log.debug('connection chosen from those the workflow declares', {
+        field: field.k,
+        next,
+        // What the picker was offering when it was chosen from, because a value
+        // that matches none of them is the interesting case.
+        offered: bindable.map((one) => `+${one.ref}`),
+      })
       onChange(next)
       return
     }
-    onDeclare?.(nameFor(binding.label, takenNames), binding.ref)
+    const name = nameFor(binding.label, takenNames)
+    log.debug('connection chosen from those the Host has established', {
+      field: field.k,
+      ref: binding.ref,
+      name,
+      // The one that decides whether anything happens at all: without a handler
+      // this call is a no-op, and the option should not have been offered.
+      declares: Boolean(onDeclare),
+    })
+    onDeclare?.(name, binding.ref)
   }
 
   if (established.status === 'loading') {
@@ -682,7 +721,13 @@ function ConnectionField({
   }
 
   return (
-    <Select id={id} value={value} aria-label={field.label} onChange={(e) => choose(e.target.value)}>
+    <Select
+      id={id}
+      value={value}
+      disabled={readOnly}
+      aria-label={field.label}
+      onChange={(e) => choose(e.target.value)}
+    >
       <option value="">—</option>
       {declared.map((connection) => (
         <option key={connection.id} value={connection.id}>

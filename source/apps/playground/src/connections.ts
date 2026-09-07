@@ -25,7 +25,12 @@ interface Established {
   status: 'ready' | 'expired' | 'revoked' | 'unknown'
 }
 
-const ESTABLISHED: Established[] = [
+/**
+ * What this Host has established, and the only refs a seed may point at: a ref
+ * nothing here serves is one nothing describes, which every `conn` field then
+ * reads as a Connection of unknown type.
+ */
+export const ESTABLISHED: Established[] = [
   { ref: 'cx_9f2a', type: 'email', label: 'Ops mailbox', hint: 'ops@example.com', status: 'ready' },
   {
     ref: 'cx_31bd',

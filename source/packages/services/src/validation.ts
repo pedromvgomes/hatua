@@ -6,7 +6,7 @@ import {
 } from '@hatua/model'
 import { contextKeysIn, manifestsIn } from '@hatua/schema'
 import type { ConnectionStore } from './connections'
-import type { EditingStore } from './editing'
+import { type EditingStore, PublishBlocked } from './editing'
 import type { ManifestStore } from './manifests'
 import type { Store } from './store'
 
@@ -128,6 +128,19 @@ export interface ValidationStore extends Store<ValidationState> {
   load(): void
 }
 
+/**
+ * How long a Publish waits for an answer that is still coming.
+ *
+ * Generous, because the normal case is a catalogue landing in well under a
+ * second and the cost of waiting is nothing; bounded, because a Host whose
+ * fetch hangs would otherwise leave the press unanswered for ever.
+ */
+const GATE_DEADLINE_MS = 10_000
+
+/** Said when the rules could not be run at all, rather than run and found nothing. */
+const UNCHECKABLE =
+  'This workflow could not be checked just now, so it has not been published. Try again in a moment.'
+
 const NONE: ReadonlyMap<string, Diagnostic[]> = new Map()
 const NOTHING: readonly Diagnostic[] = []
 
@@ -183,6 +196,156 @@ const typesFrom = (
  * this object are five things to keep level with `ValidationState`.
  */
 export const unchecked = (): ValidationState => UNCHECKED
+
+/**
+ * What blocks a **Publish**, once anything that is going to answer has.
+ *
+ * This is `PublishGate.blockers` — the async half ADR-0023 describes, kept here
+ * rather than in the composition root because deciding *when an answer has
+ * arrived* is a question about these stores and not about React.
+ *
+ * ## What it waits for, and what it refuses to wait for
+ *
+ * An answer is still coming while the catalogue is loading or the Host's
+ * Connections are `pending`. It is never coming when the catalogue **failed**,
+ * when the Connections are `undescribed`, or when there is no validation store
+ * at all — and each of those narrows the check instead of stopping it, which is
+ * ADR-0022's rule.
+ *
+ * The failed catalogue is the case worth naming. `ValidationState.ready` is
+ * false both while the manifests are arriving and forever after they fail to,
+ * so waiting on `ready` alone would hang **Publish** permanently for a Host
+ * whose manifest endpoint is down — and a Publish button that never answers is
+ * a worse failure than one that publishes unchecked. That is why the catalogue
+ * is read here directly rather than through `ready`.
+ *
+ * Nothing here needs to wait for the document: `publish()` has already refused
+ * a document that does not project before this is ever called.
+ */
+export function publishBlockers(
+  validation: ValidationStore | null | undefined,
+  manifests: ManifestStore | null | undefined,
+  { deadlineMs = GATE_DEADLINE_MS }: { deadlineMs?: number } = {},
+): Promise<readonly Diagnostic[]> {
+  if (!validation || !manifests) return Promise.resolve(NOTHING)
+
+  /*
+   * Ask, before waiting to be told.
+   *
+   * A manifest store nobody has called `load()` on sits at `loading` for ever —
+   * that is not a fetch in flight, it is a fetch that has not been started. So a
+   * gate that only waited would never answer for a Host that drives publish
+   * without mounting a region, and the Publish it belongs to would hang. This is
+   * exactly what `ValidationStore.load` exists for: "validation needs what the
+   * other regions happen to ask for", and it is idempotent, so a catalogue
+   * already on its way is not fetched twice.
+   */
+  validation.load()
+
+  const decided = () =>
+    manifests.getSnapshot().status !== 'loading' &&
+    validation.getSnapshot().connections !== 'pending'
+
+  /*
+   * What is known, or a refusal when nothing is.
+   *
+   * `ready` is what says the rules RAN. An unready snapshot's `all` is empty,
+   * and empty means "nothing is wrong" to the only caller there is — so a
+   * catalogue that FAILED must not answer with it any more than one that never
+   * arrived may. Applying that in one place and not the other left a Host whose
+   * manifest endpoint hangs refusing, while one that returns a 500 published a
+   * workflow no rule had run against.
+   *
+   * What still proceeds is a Host that wired no catalogue at all: it has no
+   * `ValidationStore`, this function returns above, and `publish()` is left with
+   * its floor — a correct configuration, which ADR-0022 is about. A Host that
+   * wired one and cannot serve it is a broken one, and the honest answer is to
+   * say so and let the press be repeated.
+   *
+   * A wait that ran out settles the same way, for the same reason: it is not a
+   * different kind of silence from a catalogue that failed.
+   */
+  const answered = (
+    resolve: (found: readonly Diagnostic[]) => void,
+    refuse: (why: Error) => void,
+  ) => {
+    if (validation.getSnapshot().ready) {
+      resolve(validation.getSnapshot().all)
+      return
+    }
+    /*
+     * Unready has two causes, and only one of them is this gate's to report.
+     *
+     * A catalogue in hand means the rules could have run, so what stopped them
+     * is the document — someone typed it out of shape during the wait, which is
+     * ordinary: the canvas keeps editing while the three buttons are disabled.
+     * Answering with nothing hands the question back to `publish()`, whose floor
+     * check runs again after the wait and says what is actually wrong. Refusing
+     * here instead would bury that behind "could not be checked, try again in a
+     * moment" — advice that is wrong, and that says the same thing on every
+     * retry because the document is what needs fixing.
+     */
+    if (manifests.getSnapshot().status === 'ready') {
+      resolve(NOTHING)
+      return
+    }
+    /*
+     * A failed catalogue is asked for again, or "try again in a moment" is a
+     * sentence that never comes true.
+     *
+     * `load()` is idempotent and a failed fetch stays failed, so every press
+     * after the first would refuse with the same advice and nothing behind it.
+     * The press is the reader saying they want this now, which is exactly what
+     * a Retry is — so it retries, and this attempt still refuses because the
+     * answer is not back yet.
+     */
+    if (manifests.getSnapshot().status === 'failed') manifests.reload()
+    refuse(new PublishBlocked(NOTHING, UNCHECKABLE))
+  }
+
+  return new Promise((resolve, reject) => {
+    if (decided()) {
+      answered(resolve, reject)
+      return
+    }
+
+    let stop = () => {}
+
+    const settle = () => {
+      clearTimeout(timer)
+      stop()
+      answered(resolve, reject)
+    }
+
+    /*
+     * The wait is bounded, and only this half of it is.
+     *
+     * "It will reply" is true of a Host that replies. One whose manifest fetch
+     * hangs — no timeout on the request — leaves the catalogue at `loading` for
+     * the life of the page, and a gate waiting on that never answers:
+     * `publish()` never settles, and the control that pressed it never hears
+     * back.
+     *
+     * That is worth a deadline where the Host's own `publish` is not, and the
+     * difference is what a wait costs. Nothing has been spent here — no claim,
+     * no version, no call to the port — so giving up and settling on what is
+     * known costs only the press being repeated. Waiting on `port.publish` is
+     * different in kind: the write is in the Host's hands, and no local timer
+     * can un-make it.
+     */
+    const timer = setTimeout(settle, deadlineMs)
+
+    stop = validation.subscribe(() => {
+      if (!decided()) return
+      settle()
+    })
+
+    // Subscribing can be the thing that makes it decidable — `load()` above may
+    // have resolved between the check and here — so ask once more rather than
+    // waiting out the deadline for an answer already sitting there.
+    if (decided()) settle()
+  })
+}
 
 export function createValidationStore(
   editing: EditingStore,

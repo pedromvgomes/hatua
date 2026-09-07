@@ -1,9 +1,10 @@
 import type { WorkflowDocument } from '@hatua/document'
+import type { Diagnostic } from '@hatua/model'
 import { regionsOf } from '@hatua/model'
 import type { Step } from '@hatua/schema'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { sequence } from './command'
-import { createEditingStore, type EditingSnapshot } from './editing'
+import { createEditingStore, type EditingSnapshot, PublishBlocked } from './editing'
 import type {
   Cursor,
   DraftSession,
@@ -1271,6 +1272,159 @@ describe('autosave', () => {
   })
 })
 
+describe('a Host that rotates the token on renewal', () => {
+  /*
+   * `Lease` carries a token as well as an expiry, which is only worth carrying
+   * if a Host may hand back a new one. Reading only the clock leaves this store
+   * writing with a credential the Host no longer honours: every save refused,
+   * then a halt, and a publish spending a claim that is not the live one.
+   */
+  it('writes with the token the renewal handed back', async () => {
+    const rotated = 'tok_2' as EditToken
+    const host = recorder({ lease: leaseFor(0.05) })
+    const seen: EditToken[] = []
+    host.port.renewLease = async () => ({ token: rotated, expiresAt: leaseFor(30).expiresAt })
+    host.port.saveDraft = async (given) => {
+      seen.push(given)
+    }
+
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+    await vi.advanceTimersByTimeAsync(2000)
+
+    store.apply(removeStep({ board: null, id: 's1' }))
+    await vi.advanceTimersByTimeAsync(200)
+
+    expect(seen).toEqual([rotated])
+  })
+})
+
+describe('a token rotated while an ending is in flight', () => {
+  const rotated = 'tok_2' as EditToken
+
+  /*
+   * A renewal can land inside the gate's wait and hand back a new token, and it
+   * does not bump the generation — so the guard after the wait says nothing
+   * about it. Spending the credential captured before the wait gets the publish
+   * refused for a reason the user can neither see nor act on.
+   */
+  it('publishes on the token the renewal handed back', async () => {
+    let answer: (found: Diagnostic[]) => void = () => {}
+    const pending = new Promise<Diagnostic[]>((resolve) => {
+      answer = resolve
+    })
+    const spent: EditToken[] = []
+    const host = recorder({ lease: leaseFor(0.05) })
+    host.port.renewLease = async () => ({ token: rotated, expiresAt: leaseFor(30).expiresAt })
+    host.port.publish = async (given): Promise<PublishedVersion> => {
+      spent.push(given)
+      return { version: 5, publishedAt: '2026-01-01T00:00:00.000Z' }
+    }
+
+    const store = createEditingStore(host.port, 'wf_morning', {
+      autosaveDelayMs: 100,
+      gate: { blockers: () => pending },
+    })
+    store.open()
+    await settle()
+
+    const attempt = store.publish()
+    await settle()
+    // The renewal fires inside the wait.
+    await vi.advanceTimersByTimeAsync(2000)
+
+    answer([])
+    await attempt
+    expect(spent).toEqual([rotated])
+  })
+
+  it('releases on it too, because the last write is an unbounded wait', async () => {
+    let land: () => void = () => {}
+    const spent: EditToken[] = []
+    const host = recorder({ lease: leaseFor(0.05) })
+    host.port.renewLease = async () => ({ token: rotated, expiresAt: leaseFor(30).expiresAt })
+    host.port.saveDraft = () =>
+      new Promise<void>((resolve) => {
+        land = resolve
+      })
+    host.port.releaseDraft = async (given) => {
+      spent.push(given)
+    }
+
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+    store.apply(removeStep({ board: null, id: 's1' }))
+
+    const ending = store.release()
+    await vi.advanceTimersByTimeAsync(2000)
+    land()
+    await ending
+
+    expect(spent).toEqual([rotated])
+  })
+})
+
+describe('a renewal that answers with less than a full lease', () => {
+  /*
+   * Nothing read the renewal's token before, so a Host answering with the expiry
+   * alone was correct and may still be. Taking `undefined` from it ends a
+   * session whose lease the Host considers perfectly good.
+   */
+  it('keeps the token it holds when the Host sends none back', async () => {
+    const host = recorder({ lease: leaseFor(0.05) })
+    host.port.renewLease = async () => ({ expiresAt: leaseFor(30).expiresAt }) as unknown as Lease
+
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+    await vi.advanceTimersByTimeAsync(2000)
+
+    expect(ready(store).claimed).toBe(true)
+    store.apply(removeStep({ board: null, id: 's1' }))
+    await vi.advanceTimersByTimeAsync(200)
+    expect(host.writes).toHaveLength(1)
+  })
+})
+
+describe('renewals do not overlap', () => {
+  /*
+   * Two overlapping renewals are sent with the SAME token, and only the later
+   * ASK is applied — so against a Host that rotates, the loser's answer carries
+   * the new credential and is discarded while the winner is refused for
+   * presenting the old one. The session is then stranded on a token nothing can
+   * refresh, and only a reopen recovers it, which discards the work ADR-0005
+   * exists to keep.
+   */
+  it('does not ask again while an ask is outstanding', async () => {
+    const answers: ((lease: Lease) => void)[] = []
+    const host = recorder({ lease: leaseFor(30) })
+    host.port.renewLease = () =>
+      new Promise<Lease>((resolve) => {
+        answers.push(resolve)
+      })
+    host.port.saveDraft = async () => {
+      throw new Error('The workflow service is unreachable.')
+    }
+
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+    store.apply(removeStep({ board: null, id: 's1' }))
+    await vi.advanceTimersByTimeAsync(200)
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
+
+    // The armed timer asks; the press and a second press find one outstanding.
+    await vi.advanceTimersByTimeAsync(16 * 60_000)
+    store.resumeSaving()
+    store.resumeSaving()
+    await settle()
+
+    expect(answers).toHaveLength(1)
+  })
+})
+
 describe('the lease', () => {
   it('renews at the halfway mark, so one lost renewal still leaves time to retry', async () => {
     const host = recorder({ lease: leaseFor(30) })
@@ -1397,6 +1551,182 @@ describe('ending the session', () => {
     expect(host.released).toBe(1)
   })
 
+  /*
+   * `write()` cannot reject — `attempt()` turns a refused `saveDraft` into a halt
+   * and returns normally — so awaiting it says the attempt is over, not that it
+   * worked. Releasing anyway hands the Draft on WITHOUT the edit that was in
+   * flight and reports a clean ending, with nothing on screen to say otherwise:
+   * the halt is drawn against a claim, and the claim would be gone.
+   */
+  it('refuses to release a Draft whose last edit never reached the Host', async () => {
+    const host = recorder({ rejectSave: new Error('Your lease on this workflow expired.') })
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+    store.apply(removeStep({ board: null, id: 's1' }))
+
+    await expect(store.release()).rejects.toThrow(/lease/)
+
+    expect(host.released).toBe(0)
+    // The claim is kept, so the halt is still on screen and still resumable.
+    expect(ready(store).claimed).toBe(true)
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
+  })
+
+  /*
+   * `attempt()` returns immediately when the store is already halted, so the
+   * write a Release awaits is a no-op and the halt stands whether or not
+   * anything was pending. Judged on the halt alone, a Release pressed on a clean
+   * document after a refused RENEWAL — the commonest halt, and one that loses
+   * nothing — is refused for ever, which is the opposite of handing the Draft
+   * back.
+   */
+  it('releases a clean Draft even though autosave is halted', async () => {
+    const host = recorder({ lease: leaseFor(0.05) })
+    host.port.renewLease = async () => {
+      throw new Error('Your lease on this workflow expired.')
+    }
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+
+    // Nothing typed, and the renewal is refused.
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
+
+    await store.release()
+    expect(host.released).toBe(1)
+    expect(ready(store).claimed).toBe(false)
+  })
+
+  /*
+   * A halt is raised by a refused RENEWAL too, and that fires on a timer — so a
+   * write that succeeded inside the same round trip as a refused renewal was
+   * reported as lost, refusing a release whose Draft is on the Host intact and
+   * leaving Discard as the only way out of it.
+   */
+  it('releases when the write landed, even though a renewal was refused alongside it', async () => {
+    const host = recorder({ lease: leaseFor(0.05) })
+    host.port.renewLease = async () => {
+      throw new Error('Your lease on this workflow expired.')
+    }
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+
+    store.apply(removeStep({ board: null, id: 's1' }))
+    // The write goes out and lands; the renewal is refused meanwhile.
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(host.writes).toHaveLength(1)
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
+
+    await store.release()
+    expect(host.released).toBe(1)
+  })
+
+  /*
+   * A document is dirty again the moment somebody types during the write, which
+   * is a healthy store with another save already scheduled — not an edit that
+   * went nowhere. Judged on that, a release refused with "could not be saved"
+   * over a write that had just succeeded, and pointed the reader at a control
+   * that is only drawn when saving has stopped.
+   */
+  it('carries the edit made during its last write, rather than leaving it behind', async () => {
+    let land: () => void = () => {}
+    let hang = true
+    const host = recorder()
+    host.port.saveDraft = async (_token, text) => {
+      host.writes.push(text)
+      if (!hang) return
+      hang = false
+      await new Promise<void>((resolve) => {
+        land = resolve
+      })
+    }
+
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+    store.apply(removeStep({ board: null, id: 's1' }))
+
+    const ending = store.release()
+    await vi.advanceTimersByTimeAsync(200)
+    // Typed while that write is still in the air. Ending the session cancels the
+    // save that would otherwise have carried it, so it has nowhere else to go.
+    store.apply(removeStep({ board: null, id: 's4' }))
+    land()
+
+    await ending
+    expect(host.released).toBe(1)
+    expect(host.writes.at(-1)).not.toContain('id: s4')
+  })
+
+  /*
+   * `write()` queues behind whatever is already in flight, so an earlier
+   * autosave landing in the meantime moves what the Host holds — and a guard
+   * that watched that mark read somebody else's success as this release's own,
+   * handing the Draft over without the edit that was actually refused.
+   */
+  it('refuses when its own write was refused, even though an earlier one landed', async () => {
+    let refuse = false
+    const host = recorder()
+    host.port.saveDraft = async (_token, text) => {
+      if (refuse) throw new Error('Your lease on this workflow expired.')
+      host.writes.push(text)
+    }
+
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+
+    // One edit autosaves cleanly, moving the Host's copy off what it held when
+    // the session opened.
+    store.apply(removeStep({ board: null, id: 's1' }))
+    await vi.advanceTimersByTimeAsync(200)
+    expect(host.writes).toHaveLength(1)
+
+    // A second edit, and the Host refuses everything from here.
+    refuse = true
+    store.apply(removeStep({ board: null, id: 's4' }))
+
+    await expect(store.release()).rejects.toThrow(/lease/)
+    expect(host.released).toBe(0)
+    expect(ready(store).claimed).toBe(true)
+  })
+
+  /*
+   * `openDraft` claims anew, so a reopen landing inside the last write leaves
+   * this call holding a token the Host has already superseded. Handing that back
+   * is at best refused — captioning a freshly opened, healthy session with
+   * someone else's claim error — and at worst honoured by a Host that unclaims
+   * by workflow rather than by token.
+   */
+  it('hands nothing back when the session it belonged to has been replaced', async () => {
+    let land: () => void = () => {}
+    const host = recorder()
+    host.port.saveDraft = () =>
+      new Promise<void>((resolve) => {
+        land = resolve
+      })
+
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+    store.apply(removeStep({ board: null, id: 's1' }))
+
+    const ending = store.release()
+    await settle()
+    store.reopen()
+    await settle()
+    land()
+    await ending
+
+    expect(host.released).toBe(0)
+    // The session that replaced it is untouched.
+    expect(store.getSnapshot().status).toBe('ready')
+    expect(ready(store).claimed).toBe(true)
+  })
+
   it('does not write before discarding, because the Draft is being thrown away', async () => {
     // The only possible effect would be to lose a race with the delete.
     const { host, store } = await open()
@@ -1445,30 +1775,49 @@ describe('ending the session', () => {
     expect(host.writes).toHaveLength(0)
   })
 
-  it('says the session ended rather than leaving an edit pending for ever', async () => {
-    // Without this the state would sit at `pending` for ever: schedule() fires,
-    // write() bails on the missing token, and nothing reports that the edit is
-    // going nowhere — indistinguishable from "about to be written".
-    const { store } = await open()
-    await store.release()
-    store.apply(removeStep({ board: null, id: 's1' }))
-
-    expect(ready(store).save).toMatchObject({ state: 'halted' })
-    expect((ready(store).save as { error: Error }).error.message).toMatch(/session has ended/)
-  })
-
-  it('writes nothing more once the session ended, even if the document is edited again', async () => {
-    // The Draft was released, discarded or promoted to an immutable Published
-    // Version. There is nothing left to write to, and a write against the old
-    // token would be refused anyway.
+  /*
+   * The Draft was released, discarded or promoted to an immutable Published
+   * Version. There is no claim to write under and, after a discard, no Draft on
+   * the Host to write to — so an edit accepted here is one the next page load
+   * takes away, made on a screen whose own toolbar says the workflow is no
+   * longer being edited.
+   */
+  it('takes no more edits once the session has ended', async () => {
     const { host, store } = await open()
     await store.release()
 
     store.apply(removeStep({ board: null, id: 's1' }))
     await vi.advanceTimersByTimeAsync(10_000)
+
     expect(host.writes).toHaveLength(0)
-    // Still an editor, though — the document was not taken away.
+    // Unchanged, rather than changed and unsaved.
+    expect(ready(store).definition?.steps.map((s) => s.id)).toEqual(['s1', 's2', 's4'])
+    expect(ready(store).save).toEqual({ state: 'saved' })
+  })
+
+  it('takes no undo either, because that is an edit too', async () => {
+    const { host, store } = await open()
+    store.apply(removeStep({ board: null, id: 's1' }))
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(host.writes).toHaveLength(1)
+
+    await store.release()
+    store.undo()
+
     expect(ready(store).definition?.steps.map((s) => s.id)).toEqual(['s2', 's4'])
+  })
+
+  it('reports the edit it could not write when one was already in the air', async () => {
+    // The one halt an ending still raises: a write was scheduled when the
+    // session ended, so it is cancelled with nothing left to carry it.
+    const { store } = await open()
+    store.apply(removeStep({ board: null, id: 's1' }))
+    expect(ready(store).save).toEqual({ state: 'pending' })
+
+    await store.discard()
+
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
+    expect((ready(store).save as { error: Error }).error.message).toMatch(/session has ended/)
   })
 
   it('releases and discards through the token', async () => {
@@ -1548,5 +1897,819 @@ describe('ending the session', () => {
     const { store } = await open()
     await store.release()
     expect(ready(store).save).toEqual({ state: 'saved' })
+  })
+})
+
+describe('the publish gate', () => {
+  const blocker = (message: string): Diagnostic => ({
+    code: 'FIELD_REQUIRED',
+    message,
+    blocks: 'publish',
+    stepId: 's1',
+  })
+
+  const opened = async (options: Parameters<typeof createEditingStore>[2] = {}) => {
+    const host = recorder()
+    const store = createEditingStore(host.port, 'wf_morning', {
+      autosaveDelayMs: 500,
+      ...options,
+    })
+    store.open()
+    await settle()
+    return { host, store }
+  }
+
+  /*
+   * The floor. It asks nothing and needs nothing wired, which is the point:
+   * ADR-0023 puts it here rather than in whatever drew the button precisely so
+   * a Host that builds this store by hand and mounts no toolbar still cannot
+   * promote something that is not a Workflow Definition.
+   */
+  it('refuses a document that does not project, with no gate in sight', async () => {
+    const host = recorder({ yaml: 'name: half written\n' })
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+
+    await expect(store.publish()).rejects.toBeInstanceOf(PublishBlocked)
+    expect(host.published).toHaveLength(0)
+  })
+
+  it('carries no diagnostics for that, because there is nothing to attach one to', async () => {
+    const host = recorder({ yaml: 'name: half written\n' })
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+
+    const refusal = await store.publish().catch((error: unknown) => error)
+    expect(refusal).toBeInstanceOf(PublishBlocked)
+    expect((refusal as PublishBlocked).diagnostics).toEqual([])
+    expect((refusal as PublishBlocked).message).not.toBe('')
+  })
+
+  it('refuses what the gate blocks, and never reaches the Host', async () => {
+    const found = [blocker('Folder is required.'), blocker('To is required.')]
+    const { host, store } = await opened({ gate: { blockers: async () => found } })
+
+    const refusal = await store.publish().catch((error: unknown) => error)
+    expect(refusal).toBeInstanceOf(PublishBlocked)
+    // Every one of them, not the first: a user fixing one field at a time is a
+    // user pressing Publish five times to find five mistakes.
+    expect((refusal as PublishBlocked).diagnostics).toEqual(found)
+    expect(host.published).toHaveLength(0)
+  })
+
+  it('keeps the session alive when it refuses, so the fix can be typed and saved', async () => {
+    const { host, store } = await opened({
+      gate: { blockers: async () => [blocker('Folder is required.')] },
+    })
+    await expect(store.publish()).rejects.toBeInstanceOf(PublishBlocked)
+
+    expect(ready(store).claimed).toBe(true)
+    store.apply(removeStep({ board: null, id: 's1' }))
+    await vi.advanceTimersByTimeAsync(500)
+    expect(host.writes).toHaveLength(1)
+  })
+
+  it('publishes when the gate finds nothing', async () => {
+    const { host, store } = await opened({ gate: { blockers: async () => [] } })
+    await store.publish()
+    expect(host.published).toHaveLength(1)
+  })
+
+  it('publishes with no gate at all, on the floor alone', async () => {
+    // A Host that serves no ManifestSource is correctly configured, not broken
+    // — ADR-0022's argument at its limit, recorded in ADR-0023.
+    const { host, store } = await opened()
+    await store.publish()
+    expect(host.published).toHaveLength(1)
+  })
+
+  it('waits for an answer rather than deciding without one', async () => {
+    let answer: (found: Diagnostic[]) => void = () => {}
+    const pending = new Promise<Diagnostic[]>((resolve) => {
+      answer = resolve
+    })
+    const { host, store } = await opened({ gate: { blockers: () => pending } })
+
+    const attempt = store.publish()
+    await settle()
+    expect(host.published).toHaveLength(0)
+
+    answer([])
+    await attempt
+    expect(host.published).toHaveLength(1)
+  })
+
+  it('reads the text after the wait, so an edit made during it is not dropped', async () => {
+    let answer: (found: Diagnostic[]) => void = () => {}
+    const pending = new Promise<Diagnostic[]>((resolve) => {
+      answer = resolve
+    })
+    const { host, store } = await opened({ gate: { blockers: () => pending } })
+
+    const attempt = store.publish()
+    await settle()
+    store.apply(removeStep({ board: null, id: 's1' }))
+    answer([])
+    await attempt
+
+    expect(host.published[0]).not.toContain('id: s1')
+  })
+
+  /*
+   * "Refused unconditionally" has to mean at the moment of publishing rather
+   * than at the moment of asking. Editing does not stop while the gate waits,
+   * and a command that breaks the projection during it also empties the gate's
+   * own answer — `createValidationStore` reports nothing about a document that
+   * does not project — so nothing else would say no.
+   */
+  it('refuses a document that stopped projecting while the gate waited', async () => {
+    let answer: (found: Diagnostic[]) => void = () => {}
+    const pending = new Promise<Diagnostic[]>((resolve) => {
+      answer = resolve
+    })
+    const { host, store } = await opened({ gate: { blockers: () => pending } })
+
+    const attempt = store.publish()
+    await settle()
+
+    // Text Mode, or anything else that writes the document directly.
+    const snapshot = ready(store)
+    snapshot.document.ast.delete('steps')
+    snapshot.document.ast.delete('version')
+
+    answer([])
+    await expect(attempt).rejects.toBeInstanceOf(PublishBlocked)
+    expect(host.published).toHaveLength(0)
+  })
+
+  /*
+   * `finish()` bumps the generation, drops the token and halts autosave. Run
+   * late — the Host's publish is a network call and the session can end and
+   * begin again underneath it — it does all of that to the session that
+   * REPLACED this one, leaving a Draft the user visibly just reopened saved
+   * nowhere and reporting that it has ended.
+   */
+  it('does not end the session that replaced it while the Host was publishing', async () => {
+    let answer: (published: PublishedVersion) => void = () => {}
+    const host = recorder()
+    host.port.publish = () =>
+      new Promise<PublishedVersion>((resolve) => {
+        answer = resolve
+      })
+
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+
+    const attempt = store.publish()
+    await settle()
+
+    // A second session, opened while the first publish is still in the air.
+    store.reopen()
+    await settle()
+    expect(ready(store).claimed).toBe(true)
+
+    answer({ version: 9, publishedAt: '2026-01-01T00:00:00.000Z' })
+    await attempt
+
+    expect(ready(store).claimed).toBe(true)
+    store.apply(removeStep({ board: null, id: 's1' }))
+    await vi.advanceTimersByTimeAsync(200)
+    expect(host.writes.length).toBeGreaterThan(0)
+  })
+
+  it('refuses, and says which, when the workflow is opened again mid-wait', async () => {
+    let answer: (found: Diagnostic[]) => void = () => {}
+    const pending = new Promise<Diagnostic[]>((resolve) => {
+      answer = resolve
+    })
+    const { host, store } = await opened({ gate: { blockers: () => pending } })
+
+    const attempt = store.publish()
+    await settle()
+    // A live session again, not an ended one — so telling the reader editing has
+    // finished would be both wrong and unactionable.
+    store.reopen()
+    await settle()
+    answer([])
+
+    await expect(attempt).rejects.toThrow(/opened again/)
+    expect(host.published).toHaveLength(0)
+    expect(ready(store).claimed).toBe(true)
+  })
+
+  it('says the session ended when it actually has', async () => {
+    let answer: (found: Diagnostic[]) => void = () => {}
+    const pending = new Promise<Diagnostic[]>((resolve) => {
+      answer = resolve
+    })
+    const { host, store } = await opened({ gate: { blockers: () => pending } })
+
+    const attempt = store.publish()
+    await settle()
+    store.dispose()
+    answer([])
+
+    await expect(attempt).rejects.toThrow(/session has ended/)
+    expect(host.published).toHaveLength(0)
+  })
+})
+
+describe('whether the session still holds the claim', () => {
+  const opened = async () => {
+    const host = recorder()
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 500 })
+    store.open()
+    await settle()
+    return { host, store }
+  }
+
+  it('is claimed while the Draft is open', async () => {
+    const { store } = await opened()
+    expect(ready(store).claimed).toBe(true)
+  })
+
+  /*
+   * The state that was invisible. Publish, Release and Discard all drop the
+   * token, and a session that ended with nothing queued leaves `save` reading
+   * `saved` — so without this the snapshot after publishing is the snapshot of
+   * a live session, and the user finds out by typing into a document that is
+   * saved nowhere.
+   */
+  it('is not claimed after publish, release or discard — with nothing queued', async () => {
+    for (const end of ['publish', 'release', 'discard'] as const) {
+      const { store } = await opened()
+      expect(ready(store).save).toEqual({ state: 'saved' })
+
+      await store[end]()
+      expect(ready(store).claimed, end).toBe(false)
+      expect(ready(store).save, end).toEqual({ state: 'saved' })
+    }
+  })
+
+  it('tells subscribers, rather than leaving them on the last snapshot', async () => {
+    const { store } = await opened()
+    let notifications = 0
+    store.subscribe(() => {
+      notifications++
+    })
+
+    await store.release()
+    expect(notifications).toBeGreaterThan(0)
+    expect(ready(store).claimed).toBe(false)
+  })
+
+  it('stays claimed when a publish is refused', async () => {
+    const host = recorder()
+    host.port.publish = async () => {
+      throw new Error('Another session holds the edit on this workflow.')
+    }
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+
+    await expect(store.publish()).rejects.toThrow(/Another session/)
+    // ADR-0005 detects conflict here and nowhere else, so the session may only
+    // end once the Host has said yes.
+    expect(ready(store).claimed).toBe(true)
+  })
+})
+
+describe('resuming a halted save', () => {
+  const halted = async () => {
+    let refuse = true
+    const host = recorder()
+    const writes: string[] = []
+    host.port.saveDraft = async (_token, yaml) => {
+      if (refuse) throw new Error('Lease expired.')
+      writes.push(yaml)
+    }
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 500 })
+    store.open()
+    await settle()
+    store.apply(removeStep({ board: null, id: 's1' }))
+    await vi.advanceTimersByTimeAsync(500)
+
+    return { store, writes, accept: () => (refuse = false) }
+  }
+
+  it('writes again on the claim it still holds, and the halt clears', async () => {
+    const { store, writes, accept } = await halted()
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
+    expect(ready(store).claimed).toBe(true)
+
+    accept()
+    store.resumeSaving()
+    await vi.advanceTimersByTimeAsync(500)
+
+    expect(writes).toHaveLength(1)
+    expect(ready(store).save).toEqual({ state: 'saved' })
+  })
+
+  it('keeps the work, which is the whole reason it exists', async () => {
+    // `reopen()` was the only exit, and it re-parses the Host's copy — throwing
+    // away exactly what ADR-0005 halts in order to keep.
+    const { store, accept } = await halted()
+    accept()
+    store.resumeSaving()
+    await vi.advanceTimersByTimeAsync(500)
+
+    expect(ready(store).definition?.steps.map((one) => one.id)).toEqual(['s2', 's4'])
+  })
+
+  /*
+   * The halt this control answers is usually a refused RENEWAL, which fires on a
+   * timer and therefore while nobody is typing. A resume that went straight to
+   * the write queue would find the document already level with the Host, report
+   * `saved`, and take the control off screen having verified nothing — and the
+   * lease would lapse quietly a few seconds later.
+   */
+  it('re-checks the claim before clearing a halt on a document with nothing to write', async () => {
+    let refuse = true
+    let renewals = 0
+    const host = recorder({ lease: leaseFor(0.05) })
+    host.port.renewLease = async () => {
+      renewals++
+      if (refuse) throw new Error('Your lease on this workflow expired.')
+      return leaseFor(30)
+    }
+
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+    // Nothing has been typed, so there is nothing for a write to verify with.
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
+
+    const before = renewals
+    store.resumeSaving()
+    await vi.advanceTimersByTimeAsync(0)
+
+    // The Host was asked, and said no again — so the halt stands rather than the
+    // bar going quiet on a claim nobody re-checked.
+    expect(renewals).toBe(before + 1)
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
+
+    refuse = false
+    store.resumeSaving()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(ready(store).save).toEqual({ state: 'saved' })
+  })
+
+  /*
+   * A halt from a refused WRITE leaves the renewal timer armed — `halt()` only
+   * cancels the save. Entering `renew()` out of band then dropped that handle
+   * without clearing it and armed a second, so every resume doubled the renewal
+   * rate for the life of the session.
+   */
+  it('does not leave a second renewal timer running behind it', async () => {
+    let refuse = true
+    let renewals = 0
+    const host = recorder()
+    host.port.saveDraft = async () => {
+      if (refuse) throw new Error('Your lease on this workflow expired.')
+    }
+    host.port.renewLease = async () => {
+      renewals++
+      return leaseFor(30)
+    }
+
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+
+    store.apply(removeStep({ board: null, id: 's1' }))
+    await vi.advanceTimersByTimeAsync(200)
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
+
+    refuse = false
+    store.resumeSaving()
+    await vi.advanceTimersByTimeAsync(0)
+
+    // One renewal per half-life from here, not two.
+    const after = renewals
+    await vi.advanceTimersByTimeAsync(16 * 60_000)
+    expect(renewals).toBe(after + 1)
+  })
+
+  /*
+   * A halt from a refused WRITE leaves the lease healthy and its renewal armed.
+   * Cancelling that on the way to asking early takes a working renewal down with
+   * a transient refusal: before the press the lease renews itself at the
+   * half-way mark, and after it the claim simply lapses.
+   */
+  it('leaves the armed renewal alone when the early ask is refused', async () => {
+    let refuseRenewal = false
+    let renewals = 0
+    const host = recorder()
+    host.port.saveDraft = async () => {
+      throw new Error('The workflow service is unreachable.')
+    }
+    host.port.renewLease = async () => {
+      renewals++
+      if (refuseRenewal) throw new Error('Not now.')
+      return leaseFor(30)
+    }
+
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+    store.apply(removeStep({ board: null, id: 's1' }))
+    await vi.advanceTimersByTimeAsync(200)
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
+
+    // The early ask fails too — but the timer armed at open is still pending.
+    refuseRenewal = true
+    store.resumeSaving()
+    await vi.advanceTimersByTimeAsync(0)
+    const asked = renewals
+
+    refuseRenewal = false
+    await vi.advanceTimersByTimeAsync(16 * 60_000)
+    expect(renewals).toBeGreaterThan(asked)
+  })
+
+  /*
+   * A press that arrives while a renewal is already outstanding does not start a
+   * second one — so the intent has to be standing rather than carried on the
+   * request, or the press is simply lost and the halt never clears.
+   */
+  it('is answered by the renewal already in flight', async () => {
+    const answers: ((lease: Lease) => void)[] = []
+    let refuseWrite = true
+    const host = recorder({ lease: leaseFor(30) })
+    host.port.renewLease = () =>
+      new Promise<Lease>((resolve) => {
+        answers.push(resolve)
+      })
+    host.port.saveDraft = async () => {
+      if (refuseWrite) throw new Error('The workflow service is unreachable.')
+    }
+
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+    store.apply(removeStep({ board: null, id: 's1' }))
+    await vi.advanceTimersByTimeAsync(200)
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
+
+    // The timer's renewal is outstanding when the press arrives.
+    await vi.advanceTimersByTimeAsync(16 * 60_000)
+    expect(answers).toHaveLength(1)
+    store.resumeSaving()
+    await settle()
+
+    refuseWrite = false
+    answers[0]?.(leaseFor(30))
+    await vi.advanceTimersByTimeAsync(200)
+
+    expect(ready(store).save).not.toMatchObject({ state: 'halted' })
+  })
+
+  it('halts again, rather than spinning, when the Host says no twice', async () => {
+    const { store } = await halted()
+    store.resumeSaving()
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
+  })
+
+  /*
+   * A halt reached through a refused renewal takes the renewal timer with it:
+   * `halt()` stops autosave and schedules nothing, and the only two callers of
+   * `scheduleRenewal` are a successful renewal and a fresh open. Resuming writes
+   * without re-arming it is the worst of both — the bar goes quiet, the token
+   * still works, and the lease lapses a minute later carrying everything typed
+   * since.
+   */
+  it('puts the lease back on a timer, not just the writes', async () => {
+    let refuse = true
+    let renewals = 0
+    const host = recorder()
+    host.port.renewLease = async () => {
+      renewals++
+      if (refuse) throw new Error('Your lease on this workflow expired.')
+      return leaseFor(30)
+    }
+
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 500 })
+    store.open()
+    await settle()
+
+    // A two-minute lease renews at the halfway mark, and the Host refuses.
+    await vi.advanceTimersByTimeAsync(16 * 60_000)
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
+
+    refuse = false
+    const before = renewals
+    store.resumeSaving()
+    await vi.advanceTimersByTimeAsync(16 * 60_000)
+
+    expect(renewals).toBeGreaterThan(before)
+  })
+
+  /*
+   * The write succeeded, so the Host does hold the text — but the lease was
+   * refused while it was in the air. Reporting `saved` would clear that halt:
+   * the bar goes quiet with no renewal armed and no claim behind it, and
+   * autosave goes on writing to a Host that has already said no.
+   */
+  it('does not let a successful write clear a halt that landed during it', async () => {
+    let release: () => void = () => {}
+    const host = recorder({ lease: leaseFor(0.05) })
+    host.port.saveDraft = () =>
+      new Promise<void>((resolve) => {
+        release = resolve
+      })
+    host.port.renewLease = async () => {
+      throw new Error('Your lease on this workflow expired.')
+    }
+
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+
+    store.apply(removeStep({ board: null, id: 's1' }))
+    // The write goes out...
+    await vi.advanceTimersByTimeAsync(150)
+    expect(ready(store).save).toEqual({ state: 'saving' })
+
+    // ...the renewal is refused while it is still in the air...
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
+
+    // ...and then the Host answers the write.
+    release()
+    await vi.advanceTimersByTimeAsync(50)
+
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
+  })
+
+  it('does nothing when the store is not halted', async () => {
+    const host = recorder()
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 500 })
+    store.open()
+    await settle()
+
+    store.resumeSaving()
+    await vi.advanceTimersByTimeAsync(500)
+    expect(ready(store).save).toEqual({ state: 'saved' })
+    expect(host.writes).toHaveLength(0)
+  })
+
+  /*
+   * The halt after a session ends has no token behind it, so there is nothing
+   * to write to. Putting the snapshot back to `pending` would promise a write
+   * that can never run, with no timer behind it and no way out.
+   */
+  it('does nothing once the session has ended, because there is nothing to write to', async () => {
+    const host = recorder()
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 500 })
+    store.open()
+    await settle()
+
+    // A write was scheduled when the session ended, so `finish()` halts with
+    // nothing left to carry it — the one halt an ending still raises.
+    store.apply(removeStep({ board: null, id: 's1' }))
+    await store.discard()
+    expect(ready(store).claimed).toBe(false)
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
+
+    store.resumeSaving()
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(ready(store).save).toMatchObject({ state: 'halted' })
+  })
+})
+
+describe('a release the session outlived', () => {
+  /*
+   * `release()` awaits a last write, which is an unbounded wait on the Host, and
+   * the session can begin again inside it. A late `finish()` bumps the
+   * generation a second time — and an `openDraft` started in the meantime then
+   * finds its own generation stale when its fetch lands and returns silently,
+   * leaving the store at `opening` for good.
+   */
+  it('does not strand the session that replaced it', async () => {
+    let release: () => void = () => {}
+    const host = recorder()
+    host.port.saveDraft = () =>
+      new Promise<void>((resolve) => {
+        release = resolve
+      })
+
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+    store.apply(removeStep({ board: null, id: 's1' }))
+
+    const ending = store.release()
+    await settle()
+
+    store.reopen()
+    await settle()
+
+    release()
+    await ending.catch(() => {})
+    await settle()
+
+    expect(store.getSnapshot().status).toBe('ready')
+    expect(ready(store).claimed).toBe(true)
+  })
+})
+
+describe('a renewal that never comes back', () => {
+  /*
+   * `renewing` is a fact about the session that asked. Carried across an open, a
+   * renewal that never settles leaves it set for the life of the store — and
+   * every renewal after it returns at the guard, so the NEW session's claim
+   * lapses, its writes are refused, and autosave halts on work the reader
+   * believes is being saved.
+   */
+  it('does not stop the next session renewing its own claim', async () => {
+    let asks = 0
+    const host = recorder({ lease: leaseFor(0.05) })
+    host.port.renewLease = () => {
+      asks++
+      return new Promise<Lease>(() => {})
+    }
+
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+    // The first session's renewal fires and hangs.
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(asks).toBe(1)
+
+    store.reopen()
+    await settle()
+    await vi.advanceTimersByTimeAsync(2000)
+
+    expect(asks).toBeGreaterThan(1)
+  })
+
+  /*
+   * A bare flag is cleared by whoever finishes last. The abandoned call returns,
+   * clears it, and the live session's renewal — still in the air — is no longer
+   * protected: the next press issues a second concurrent renewal on the same
+   * token, which is the overlap the guard exists to prevent, reached from
+   * underneath it.
+   */
+  it('does not let an abandoned renewal unguard the session that replaced it', async () => {
+    const asks: ((lease: Lease) => void)[] = []
+    const host = recorder({ lease: leaseFor(0.05) })
+    host.port.renewLease = () =>
+      new Promise<Lease>((resolve) => {
+        asks.push(resolve)
+      })
+    host.port.saveDraft = async () => {
+      throw new Error('The workflow service is unreachable.')
+    }
+
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+    // Session A's renewal fires and hangs.
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(asks).toHaveLength(1)
+
+    store.reopen()
+    await settle()
+    // Session B's own renewal is now outstanding.
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(asks).toHaveLength(2)
+
+    // A finally answers, into a session that has moved on.
+    asks[0]?.(leaseFor(30))
+    await settle()
+
+    // A press must not start a third while B's is still in the air.
+    store.apply(removeStep({ board: null, id: 's1' }))
+    await vi.advanceTimersByTimeAsync(200)
+    store.resumeSaving()
+    await settle()
+
+    expect(asks).toHaveLength(2)
+  })
+
+  it('keeps a renewal armed when one it asked for is still outstanding', async () => {
+    // The timer that reached the guard has already dropped its handle, so
+    // leaving without re-arming loses the renewal altogether.
+    let asks = 0
+    let land: (lease: Lease) => void = () => {}
+    const host = recorder({ lease: leaseFor(0.05) })
+    host.port.renewLease = () => {
+      asks++
+      return new Promise<Lease>((resolve) => {
+        land = resolve
+      })
+    }
+
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(asks).toBe(1)
+
+    // The armed timer comes round again while the first is still in flight.
+    await vi.advanceTimersByTimeAsync(5000)
+    land(leaseFor(30))
+    await settle()
+    await vi.advanceTimersByTimeAsync(16 * 60_000)
+
+    expect(asks).toBeGreaterThan(1)
+  })
+})
+
+describe('a release with an undo behind it', () => {
+  /*
+   * A write already in flight can carry text an undo has since taken back, so
+   * "nothing was pending" at the press is no promise that nothing is pending
+   * once it lands.
+   */
+  it('refuses when its own write is refused after an earlier one landed', async () => {
+    let refuse = false
+    const host = recorder()
+    host.port.saveDraft = async (_token, text) => {
+      if (refuse) throw new Error('Your lease on this workflow expired.')
+      host.writes.push(text)
+    }
+
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 100 })
+    store.open()
+    await settle()
+
+    store.apply(removeStep({ board: null, id: 's1' }))
+    await vi.advanceTimersByTimeAsync(200)
+    expect(host.writes).toHaveLength(1)
+
+    // Taken back, and the Host still holds the version without it.
+    refuse = true
+    store.undo()
+
+    await expect(store.release()).rejects.toThrow()
+    expect(host.released).toBe(0)
+  })
+})
+
+describe('a command that is refused', () => {
+  const open = async () => {
+    const host = recorder()
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 500 })
+    store.open()
+    await settle()
+    return { host, store }
+  }
+
+  /*
+   * A refused command restores the document and records nothing, which is
+   * right — but it also said nothing, so the control that asked re-rendered
+   * from a document that never moved. That reads as a click that did not
+   * register, and several commands throw a sentence written for the person who
+   * asked.
+   */
+  it('says why, rather than changing nothing quietly', async () => {
+    const { store } = await open()
+
+    store.apply({
+      label: 'Refuse',
+      apply() {
+        throw new Error('That connection is already declared as "mailbox"')
+      },
+    })
+
+    expect(ready(store).refused?.message).toBe('That connection is already declared as "mailbox"')
+    // Nothing moved, which is the other half of the promise.
+    expect(ready(store).definition?.steps.map((one) => one.id)).toEqual(['s1', 's2', 's4'])
+  })
+
+  it('stops saying it once a command takes', async () => {
+    const { store } = await open()
+    store.apply({
+      label: 'Refuse',
+      apply() {
+        throw new Error('nope')
+      },
+    })
+    expect(ready(store).refused).not.toBeNull()
+
+    store.apply(removeStep({ board: null, id: 's1' }))
+    expect(ready(store).refused).toBeNull()
+  })
+
+  it('reports the projection backstop in words, not as silence', async () => {
+    // The guard under every command: one that would leave the document
+    // unprojectable is refused, and until now the screen simply did not change.
+    const { store } = await open()
+
+    store.apply({
+      label: 'Break it',
+      apply(document) {
+        document.ast.delete('steps')
+      },
+    })
+
+    expect(ready(store).refused?.message).toMatch(/cannot be saved/)
+    expect(ready(store).definition).not.toBeNull()
   })
 })

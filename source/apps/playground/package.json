@@ -3,8 +3,8 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Development harness for the Hatua designer — not published",
-  "//configLoader": "Vite bundles its config with esbuild and externalises node_modules, so the default loader hands vite.config.ts to Node — which cannot import a workspace package that resolves to TypeScript source (ADR-0004). The runner loader goes through Vite's own module runner, which can. It is needed because the config reads the conformance manifest fixtures through @hatua/sdk; see vite.config.ts.",
+  "description": "Development harness for the Hatua designer \u2014 not published",
+  "//configLoader": "Vite bundles its config with esbuild and externalises node_modules, so the default loader hands vite.config.ts to Node \u2014 which cannot import a workspace package that resolves to TypeScript source (ADR-0004). The runner loader goes through Vite's own module runner, which can. It is needed because the config reads the conformance manifest fixtures through @hatua/sdk; see vite.config.ts.",
   "scripts": {
     "dev": "vite --configLoader runner",
     "build": "vite build --configLoader runner",
@@ -16,7 +16,8 @@
   "dependencies": {
     "@hatua/react": "workspace:*",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "@hatua/log": "workspace:*"
   },
   "devDependencies": {
     "@hatua/expressions": "workspace:*",

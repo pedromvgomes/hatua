@@ -40,9 +40,10 @@ export function Select({ className, children, revealOnOverflow, ref, ...rest }: 
    */
   const [chosen, setChosen] = useState('')
   const read = useCallback(() => {
+    if (!revealOnOverflow) return
     const text = own.current?.selectedOptions?.[0]?.text ?? ''
     setChosen((current) => (current === text ? current : text))
-  }, [])
+  }, [revealOnOverflow])
 
   useEffect(read)
 
@@ -50,13 +51,27 @@ export function Select({ className, children, revealOnOverflow, ref, ...rest }: 
    * And on the element's own `change`, because an uncontrolled `<select>`
    * changes without anything re-rendering — so a reveal left over from the
    * previous option would sit there describing a value no longer chosen.
+   *
+   * Only where something reads it, and that is not a tidiness point.
+   *
+   * This listener is on the ELEMENT, so it runs in the target phase — before
+   * React's, which is delegated to the root and runs as the event bubbles. A
+   * `change` is a discrete event, so the state it sets is flushed
+   * synchronously: React re-renders the `<select>` mid-dispatch and, if the
+   * caller controls it, writes `value` back to the prop. The handler that runs
+   * next then reads THAT value rather than the one just chosen — a controlled
+   * picker reports the option it was showing before instead of the one the user
+   * picked, and every choice looks like a choice of nothing.
+   *
+   * Attached only when a tooltip is going to read it, which is the only thing
+   * it was ever for.
    */
   useEffect(() => {
     const element = own.current
-    if (!element) return
+    if (!element || !revealOnOverflow) return
     element.addEventListener('change', read)
     return () => element.removeEventListener('change', read)
-  }, [read])
+  }, [read, revealOnOverflow])
 
   const overflowing = useTextOverflowing(own, chosen)
 

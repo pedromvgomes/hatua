@@ -312,6 +312,31 @@ describe('Build wires the Components tab to the canvas', () => {
     await waitFor(() => expect(rowNames()).toEqual(['First', 'Second', 'Send email']))
   })
 
+  /*
+   * Revealing a problem is a Board change like any other, and an insert point
+   * names a list on the Board it was made on. Kept across one, the next
+   * Component picked lands at the old Board's index — somewhere nobody chose
+   * and nobody is looking at — or names a Step that is not there, and the click
+   * does nothing and says nothing about why.
+   */
+  it('forgets the pending point when a problem is revealed on another Board', async () => {
+    wired(CALLING)
+    await map().findByText('First')
+
+    fireEvent.click(
+      map().getByRole('button', { name: 'Insert a Step at the start of the workflow' }),
+    )
+    expect(screen.getByText('Pick a component to drop into the flow.')).toBeDefined()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Publish' }))
+    // `deep` is the only Step using that verb, so the row identifies the Step
+    // on the Block's Board.
+    fireEvent.click(await screen.findByRole('button', { name: /Nothing declares "b"/ }))
+
+    await waitFor(() => expect(map().getByText('Deep')).toBeDefined())
+    expect(screen.queryByText('Pick a component to drop into the flow.')).toBeNull()
+  })
+
   it('keeps the pending point when the open tab is clicked again', async () => {
     // <TabbedPanel> reports every click, including one on the tab already
     // open — which is what anyone does to focus it. Treating that as

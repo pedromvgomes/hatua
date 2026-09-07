@@ -30,6 +30,7 @@ import {
 import type { Manifest, ManifestEntry, Step, WorkflowDefinition } from '@hatua/schema'
 import { manifestsIn } from '@hatua/schema'
 import {
+  type ConnectionState,
   type EditingState,
   extractBlock,
   type ManifestState,
@@ -57,7 +58,13 @@ import {
   useSyncExternalStore,
 } from 'react'
 import { cx } from '../primitives/classNames'
-import { useEditingStore, useManifestStore, useValidationStore } from '../theme/HatuaProvider'
+import {
+  useConnectionStore,
+  useEditingStore,
+  useManifestStore,
+  useValidationStore,
+} from '../theme/HatuaProvider'
+import { useReadOnly } from '../theme/readOnly'
 import { type BoardTab, BoardTabs } from '../units/BoardTabs'
 import { CanvasControls } from '../units/CanvasControls'
 import { Connectors } from '../units/Connectors'
@@ -281,6 +288,34 @@ type MapState = EditingState | { status: 'unconfigured' }
 
 const UNCONFIGURED = { status: 'unconfigured' } as const
 const OPENING = { status: 'opening' } as const
+
+/**
+ * What the Host calls each handle it has established, by ref.
+ *
+ * Empty when no `ConnectionSource` is wired, which is a correct configuration —
+ * the cards then fall back to the workflow's own names, and no card ever shows a
+ * handle.
+ */
+function useDescribedConnections(): ReadonlyMap<string, string> {
+  const store = useConnectionStore()
+  const state = useSyncExternalStore(
+    store ? store.subscribe : subscribeToNothing,
+    store ? store.getSnapshot : readNoConnections,
+    readNoConnections,
+  )
+
+  return useMemo(
+    () =>
+      state.status === 'ready'
+        ? new Map(state.connections.map((one): [string, string] => [one.ref, one.label]))
+        : NO_LABELS,
+    [state],
+  )
+}
+
+const NO_LABELS: ReadonlyMap<string, string> = new Map()
+const NO_CONNECTIONS = { status: 'loading' } as const
+const readNoConnections = (): ConnectionState => NO_CONNECTIONS
 
 // Module-level and therefore stable: useSyncExternalStore re-subscribes whenever
 // `subscribe` changes identity, and re-renders forever if `getSnapshot` returns
@@ -989,6 +1024,7 @@ function Canvas({
   onDragIn: () => void
   onDragOut: () => void
 }) {
+  const readOnly = useReadOnly()
   // Bare ids, because a Board is already `layout`'s argument. This is where a
   // set that spans Boards becomes the set for one of them, and it is the only
   // place the two spellings meet.
@@ -1016,8 +1052,25 @@ function Canvas({
   )
   const steps = new Map<string, Step>()
   for (const { step, ref } of walk(board)) steps.set(stepKey(ref), step)
+  /*
+   * What each Connection a Step names is CALLED, which is never its handle.
+   *
+   * `ref` is opaque by construction (ADR-0007): the document stores a handle so
+   * that nothing cached in it goes stale when a Connection is renamed, and it
+   * means nothing to anybody reading the workflow. What a person recognises is
+   * whatever the Host calls the thing it points at — the same order `Fields`
+   * puts them in, because a card and the field it summarises must not disagree
+   * about what a Connection is called.
+   *
+   * The workflow-local name is the fallback rather than the handle: it is at
+   * least a word somebody chose, and it is what the Workflow tab shows.
+   */
+  const described = useDescribedConnections()
   const connections = new Map(
-    (definition.connections ?? []).map((one) => [one.id, one.ref ?? one.id]),
+    (definition.connections ?? []).map((one) => [
+      one.id,
+      (one.ref ? described.get(one.ref) : undefined) ?? one.id,
+    ]),
   )
 
   const canvas = useViewport({ root: map.root, content: map, at: view, board: board.id, onView })
@@ -1158,8 +1211,11 @@ function Canvas({
           buttons whose relationship is drawn and nothing else.
         */}
         <ul className={styles.cards} aria-label="Steps">
+          {/* No insert points once the session has ended. The tree is still
+              drawn in full — it is what the workflow IS — but a `+` that adds
+              nothing is a control with nothing behind it. */}
           {map.links.map((link, index) =>
-            link.at && link.dotAt ? (
+            link.at && link.dotAt && !readOnly ? (
               <InsertDot
                 // biome-ignore lint/suspicious/noArrayIndexKey: a gap is identified by where it is in the emitted order — a link has no identity of its own.
                 key={`gap:${index}`}
@@ -1214,7 +1270,9 @@ function Canvas({
         </ul>
       </div>
 
-      {selectedCount > 0 ? (
+      {/* The bar acts on the selection, and both its actions write. Selecting
+          still works, because reading which Steps are which is not editing. */}
+      {selectedCount > 0 && !readOnly ? (
         <SegmentBar
           count={selectedCount}
           onExtract={onExtractSelection}

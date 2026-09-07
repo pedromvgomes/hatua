@@ -138,3 +138,73 @@ describe('useOverflowing', () => {
     expect(screen.getByText('unmeasurable').getAttribute('data-long')).toBe('false')
   })
 })
+
+describe('a Select that nothing is reading the chosen text of', () => {
+  /*
+   * The listener is on the ELEMENT, so it runs in the target phase — before
+   * React's, which is delegated to the root and runs as the event bubbles. A
+   * `change` is discrete, so state set there is flushed synchronously: React
+   * re-renders the `<select>` mid-dispatch and, on a controlled one, writes
+   * `value` back to the prop. The handler that runs next then reads THAT value
+   * rather than the option just chosen, and every choice looks like a choice of
+   * nothing.
+   */
+  it('attaches no change listener of its own', () => {
+    const listeners: string[] = []
+    const original = HTMLSelectElement.prototype.addEventListener
+    HTMLSelectElement.prototype.addEventListener = function patched(
+      this: HTMLSelectElement,
+      type: string,
+      ...rest: unknown[]
+    ) {
+      listeners.push(type)
+      return original.call(
+        this,
+        type,
+        ...(rest as [EventListenerOrEventListenerObject, boolean | AddEventListenerOptions]),
+      )
+    } as typeof original
+
+    try {
+      render(
+        <Select aria-label="Pick" value="" onChange={() => {}}>
+          <option value="">—</option>
+          <option value="a">A</option>
+        </Select>,
+      )
+    } finally {
+      HTMLSelectElement.prototype.addEventListener = original
+    }
+
+    expect(listeners).not.toContain('change')
+  })
+
+  it('still attaches one when a tooltip is going to read it', () => {
+    const listeners: string[] = []
+    const original = HTMLSelectElement.prototype.addEventListener
+    HTMLSelectElement.prototype.addEventListener = function patched(
+      this: HTMLSelectElement,
+      type: string,
+      ...rest: unknown[]
+    ) {
+      listeners.push(type)
+      return original.call(
+        this,
+        type,
+        ...(rest as [EventListenerOrEventListenerObject, boolean | AddEventListenerOptions]),
+      )
+    } as typeof original
+
+    try {
+      render(
+        <Select aria-label="Pick" revealOnOverflow value="" onChange={() => {}}>
+          <option value="">—</option>
+        </Select>,
+      )
+    } finally {
+      HTMLSelectElement.prototype.addEventListener = original
+    }
+
+    expect(listeners).toContain('change')
+  })
+})

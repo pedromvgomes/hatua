@@ -28,6 +28,7 @@
     "@hatua/document": "workspace:*",
     "@hatua/model": "workspace:*",
     "@hatua/layout": "workspace:*",
-    "@hatua/expressions": "workspace:*"
+    "@hatua/expressions": "workspace:*",
+    "@hatua/log": "workspace:*"
   }
 }

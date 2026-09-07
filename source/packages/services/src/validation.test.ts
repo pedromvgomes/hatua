@@ -1,11 +1,12 @@
 import type { Manifest } from '@hatua/schema'
 import { describe, expect, it, vi } from 'vitest'
 import { type ConnectionStore, createConnectionStore } from './connections'
-import { createEditingStore, type EditingStore } from './editing'
+import { createEditingStore, type EditingStore, PublishBlocked } from './editing'
 import { createManifestStore, type ManifestStore } from './manifests'
 import type { ConnectionSource, DraftSession, EditToken, Lease, WorkflowStore } from './ports'
 import { removeStep } from './steps'
-import { createValidationStore } from './validation'
+import { createValidationStore, publishBlockers } from './validation'
+import { setWorkflowName } from './workflow'
 
 /**
  * The join between the document and the catalogue.
@@ -518,5 +519,256 @@ describe('what the connection rules are worth saying', () => {
     stores.validation.load()
     await settle()
     expect(listConnections).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('what blocks a publish', () => {
+  it('answers with nothing when there is no validation store to ask', async () => {
+    const { catalogue } = await opened()
+    await expect(publishBlockers(null, catalogue)).resolves.toEqual([])
+  })
+
+  it('reports what the checker found, once it has found it', async () => {
+    const { validation, catalogue } = await opened(MISSING)
+    const found = await publishBlockers(validation, catalogue)
+
+    expect(found).toHaveLength(2)
+    expect(found.map((one) => one.code)).toEqual(['FIELD_REQUIRED', 'FIELD_REQUIRED'])
+  })
+
+  it('reports nothing for a workflow with nothing wrong with it', async () => {
+    const { validation, catalogue } = await opened(VALID)
+    await expect(publishBlockers(validation, catalogue)).resolves.toEqual([])
+  })
+
+  /*
+   * `validation.ts` says of `pending` that "the port has not replied yet. It
+   * will, so a Publish gate may wait." This is that sentence, kept.
+   */
+  it('waits for the catalogue rather than answering without it', async () => {
+    let arrive: (manifests: Manifest[]) => void = () => {}
+    const pending = new Promise<Manifest[]>((resolve) => {
+      arrive = resolve
+    })
+    const editing = createEditingStore(workflowPort(MISSING), 'wf')
+    const catalogue = createManifestStore({ loadManifests: () => pending })
+    const validation = createValidationStore(editing, catalogue, null)
+    validation.load()
+    await settle()
+
+    let answered: readonly unknown[] | null = null
+    void publishBlockers(validation, catalogue).then((found) => {
+      answered = found
+    })
+    await settle()
+    expect(answered).toBeNull()
+
+    arrive(CATALOGUE)
+    await settle()
+    expect(answered).toHaveLength(2)
+  })
+
+  it('waits while the Host has not said what its Connections are', async () => {
+    let arrive: (found: never[]) => void = () => {}
+    const pending = new Promise<never[]>((resolve) => {
+      arrive = resolve
+    })
+    const source: ConnectionSource = { listConnections: () => pending as never }
+    const { validation, catalogue } = (() => {
+      const stores = wired(MISSING, CATALOGUE, createConnectionStore(source))
+      stores.validation.load()
+      return stores
+    })()
+    await settle()
+
+    let answered: readonly unknown[] | null = null
+    void publishBlockers(validation, catalogue).then((found) => {
+      answered = found
+    })
+    await settle()
+    expect(answered).toBeNull()
+
+    arrive([])
+    await settle()
+    expect(answered).toHaveLength(2)
+  })
+
+  /*
+   * A catalogue that failed ran no rules, and an empty list says the opposite to
+   * the only caller there is. It is not the narrowing ADR-0022 describes: that
+   * is for a Host which wired no catalogue at all — correctly — and which has no
+   * validation store to ask. One that wired a catalogue and cannot serve it is
+   * broken, and saying so lets the press be repeated.
+   */
+  it('refuses when the catalogue failed, rather than reporting a clean workflow', async () => {
+    const editing = createEditingStore(workflowPort(MISSING), 'wf')
+    const catalogue = createManifestStore({
+      loadManifests: async () => {
+        throw new Error('unreachable')
+      },
+    })
+    const validation = createValidationStore(editing, catalogue, null)
+    validation.load()
+    await settle()
+
+    await expect(publishBlockers(validation, catalogue)).rejects.toBeInstanceOf(PublishBlocked)
+  })
+
+  it('answers rather than waiting when nobody can describe the Connections', async () => {
+    // `undescribed` never resolves, so waiting on it never ends. ADR-0022:
+    // narrow the check, never withhold it.
+    const stores = wired(MISSING, CATALOGUE, null)
+    stores.validation.load()
+    await settle()
+
+    await expect(publishBlockers(stores.validation, stores.catalogue)).resolves.toHaveLength(2)
+  })
+})
+
+describe('a gate nobody has loaded the catalogue for', () => {
+  /*
+   * A manifest store nobody has called `load()` on sits at `loading` for ever:
+   * that is a fetch not started rather than one in flight. A gate that only
+   * waited would never answer, and the Publish behind it would hang — which is
+   * the failure `publishBlockers` exists to avoid, arrived at from the other
+   * side.
+   */
+  it('asks for the catalogue rather than waiting to be handed one', async () => {
+    const editing = createEditingStore(workflowPort(MISSING), 'wf')
+    const catalogue = createManifestStore({ loadManifests: async () => CATALOGUE })
+    const validation = createValidationStore(editing, catalogue, null)
+    // Deliberately no `validation.load()`: nothing has mounted.
+    expect(catalogue.getSnapshot().status).toBe('loading')
+
+    await expect(publishBlockers(validation, catalogue)).resolves.toHaveLength(2)
+  })
+})
+
+describe('a gate waiting on a Host that never answers', () => {
+  /*
+   * "It will reply" is true of a Host that replies. One whose manifest fetch
+   * hangs leaves the catalogue loading for the life of the page, and a gate
+   * waiting on that never answers — so the press is never heard back from and
+   * every control it disabled stays disabled.
+   *
+   * Nothing is spent while it waits: no claim, no version, no call to the port.
+   * So giving up and reporting what IS known is ADR-0022's narrowing, reached by
+   * clock instead of by a port's answer.
+   */
+  it('refuses when its deadline runs out, rather than reporting a clean workflow', async () => {
+    vi.useFakeTimers()
+    try {
+      const editing = createEditingStore(workflowPort(MISSING), 'wf')
+      // Never settles, which is what a fetch with no timeout does.
+      const catalogue = createManifestStore({ loadManifests: () => new Promise(() => {}) })
+      const validation = createValidationStore(editing, catalogue, null)
+      validation.load()
+      await vi.advanceTimersByTimeAsync(0)
+
+      let refusal: unknown = null
+      const asked = publishBlockers(validation, catalogue, { deadlineMs: 50 }).catch(
+        (cause: unknown) => {
+          refusal = cause
+        },
+      )
+
+      await vi.advanceTimersByTimeAsync(10)
+      expect(refusal).toBeNull()
+
+      await vi.advanceTimersByTimeAsync(100)
+      await asked
+      // Nothing could be checked, and an empty list would say the opposite to
+      // the only caller there is.
+      expect(refusal).toBeInstanceOf(PublishBlocked)
+      expect((refusal as PublishBlocked).message).toMatch(/could not be checked/)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('answers with what is known when the catalogue arrived and only the Connections did not', async () => {
+    // The narrowing this file does elsewhere: a question nobody can ever answer
+    // is proceeded past, and the two codes that need a type go unreported.
+    vi.useFakeTimers()
+    try {
+      const source: ConnectionSource = { listConnections: () => new Promise(() => {}) as never }
+      const stores = wired(MISSING, CATALOGUE, createConnectionStore(source))
+      stores.validation.load()
+      await vi.advanceTimersByTimeAsync(0)
+
+      let answered: readonly unknown[] | null = null
+      const asked = publishBlockers(stores.validation, stores.catalogue, { deadlineMs: 50 }).then(
+        (found) => {
+          answered = found
+        },
+      )
+
+      await vi.advanceTimersByTimeAsync(100)
+      await asked
+      expect(answered).toHaveLength(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('answers before the deadline when the catalogue lands', async () => {
+    vi.useFakeTimers()
+    try {
+      let arrive: (manifests: Manifest[]) => void = () => {}
+      const pending = new Promise<Manifest[]>((resolve) => {
+        arrive = resolve
+      })
+      const editing = createEditingStore(workflowPort(MISSING), 'wf')
+      const catalogue = createManifestStore({ loadManifests: () => pending })
+      const validation = createValidationStore(editing, catalogue, null)
+      validation.load()
+      await vi.advanceTimersByTimeAsync(0)
+
+      let answered: readonly unknown[] | null = null
+      void publishBlockers(validation, catalogue, { deadlineMs: 10_000 }).then((found) => {
+        answered = found
+      })
+
+      arrive(CATALOGUE)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(answered).toHaveLength(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
+describe('a document that stops projecting while the gate waits', () => {
+  /*
+   * The canvas keeps editing while the three toolbar buttons are disabled, so a
+   * keystroke can break the projection mid-wait. Refusing here buries the floor's
+   * own message — "This is not a valid workflow yet." — behind "could not be
+   * checked, try again in a moment", which is wrong and says the same thing on
+   * every retry, because what needs fixing is the document.
+   */
+  it('hands the question back rather than reporting an uncheckable workflow', async () => {
+    let arrive: (manifests: Manifest[]) => void = () => {}
+    const pending = new Promise<Manifest[]>((resolve) => {
+      arrive = resolve
+    })
+    const editing = createEditingStore(workflowPort(MISSING), 'wf')
+    const catalogue = createManifestStore({ loadManifests: () => pending })
+    const validation = createValidationStore(editing, catalogue, null)
+    validation.load()
+    await settle()
+
+    const asked = publishBlockers(validation, catalogue)
+
+    // Typed out of shape while the catalogue was still coming.
+    const state = editing.getSnapshot()
+    if (state.status === 'ready') {
+      state.workflow.document.ast.delete('steps')
+      state.workflow.document.ast.delete('version')
+      editing.apply(setWorkflowName('Renamed while broken'))
+    }
+
+    arrive(CATALOGUE)
+    // Nothing to report, and `publish()`'s floor is what says why.
+    await expect(asked).resolves.toEqual([])
   })
 })

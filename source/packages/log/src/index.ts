@@ -1,0 +1,271 @@
+/**
+ * Levelled, categorised diagnostics for the parts of Hatua that decide things
+ * without drawing them.
+ *
+ * The store refuses a command, narrows a publish gate, halts a save, drops a
+ * stale renewal — each for a reason it knows exactly and, until now, kept. What
+ * reaches a screen is the outcome; what is worth having while something is
+ * being worked on is the reasoning that led there, in order, with what it was
+ * looking at.
+ *
+ * ## Silent unless asked
+ *
+ * Hatua renders inside somebody else's product. A library that writes `info` to
+ * a Host's console by default is one every integrator has to go and turn off,
+ * and one whose noise buries their own logs — so nothing below `warn` is
+ * written until a caller asks for it. `warn` and `error` are always through,
+ * because a Host that has wired something wrongly should hear about it without
+ * having to opt in.
+ *
+ * ## Categories are packages
+ *
+ * A category names where the line came from — `services.editing`,
+ * `react.fields` — so a level can be turned up for the thing being chased
+ * without turning it up for everything. Dotted, and matched by prefix:
+ * `services` covers `services.editing`, and `*` covers everything.
+ */
+
+export type Level = 'error' | 'warn' | 'info' | 'debug' | 'trace'
+
+/** Ordered, so a threshold is a comparison rather than a table. */
+const RANK: Record<Level, number> = { error: 0, warn: 1, info: 2, debug: 3, trace: 4 }
+
+/**
+ * What a line is handed to.
+ *
+ * A seam rather than a hard-wired `console`, because a Host that already has
+ * somewhere for diagnostics to go should not have Hatua's arriving somewhere
+ * else — and because a test that asserts what was logged should not have to
+ * read the terminal to do it.
+ */
+export type Sink = (line: Line) => void
+
+export interface Line {
+  level: Level
+  /** Where it came from, dotted: `services.editing`. */
+  category: string
+  message: string
+  /** Whatever the call site was looking at when it decided. */
+  detail?: Record<string, unknown>
+}
+
+export interface LogConfig {
+  /**
+   * The level a category is written at, by prefix. The longest matching prefix
+   * wins, so `{ '*': 'warn', 'services.editing': 'trace' }` says what it looks
+   * like it says.
+   */
+  levels?: Record<string, Level>
+  sink?: Sink
+}
+
+/**
+ * The default: nothing below a warning, written to the console.
+ *
+ * `warn` rather than `off` entirely, because the things Hatua warns about are
+ * misconfigurations — a port that answered with the wrong shape, a manifest it
+ * could not read — and those reach an integrator who has not thought to switch
+ * logging on precisely because they do not yet know anything is wrong.
+ */
+const DEFAULT_LEVELS: Record<string, Level> = { '*': 'warn' }
+
+/**
+ * What each level looks like.
+ *
+ * Grey for the two that are only interesting while something is being chased,
+ * so a page of them reads as background rather than as a page of problems;
+ * amber and red for the two that are addressed to somebody. Chosen to stay
+ * legible on both a light and a dark devtools theme, which rules out anything
+ * near either end of the range.
+ */
+const COLOUR: Record<Level, string> = {
+  error: '#e5484d',
+  warn: '#d9a300',
+  info: '#8b8b8b',
+  debug: '#8b8b8b',
+  trace: '#8b8b8b',
+}
+
+/**
+ * Whether the console understands `%c`.
+ *
+ * A browser's does; Node's prints the directive and the style string as text,
+ * which is worse than no colour at all. Tests reach the sink through their own
+ * and never come here, so this is only about which runtime is drawing it.
+ */
+const styled = typeof window !== 'undefined'
+
+const consoleSink: Sink = ({ level, category, message, detail }) => {
+  const say = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log
+  // The level first and the category second, both in the label, so a console
+  // filter can be typed against either — `[DEBUG]` for everything noisy,
+  // `[services.editing]` for one package's worth.
+  const label = `[${level.toUpperCase()}][${category}]`
+
+  if (!styled) {
+    const plain = `${label} ${message}`
+    if (detail === undefined) say(plain)
+    else say(plain, detail)
+    return
+  }
+
+  const head = `%c${label}%c ${message}`
+  const bold = `color:${COLOUR[level]};font-weight:bold`
+  const rest = `color:${COLOUR[level]};font-weight:normal`
+  if (detail === undefined) say(head, bold, rest)
+  else say(head, bold, rest, detail)
+}
+
+/**
+ * The settings, held on the global rather than in this module.
+ *
+ * A module holds its state once per instance, and there is no promise that this
+ * module is instantiated once. A dev server resolving symlinked workspace
+ * packages, a Host bundling `@hatua/react` while its own code imports
+ * `@hatua/log`, two copies at different versions in one tree — each gives the
+ * app one table and the packages another, so turning a category up changes a
+ * table nothing reads and the switch appears to do nothing at all.
+ *
+ * A symbol on `globalThis` is the one place every instance can agree on. It is
+ * what the settings are ABOUT — one page, one answer to "what is Hatua writing"
+ * — so sharing them there is the shape of the thing rather than a workaround
+ * for the bundler.
+ */
+interface Settings {
+  levels: Record<string, Level>
+  sink: Sink
+}
+
+const SETTINGS = Symbol.for('hatua.log.settings')
+
+const held = globalThis as unknown as { [SETTINGS]?: Settings }
+
+const settings = (): Settings => {
+  held[SETTINGS] ??= { levels: { ...DEFAULT_LEVELS }, sink: consoleSink }
+  return held[SETTINGS]
+}
+
+/**
+ * Turn categories up or down, or send lines somewhere else.
+ *
+ * Merged into what is already set rather than replacing it, so turning one
+ * category up does not silently reset the rest. Returns what is in force, so a
+ * console can show whether the call took.
+ */
+export function configureLogging(config: LogConfig): Readonly<Settings> {
+  const current = settings()
+  if (config.levels) current.levels = { ...current.levels, ...config.levels }
+  if (config.sink) current.sink = config.sink
+  return { levels: { ...current.levels }, sink: current.sink }
+}
+
+/**
+ * Turn a level on from code, in one line, with the spec a person types.
+ *
+ * What a `console.log` used to be for. Chasing something means putting a line
+ * where the question is, and going through `configureLogging({ levels: … })`
+ * asks for two imports and a nested object at the moment attention is
+ * elsewhere — so this is the form that gets pasted at the top of a file and
+ * deleted an hour later.
+ *
+ *   import { setLogLevel } from '@hatua/log'
+ *   setLogLevel('*:debug')
+ *
+ * It complains rather than doing nothing when the spec is unusable, because a
+ * diagnostic switch that fails silently is worse than none: the silence reads
+ * as "nothing is happening" when it means "nothing was turned on".
+ */
+export function setLogLevel(spec: string): Readonly<Settings> {
+  const levels = levelsFrom(spec)
+  if (Object.keys(levels).length === 0) {
+    console.warn(`[hatua] nothing usable in the log level "${spec}". Try '*:debug'.`)
+  }
+  return configureLogging({ levels })
+}
+
+/** Back to silent-unless-asked, and back to the console. What a test resets to. */
+export function resetLogging(): void {
+  held[SETTINGS] = { levels: { ...DEFAULT_LEVELS }, sink: consoleSink }
+}
+
+/**
+ * The level a category is written at: the longest configured prefix that
+ * matches it.
+ *
+ * Longest rather than first, so `services` and `services.editing` can both be
+ * set and the more specific one wins whichever order they were written in.
+ */
+const levelFor = (category: string): Level => {
+  const { levels } = settings()
+  let best = levels['*'] ?? 'warn'
+  let longest = -1
+  for (const [prefix, level] of Object.entries(levels)) {
+    if (prefix === '*') continue
+    if (category !== prefix && !category.startsWith(`${prefix}.`)) continue
+    if (prefix.length > longest) {
+      longest = prefix.length
+      best = level
+    }
+  }
+  return best
+}
+
+/**
+ * Levels from a short string: `*:debug`, `services.editing:trace,react:debug`.
+ *
+ * Here rather than in whatever is calling it because it is the form a person
+ * types under time pressure — into a console, into a query string, into an
+ * environment variable — and every one of those callers would otherwise write
+ * its own splitter and get a different one wrong.
+ *
+ * A bare level with no category means everything: `debug` is `*:debug`.
+ */
+export function levelsFrom(spec: string): Record<string, Level> {
+  const out: Record<string, Level> = {}
+  for (const part of spec.split(',')) {
+    const one = part.trim()
+    if (!one) continue
+    const at = one.lastIndexOf(':')
+    const category = at < 0 ? '*' : one.slice(0, at).trim()
+    const level = (at < 0 ? one : one.slice(at + 1)).trim()
+    if (!isLevel(level)) continue
+    out[category || '*'] = level
+  }
+  return out
+}
+
+/** A level Hatua knows, rather than whatever was typed. */
+const isLevel = (value: string): value is Level => value in RANK
+
+export interface Logger {
+  error(message: string, detail?: Record<string, unknown>): void
+  warn(message: string, detail?: Record<string, unknown>): void
+  info(message: string, detail?: Record<string, unknown>): void
+  debug(message: string, detail?: Record<string, unknown>): void
+  trace(message: string, detail?: Record<string, unknown>): void
+  /** Whether a line at this level would be written, for a caller with work to do to build one. */
+  enabled(level: Level): boolean
+}
+
+/**
+ * A logger for one category.
+ *
+ * Held at module scope by its caller — the category is a fact about the file,
+ * not about the call — and it reads the configuration at write time, so turning
+ * a category up affects loggers already made.
+ */
+export function logger(category: string): Logger {
+  const write = (level: Level, message: string, detail?: Record<string, unknown>) => {
+    if (RANK[level] > RANK[levelFor(category)]) return
+    settings().sink({ level, category, message, ...(detail === undefined ? {} : { detail }) })
+  }
+
+  return {
+    error: (message, detail) => write('error', message, detail),
+    warn: (message, detail) => write('warn', message, detail),
+    info: (message, detail) => write('info', message, detail),
+    debug: (message, detail) => write('debug', message, detail),
+    trace: (message, detail) => write('trace', message, detail),
+    enabled: (level) => RANK[level] <= RANK[levelFor(category)],
+  }
+}

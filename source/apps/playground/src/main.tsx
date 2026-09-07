@@ -1,7 +1,16 @@
+import {
+  configureLogging,
+  type Level,
+  levelsFrom,
+  logger,
+  resetLogging,
+  setLogLevel,
+} from '@hatua/log'
 import { Hatua } from '@hatua/react'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { SOURCES } from './catalogue'
+import { CONNECTIONS } from './connections'
 import { createLocalWorkflowStore } from './workflow-store'
 
 // The Host imports no CSS — Hatua renders its own stylesheet (ADR-0003).
@@ -43,8 +52,131 @@ import { createLocalWorkflowStore } from './workflow-store'
  */
 const workflows = createLocalWorkflowStore()
 
+/*
+ * Logging, switched on in a way that survives a reload.
+ *
+ * `configureLogging` holds its settings in memory, which is right for a library
+ * — a Host decides afresh each time it starts — and useless for chasing
+ * something here: every edit to a region forces a full page reload, so a switch
+ * thrown in the console is gone before the thing being watched happens again.
+ *
+ * So the playground remembers. A level written here is put in `localStorage` and
+ * read back at startup, and `?log=` sets it for one visit without touching what
+ * is stored.
+ *
+ *   hatuaLogging('*:debug')
+ *   hatuaLogging('services.editing:trace,react.fields:debug')
+ *   hatuaLogging(null)                       // back to silent
+ *   http://localhost:5173/?log=*:trace
+ *
+ * The playground's own affordance, not Hatua's: a Host decides whether it wants
+ * one at all, and this one is a development harness.
+ */
+const STORED = 'hatua.log'
+
+/**
+ * What was asked for, however it was asked.
+ *
+ * A string because that is what types cleanly into a console; the config object
+ * because that is what `configureLogging` takes and what a reader who has seen
+ * the package reaches for first. Accepting one and silently storing the other
+ * as `[object Object]` is a switch that appears to work and does nothing, which
+ * is the failure this whole affordance exists to avoid.
+ */
+const asSpec = (asked: string | { levels?: Record<string, Level> }): string =>
+  typeof asked === 'string'
+    ? asked
+    : Object.entries(asked.levels ?? {})
+        .map(([category, level]) => `${category}:${level}`)
+        .join(',')
+
+const remembered = (): string | null => {
+  const asked = new URLSearchParams(globalThis.location.search).get('log')
+  if (asked !== null) return asked
+  try {
+    return globalThis.localStorage.getItem(STORED)
+  } catch {
+    // A browser with site data blocked. Nothing to remember, which is the
+    // default anyway.
+    return null
+  }
+}
+
+const log = logger('playground')
+
+/*
+ * A stored spec that yields nothing is thrown away rather than kept.
+ *
+ * It is how this went wrong once already: a spec written under an older
+ * signature was stored as `[object Object]`, read back on every load, parsed to
+ * nothing, and left logging silent — with no way to tell that from never having
+ * switched it on. `warn` is through by default, so saying so reaches somebody
+ * who is looking at a console wondering why it is empty.
+ */
+const stored = remembered()
+if (stored) {
+  const levels = levelsFrom(stored)
+  if (Object.keys(levels).length === 0) {
+    console.warn(`[hatua] ignoring an unreadable log level: "${stored}". Cleared.`)
+    try {
+      globalThis.localStorage.removeItem(STORED)
+    } catch {
+      // Nothing to clear, which is the same outcome.
+    }
+  } else {
+    setLogLevel(stored)
+    log.info('logging on', { levels })
+  }
+}
+
+;(
+  globalThis as unknown as {
+    hatuaLogging: (asked?: string | { levels?: Record<string, Level> } | null) => unknown
+  }
+).hatuaLogging = (asked) => {
+  // Asked nothing: report what is in force rather than changing it.
+  if (asked === undefined) return configureLogging({})
+
+  if (asked === null) {
+    try {
+      globalThis.localStorage.removeItem(STORED)
+    } catch {
+      // Not remembered; the reset below still applies to this page.
+    }
+    resetLogging()
+    return 'Logging off.'
+  }
+
+  const spec = asSpec(asked)
+  const levels = levelsFrom(spec)
+  if (Object.keys(levels).length === 0) {
+    return `Nothing usable in "${spec}". Try '*:debug' or 'services.editing:trace'.`
+  }
+
+  try {
+    globalThis.localStorage.setItem(STORED, spec)
+  } catch {
+    // Not remembered, but still applied for this page.
+  }
+
+  const inForce = setLogLevel(spec)
+  /*
+   * And write one line at the level just asked for, through the logger.
+   *
+   * The whole chain in one call — settings, threshold, sink, console — so the
+   * switch answers "did that work" itself instead of leaving it to be inferred
+   * from whether something else logs later. Every failure of this affordance so
+   * far has looked exactly like a quiet application.
+   */
+  log.debug('logging on', { levels: inForce.levels })
+  return inForce
+}
+
 createRoot(document.getElementById('root') as HTMLElement).render(
   <StrictMode>
-    <Hatua ports={{ manifests: SOURCES.ready, workflows }} workflowId="wf_morning" />
+    <Hatua
+      ports={{ manifests: SOURCES.ready, workflows, ...CONNECTIONS.ready }}
+      workflowId="wf_morning"
+    />
   </StrictMode>,
 )

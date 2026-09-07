@@ -423,10 +423,27 @@ Left cluster carries identity: `workflows /`, the workflow's name, its slug, the
 control — `v5 · Draft`, opening to a list from `listVersions`, newest first, paged, each with its
 status spelled `draft | published | archived` as the schema spells it.
 
-Right cluster carries **Build / Runs**, then **Publish**, **Release**, **Discard**.
+Right cluster carries **Publish**, **Release**, **Discard**. The **Build / Runs** segmented control
+is not drawn: `ExecutionSource` already says "omit entirely and the Runs view is hidden", and there
+is no Runs view to switch to.
 
 There is no **Save changes** button. Editing autosaves (ADR-0005), and the flag behind that button
 is not a thing to render.
+
+**Publish is never disabled.** It is refused by the store (ADR-0023) and the bar carries the count of
+what is blocking it; pressing it opens that list, each row navigating to the thing it is about. The
+bar reports the refusal and does not decide it, which is why a Host that mounts no toolbar still
+cannot publish a broken workflow.
+
+**This is where autosave says it has stopped.** ADR-0005 halts autosave on a rejected write and keeps
+the in-memory document, and the bar is where a user learns that: shown, not announced, because
+`<StepList>` and the **Workflow** tab already announce the same sentence into a live region and a
+screen mounting all three would say it three times. Where the claim is still held the control resumes
+saving; where the session has ended it does not, because every action left discards the work.
+
+**A session that has ended says so.** Publish, Release and Discard all drop the claim, and a screen
+that still looks live is one whose next keystroke goes nowhere. The bar shows what happened and
+offers **Edit**, which opens the **Draft** again — the same loop after all three.
 
 **Version and status appear here and nowhere else.** ADR-0011 settled it: a property of the whole
 document, shown behind a tab, is visible only while that tab is open, and the canvas, the step
@@ -1129,6 +1146,17 @@ Recorded here so the two documents cannot disagree quietly. ADR-0011 already lis
   the port's shape.
 - **`Ctrl`+`Space`** conflicts with input-source switching for multilingual macOS users. `Ctrl`+`.` is
   the fallback if it bites.
+- **The read-only version mode.** ADR-0011 describes selecting a version and loading it through
+  `loadVersion`; the top bar lists versions and does not select one, because read-only is a state of
+  the canvas, the step editor and the **Workflow** tab together rather than of the bar. The PR that
+  designs it is the one that justifies `loadVersion`.
+- **A halt the claim cannot resume has no escape.** Where the session has ended, the in-memory
+  document is intact, editable and saved nowhere, and every action available discards it. Getting the
+  text out is **Text Mode**'s job, which is why that is the answer rather than a button in the bar.
+- **`WorkflowStore.publish` carries no typed conflict.** ADR-0005 makes publish the one moment
+  conflict is detected, but the port rejects with a plain error, so Hatua cannot tell "someone else
+  published" from "your claim was taken" and renders the Host's message for both. A code on the
+  rejection would change a contract `sdk/go` shares.
 
 Two that were open here are now settled and recorded above: the **Run Context schema**, in
 [ADR-0012](adr/0012-run-context-is-a-fourth-manifest-kind.md) and under [Run Context](#run-context);

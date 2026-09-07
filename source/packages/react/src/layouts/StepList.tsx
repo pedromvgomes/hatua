@@ -36,6 +36,7 @@ import {
 import { Button } from '../primitives/Button'
 import { cx } from '../primitives/classNames'
 import { useEditingStore, useValidationStore } from '../theme/HatuaProvider'
+import { useReadOnly } from '../theme/readOnly'
 import styles from './StepList.module.css'
 import css from './StepList.module.css?inline'
 
@@ -189,6 +190,7 @@ export function StepList({
   className,
   ...rest
 }: StepListProps) {
+  const readOnly = useReadOnly()
   const store = useEditingStore()
   const validation = useValidationStore()
   const [ownSelected, setOwnSelected] = useState<Segment | undefined>(defaultSelected)
@@ -407,7 +409,10 @@ export function StepList({
               onSelect={select}
               onToggle={toggle}
               onRemove={remove}
-              onInsert={onInsert}
+              // Withheld once the session has ended, which is how a region says
+              // "no insert points" — the same absence a Host that wires no
+              // handler already gets. The tree stays listed in full.
+              onInsert={readOnly ? undefined : onInsert}
               onDropStep={move}
               onDragStart={setDragging}
               onDragEnd={() => setDragging(null)}
@@ -458,6 +463,7 @@ interface SequenceProps {
  * inside branches, and there is no way to say otherwise outside `role="tree"`.
  */
 function Sequence({ steps, scope, at, ...handlers }: SequenceProps) {
+  const readOnly = useReadOnly()
   const { selection, problems, troubled, collapsed, dragging, onInsert, onDropStep } = handlers
 
   return (
@@ -485,7 +491,7 @@ function Sequence({ steps, scope, at, ...handlers }: SequenceProps) {
           <Fragment key={step.id}>
             <li
               className={styles.item}
-              draggable
+              draggable={!readOnly}
               onDragStart={(event) => {
                 // A container's <li> WRAPS its children's, so this fires again
                 // at every enclosing level and the last one to run wins:
@@ -723,6 +729,7 @@ function Row({
   onToggle: (id: string) => void
   onRemove: (id: string) => void
 }) {
+  const readOnly = useReadOnly()
   const container = Boolean(step.branches?.length || step.steps || step.handler)
 
   /*
@@ -791,13 +798,14 @@ function Row({
         </button>
       ) : null}
 
-      <button
-        type="button"
-        className={styles.remove}
-        aria-label={`Remove ${nameOf(step)}`}
-        onClick={() => onRemove(step.id)}
-      >
-        {/*
+      {readOnly ? null : (
+        <button
+          type="button"
+          className={styles.remove}
+          aria-label={`Remove ${nameOf(step)}`}
+          onClick={() => onRemove(step.id)}
+        >
+          {/*
           A bin, not a cross. `×` is the glyph for dismissing a thing — closing
           a panel, clearing a filter — and this deletes a Step out of the
           document. The two are worth telling apart before the click, not after.
@@ -805,19 +813,20 @@ function Row({
           Drawn rather than set in type: the only bin in a text font is an emoji,
           which renders at a size and colour the row does not control.
         */}
-        <svg
-          className={styles.icon}
-          viewBox="0 0 16 16"
-          width="14"
-          height="14"
-          focusable="false"
-          aria-hidden="true"
-        >
-          <path d="M3 4.5h10M6.5 4.5V3.2a.7.7 0 0 1 .7-.7h1.6a.7.7 0 0 1 .7.7v1.3" />
-          <path d="M4.4 4.5l.6 8a1 1 0 0 0 1 .9h4a1 1 0 0 0 1-.9l.6-8" />
-          <path d="M6.8 7v3.6M9.2 7v3.6" />
-        </svg>
-      </button>
+          <svg
+            className={styles.icon}
+            viewBox="0 0 16 16"
+            width="14"
+            height="14"
+            focusable="false"
+            aria-hidden="true"
+          >
+            <path d="M3 4.5h10M6.5 4.5V3.2a.7.7 0 0 1 .7-.7h1.6a.7.7 0 0 1 .7.7v1.3" />
+            <path d="M4.4 4.5l.6 8a1 1 0 0 0 1 .9h4a1 1 0 0 0 1-.9l.6-8" />
+            <path d="M6.8 7v3.6M9.2 7v3.6" />
+          </svg>
+        </button>
+      )}
     </div>
   )
 }

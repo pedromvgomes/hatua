@@ -13,8 +13,18 @@ import type {
 } from '@hatua/services'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { HatuaProvider } from '../theme/HatuaProvider'
+import { HatuaProvider, useEditingStore } from '../theme/HatuaProvider'
 import { Inspector } from './Inspector'
+
+/** A Host's own control, ending the session without going through a toolbar. */
+function Ends() {
+  const store = useEditingStore()
+  return (
+    <button type="button" onClick={() => void store?.release()}>
+      end it
+    </button>
+  )
+}
 
 /**
  * The step editor against a Host's ports.
@@ -373,6 +383,21 @@ describe('the edits it writes', () => {
     expect(written).toContain('ref: ref_support')
     expect(written).toContain('mailbox: support_inbox')
   })
+
+  it('shows the Connection it just declared, rather than falling back to none', async () => {
+    // The document is written correctly and the picker still has to SAY so: a
+    // field that snaps back to "—" reads as a choice that did not take.
+    const source = host()
+    mount(source, on('s1'), CATALOGUE, true)
+
+    const picker = await screen.findByLabelText('Mailbox')
+    await waitFor(() => expect(picker.querySelectorAll('option').length).toBeGreaterThan(1))
+    fireEvent.change(picker, { target: { value: '+ref_support' } })
+
+    await waitFor(() =>
+      expect((screen.getByLabelText('Mailbox') as HTMLSelectElement).value).toBe('support_inbox'),
+    )
+  })
 })
 
 describe('the relationship with the Data panel beside it', () => {
@@ -569,5 +594,120 @@ describe('the name field', () => {
     const box = await screen.findByDisplayValue('Fetch the mail')
     expect(box.getAttribute('aria-label')).toBe('Name')
     expect(screen.getByLabelText('Name')).toBe(box)
+  })
+})
+
+describe('once the session has ended', () => {
+  /*
+   * The store refuses commands with no claim behind them, and a form that still
+   * looked editable would be one whose every keystroke was dropped without a
+   * word. What a Step declares stays on screen in full — most of what a Step
+   * DOES is what its fields say, so emptying the panel would answer "what is
+   * this workflow" with nothing.
+   */
+  it('shows every parameter, and lets none of them be edited', async () => {
+    const source = host()
+    render(
+      <HatuaProvider
+        ports={{ workflows: source.port, manifests: serving(CATALOGUE) }}
+        workflowId="wf_morning"
+      >
+        <Ends />
+        <Inspector selected={{ board: null, steps: ['s1'] }} />
+      </HatuaProvider>,
+    )
+
+    // Editable while the Draft is claimed.
+    const name = await screen.findByLabelText('Name')
+    expect((name as HTMLInputElement).disabled).toBe(false)
+
+    fireEvent.click(screen.getByRole('button', { name: 'end it' }))
+
+    await waitFor(() =>
+      expect((screen.getByLabelText('Name') as HTMLInputElement).disabled).toBe(true),
+    )
+    // The value is still there to read.
+    expect((screen.getByLabelText('Name') as HTMLInputElement).value).not.toBe('')
+    for (const field of screen.getAllByRole('textbox')) {
+      expect((field as HTMLInputElement).disabled).toBe(true)
+    }
+  })
+})
+
+describe('the playground’s own shape', () => {
+  /*
+   * What the seed actually has: a workflow declaring one email Connection bound
+   * to a served handle, a Step whose field wants a different type, and several
+   * handles served — only one of which fits.
+   */
+  const LLM = `id: wf_morning
+name: n
+version: 1
+status: draft
+
+connections:
+  - id: mailbox
+    ref: cx_9f2a
+
+steps:
+  - id: s1
+    use: component.agent.act
+    name: "Sort by urgency"
+`
+
+  const AGENT: Manifest[] = [
+    {
+      kind: 'component',
+      use: 'component.agent.act',
+      name: 'Run agent',
+      fields: [{ k: 'connection', label: 'Model', kind: 'conn', conn_type: 'llm', req: true }],
+      outputs: [],
+    },
+  ]
+
+  const SERVED = [
+    { ref: 'cx_9f2a', type: 'email', label: 'Ops mailbox' },
+    { ref: 'cx_7c04', type: 'llm', label: 'Claude Code · Haiku 4.5' },
+  ]
+
+  const ports = () => ({
+    connections: {
+      async listConnections() {
+        return { items: SERVED.map(({ ref, type }) => ({ ref, type })) }
+      },
+    },
+    describeConnection: {
+      async describe(ref: string) {
+        const found = SERVED.find((one) => one.ref === ref)
+        if (!found) throw new Error(`No connection "${ref}"`)
+        return { type: found.type, label: found.label, status: 'ready' as const, details: {} }
+      },
+    },
+  })
+
+  it('offers only the Connection that fits, and keeps it once chosen', async () => {
+    const source = host(LLM)
+    render(
+      <HatuaProvider
+        ports={{ workflows: source.port, manifests: serving(AGENT), ...ports() }}
+        workflowId="wf_morning"
+      >
+        <Inspector selected={{ board: null, steps: ['s1'] }} />
+      </HatuaProvider>,
+    )
+
+    const picker = (await screen.findByLabelText('Model')) as HTMLSelectElement
+    await waitFor(() => expect(picker.querySelectorAll('option').length).toBeGreaterThan(1))
+
+    // The email mailbox is not offered for a Model.
+    expect([...picker.querySelectorAll('option')].map((one) => one.textContent)).not.toContain(
+      'Ops mailbox',
+    )
+
+    fireEvent.change(picker, { target: { value: '+cx_7c04' } })
+
+    await waitFor(() =>
+      expect((screen.getByLabelText('Model') as HTMLSelectElement).value).not.toBe(''),
+    )
   })
 })
