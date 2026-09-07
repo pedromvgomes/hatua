@@ -201,12 +201,18 @@ export function HatuaProvider({
     [connectionSource, connectionDescriber],
   )
 
-  // Pure derivation over the two stores above, so it holds nothing of its own
-  // and needs no disposal — see createValidationStore.
+  // Pure derivation over the stores above, so it holds nothing of its own and
+  // needs no disposal — see createValidationStore.
+  //
+  // The connection store is passed even though it may be null: a Host that wires
+  // no `ConnectionSource` is correctly configured, and validation narrows to the
+  // rules a document can answer on its own rather than withholding all of them.
   const validationStore = useMemo(
     () =>
-      editingStore && manifestStore ? createValidationStore(editingStore, manifestStore) : null,
-    [editingStore, manifestStore],
+      editingStore && manifestStore
+        ? createValidationStore(editingStore, manifestStore, connectionStore)
+        : null,
+    [editingStore, manifestStore, connectionStore],
   )
 
   return (

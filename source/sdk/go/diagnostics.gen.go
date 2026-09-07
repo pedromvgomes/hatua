@@ -17,25 +17,29 @@ const (
 type DefinitionCode string
 
 const (
-	CodeFieldRequired           DefinitionCode = "FIELD_REQUIRED"
-	CodeComponentUnknown        DefinitionCode = "COMPONENT_UNKNOWN"
-	CodeForkHasNoBranches       DefinitionCode = "FORK_HAS_NO_BRANCHES"
-	CodeForkNeedsTwoBranches    DefinitionCode = "FORK_NEEDS_TWO_BRANCHES"
-	CodeBranchUnreachableAfter  DefinitionCode = "BRANCH_UNREACHABLE_AFTER"
-	CodeLoopHasNoBody           DefinitionCode = "LOOP_HAS_NO_BODY"
-	CodeTryHasNoBody            DefinitionCode = "TRY_HAS_NO_BODY"
-	CodeTryHasNoHandler         DefinitionCode = "TRY_HAS_NO_HANDLER"
-	CodeLoopListNotAList        DefinitionCode = "LOOP_LIST_NOT_A_LIST"
-	CodeRepeatHasNoCondition    DefinitionCode = "REPEAT_HAS_NO_CONDITION"
-	CodeVarUnknown              DefinitionCode = "VAR_UNKNOWN"
-	CodeBlockUnknown            DefinitionCode = "BLOCK_UNKNOWN"
-	CodeBlockRecursion          DefinitionCode = "BLOCK_RECURSION"
-	CodeReturnOutsideBlock      DefinitionCode = "RETURN_OUTSIDE_BLOCK"
-	CodeBlockPathWithoutReturn  DefinitionCode = "BLOCK_PATH_WITHOUT_RETURN"
-	CodeStepAfterReturn         DefinitionCode = "STEP_AFTER_RETURN"
-	CodeBlockIdDuplicate        DefinitionCode = "BLOCK_ID_DUPLICATE"
-	CodeDeclarationKeyDuplicate DefinitionCode = "DECLARATION_KEY_DUPLICATE"
-	CodeStepIdDuplicate         DefinitionCode = "STEP_ID_DUPLICATE"
+	CodeFieldRequired            DefinitionCode = "FIELD_REQUIRED"
+	CodeComponentUnknown         DefinitionCode = "COMPONENT_UNKNOWN"
+	CodeForkHasNoBranches        DefinitionCode = "FORK_HAS_NO_BRANCHES"
+	CodeForkNeedsTwoBranches     DefinitionCode = "FORK_NEEDS_TWO_BRANCHES"
+	CodeBranchUnreachableAfter   DefinitionCode = "BRANCH_UNREACHABLE_AFTER"
+	CodeLoopHasNoBody            DefinitionCode = "LOOP_HAS_NO_BODY"
+	CodeTryHasNoBody             DefinitionCode = "TRY_HAS_NO_BODY"
+	CodeTryHasNoHandler          DefinitionCode = "TRY_HAS_NO_HANDLER"
+	CodeLoopListNotAList         DefinitionCode = "LOOP_LIST_NOT_A_LIST"
+	CodeRepeatHasNoCondition     DefinitionCode = "REPEAT_HAS_NO_CONDITION"
+	CodeVarUnknown               DefinitionCode = "VAR_UNKNOWN"
+	CodeBlockUnknown             DefinitionCode = "BLOCK_UNKNOWN"
+	CodeBlockRecursion           DefinitionCode = "BLOCK_RECURSION"
+	CodeReturnOutsideBlock       DefinitionCode = "RETURN_OUTSIDE_BLOCK"
+	CodeBlockPathWithoutReturn   DefinitionCode = "BLOCK_PATH_WITHOUT_RETURN"
+	CodeStepAfterReturn          DefinitionCode = "STEP_AFTER_RETURN"
+	CodeBlockIdDuplicate         DefinitionCode = "BLOCK_ID_DUPLICATE"
+	CodeDeclarationKeyDuplicate  DefinitionCode = "DECLARATION_KEY_DUPLICATE"
+	CodeStepIdDuplicate          DefinitionCode = "STEP_ID_DUPLICATE"
+	CodeConnectionNotEstablished DefinitionCode = "CONNECTION_NOT_ESTABLISHED"
+	CodeConnectionUnknown        DefinitionCode = "CONNECTION_UNKNOWN"
+	CodeConnectionUnresolvable   DefinitionCode = "CONNECTION_UNRESOLVABLE"
+	CodeConnectionTypeMismatch   DefinitionCode = "CONNECTION_TYPE_MISMATCH"
 )
 
 // DefinitionDiagnosticSpec is one declared code.
@@ -50,23 +54,27 @@ type DefinitionDiagnosticSpec struct {
 // contract: a code that stopped Publish in TypeScript and merely informed
 // here would let a workflow publish from one builder and not another.
 var DefinitionDiagnostics = map[DefinitionCode]DefinitionDiagnosticSpec{
-	CodeFieldRequired:           {Code: CodeFieldRequired, Blocks: BlocksPublish, Message: "{label} is required."},
-	CodeComponentUnknown:        {Code: CodeComponentUnknown, Blocks: BlocksEdit, Message: "Nothing declares \"{use}\". It may no longer be available."},
-	CodeForkHasNoBranches:       {Code: CodeForkHasNoBranches, Blocks: BlocksPublish, Message: "This fork has no branches. Add the two paths it chooses between."},
-	CodeForkNeedsTwoBranches:    {Code: CodeForkNeedsTwoBranches, Blocks: BlocksPublish, Message: "A fork needs at least two branches — add the other path."},
-	CodeBranchUnreachableAfter:  {Code: CodeBranchUnreachableAfter, Blocks: BlocksPublish, Message: "\"{label}\" has no condition, so nothing after it can ever run. Only the last branch may be unconditional."},
-	CodeLoopHasNoBody:           {Code: CodeLoopHasNoBody, Blocks: BlocksPublish, Message: "This loop repeats nothing. Add at least one Step inside it."},
-	CodeTryHasNoBody:            {Code: CodeTryHasNoBody, Blocks: BlocksPublish, Message: "This try protects nothing. Add at least one Step to its body."},
-	CodeTryHasNoHandler:         {Code: CodeTryHasNoHandler, Blocks: BlocksPublish, Message: "This try has no handler, so a failure has nowhere to go. Add a Step to `handler:`."},
-	CodeLoopListNotAList:        {Code: CodeLoopListNotAList, Blocks: BlocksPublish, Message: "\"{name}\" is {actual}, not a list, so there is nothing to iterate."},
-	CodeRepeatHasNoCondition:    {Code: CodeRepeatHasNoCondition, Blocks: BlocksPublish, Message: "This repeat has no condition, so nothing ever ends it. Give it an `until`."},
-	CodeVarUnknown:              {Code: CodeVarUnknown, Blocks: BlocksPublish, Message: "No variable called \"{name}\" is declared on this board."},
-	CodeBlockUnknown:            {Code: CodeBlockUnknown, Blocks: BlocksPublish, Message: "No block called \"{name}\" is declared in this workflow."},
-	CodeBlockRecursion:          {Code: CodeBlockRecursion, Blocks: BlocksPublish, Message: "\"{name}\" calls itself, directly or through another block."},
-	CodeReturnOutsideBlock:      {Code: CodeReturnOutsideBlock, Blocks: BlocksPublish, Message: "`core.return` publishes a block's outputs, and this is not inside a block."},
-	CodeBlockPathWithoutReturn:  {Code: CodeBlockPathWithoutReturn, Blocks: BlocksPublish, Message: "\"{name}\" declares outputs, but a path through it can finish without returning."},
-	CodeStepAfterReturn:         {Code: CodeStepAfterReturn, Blocks: BlocksPublish, Message: "Nothing after `core.return` can run."},
-	CodeBlockIdDuplicate:        {Code: CodeBlockIdDuplicate, Blocks: BlocksPublish, Message: "More than one block is called \"{name}\"."},
-	CodeDeclarationKeyDuplicate: {Code: CodeDeclarationKeyDuplicate, Blocks: BlocksPublish, Message: "More than one {side} of \"{block}\" is called \"{name}\"."},
-	CodeStepIdDuplicate:         {Code: CodeStepIdDuplicate, Blocks: BlocksPublish, Message: "More than one step on this board is called \"{name}\"."},
+	CodeFieldRequired:            {Code: CodeFieldRequired, Blocks: BlocksPublish, Message: "{label} is required."},
+	CodeComponentUnknown:         {Code: CodeComponentUnknown, Blocks: BlocksEdit, Message: "Nothing declares \"{use}\". It may no longer be available."},
+	CodeForkHasNoBranches:        {Code: CodeForkHasNoBranches, Blocks: BlocksPublish, Message: "This fork has no branches. Add the two paths it chooses between."},
+	CodeForkNeedsTwoBranches:     {Code: CodeForkNeedsTwoBranches, Blocks: BlocksPublish, Message: "A fork needs at least two branches — add the other path."},
+	CodeBranchUnreachableAfter:   {Code: CodeBranchUnreachableAfter, Blocks: BlocksPublish, Message: "\"{label}\" has no condition, so nothing after it can ever run. Only the last branch may be unconditional."},
+	CodeLoopHasNoBody:            {Code: CodeLoopHasNoBody, Blocks: BlocksPublish, Message: "This loop repeats nothing. Add at least one Step inside it."},
+	CodeTryHasNoBody:             {Code: CodeTryHasNoBody, Blocks: BlocksPublish, Message: "This try protects nothing. Add at least one Step to its body."},
+	CodeTryHasNoHandler:          {Code: CodeTryHasNoHandler, Blocks: BlocksPublish, Message: "This try has no handler, so a failure has nowhere to go. Add a Step to `handler:`."},
+	CodeLoopListNotAList:         {Code: CodeLoopListNotAList, Blocks: BlocksPublish, Message: "\"{name}\" is {actual}, not a list, so there is nothing to iterate."},
+	CodeRepeatHasNoCondition:     {Code: CodeRepeatHasNoCondition, Blocks: BlocksPublish, Message: "This repeat has no condition, so nothing ever ends it. Give it an `until`."},
+	CodeVarUnknown:               {Code: CodeVarUnknown, Blocks: BlocksPublish, Message: "No variable called \"{name}\" is declared on this board."},
+	CodeBlockUnknown:             {Code: CodeBlockUnknown, Blocks: BlocksPublish, Message: "No block called \"{name}\" is declared in this workflow."},
+	CodeBlockRecursion:           {Code: CodeBlockRecursion, Blocks: BlocksPublish, Message: "\"{name}\" calls itself, directly or through another block."},
+	CodeReturnOutsideBlock:       {Code: CodeReturnOutsideBlock, Blocks: BlocksPublish, Message: "`core.return` publishes a block's outputs, and this is not inside a block."},
+	CodeBlockPathWithoutReturn:   {Code: CodeBlockPathWithoutReturn, Blocks: BlocksPublish, Message: "\"{name}\" declares outputs, but a path through it can finish without returning."},
+	CodeStepAfterReturn:          {Code: CodeStepAfterReturn, Blocks: BlocksPublish, Message: "Nothing after `core.return` can run."},
+	CodeBlockIdDuplicate:         {Code: CodeBlockIdDuplicate, Blocks: BlocksPublish, Message: "More than one block is called \"{name}\"."},
+	CodeDeclarationKeyDuplicate:  {Code: CodeDeclarationKeyDuplicate, Blocks: BlocksPublish, Message: "More than one {side} of \"{block}\" is called \"{name}\"."},
+	CodeStepIdDuplicate:          {Code: CodeStepIdDuplicate, Blocks: BlocksPublish, Message: "More than one step on this board is called \"{name}\"."},
+	CodeConnectionNotEstablished: {Code: CodeConnectionNotEstablished, Blocks: BlocksPublish, Message: "\"{name}\" is not connected yet. Connect it before publishing."},
+	CodeConnectionUnknown:        {Code: CodeConnectionUnknown, Blocks: BlocksEdit, Message: "\"{name}\" is not declared in this workflow."},
+	CodeConnectionUnresolvable:   {Code: CodeConnectionUnresolvable, Blocks: BlocksPublish, Message: "\"{name}\" no longer resolves. Reconnect it or pick another."},
+	CodeConnectionTypeMismatch:   {Code: CodeConnectionTypeMismatch, Blocks: BlocksEdit, Message: "{label} needs a {wanted} connection, but \"{name}\" is {actual}."},
 }

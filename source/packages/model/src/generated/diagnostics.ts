@@ -27,6 +27,10 @@ export type DefinitionCode =
   | 'BLOCK_ID_DUPLICATE'
   | 'DECLARATION_KEY_DUPLICATE'
   | 'STEP_ID_DUPLICATE'
+  | 'CONNECTION_NOT_ESTABLISHED'
+  | 'CONNECTION_UNKNOWN'
+  | 'CONNECTION_UNRESOLVABLE'
+  | 'CONNECTION_TYPE_MISMATCH'
 
 export interface DefinitionDiagnosticSpec {
   readonly code: DefinitionCode
@@ -132,5 +136,25 @@ export const DEFINITION_DIAGNOSTICS: Record<DefinitionCode, DefinitionDiagnostic
     code: 'STEP_ID_DUPLICATE',
     blocks: 'publish',
     message: 'More than one step on this board is called "{name}".',
+  },
+  CONNECTION_NOT_ESTABLISHED: {
+    code: 'CONNECTION_NOT_ESTABLISHED',
+    blocks: 'publish',
+    message: '"{name}" is not connected yet. Connect it before publishing.',
+  },
+  CONNECTION_UNKNOWN: {
+    code: 'CONNECTION_UNKNOWN',
+    blocks: 'edit',
+    message: '"{name}" is not declared in this workflow.',
+  },
+  CONNECTION_UNRESOLVABLE: {
+    code: 'CONNECTION_UNRESOLVABLE',
+    blocks: 'publish',
+    message: '"{name}" no longer resolves. Reconnect it or pick another.',
+  },
+  CONNECTION_TYPE_MISMATCH: {
+    code: 'CONNECTION_TYPE_MISMATCH',
+    blocks: 'edit',
+    message: '{label} needs a {wanted} connection, but "{name}" is {actual}.',
   },
 }

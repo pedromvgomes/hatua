@@ -21,6 +21,7 @@ import {
   type InsertPoint,
   moveStep,
   removeStep,
+  unchecked,
   type ValidationState,
 } from '@hatua/services'
 import {
@@ -173,14 +174,6 @@ const subscribeToNothing = () => () => {}
 const NO_PROBLEMS: ReadonlyMap<string, Diagnostic[]> = new Map()
 /** The same, for the Blocks a row may report as unable to run. */
 const NO_TROUBLE: ReadonlySet<string> = new Set()
-const UNCHECKED: ValidationState = {
-  byStep: NO_PROBLEMS,
-  byTrigger: NO_PROBLEMS,
-  byBlock: NO_PROBLEMS,
-  all: [],
-  ready: false,
-}
-const readUnchecked = (): ValidationState => UNCHECKED
 const readUnconfigured = (): ListState => UNCONFIGURED
 const readOpening = (): ListState => OPENING
 
@@ -236,8 +229,8 @@ export function StepList({
 
   const checks = useSyncExternalStore<ValidationState>(
     validation ? validation.subscribe : subscribeToNothing,
-    validation ? validation.getSnapshot : readUnchecked,
-    readUnchecked,
+    validation ? validation.getSnapshot : unchecked,
+    unchecked,
   )
   // Absent, not empty. "Not checked yet" and "checked and fine" must not look
   // the same: every Step is an unknown component until the manifests land, so
