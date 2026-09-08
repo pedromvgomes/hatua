@@ -1,0 +1,33 @@
+@layer hatua {
+  /*
+   * One column, and that is the decision rather than a simplification.
+   *
+   * The state this view exists for is a document that no other region can draw:
+   * the side panel, the canvas and the step editor all read `definition`, and
+   * `definition` is null. Columns beside the text would be blank exactly when
+   * the text matters most.
+   */
+  .text {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    block-size: 100%;
+    min-block-size: 0;
+    min-inline-size: 1240px;
+    background: var(--hatua-surface-page);
+  }
+
+  .scroller {
+    block-size: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .bar {
+    min-inline-size: 0;
+  }
+
+  .body {
+    min-inline-size: 0;
+    min-block-size: 0;
+  }
+}

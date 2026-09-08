@@ -1,5 +1,5 @@
 import type { Rect } from '@hatua/layout'
-import { type Diagnostic, isContainer, nameOf, slotsFor } from '@hatua/model'
+import { type Diagnostic, isContainer, nameOf, type RunStatus, slotsFor } from '@hatua/model'
 import type { Manifest, Step } from '@hatua/schema'
 import { cx } from '../primitives/classNames'
 import { boxOf } from './box'
@@ -44,6 +44,26 @@ export interface NodeCardProps {
   opens?: string
   /** This Step's diagnostics; a Step with none is handed nothing. */
   problems?: readonly Diagnostic[]
+  /**
+   * What this Step did in the run being read, and how many times it did it.
+   *
+   * Absent everywhere except the **Runs** view, and absent there too for a Step
+   * the run never reached — inside a **Branch** that was not taken, or after the
+   * failure that ended it. An unmarked card is what says so, and it has to stay
+   * possible: marking every card would say a Step ran when nothing reports that
+   * it did.
+   *
+   * `passes` is above one only inside a loop, where `core.for_each` gives each
+   * item its own record. The status is the worst of them (`statusOf`), because a
+   * card is one shape and cannot say twenty-four things — the pane beside the
+   * map is where each pass is.
+   *
+   * **It changes nothing about the card's size.** Two heights exist and the
+   * manifest alone decides which (`slotsFor`), so the map stays a function of
+   * the document and the catalogue: this draws inside the head the card already
+   * has.
+   */
+  run?: { status: RunStatus; passes: number }
   /**
    * Whether the Block this Step calls will not run — a problem on its own Board,
    * or on the Board of something it calls in turn.
@@ -100,6 +120,7 @@ export function NodeCard({
   expanded = true,
   opens,
   problems,
+  run,
   callsBrokenBlock,
   onSelect,
   onToggle,
@@ -205,6 +226,18 @@ export function NodeCard({
             <span className={styles.name}>{name}</span>
             <span className={styles.verb}>{step.use}</span>
           </button>
+
+          {run ? (
+            /*
+             * The status in ink as well as in colour, because a colour is the
+             * one thing a reader may not have — the same reason the run list
+             * spells its dot out in words.
+             */
+            <span className={cx(styles.run, styles[run.status])}>
+              {RUN_LABEL[run.status]}
+              {run.passes > 1 ? ` ×${String(run.passes)}` : ''}
+            </span>
+          ) : null}
 
           {reasons.length > 0 ? (
             <svg
@@ -335,3 +368,18 @@ function chipsFor(
  * and cannot act on without going there first.
  */
 const CALLS_BROKEN_BLOCK = 'The block this opens has problems inside it.'
+
+/**
+ * A status, short enough for a 236px card.
+ *
+ * Shorter than the pane's wording deliberately: the card is a map and the pane
+ * is the reading, so "Not started" becomes "Waiting" here and the full sentence
+ * is one selection away.
+ */
+const RUN_LABEL: Record<RunStatus, string> = {
+  pending: 'Waiting',
+  running: 'Running',
+  succeeded: 'Ran',
+  failed: 'Failed',
+  skipped: 'Skipped',
+}

@@ -21,9 +21,14 @@ describe('@hatua/react exports', () => {
       'HatuaProvider',
       'Input',
       'Inspector',
+      'RunList',
+      'RunStep',
+      'Runs',
       'Select',
       'StepList',
       'TabbedPanel',
+      'Text',
+      'TextMode',
       'Toast',
       'Toggle',
       'Tooltip',
@@ -49,6 +54,9 @@ describe('@hatua/react exports', () => {
       'Inspector',
       'Components',
       'Workflow',
+      'RunList',
+      'RunStep',
+      'TextMode',
     ]) {
       expect(api).toHaveProperty(part)
       expect(api.Hatua).not.toHaveProperty(part)

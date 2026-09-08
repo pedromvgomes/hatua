@@ -6,6 +6,7 @@ import { Data } from '../layouts/Data'
 import { FlowMap } from '../layouts/FlowMap'
 import { Inspector } from '../layouts/Inspector'
 import { TabbedPanel } from '../layouts/TabbedPanel'
+import type { BarView } from '../layouts/TopBar'
 import { TopBar } from '../layouts/TopBar'
 import { boardTabLabel, Workflow } from '../layouts/Workflow'
 import { cx } from '../primitives/classNames'
@@ -13,7 +14,18 @@ import { useEditingStore } from '../theme/HatuaProvider'
 import styles from './Build.module.css'
 import css from './Build.module.css?inline'
 
-export type BuildProps = ComponentPropsWithRef<'div'>
+export interface BuildProps extends ComponentPropsWithRef<'div'> {
+  /**
+   * Which view is on screen, forwarded to the bar's segmented control.
+   *
+   * Chrome, and held one level out for the reason the Board and the selection
+   * are held here: the thing that renders the views is the only thing that can
+   * answer it. Absent means no control is drawn, which is what a Host mounting
+   * this alone gets — it has no other view to switch to.
+   */
+  view?: BarView
+  onViewChange?: (view: BarView) => void
+}
 
 /**
  * The designer screen: the toolbar across the top, then three columns — the
@@ -53,7 +65,7 @@ export type BuildProps = ComponentPropsWithRef<'div'>
  * that wants different columns imports the regions and writes its own grid,
  * which is strictly more capable. See views/README.
  */
-export function Build({ className, ...rest }: BuildProps) {
+export function Build({ className, view = 'build', onViewChange, ...rest }: BuildProps) {
   const store = useEditingStore()
 
   /*
@@ -159,6 +171,8 @@ export function Build({ className, ...rest }: BuildProps) {
         <div className={styles.build}>
           <div className={styles.bar}>
             <TopBar
+              view={view}
+              onViewChange={onViewChange}
               /*
                * Where a blocking problem actually is.
                *

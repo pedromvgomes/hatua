@@ -286,4 +286,44 @@
     padding: 4px 6px;
     color: var(--hatua-text-secondary);
   }
+
+  /*
+   * The segmented control, drawn as one group so the three read as one choice
+   * rather than as three buttons that happen to sit together.
+   */
+  .views {
+    display: inline-flex;
+    padding: 2px;
+    border: 1px solid var(--hatua-border-subtle);
+    border-radius: var(--hatua-radius-md);
+    background: var(--hatua-surface-sunken);
+  }
+
+  .view {
+    padding: 3px 10px;
+    border: 0;
+    border-radius: calc(var(--hatua-radius-md) - 2px);
+    background: none;
+    color: var(--hatua-text-secondary);
+    font: inherit;
+    font-size: 0.75rem;
+    cursor: pointer;
+  }
+
+  .view:hover {
+    color: var(--hatua-text-primary);
+  }
+
+  .view:focus-visible {
+    outline: var(--hatua-focus-ring);
+    outline-offset: -1px;
+  }
+
+  /* The one on screen. Raised rather than tinted, so the group still reads as a
+     track with one segment lifted out of it in either colour mode. */
+  .view[aria-pressed="true"] {
+    background: var(--hatua-surface-card);
+    color: var(--hatua-text-primary);
+    box-shadow: 0 1px 2px var(--hatua-shadow-color);
+  }
 }

@@ -34,6 +34,8 @@ export type {
   Cursor,
   DraftSession,
   EditToken,
+  ExecutionSource,
+  ExecutionSummary,
   InsertPoint,
   Lease,
   ManifestSource,
@@ -42,14 +44,18 @@ export type {
   WorkflowStore,
 } from '@hatua/services'
 export type {
+  BarView,
   ComponentDrag,
   ComponentsProps,
   DataProps,
   FlowMapProps,
   InspectorProps,
   PanelTab,
+  RunListProps,
+  RunStepProps,
   StepListProps,
   TabbedPanelProps,
+  TextModeProps,
   TopBarProps,
   Viewport,
   WorkflowProps,
@@ -59,8 +65,11 @@ export {
   Data,
   FlowMap,
   Inspector,
+  RunList,
+  RunStep,
   StepList,
   TabbedPanel,
+  TextMode,
   TopBar,
   Workflow,
 } from './layouts'
@@ -85,3 +94,7 @@ export type { BuildProps } from './views/Build'
 export { Build } from './views/Build'
 export type { HatuaProps } from './views/Hatua'
 export { Hatua } from './views/Hatua'
+export type { RunsProps } from './views/Runs'
+export { Runs } from './views/Runs'
+export type { TextProps } from './views/Text'
+export { Text } from './views/Text'
