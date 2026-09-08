@@ -1164,9 +1164,14 @@ bar discards it.
 
 **The colour is ours, and it is a layer rather than an editor** (ADR-0027). A textarea cannot hold
 styled ranges, so the document is drawn twice — coloured underneath, typed into on top with
-transparent glyphs and a real caret. Five tokens carry the palette: `--hatua-code-key`, `-string`,
-`-number`, `-comment` and `-reference`; punctuation and plain scalars use the text aliases that
-already exist, because a highlighter that colours everything says nothing about anything.
+transparent glyphs and a real caret. Six tokens carry the palette: `--hatua-code-key`, `-string`,
+`-number`, `-comment`, `-reference` and `-selection`; punctuation and plain scalars use the text
+aliases that already exist, because a highlighter that colours everything says nothing about
+anything.
+
+**The selection is translucent, and the selected glyphs stay transparent.** Both follow from the band
+being drawn by the layer above the colour: an opaque band covers what it selects, and a `::selection`
+that sets only a background lets the browser paint the box's own characters over the painted ones.
 
 A `{{ … }}` **Reference** is the one span with the accent on it, and the one no off-the-shelf
 grammar knows about: to a YAML grammar `"{{ var.digest_to }}"` is one flat string. The holes come

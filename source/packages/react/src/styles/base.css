@@ -81,6 +81,16 @@
     --hatua-code-number: oklch(0.52 0.145 45);
     --hatua-code-comment: oklch(from var(--hatua-seed-ink) calc(l + 0.42) calc(c * 0.4) h);
     --hatua-code-reference: var(--hatua-text-accent);
+    /*
+     * Translucent, and that is the whole of it.
+     *
+     * Text Mode draws the document twice — coloured underneath, typed into on
+     * top with transparent glyphs — so a selection band belongs to the layer
+     * ABOVE the colour. An opaque one covers what it is selecting: the reader
+     * drags across a line and the line goes blank. Alpha is what lets the band
+     * read as a band while the glyphs under it stay legible.
+     */
+    --hatua-code-selection: oklch(from var(--hatua-accent) l c h / 0.26);
 
     --hatua-status-ok: oklch(0.58 0.12 150);
     --hatua-status-warn: oklch(0.75 0.135 75);
@@ -173,6 +183,9 @@
     --hatua-code-string: oklch(0.79 0.1 150);
     --hatua-code-number: oklch(0.82 0.11 65);
     --hatua-code-comment: #6f7a97;
+    /* Heavier than the light band: the same alpha over a near-black surface
+       barely separates from it. */
+    --hatua-code-selection: oklch(from var(--hatua-accent) l c h / 0.38);
 
     /* The wash is a background for --hatua-text-primary to sit on, so it has to
        invert with the surfaces. Leaving the light value here puts near-white
@@ -213,6 +226,7 @@
       --hatua-code-string: oklch(0.79 0.1 150);
       --hatua-code-number: oklch(0.82 0.11 65);
       --hatua-code-comment: #6f7a97;
+      --hatua-code-selection: oklch(from var(--hatua-accent) l c h / 0.38);
       --hatua-status-error-wash: oklch(0.28 0.06 25);
       --hatua-shadow-color: oklch(0.02 0 0 / 0.55);
       --hatua-scrim: oklch(0.02 0 0 / 0.65);

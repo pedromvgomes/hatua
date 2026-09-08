@@ -48,12 +48,17 @@
     resize: none;
     background: none;
     /*
-     * Transparent glyphs over the paint, with the caret and the selection left
-     * alone: `color` paints the text, `caret-color` the cursor, and the
-     * selection is the browser's own. So the reader types into this box, sees
-     * the coloured layer, and every affordance a textarea has still works.
+     * Transparent glyphs over the paint, with the caret left alone: `color`
+     * paints the text and `caret-color` the cursor. So the reader types into
+     * this box, sees the coloured layer, and every affordance a textarea has
+     * still works.
+     *
+     * `-webkit-text-fill-color` as well as `color`, because WebKit lets a form
+     * control's fill colour win — without it the glyphs are painted anyway in
+     * Safari and every line reads as doubled against the layer beneath.
      */
     color: transparent;
+    -webkit-text-fill-color: transparent;
     caret-color: var(--hatua-text-primary);
     font-family: var(--hatua-font-mono);
     font-size: 0.8125rem;
@@ -64,10 +69,22 @@
     white-space: pre;
   }
 
+  /*
+   * The selection is drawn by the box on top, over the colour underneath — so
+   * both halves of it have to leave that colour alone.
+   *
+   * The band is translucent, because an opaque one covers exactly what it is
+   * selecting: drag across a line and the line goes blank.
+   *
+   * And the glyphs stay transparent. A `::selection` that sets only a background
+   * leaves the text colour to the browser, which paints its own contrasting one
+   * — so the box's own characters appear on top of the painted ones, slightly
+   * off, and a selected line reads as doubled.
+   */
   .box::selection {
-    /* Opaque enough to read the coloured glyphs through, which is the whole
-       point of painting underneath rather than on top. */
-    background: var(--hatua-accent-wash);
+    background: var(--hatua-code-selection);
+    color: transparent;
+    -webkit-text-fill-color: transparent;
   }
 
   .box:focus-visible {
