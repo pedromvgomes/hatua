@@ -77,11 +77,20 @@ path taken first.
 
 ## Consequences
 
-- **Five theme tokens, and they are permanent.** `--hatua-code-key`, `-string`,
-  `-number`, `-comment` and `-reference` join the semantic aliases a Host
-  inherits, defined in `base.css` in all three colour-mode blocks like every other
-  colour. `-reference` is `var(--hatua-text-accent)`, so a Host re-theming gets a
-  Reference in its own accent for nothing.
+- **Six theme tokens, and they are permanent.** `--hatua-code-key`, `-string`,
+  `-number`, `-comment`, `-reference` and `-selection` join the semantic aliases a
+  Host inherits, defined in `base.css` in all three colour-mode blocks like every
+  other colour. `-reference` is `var(--hatua-text-accent)`, so a Host re-theming
+  gets a Reference in its own accent for nothing.
+- **The selection is translucent, and that is structural rather than taste.** The
+  band is drawn by the box on top, over the colour underneath, so an opaque one
+  covers exactly what it is selecting — drag across a line and the line goes
+  blank. The selected glyphs stay transparent for the mirror of that reason: a
+  `::selection` setting only a background leaves the text colour to the browser,
+  which paints its own contrasting one, and the box's characters then appear over
+  the painted ones slightly off. Both halves are what "two layers holding one
+  string" costs, and neither is a thing an editor library would have made us
+  think about.
 - **Punctuation and plain scalars are not new colours.** They read
   `--hatua-text-muted` and `--hatua-text-primary`. A highlighter that colours
   everything says nothing about anything.
