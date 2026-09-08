@@ -1,0 +1,72 @@
+@layer hatua {
+  .text {
+    display: flex;
+    flex-direction: column;
+    block-size: 100%;
+    min-block-size: 0;
+    background: var(--hatua-surface-card);
+  }
+
+  /*
+   * The box fills the region and scrolls in itself. A document is as long as it
+   * is, and a textarea that grew with its content would put the caret below the
+   * fold and leave the page scrolling instead of the editor.
+   */
+  .box {
+    flex: 1 1 auto;
+    min-block-size: 0;
+    inline-size: 100%;
+    padding: 12px 16px;
+    border: 0;
+    resize: none;
+    background: var(--hatua-surface-sunken);
+    color: var(--hatua-text-primary);
+    font-family: var(--hatua-font-mono);
+    font-size: 0.8125rem;
+    line-height: 1.6;
+    tab-size: 2;
+    /* YAML is significant at the start of a line, so nothing may be re-wrapped
+       into a column the user did not type. */
+    white-space: pre;
+    overflow: auto;
+  }
+
+  .box:focus-visible {
+    outline: var(--hatua-focus-ring);
+    outline-offset: -2px;
+  }
+
+  .box:read-only {
+    background: var(--hatua-surface-card);
+    color: var(--hatua-text-secondary);
+  }
+
+  /*
+   * What the document is doing, under the box rather than over it: the first
+   * line of a file is where a reader looks, and a strip above it would move the
+   * text down every time the state changed.
+   */
+  .foot {
+    flex: none;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 8px 16px;
+    border-block-start: 1px solid var(--hatua-border-subtle);
+    font-size: 0.75rem;
+    color: var(--hatua-text-muted);
+    min-block-size: 34px;
+  }
+
+  .wrong {
+    color: var(--hatua-status-error);
+  }
+
+  .said {
+    margin: 0;
+    padding: 12px 16px;
+    font-size: 0.8125rem;
+    color: var(--hatua-text-muted);
+    text-wrap: pretty;
+  }
+}

@@ -206,4 +206,35 @@
     overflow: hidden;
     white-space: nowrap;
   }
+
+  /*
+   * What this Step did in the run being read.
+   *
+   * In the head, where the problem marker goes, and the two never appear
+   * together: the checker narrows to nothing while a run is on screen, because a
+   * diagnostic about history is a mark in the opposite tense (ADR-0025).
+   */
+  .run {
+    flex: none;
+    padding: 1px 6px;
+    border-radius: 999px;
+    font-size: 0.625rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    background: var(--hatua-surface-sunken);
+    color: var(--hatua-text-muted);
+  }
+
+  .succeeded {
+    color: var(--hatua-status-ok);
+  }
+
+  .failed {
+    color: var(--hatua-status-error);
+  }
+
+  .running {
+    color: var(--hatua-status-warn);
+  }
 }

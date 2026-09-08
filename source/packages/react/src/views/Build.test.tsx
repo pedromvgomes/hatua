@@ -4,8 +4,15 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import type { ComponentPropsWithRef } from 'react'
 import { describe, expect, it } from 'vitest'
 import { COMPONENT_MIME } from '../layouts/dragging'
+import type { BarView } from '../layouts/TopBar'
 import { HatuaProvider } from '../theme/HatuaProvider'
 import { Build, type BuildProps } from './Build'
+
+/** Which of the three screens is up — chrome the view is handed, never a region. */
+interface ViewChrome {
+  view?: BarView
+  onViewChange?: (view: BarView) => void
+}
 
 /** True only when A and B are the same type — not merely assignable. */
 type Equals<A, B> =
@@ -78,12 +85,20 @@ describe('Build', () => {
   })
 
   it('takes no slot props: swapping a region means importing the region', () => {
-    // Guarded by the compiler, not by the assertion. BuildProps is exactly a
-    // <div>'s props and nothing else; the moment a `topBar` or `inspector` slot
-    // appears — required or optional — this stops type-checking. A slot would
-    // be a third mechanism doing what importing <TopBar> already does, so
-    // reversing that has to be a deliberate edit to this line.
-    const noSlotProps: Equals<BuildProps, ComponentPropsWithRef<'div'>> = true
+    // Guarded by the compiler, not by the assertion. BuildProps is a <div>'s
+    // props plus which view is on screen and nothing else; the moment a `topBar`
+    // or `inspector` slot appears — required or optional — this stops
+    // type-checking. A slot would be a third mechanism doing what importing
+    // <TopBar> already does, so reversing that has to be a deliberate edit to
+    // this line.
+    //
+    // The two that ARE here are chrome and not regions: `view` is which of the
+    // three screens is up, and nothing but the thing rendering all three can
+    // answer it — the same shape `<TabbedPanel>` takes for which tab is open.
+    const noSlotProps: Equals<
+      Omit<BuildProps, keyof ViewChrome>,
+      Omit<ComponentPropsWithRef<'div'>, never>
+    > = true
     expect(noSlotProps).toBe(true)
   })
 })

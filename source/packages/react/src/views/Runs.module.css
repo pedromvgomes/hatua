@@ -1,0 +1,70 @@
+@layer hatua {
+  /*
+   * The same floor and the same scroller the designer has, for the same reason:
+   * three columns that each shrink to nothing produce a map too narrow to lay a
+   * node out in and a pane too narrow to hold a payload.
+   */
+  .scroller {
+    block-size: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  /*
+   * Three columns, not four. Nothing here expands into a **References** panel:
+   * that column exists so the step editor can be filled from it, and this pane
+   * fills nothing.
+   */
+  .runs {
+    display: grid;
+    grid-template-columns: 304px minmax(0, 1fr) 404px;
+    grid-template-rows: auto minmax(0, 1fr);
+    min-inline-size: 1240px;
+    block-size: 100%;
+    min-block-size: 0;
+    background: var(--hatua-surface-page);
+  }
+
+  .bar {
+    grid-row: 1;
+    grid-column: 1 / -1;
+    min-inline-size: 0;
+  }
+
+  /* The dividers belong to the container, not to the regions: the same call
+     `views/Build` makes, and for the same reason. */
+  .side {
+    grid-row: 2;
+    grid-column: 1;
+    min-inline-size: 0;
+    min-block-size: 0;
+    border-inline-end: 1px solid var(--hatua-border-subtle);
+  }
+
+  .map {
+    grid-row: 2;
+    grid-column: 2;
+    min-inline-size: 0;
+    min-block-size: 0;
+  }
+
+  .aside {
+    grid-row: 2;
+    grid-column: 3;
+    min-inline-size: 0;
+    min-block-size: 0;
+    border-inline-start: 1px solid var(--hatua-border-subtle);
+  }
+
+  /* What stands where the map goes until a run is picked. Centred, because it is
+     the only thing in a column the size of the whole canvas. */
+  .empty {
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    font-size: 0.8125rem;
+    color: var(--hatua-text-muted);
+    text-align: center;
+    text-wrap: pretty;
+  }
+}

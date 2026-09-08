@@ -4,8 +4,11 @@ import { Components } from './Components'
 import { Data } from './Data'
 import { FlowMap } from './FlowMap'
 import { Inspector } from './Inspector'
+import { RunList } from './RunList'
+import { RunStep } from './RunStep'
 import { StepList } from './StepList'
 import { TabbedPanel } from './TabbedPanel'
+import { TextMode } from './TextMode'
 import { TopBar } from './TopBar'
 import { Workflow } from './Workflow'
 
@@ -63,6 +66,34 @@ const REGIONS = [
     role: 'region',
     label: 'References',
     href: 'hatua-data',
+  },
+  {
+    // The list is `RunList` and the tab over it reads "Runs", the same pair of
+    // names `StepList` has under a tab labelled Flow. `views/Runs` is the whole
+    // screen, and two things answering to one name is the collision the canvas
+    // paid for once.
+    name: 'RunList',
+    element: <RunList />,
+    role: 'region',
+    label: 'Runs',
+    href: 'hatua-run-list',
+  },
+  {
+    name: 'RunStep',
+    element: <RunStep />,
+    role: 'region',
+    label: 'Run',
+    href: 'hatua-run-step',
+  },
+  {
+    // "Text", because that is what the segmented control reads. The region is
+    // `TextMode` for the reason CONTEXT.md spells the concept that way, and the
+    // label is the one word a user sees.
+    name: 'TextMode',
+    element: <TextMode />,
+    role: 'region',
+    label: 'Text',
+    href: 'hatua-text-mode',
   },
   {
     name: 'Inspector',
