@@ -368,6 +368,25 @@ export function createValidationStore(
     if (document.status !== 'ready' || !document.workflow.definition) return UNCHECKED
     if (catalogue.status !== 'ready') return UNCHECKED
 
+    /*
+     * A run on screen is history, and history is not checkable.
+     *
+     * The snapshot describes whichever version is on screen (ADR-0024), so
+     * pointing it at the version a **Workflow Execution** references points this
+     * pass at it too — and every rule here judges a document against TODAY's
+     * catalogue. The card the diagnostic lands on already carries a mark saying
+     * what happened when it ran, so a second mark appears beside it in the
+     * opposite tense, about a Step nobody can go and fix: the version is
+     * immutable, and the catalogue moved after the run.
+     *
+     * Narrowed to nothing rather than reported, which is the answer ADR-0022
+     * gives whenever the rules cannot say something true. A **Preview** the
+     * reader CHOSE keeps its diagnostics: that version is what a **Restore**
+     * would bring across, so what is wrong with it is a question they can act
+     * on. See ADR-0025.
+     */
+    if (document.workflow.previewing?.because === 'run') return UNCHECKED
+
     const { types, status } = typesFrom(connections)
     const validity = validateDefinition(
       document.workflow.definition,
