@@ -83,17 +83,15 @@
    * widening the pane, which is the rule every wide thing here follows.
    */
   .payload {
-    margin: 0;
     padding: 8px;
     max-block-size: 240px;
     overflow: auto;
     border-radius: var(--hatua-radius-sm);
     background: var(--hatua-surface-sunken);
-    font-family: var(--hatua-font-mono);
+    /* Smaller than the editor's, because a payload is read in a 404px column
+       beside the map rather than filling a screen. The face, the line height and
+       the wrapping are `Code`'s and are deliberately not restated. */
     font-size: 0.6875rem;
-    line-height: 1.5;
-    color: var(--hatua-text-primary);
-    white-space: pre;
   }
 
   .fault {

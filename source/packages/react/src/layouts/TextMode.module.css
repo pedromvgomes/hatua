@@ -8,19 +8,53 @@
   }
 
   /*
-   * The box fills the region and scrolls in itself. A document is as long as it
-   * is, and a textarea that grew with its content would put the caret below the
-   * fold and leave the page scrolling instead of the editor.
+   * The two layers, exactly on top of each other.
+   *
+   * A textarea cannot hold styled ranges, so the text is drawn twice: coloured
+   * underneath, and typed into on top with transparent glyphs. Everything that
+   * decides where a character lands — the face, the size, the line height, the
+   * padding, the wrapping — must therefore be identical on both, so each of
+   * those is declared once below and inherited by both rather than written
+   * twice and kept level by inspection.
    */
-  .box {
+  .stack {
+    position: relative;
     flex: 1 1 auto;
     min-block-size: 0;
-    inline-size: 100%;
+    background: var(--hatua-surface-sunken);
+  }
+
+  .stack > * {
+    position: absolute;
+    inset: 0;
     padding: 12px 16px;
+    overflow: auto;
+    /* The scrollbar belongs to the box on top, which owns the caret. Two
+       scrollable layers with the same text drift the moment either is scrolled
+       by something the other cannot see. */
+    scrollbar-width: none;
+  }
+
+  .paint {
+    /* Selection is the textarea's — a second highlight underneath it would show
+       through as a doubled, slightly offset band. */
+    user-select: none;
+    pointer-events: none;
+  }
+
+  .box {
+    inline-size: 100%;
     border: 0;
     resize: none;
-    background: var(--hatua-surface-sunken);
-    color: var(--hatua-text-primary);
+    background: none;
+    /*
+     * Transparent glyphs over the paint, with the caret and the selection left
+     * alone: `color` paints the text, `caret-color` the cursor, and the
+     * selection is the browser's own. So the reader types into this box, sees
+     * the coloured layer, and every affordance a textarea has still works.
+     */
+    color: transparent;
+    caret-color: var(--hatua-text-primary);
     font-family: var(--hatua-font-mono);
     font-size: 0.8125rem;
     line-height: 1.6;
@@ -28,7 +62,12 @@
     /* YAML is significant at the start of a line, so nothing may be re-wrapped
        into a column the user did not type. */
     white-space: pre;
-    overflow: auto;
+  }
+
+  .box::selection {
+    /* Opaque enough to read the coloured glyphs through, which is the whole
+       point of painting underneath rather than on top. */
+    background: var(--hatua-accent-wash);
   }
 
   .box:focus-visible {
@@ -36,9 +75,10 @@
     outline-offset: -2px;
   }
 
-  .box:read-only {
+  /* Nothing may be typed, and everything may still be read and copied — which
+     is the escape from a session that has ended. */
+  .stack:has(.box:read-only) {
     background: var(--hatua-surface-card);
-    color: var(--hatua-text-secondary);
   }
 
   /*

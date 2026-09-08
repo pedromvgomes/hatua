@@ -286,8 +286,13 @@ describe('the pane about the run', () => {
     expect(within(pane).getByText('Succeeded')).toBeDefined()
     // `resolved_input` is the one thing the definition cannot show: a Template
     // says where a value comes from, this says what arrived.
-    expect(screen.getByText(/"folder": "INBOX"/)).toBeDefined()
-    expect(screen.getByText(/"count": 24/)).toBeDefined()
+    //
+    // Read off the pane's text rather than matched as one node: a payload is
+    // drawn as coloured spans, so the string a reader sees is assembled from
+    // several — which is also the property worth holding, since a highlighter
+    // that drops a character renders text nobody typed.
+    expect(pane.textContent).toContain('"folder": "INBOX"')
+    expect(pane.textContent).toContain('"count": 24')
   })
 
   it('lists a loop Step once per pass, which a flat status list could not express', async () => {

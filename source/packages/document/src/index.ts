@@ -1,3 +1,5 @@
+export * from './lex'
+
 import { type WorkflowDefinition, workflowDefinition } from '@hatua/schema'
 import { Composer, CST, type Document, Parser } from 'yaml'
 

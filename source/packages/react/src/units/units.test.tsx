@@ -5,6 +5,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { boxOf } from './box'
 import { CanvasControls } from './CanvasControls'
+import { Code } from './Code'
 import { JoinMarker } from './JoinMarker'
 import { NodeCard } from './NodeCard'
 import { RegionBand } from './RegionBand'
@@ -492,5 +493,50 @@ describe('CanvasControls', () => {
     fireEvent.keyDown(trigger, { key: 'Escape' })
     expect(trigger.getAttribute('aria-expanded')).toBe('false')
     expect(document.activeElement).toBe(trigger)
+  })
+})
+
+describe('Code', () => {
+  /*
+   * The property everything above the unit rests on. In the run pane a dropped
+   * character is a payload that lies; under Text Mode's textarea it is a caret
+   * sitting between the wrong glyphs, because the coloured layer and the box on
+   * top no longer hold the same text.
+   */
+  it('renders exactly the text it is handed', () => {
+    const { container } = render(
+      <Code
+        tokens={[
+          { text: 'id', kind: 'key' },
+          { text: ': ', kind: 'punctuation' },
+          { text: '"wf', kind: 'string' },
+          { text: '{{ a.b }}', kind: 'reference' },
+          { text: '"\n', kind: 'string' },
+          { text: '  ', kind: 'plain' },
+        ]}
+      />,
+    )
+    expect(container.textContent).toBe('id: "wf{{ a.b }}"\n  ')
+  })
+
+  it('wraps nothing around a plain run', () => {
+    // A span per gap between two coloured tokens triples the node count of a
+    // long document for a class that sets nothing.
+    const { container } = render(<Code tokens={[{ text: 'plain', kind: 'plain' }]} />)
+    expect(container.querySelectorAll('span')).toHaveLength(0)
+  })
+
+  it('gives each coloured kind a class of its own', () => {
+    const { container } = render(
+      <Code
+        tokens={[
+          { text: 'k', kind: 'key' },
+          { text: 's', kind: 'string' },
+          { text: 'r', kind: 'reference' },
+        ]}
+      />,
+    )
+    const classes = [...container.querySelectorAll('span')].map((span) => span.className)
+    expect(new Set(classes).size).toBe(3)
   })
 })
