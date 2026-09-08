@@ -74,8 +74,13 @@ whatever the history holds, because its other job is the readout, and because `l
 fetched until the list is opened: a bar that hid itself would have to pay for that request on every
 mount, on every screen carrying the toolbar, for every user who never opens it.
 
-The **Build / Runs** segmented control is still not drawn: `ExecutionSource` says "omit entirely and
-the Runs view is hidden", and there is no view to switch to.
+The segmented control beside them is **not** this bar's decision about versions, and it is drawn:
+`ExecutionSource` gives **Runs** a view to switch to, and ADR-0001's second way of editing gives
+**Text Mode** one. Which of the three is up is chrome the bar reports and a caller holds, the way
+`<TabbedPanel>` lifts which tab is open — the bar draws the control and owns none of the views. The
+port's rule is unchanged and is what hides a segment: no `ExecutionSource`, no **Runs**. **Text
+Mode** is always offered, because the store always has text — including when it has nothing else,
+which is the state that view exists for.
 
 ## Three things in the design handoff our decisions have already overtaken
 
