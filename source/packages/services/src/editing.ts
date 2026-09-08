@@ -5,7 +5,7 @@ import type { WorkflowDefinition } from '@hatua/schema'
 import type { EditCommand } from './command'
 import type { EditToken, Lease, PublishedVersion, WorkflowStore } from './ports'
 import type { Store } from './store'
-import { replaceContent, restoreContent } from './workflow'
+import { alignIdentity, restoreContent } from './workflow'
 
 /**
  * The Draft being edited, and the autosave that keeps the Host's copy level
@@ -1117,47 +1117,53 @@ export function createEditingStore(
    * without having to tell its own refusal from one left on the snapshot by a
    * command earlier in the session.
    */
-  const runCommand = (command: EditCommand, guardProjection: boolean): Error | null => {
+  /**
+   * The three reasons an edit is dropped rather than refused.
+   *
+   * None of them is a judgement on what was written — nothing is open, the
+   * session has ended, or a **Preview** is on screen — so a caller that reports
+   * refusals has nothing to report for any of them.
+   */
+  const cannotEdit = (label: string): boolean => {
     if (!document) {
-      log.debug('command dropped: nothing is open', { command: command.label })
-      return null
+      log.debug('edit dropped: nothing is open', { command: label })
+      return true
     }
     /*
      * A session that has ended takes no more edits.
      *
-     * `finish()` keeps the document, and that is right — it is what the user
-     * was looking at, and after a **Publish** it is what was published. What
-     * it must not do is go on accepting changes: there is no claim to write
-     * them under and no Draft on the Host to write them to, so every one of
-     * them is lost the moment the page moves on. After a **Discard** the Draft
-     * they would belong to has been thrown away outright.
-     *
-     * The bar says "you are no longer editing this workflow" and offers to
-     * open the Draft again; this is what makes that sentence true rather than
-     * a description of somewhere the writes are not going.
+     * `finish()` keeps the document, and that is right — it is what the user was
+     * looking at, and after a **Publish** it is what was published. What it must
+     * not do is go on accepting changes: there is no claim to write them under
+     * and no Draft on the Host to write them to, so every one of them is lost the
+     * moment the page moves on. After a **Discard** the Draft they would belong
+     * to has been thrown away outright.
      */
     if (!token) {
-      log.debug('command dropped: the session has ended', { command: command.label })
-      return null
+      log.debug('edit dropped: the session has ended', { command: label })
+      return true
     }
-
     /*
      * A Preview takes no edits either, and this guard is a correctness one
      * rather than an affordance.
      *
-     * The command would SUCCEED: the token is held, the Draft is open, and
-     * `document` is the Draft — so the edit lands, autosaves, and is invisible,
-     * because what the reader is looking at is a version that is immutable by
-     * definition (ADR-0005). Every control that could send one is disabled
-     * through `useReadOnly`, and this is the floor under all of them, for the
-     * same reason ADR-0023 puts the publish gate in the store: a rule that
-     * lives in a control is a rule the next control forgets.
+     * The edit would SUCCEED: the token is held, the Draft is open, and
+     * `document` is the Draft — so it lands, autosaves, and is invisible, because
+     * what the reader is looking at is a version that is immutable by definition
+     * (ADR-0005). Every control that could send one is disabled through
+     * `useReadOnly`, and this is the floor under all of them, for the same reason
+     * ADR-0023 puts the publish gate in the store: a rule that lives in a control
+     * is a rule the next control forgets.
      */
     if (previewed) {
-      log.debug('command dropped: a version is being previewed', { command: command.label })
-      return null
+      log.debug('edit dropped: a version is being previewed', { command: label })
+      return true
     }
+    return false
+  }
 
+  const runCommand = (command: EditCommand, guardProjection: boolean): Error | null => {
+    if (cannotEdit(command.label) || !document) return null
     /*
      * The serialisations are inside the guard, not only `command.apply`.
      *
@@ -1282,7 +1288,73 @@ export function createEditingStore(
        * the region holds what is being typed and hands it over on a quiet
        * period, so an undo takes back a change the user would recognise.
        */
-      return runCommand(replaceContent('Edit the text', yaml), false)
+      const label = 'Edit the text'
+      if (cannotEdit(label) || !document) return null
+
+      /*
+       * **The document becomes the text, rather than the text being written
+       * into the document.**
+       *
+       * This is the whole difference between this path and every command, and
+       * it is ADR-0001's central promise: "we never re-serialise the whole
+       * document from typed objects". `@hatua/document` hands back a document
+       * that stringifies byte-identically while untouched — so keeping the one
+       * just parsed is what returns the reader their own bytes.
+       *
+       * Splicing the parsed contents into the document already held does not.
+       * It discards the CST that made the round trip exact, and everything the
+       * serialiser has an opinion about comes back its way instead of the
+       * author's: `[{a: 1}]` becomes `[ { a: 1 } ]`, two blank lines become one,
+       * a missing trailing newline is supplied, and a comment aligned by hand
+       * against the column beside it is pulled back to a single space. On a
+       * quiet 800ms timer, while the author is looking at it.
+       *
+       * A **Restore** still splices, and is right to: it carries another
+       * version's bytes into the document the Draft already is, and the reader
+       * did not type them.
+       */
+      let incoming: WorkflowDocument
+      try {
+        incoming = parseWorkflow(yaml)
+      } catch (cause) {
+        // Not YAML at all, or two documents in one file. Every edit reaches
+        // through the AST and there would be no AST, so the document is left
+        // exactly as it was and the reason goes back to whoever can show it
+        // beside the text that produced it.
+        refused = asError(cause)
+        log.debug('text refused', { why: refused.message })
+        commit()
+        return refused
+      }
+
+      let before: string
+      try {
+        before = document.toString()
+      } catch {
+        return null
+      }
+
+      // The keys that say WHICH document this is are the Draft's, whatever was
+      // typed over them — and writing one costs the byte-fidelity above, so it
+      // happens only where the two actually disagree.
+      alignIdentity(incoming, document)
+
+      const after = incoming.toString()
+      if (after === before) {
+        log.debug('text changed nothing')
+        return null
+      }
+
+      refused = null
+      log.trace('text applied')
+      document = incoming
+      history.push({ text: before, label })
+      if (history.length > HISTORY_LIMIT) history.shift()
+      future = []
+
+      schedule()
+      commit()
+      return null
     },
 
     undo() {

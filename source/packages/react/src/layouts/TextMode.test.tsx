@@ -200,6 +200,16 @@ describe('what is typed', () => {
   })
 })
 
+/** Undoes the last edit, the way nothing on screen does yet — but the store can. */
+function Undoing() {
+  const store = useEditingStore()
+  return (
+    <button type="button" onClick={() => store?.undo()}>
+      Undo
+    </button>
+  )
+}
+
 /** Ends the session the way a toolbar does, from inside the provider. */
 function Ending() {
   const store = useEditingStore()
@@ -252,5 +262,84 @@ describe('what it will not do', () => {
     expect(written).toContain('version: 4')
     expect(written).toContain('status: draft')
     expect(written).toContain('name: Typed')
+  })
+})
+
+describe('what the box holds after the document has taken it', () => {
+  /*
+   * A commit re-serialises: `replaceContent` writes the **Draft**'s `id`,
+   * `version` and `status` back in, and the serialiser normalises quoting, flow
+   * style and the trailing newline. So the document's text after a commit is
+   * routinely NOT the text that was typed — the commonest case being a caret at
+   * the end of a document with no trailing newline, which every commit adds.
+   *
+   * The box must go on showing what was typed. Swapping it for the
+   * serialisation moves text under a caret the browser holds by index, so the
+   * next keystroke lands somewhere else entirely and a click aims at glyphs that
+   * are no longer where they were drawn.
+   */
+  it('sends the Host the bytes that were typed, not a serialisation of them', async () => {
+    const wired = host()
+    mount(wired.port)
+    await settle()
+
+    // No trailing newline, and none is added: the reader is the serialiser here,
+    // so the document becomes the text rather than the text being written into
+    // the document (ADR-0001).
+    const TYPED = 'id: wf_morning\nname: n\nversion: 4\nstatus: draft\nsteps: []'
+    await type(TYPED)
+
+    expect(wired.writes.at(-1)).toBe(TYPED)
+    expect(box().value).toBe(TYPED)
+  })
+
+  it('keeps the comment alignment the author chose', async () => {
+    const wired = host()
+    mount(wired.port)
+    await settle()
+
+    // The seed every playground reader opens has one of these. Re-serialising
+    // pulls it back to a single space, which is Hatua rewriting a file it does
+    // not own while the author watches.
+    const TYPED =
+      'id: wf_morning\nname: n\nversion: 4\nstatus: draft\nsteps:\n  - id: s1\n    use: a.b\n    with:\n      folder: INBOX      # not Archive\n'
+    await type(TYPED)
+
+    expect(wired.writes.at(-1)).toBe(TYPED)
+  })
+
+  it('keeps what was typed when the commit writes the identity keys back in', async () => {
+    const wired = host()
+    mount(wired.port)
+    await settle()
+
+    // `id`, `version` and `status` are the Draft's whatever the source says, so
+    // a document typed without them comes back with them.
+    const TYPED = 'name: renamed\nsteps: []\n'
+    await type(TYPED)
+
+    expect(wired.writes.at(-1)).toContain('id: wf_morning')
+    expect(box().value).toBe(TYPED)
+  })
+
+  it('still follows the document when it moves for a reason of its own', async () => {
+    const wired = host()
+    render(
+      <HatuaProvider ports={{ workflows: wired.port }} workflowId="wf_morning">
+        <Undoing />
+        <TextMode />
+      </HatuaProvider>,
+    )
+    await settle()
+    await type('name: renamed\nsteps: []\n')
+    expect(box().value).toContain('renamed')
+
+    // An undo is not this box's edit, so the box adopts rather than holding on
+    // to text the document no longer has.
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    await settle()
+
+    expect(box().value).toContain('Morning inbox triage')
+    expect(box().value).not.toContain('renamed')
   })
 })
