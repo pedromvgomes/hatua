@@ -5,7 +5,7 @@ import type { WorkflowDefinition } from '@hatua/schema'
 import type { EditCommand } from './command'
 import type { EditToken, Lease, PublishedVersion, WorkflowStore } from './ports'
 import type { Store } from './store'
-import { restoreContent } from './workflow'
+import { replaceContent, restoreContent } from './workflow'
 
 /**
  * The Draft being edited, and the autosave that keeps the Host's copy level
@@ -112,6 +112,26 @@ export type Ended =
   | { how: 'released' }
   | { how: 'discarded' }
 
+/**
+ * What is on screen instead of the **Draft**, and why it is.
+ *
+ * The version alone is what a reader of the document needs, and it is all
+ * `useReadOnly` ever asks for. The reason is for the two readers that cannot
+ * work from a number: the toolbar, whose **Preview** cluster offers **Restore
+ * this version** and would be offering it over a run nobody went looking for a
+ * row for; and the checker, which reports against a document a run has made
+ * unfixable.
+ *
+ * One field with one meaning — *what is on screen instead of the Draft* — so
+ * `previewing !== null` still answers every question that only wanted the
+ * boolean.
+ */
+export type Previewing =
+  /** Chosen from the version list. */
+  | { version: number; because: 'chosen' }
+  /** Opened from the **Runs** view; the version is the one the execution references. */
+  | { version: number; because: 'run'; runId: string }
+
 export interface EditingSnapshot {
   /** The source of truth. Mutated only through `apply`. */
   document: WorkflowDocument
@@ -160,8 +180,8 @@ export interface EditingSnapshot {
    */
   claimed: boolean
   /**
-   * Which version is on screen instead of the **Draft**, or null when the
-   * **Draft** itself is.
+   * Which version is on screen instead of the **Draft** and why, or null when
+   * the **Draft** itself is.
    *
    * `document`, `text` and `definition` above describe THAT version while this
    * is set, which is what lets every region show a **Preview** without being
@@ -175,7 +195,7 @@ export interface EditingSnapshot {
    * definition (ADR-0005), and a command that landed on the **Draft** while the
    * screen showed something else would be an edit the user never sees.
    */
-  previewing: number | null
+  previewing: Previewing | null
   /**
    * How this session ended, or null while one is live — and after a `dispose()`,
    * which ends the session without anybody having chosen an outcome.
@@ -216,6 +236,35 @@ export interface EditingStore extends Store<EditingState> {
    * insertion point is a no-op rather than half an edit.
    */
   apply(command: EditCommand): void
+
+  /**
+   * Replace the whole document with a YAML source the user typed, as one
+   * undoable edit that autosaves like any other.
+   *
+   * **The projection backstop does not apply.** ADR-0019 refuses a command that
+   * turns a document that projects into one that does not, because every
+   * surface reads `definition` and the user is left with nothing to click on to
+   * undo it. Neither half holds here: the surface that sends this renders the
+   * TEXT, and what broke the projection is under the caret. Refusing would make
+   * the one screen that exists to repair a broken document the one screen that
+   * cannot save the repair, which is ADR-0001 inverted. See ADR-0026.
+   *
+   * What it does refuse is what cannot be held at all — a source that is not
+   * YAML, or two documents in one file, which `parseWorkflow` rejects and every
+   * command here reaches through the AST for. The document is left exactly as
+   * it was, and the reason comes back so the caller can say it beside the text
+   * that produced it.
+   *
+   * The **Draft**'s `id`, `version` and `status` are kept whatever the source
+   * says, which is `replaceContent`'s rule and is what a **Restore** follows
+   * too: they say which document this is rather than what is in it, and
+   * `publish()` sends the document's own bytes.
+   *
+   * Dropped in the three cases `apply` drops one — nothing open, the session
+   * ended, a **Preview** on screen — and null comes back, because none of them
+   * is a refusal of what was typed.
+   */
+  setText(yaml: string): Error | null
 
   undo(): void
   redo(): void
@@ -259,8 +308,15 @@ export interface EditingStore extends Store<EditingState> {
    * the **Draft** does not project, and this is the same question about the same
    * workflow — someone who has just discarded a draft is exactly who wants to
    * look at what the last **Published Version** held.
+   *
+   * `runId` says the version is on screen because a **Workflow Execution** is
+   * being read against it (ADR-0025). It changes nothing about how the document
+   * is loaded or held — a run IS a preview — and it is what lets the toolbar
+   * draw the run's cluster rather than offering to restore a version nobody
+   * chose, and the checker narrow rather than report today's problems with
+   * three-week-old history.
    */
-  preview(version: number): Promise<void>
+  preview(version: number, options?: { runId: string }): Promise<void>
 
   /** Put the **Draft** back on screen. A no-op when it already is. */
   exitPreview(): void
@@ -314,6 +370,19 @@ const log = logger('services.editing')
 
 const asError = (cause: unknown): Error =>
   cause instanceof Error ? cause : new Error(String(cause))
+
+/**
+ * The held preview without its document, so the snapshot carries the answer and
+ * not the parsed tree it was answered from.
+ *
+ * Rebuilt per commit rather than held alongside, because the two would then be
+ * two records of one fact and only one of them is what `preview()` was asked
+ * for.
+ */
+const shownAs = (held: Previewing & { document: WorkflowDocument }): Previewing =>
+  held.because === 'run'
+    ? { version: held.version, because: 'run', runId: held.runId }
+    : { version: held.version, because: 'chosen' }
 
 /** Why autosave stopped, for a caller that has to report it rather than render it. */
 const reasonFor = (save: SaveState): Error =>
@@ -393,7 +462,7 @@ export function createEditingStore(
    * `publish()` and the undo stack all go on reading `document`, which is the
    * Draft, because that is what every one of them is about.
    */
-  let previewed: { version: number; document: WorkflowDocument } | null = null
+  let previewed: (Previewing & { document: WorkflowDocument }) | null = null
   let ended: Ended | null = null
 
   /*
@@ -526,7 +595,7 @@ export function createEditingStore(
         refused,
         resumed,
         claimed: token !== null,
-        previewing: previewed?.version ?? null,
+        previewing: previewed ? shownAs(previewed) : null,
         ended,
         lease,
         save,
@@ -1032,6 +1101,161 @@ export function createEditingStore(
     commit()
   }
 
+  /**
+   * Run one command against the document, record it for undo, and schedule the
+   * write.
+   *
+   * `guardProjection` is ADR-0019's backstop and is on for every command a
+   * gesture issues. It is off for exactly one caller, `setText`, and the reason
+   * is in ADR-0026: the backstop exists because a broken projection empties the
+   * canvas, the panel and the step editor and leaves the user nothing to click
+   * on to undo it, and neither half is true of a surface that renders the text
+   * and puts the fault under the caret.
+   *
+   * Returns why the document did not move, or null when it did — or when there
+   * was nothing to do. A caller that renders the source needs the sentence
+   * without having to tell its own refusal from one left on the snapshot by a
+   * command earlier in the session.
+   */
+  const runCommand = (command: EditCommand, guardProjection: boolean): Error | null => {
+    if (!document) {
+      log.debug('command dropped: nothing is open', { command: command.label })
+      return null
+    }
+    /*
+     * A session that has ended takes no more edits.
+     *
+     * `finish()` keeps the document, and that is right — it is what the user
+     * was looking at, and after a **Publish** it is what was published. What
+     * it must not do is go on accepting changes: there is no claim to write
+     * them under and no Draft on the Host to write them to, so every one of
+     * them is lost the moment the page moves on. After a **Discard** the Draft
+     * they would belong to has been thrown away outright.
+     *
+     * The bar says "you are no longer editing this workflow" and offers to
+     * open the Draft again; this is what makes that sentence true rather than
+     * a description of somewhere the writes are not going.
+     */
+    if (!token) {
+      log.debug('command dropped: the session has ended', { command: command.label })
+      return null
+    }
+
+    /*
+     * A Preview takes no edits either, and this guard is a correctness one
+     * rather than an affordance.
+     *
+     * The command would SUCCEED: the token is held, the Draft is open, and
+     * `document` is the Draft — so the edit lands, autosaves, and is invisible,
+     * because what the reader is looking at is a version that is immutable by
+     * definition (ADR-0005). Every control that could send one is disabled
+     * through `useReadOnly`, and this is the floor under all of them, for the
+     * same reason ADR-0023 puts the publish gate in the store: a rule that
+     * lives in a control is a rule the next control forgets.
+     */
+    if (previewed) {
+      log.debug('command dropped: a version is being previewed', { command: command.label })
+      return null
+    }
+
+    /*
+     * The serialisations are inside the guard, not only `command.apply`.
+     *
+     * A command that leaves the AST in a state `toString()` refuses — a node
+     * spliced somewhere it does not belong — throws from the line that reads
+     * the result rather than from the mutation, so guarding the mutation
+     * alone lets it escape into whatever click handler called this. The store
+     * is then holding a document that cannot be serialised, which means every
+     * later commit, undo, autosave and even the NEXT command throws too: one
+     * bad command and nothing but `reopen()` recovers.
+     *
+     * So the document is put back. `before` is the text it had, and ADR-0001
+     * makes text the source of truth — re-parsing it yields the same document
+     * including its comments and quoting, which is the same move `undo` makes
+     * and for the same reason.
+     */
+    let before: string
+    try {
+      before = document.toString()
+    } catch {
+      return null
+    }
+
+    /*
+     * Whether the document projected BEFORE this command, read off the last
+     * published snapshot rather than validated again.
+     *
+     * A document that already does not project is not this command's doing
+     * and is not judged below — that state is ADR-0001's and belongs to the
+     * user's file. What is judged is a command that MAKES one.
+     */
+    const projected = state.status === 'ready' && state.workflow.definition !== null
+
+    let after: string
+    try {
+      command.apply(document)
+      after = document.toString()
+    } catch (cause) {
+      // A command throws when the tree it was built against has moved on — a
+      // Step removed under a stale insertion point, most likely — or when
+      // what it was asked to edit is not the shape it edits, or when the
+      // source it carries is not one YAML document. Either way the document is
+      // left as it was and nothing reaches the undo stack, so a stale
+      // insertion point is a no-op rather than half an edit.
+      //
+      // Reported, though. Several commands throw a sentence written for the
+      // person who asked — "that connection is already declared as …" — and
+      // restoring without it turns the refusal into a control that did not
+      // respond.
+      refused = asError(cause)
+      log.debug('command refused', { command: command.label, why: refused.message })
+      revert(before)
+      return refused
+    }
+
+    if (after === before) {
+      log.debug('command changed nothing', { command: command.label })
+      return null
+    }
+
+    /*
+     * **A command may not turn a document that projects into one that does
+     * not.** Inheriting an invalid document from the Host's file is a state
+     * this store is built to hold — ADR-0001 makes the text the source of
+     * truth, and the panel has a screen that says so. MANUFACTURING one is a
+     * different thing entirely: every surface in the product reads
+     * `definition`, so a single command that breaks the projection empties
+     * the canvas, the side panel and the step editor at once, and the user is
+     * left with nothing to click on to undo it.
+     *
+     * Every command that writes a user-chosen name refuses a name the schema
+     * cannot hold, which is where a refusal can say something useful. This is
+     * the backstop under all of them, and under every command written later:
+     * a whole class of defect that would otherwise be one field's oversight
+     * each time.
+     */
+    if (guardProjection && projected && !document.validate().success) {
+      refused = new Error(
+        'That change would leave the workflow in a state it cannot be saved in, so it was not made.',
+      )
+      log.debug('command refused: it would break the projection', { command: command.label })
+      revert(before)
+      return refused
+    }
+
+    refused = null
+    log.trace('command applied', { command: command.label })
+    history.push({ text: before, label: command.label })
+    if (history.length > HISTORY_LIMIT) history.shift()
+    // A new edit makes the redo stack unreachable: there is no longer one
+    // future to walk back into.
+    future = []
+
+    schedule()
+    commit()
+    return null
+  }
+
   const store: EditingStore = {
     getSnapshot: () => state,
     subscribe(listener) {
@@ -1048,140 +1272,17 @@ export function createEditingStore(
     reopen: openDraft,
 
     apply(command) {
-      if (!document) {
-        log.debug('command dropped: nothing is open', { command: command.label })
-        return
-      }
+      runCommand(command, true)
+    },
+
+    setText(yaml) {
       /*
-       * A session that has ended takes no more edits.
-       *
-       * `finish()` keeps the document, and that is right — it is what the user
-       * was looking at, and after a **Publish** it is what was published. What
-       * it must not do is go on accepting changes: there is no claim to write
-       * them under and no Draft on the Host to write them to, so every one of
-       * them is lost the moment the page moves on. After a **Discard** the Draft
-       * they would belong to has been thrown away outright.
-       *
-       * The bar says "you are no longer editing this workflow" and offers to
-       * open the Draft again; this is what makes that sentence true rather than
-       * a description of somewhere the writes are not going.
+       * The label is the same whatever was typed, because a whole-document edit
+       * has nothing smaller to name. One entry per commit, not per keystroke:
+       * the region holds what is being typed and hands it over on a quiet
+       * period, so an undo takes back a change the user would recognise.
        */
-      if (!token) {
-        log.debug('command dropped: the session has ended', { command: command.label })
-        return
-      }
-
-      /*
-       * A Preview takes no edits either, and this guard is a correctness one
-       * rather than an affordance.
-       *
-       * The command would SUCCEED: the token is held, the Draft is open, and
-       * `document` is the Draft — so the edit lands, autosaves, and is invisible,
-       * because what the reader is looking at is a Published Version that is
-       * immutable by definition (ADR-0005). Every control that could send one is
-       * disabled through `useReadOnly`, and this is the floor under all of them,
-       * for the same reason ADR-0023 puts the publish gate in the store: a rule
-       * that lives in a control is a rule the next control forgets.
-       */
-      if (previewed) {
-        log.debug('command dropped: a version is being previewed', { command: command.label })
-        return
-      }
-
-      /*
-       * The serialisations are inside the guard, not only `command.apply`.
-       *
-       * A command that leaves the AST in a state `toString()` refuses — a node
-       * spliced somewhere it does not belong — throws from the line that reads
-       * the result rather than from the mutation, so guarding the mutation
-       * alone lets it escape into whatever click handler called this. The store
-       * is then holding a document that cannot be serialised, which means every
-       * later commit, undo, autosave and even the NEXT apply throws too: one
-       * bad command and nothing but `reopen()` recovers.
-       *
-       * So the document is put back. `before` is the text it had, and ADR-0001
-       * makes text the source of truth — re-parsing it yields the same document
-       * including its comments and quoting, which is the same move `undo` makes
-       * and for the same reason.
-       */
-      let before: string
-      try {
-        before = document.toString()
-      } catch {
-        return
-      }
-
-      /*
-       * Whether the document projected BEFORE this command, read off the last
-       * published snapshot rather than validated again.
-       *
-       * A document that already does not project is not this command's doing
-       * and is not judged below — that state is ADR-0001's and belongs to the
-       * user's file. What is judged is a command that MAKES one.
-       */
-      const projected = state.status === 'ready' && state.workflow.definition !== null
-
-      let after: string
-      try {
-        command.apply(document)
-        after = document.toString()
-      } catch (cause) {
-        // A command throws when the tree it was built against has moved on — a
-        // Step removed under a stale insertion point, most likely — or when
-        // what it was asked to edit is not the shape it edits. Either way the
-        // document is left as it was and nothing reaches the undo stack, so a
-        // stale insertion point is a no-op rather than half an edit.
-        //
-        // Reported, though. Several commands throw a sentence written for the
-        // person who asked — "that connection is already declared as …" — and
-        // restoring without it turns the refusal into a control that did not
-        // respond.
-        refused = asError(cause)
-        log.debug('command refused', { command: command.label, why: refused.message })
-        revert(before)
-        return
-      }
-
-      if (after === before) {
-        log.debug('command changed nothing', { command: command.label })
-        return
-      }
-
-      /*
-       * **A command may not turn a document that projects into one that does
-       * not.** Inheriting an invalid document from the Host's file is a state
-       * this store is built to hold — ADR-0001 makes the text the source of
-       * truth, and the panel has a screen that says so. MANUFACTURING one is a
-       * different thing entirely: every surface in the product reads
-       * `definition`, so a single command that breaks the projection empties
-       * the canvas, the side panel and the step editor at once, and the user is
-       * left with nothing to click on to undo it.
-       *
-       * Every command that writes a user-chosen name refuses a name the schema
-       * cannot hold, which is where a refusal can say something useful. This is
-       * the backstop under all of them, and under every command written later:
-       * a whole class of defect that would otherwise be one field's oversight
-       * each time.
-       */
-      if (projected && !document.validate().success) {
-        refused = new Error(
-          'That change would leave the workflow in a state it cannot be saved in, so it was not made.',
-        )
-        log.debug('command refused: it would break the projection', { command: command.label })
-        revert(before)
-        return
-      }
-
-      refused = null
-      log.trace('command applied', { command: command.label })
-      history.push({ text: before, label: command.label })
-      if (history.length > HISTORY_LIMIT) history.shift()
-      // A new edit makes the redo stack unreachable: there is no longer one
-      // future to walk back into.
-      future = []
-
-      schedule()
-      commit()
+      return runCommand(replaceContent('Edit the text', yaml), false)
     },
 
     undo() {
@@ -1482,7 +1583,7 @@ export function createEditingStore(
       return port.discardDraft(held)
     },
 
-    async preview(version) {
+    async preview(version, options) {
       if (disposed) return
       const mine = opens
 
@@ -1528,7 +1629,9 @@ export function createEditingStore(
        * would replace something readable with an error, and the reader's way out
        * of a preview is a control that preview draws.
        */
-      previewed = { version, document: parseWorkflow(yaml) }
+      previewed = options
+        ? { version, because: 'run', runId: options.runId, document: parseWorkflow(yaml) }
+        : { version, because: 'chosen', document: parseWorkflow(yaml) }
       commit()
     },
 

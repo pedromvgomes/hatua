@@ -23,6 +23,7 @@ const SURFACE = [
   // The stores a region subscribes to.
   'createConnectionStore',
   'createEditingStore',
+  'createExecutionStore',
   'createManifestStore',
   'createValidationStore',
   'createVersionStore',
@@ -47,6 +48,7 @@ const SURFACE = [
   // The rule every command that writes a user-chosen name checks, so a field
   // can ask the same question the command will.
   'isUsableName',
+  'replaceContent',
   'requireUsableName',
   'restoreContent',
 
