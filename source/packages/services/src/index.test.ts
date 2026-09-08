@@ -65,6 +65,7 @@ const SURFACE = [
 
   // Commands: the Blocks, and the contract each one declares.
   'addBlock',
+  'alignIdentity',
   'addDeclaration',
   'blockPath',
   'extractBlock',

@@ -3213,6 +3213,44 @@ describe('how a session ended', () => {
 })
 
 describe('writing the whole document as text', () => {
+  /*
+   * ADR-0001's central promise, and the one this path is most able to break:
+   * "we never re-serialise the whole document from typed objects", so the
+   * user's comments, key order and style survive a round trip.
+   *
+   * A text edit is the case where that is not a nicety. The user IS the
+   * serialiser — they typed the bytes — so a document that came back
+   * re-serialised would be Hatua rewriting a file it does not own, on a quiet
+   * 800ms timer, while they are looking at it.
+   */
+  const BYTES: Record<string, string> = {
+    'flow style':
+      'id: wf_morning\nname: n\nversion: 4\nstatus: draft\nsteps: [{id: s1, use: a.b}]\n',
+    'no trailing newline': 'id: wf_morning\nname: n\nversion: 4\nstatus: draft\nsteps: []',
+    'blank lines the author left':
+      'id: wf_morning\n\n\nname: n\nversion: 4\nstatus: draft\nsteps: []\n',
+    'a comment aligned by hand':
+      'id: wf_morning\nname: n\nversion: 4\nstatus: draft\nsteps:\n  - id: s1\n    use: a.b\n    with:\n      folder: INBOX      # not Archive\n',
+    'quoting the author chose': `id: wf_morning\nname: 'n'\nversion: 4\nstatus: draft\nsteps: []\n`,
+  }
+
+  for (const [what, typed] of Object.entries(BYTES)) {
+    it(`gives back the bytes that were typed — ${what}`, async () => {
+      const host = recorder()
+      const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 0 })
+      store.open()
+      await settle()
+
+      expect(store.setText(typed)).toBeNull()
+
+      // What the reader sees, and what the Host is sent, are the bytes they
+      // wrote — not a serialisation of what those bytes parsed into.
+      expect(ready(store).text).toBe(typed)
+      await store.flush()
+      expect(host.writes.at(-1)).toBe(typed)
+    })
+  }
+
   it('takes a source that is not a Workflow Definition, which is what it exists for', async () => {
     const host = recorder()
     const store = createEditingStore(host.port, 'wf_morning')
