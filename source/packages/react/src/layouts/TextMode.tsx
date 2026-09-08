@@ -9,6 +9,8 @@ import {
 import { cx } from '../primitives/classNames'
 import { useEditingStore } from '../theme/HatuaProvider'
 import { useReadOnly } from '../theme/readOnly'
+import { Code } from '../units/Code'
+import { yamlTokens } from './highlight'
 import styles from './TextMode.module.css'
 import css from './TextMode.module.css?inline'
 
@@ -204,27 +206,60 @@ export function TextMode({ className, onUnsavedChange, ...rest }: TextModeProps)
 
       {state.status === 'ready' ? (
         <>
-          <textarea
-            aria-label="Workflow YAML"
-            className={styles.box}
-            // Off, all four: this is a file, and a helper that capitalises a key
-            // or turns a quote into a curly one writes YAML the parser refuses.
-            spellCheck={false}
-            autoCapitalize="off"
-            autoCorrect="off"
-            autoComplete="off"
-            readOnly={readOnly}
-            value={shown}
-            onChange={(event) => type(event.currentTarget.value)}
-            // What is typed reaches the document on the quiet period, and a blur
-            // is the reader saying they are done sooner than the timer knows.
-            onBlur={() => {
-              if (timer.current === undefined || typed === null) return
-              clearTimeout(timer.current)
-              timer.current = undefined
-              commit(typed)
-            }}
-          />
+          {/*
+            The colour, under the box.
+            *
+            * A textarea cannot hold styled ranges, so the text is drawn twice:
+            * once here in colour, and once above in a textarea whose own glyphs
+            * are transparent and whose caret and selection are not. The two must
+            * agree character for character — `units/Code` owns the face, the
+            * size and the wrapping, and `.box` restates none of them.
+            *
+            * `aria-hidden`, because the textarea above carries the same text and
+            * a screen reader hearing it twice would be reading a document that
+            * says everything twice.
+            */}
+          <div className={styles.stack}>
+            <Code aria-hidden="true" className={styles.paint} tokens={yamlTokens(shown)} />
+            <textarea
+              aria-label="Workflow YAML"
+              className={styles.box}
+              // Off, all four: this is a file, and a helper that capitalises a
+              // key or turns a quote into a curly one writes YAML the parser
+              // refuses.
+              spellCheck={false}
+              autoCapitalize="off"
+              autoCorrect="off"
+              autoComplete="off"
+              readOnly={readOnly}
+              value={shown}
+              onChange={(event) => type(event.currentTarget.value)}
+              onScroll={(event) => {
+                /*
+                 * The paint follows the box rather than scrolling itself.
+                 *
+                 * Only one of the two can own the scroll position: two scrollable
+                 * boxes with the same content drift the moment either is scrolled
+                 * by anything the other does not see — a keyboard caret leaving
+                 * the viewport, a find-in-page, a trackpad fling. The textarea
+                 * owns it because it owns the caret.
+                 */
+                const paint = event.currentTarget.previousElementSibling
+                if (!(paint instanceof HTMLElement)) return
+                paint.scrollTop = event.currentTarget.scrollTop
+                paint.scrollLeft = event.currentTarget.scrollLeft
+              }}
+              // What is typed reaches the document on the quiet period, and a
+              // blur is the reader saying they are done sooner than the timer
+              // knows.
+              onBlur={() => {
+                if (timer.current === undefined || typed === null) return
+                clearTimeout(timer.current)
+                timer.current = undefined
+                commit(typed)
+              }}
+            />
+          </div>
           <p className={cx(styles.foot, refused ? styles.wrong : undefined)} aria-live="polite">
             {refused
               ? refused.message

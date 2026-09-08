@@ -201,6 +201,23 @@ Whether the box is holding text the document has not taken is reported out —
 `onUnsavedChange` — because a region cannot refuse to be unmounted and should not
 try. `views/Text` is what asks before the screen changes.
 
+**The colour is a second layer, not a second editor** (ADR-0027). A textarea
+cannot hold styled ranges, so the text is drawn twice: `units/Code` underneath in
+colour, and the textarea above with transparent glyphs and a real caret. Which
+means everything deciding where a character lands — face, size, line height,
+padding, wrapping — is declared once and inherited by both, and `highlight.ts` is
+held to a reassembly property rather than to appearance: a dropped character is a
+caret between the wrong glyphs, not a mis-colour.
+
+`highlight.ts` holds both producers, because the two source surfaces reach their
+tokens completely differently and must not disagree about what a string looks
+like. `yamlTokens` lexes text through `@hatua/document`, then cuts the runs
+holding a `{{ … }}` finer through `compounds/templateSpans` — derived from the
+parse, never scanned (ADR-0008). `valueTokens` walks a **Workflow Execution**'s
+payload while serialising it, so a string is coloured as a string because it is
+one; stringifying and re-reading would throw that away and make a tokeniser guess
+from quotes it had just written.
+
 ### The shape of each region on the map
 
 `@hatua/layout` decides where every card goes; this tier draws what it is handed

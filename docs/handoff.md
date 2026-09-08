@@ -1092,6 +1092,13 @@ against a version that cannot change. `createValidationStore` narrows to nothing
 screen, which is ADR-0022's answer whenever the rules cannot say something true. A **Preview** the
 reader *chose* keeps its diagnostics, because that version is what a **Restore** would bring across.
 
+**A payload is coloured by walking the value, not by re-reading the text** (ADR-0027). `output` is
+`{}` in the schema — anything at all — so there is nothing to render against and nothing to label the
+parts of; JSON is what it is. Walking the value while serialising it is what lets a string be
+coloured as a string because it *is* one, and it is what handles the shapes a **Host** can send that
+JSON has no spelling for: a cycle, a `BigInt`, `NaN`. It lands on the same five tokens the document
+does, so a string looks the same on either screen.
+
 **The pane has two subjects and one home.** With nothing selected it draws the run — status, when it
 started, how long it took, what fired it and its payload, and the totals derived from every Step's
 metadata — and the whole log under it. With one Step selected it draws that Step's record and narrows
@@ -1154,6 +1161,23 @@ accepted, which is how the store already asks.
 uneditable — and both leave it *readable*, which is the point: that is the escape from a halt the
 claim cannot resume, where the in-memory document is intact, saved nowhere, and every action on the
 bar discards it.
+
+**The colour is ours, and it is a layer rather than an editor** (ADR-0027). A textarea cannot hold
+styled ranges, so the document is drawn twice — coloured underneath, typed into on top with
+transparent glyphs and a real caret. Five tokens carry the palette: `--hatua-code-key`, `-string`,
+`-number`, `-comment` and `-reference`; punctuation and plain scalars use the text aliases that
+already exist, because a highlighter that colours everything says nothing about anything.
+
+A `{{ … }}` **Reference** is the one span with the accent on it, and the one no off-the-shelf
+grammar knows about: to a YAML grammar `"{{ var.digest_to }}"` is one flat string. The holes come
+from `templateShape`, which derives them from the parse rather than scanning for delimiters
+(ADR-0008) — so the highlighter and the checker cannot disagree about `{{ '{{' }}`.
+
+The **lexer**, not the parser. A reader spends most of their keystrokes on text that does not parse,
+and colour that flickered off between two valid states would be worse than none.
+
+What it does not do: no folding, no bracket matching, no autocomplete, no find-and-replace, no
+gutter. Each is a reason to revisit ADR-0027, and none of them is asked for.
 
 ---
 

@@ -1,0 +1,53 @@
+@layer hatua {
+  /*
+   * The mono face, the size and the line height live here and nowhere else.
+   *
+   * When this is the layer UNDER a textarea, every one of them has to match the
+   * box on top character for character or the caret drifts from the glyphs it is
+   * between. One definition is what makes that checkable rather than a pair of
+   * numbers two files have to agree on by inspection.
+   */
+  .code {
+    margin: 0;
+    font-family: var(--hatua-font-mono);
+    font-size: 0.8125rem;
+    line-height: 1.6;
+    tab-size: 2;
+    /* YAML is significant at the start of a line, so nothing may be re-wrapped
+       into a column the author did not type. */
+    white-space: pre;
+    color: var(--hatua-text-primary);
+  }
+
+  .key {
+    color: var(--hatua-code-key);
+  }
+
+  .string {
+    color: var(--hatua-code-string);
+  }
+
+  .number {
+    color: var(--hatua-code-number);
+  }
+
+  .comment {
+    color: var(--hatua-code-comment);
+    font-style: italic;
+  }
+
+  /*
+   * A Reference names something live in the document, which is what the accent
+   * marks everywhere else. It is the one span no off-the-shelf grammar knows
+   * about, and the one a reader most needs to pick out of a quoted string.
+   */
+  .reference {
+    color: var(--hatua-code-reference);
+  }
+
+  /* Structure, said quietly: a highlighter that colours the punctuation as
+     loudly as the values makes every line look equally important. */
+  .punctuation {
+    color: var(--hatua-text-muted);
+  }
+}

@@ -24,6 +24,8 @@ import {
 import { type ComponentPropsWithRef, useEffect, useMemo, useSyncExternalStore } from 'react'
 import { cx } from '../primitives/classNames'
 import { useEditingStore, useExecutionStore, useManifestStore } from '../theme/HatuaProvider'
+import { Code } from '../units/Code'
+import { valueTokens } from './highlight'
 import styles from './RunStep.module.css'
 import css from './RunStep.module.css?inline'
 import { durationOf, momentOf, RUN_STATUS_LABEL, STATUS_LABEL } from './runRecords'
@@ -450,26 +452,24 @@ function Row({ label, value }: { label: string; value: string }) {
 }
 
 /**
- * A payload, as JSON.
+ * A payload, as JSON, coloured.
  *
  * `output` is `{}` in the schema — anything at all — so there is no shape to
  * render against and nothing to label the parts of. JSON is what it is, and a
  * box that scrolls in its own right is what keeps the widest run from widening
  * the column.
+ *
+ * `valueTokens` walks the value rather than stringifying and re-reading it: by
+ * the time a payload is text, "was this a string or a number" is a question a
+ * tokeniser has to guess at from quotes it has just written. It also handles the
+ * shapes a Host can send that JSON has no syntax for — a cycle, a `BigInt`,
+ * `NaN` — which is why nothing here has to catch.
  */
 function Payload({ label, value }: { label?: string; value: unknown }) {
-  let text: string
-  try {
-    text = JSON.stringify(value, null, 2) ?? String(value)
-  } catch {
-    // A Host may hand over anything, including a structure that cannot be
-    // stringified. Saying so beats an empty box, and beats taking the tree down.
-    text = 'This value could not be read.'
-  }
   return (
     <>
       {label ? <h3 className={styles.legend}>{label}</h3> : null}
-      <pre className={styles.payload}>{text}</pre>
+      <Code className={styles.payload} tokens={valueTokens(value)} />
     </>
   )
 }
