@@ -198,8 +198,7 @@ export function Build({ className, view = 'build', onViewChange, ...rest }: Buil
             <div className={styles.column}>
               <TextMode onUnsavedChange={leaving.onUnsavedChange} />
               <TextToggle
-                variant="pill"
-                pressed
+                showing="yaml"
                 onToggle={() => leaving.guard(true, () => setText(false))}
               />
             </div>
@@ -421,7 +420,7 @@ export function Build({ className, view = 'build', onViewChange, ...rest }: Buil
               // At the head of the zoom strip: `YAML | − 100% + fit`. Sharing
               // that corner is what makes it read as chrome; it takes the corner
               // itself in Text Mode, where there is no strip.
-              leadingControl={<TextToggle pressed={false} onToggle={() => setText(true)} />}
+              leadingControl={<TextToggle showing="flow" onToggle={() => setText(true)} />}
             />
           </div>
           {/*
