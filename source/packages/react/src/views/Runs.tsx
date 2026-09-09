@@ -175,7 +175,11 @@ export function Runs({ className, view = 'runs', onViewChange, ...rest }: RunsPr
                 is saying what to do, and a control that swapped how nothing is
                 drawn would be one more thing to press for no effect. */}
             {open === 'ready' ? (
-              <TextToggle pressed={text} onToggle={() => setText((was) => !was)} />
+              <TextToggle
+                className={text ? undefined : styles.clearsZoom}
+                pressed={text}
+                onToggle={() => setText((was) => !was)}
+              />
             ) : null}
           </div>
           <div className={styles.aside}>

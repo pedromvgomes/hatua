@@ -86,13 +86,15 @@ const REGIONS = [
     href: 'hatua-run-step',
   },
   {
-    // "Text", because that is what the segmented control reads. The region is
-    // `TextMode` for the reason CONTEXT.md spells the concept that way, and the
-    // label is the one word a user sees.
+    // The region is `TextMode` because that is what CONTEXT.md calls the
+    // concept, and it ANNOUNCES itself as YAML because that is what the control
+    // opening it reads — the same split `Data` makes, announcing References.
+    // A landmark and the control that opens it must not be two names for one
+    // thing.
     name: 'TextMode',
     element: <TextMode />,
     role: 'region',
-    label: 'Text',
+    label: 'YAML',
     href: 'hatua-text-mode',
   },
   {

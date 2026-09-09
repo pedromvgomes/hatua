@@ -35,6 +35,21 @@ saying which one it is in, which is the call the **References** control already
 makes: a control that swaps its verb *and* reports pressed announces the state
 twice.
 
+**It reads YAML.** *Text* is ambiguous on a canvas, where it reads as "add a text
+box" before it reads as "show me the file", and *Source* is short for source code
+— which CONTEXT.md puts on **Text Mode**'s avoid list for the reason `attempt`
+beat `try`: these words render inside somebody else's product, to people who have
+never written code. The concept keeps its name; the landmark follows the control,
+because a label and the thing it opens must not be two names for one thing.
+
+**It shares the lower corner with the zoom cluster rather than joining it.**
+Sharing the corner is what stops it reading as something left in the middle of an
+empty canvas. Sharing the pill would put it inside `CanvasControls`, which Text
+Mode does not draw at all — and this is the control that gets back out of Text
+Mode, so it is the one thing that may not live there. Which of the two positions
+it takes is the composing view's to say, because only the thing rendering both
+knows they share a corner.
+
 ## Why the columns beside it go
 
 Pressing it takes the side panel and the step editor with it, and the reason is

@@ -1598,7 +1598,7 @@ describe('which screen is up', () => {
      * document is on screen, and how it is drawn is the column's own question.
      */
     expect(screen.queryByRole('group', { name: 'View' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Text' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'YAML' })).toBeNull()
   })
 
   it('offers Runs once the port is there', async () => {

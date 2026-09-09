@@ -547,17 +547,17 @@ describe('TextToggle', () => {
     // The call the References control makes, for the reason stated there: a
     // control that swaps its verb AND reports pressed announces the state twice.
     const { rerender } = render(<TextToggle pressed={false} onToggle={() => {}} />)
-    const button = screen.getByRole('button', { name: 'Text' })
+    const button = screen.getByRole('button', { name: 'YAML' })
     expect(button.getAttribute('aria-pressed')).toBe('false')
 
     rerender(<TextToggle pressed onToggle={() => {}} />)
-    expect(screen.getByRole('button', { name: 'Text' }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('button', { name: 'YAML' }).getAttribute('aria-pressed')).toBe('true')
   })
 
   it('reports the press and switches nothing itself', () => {
     let pressed = 0
     render(<TextToggle pressed={false} onToggle={() => pressed++} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Text' }))
+    fireEvent.click(screen.getByRole('button', { name: 'YAML' }))
     expect(pressed).toBe(1)
   })
 })
