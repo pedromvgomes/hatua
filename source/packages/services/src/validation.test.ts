@@ -165,6 +165,49 @@ describe('withholding an answer', () => {
   })
 })
 
+describe('what a Preview is checked against', () => {
+  it('goes on checking a version chosen from the list, because a Restore may bring it across', async () => {
+    const { editing, validation } = await opened()
+    expect(validation.getSnapshot().ready).toBe(true)
+
+    await editing.preview(1)
+    await settle()
+
+    // The snapshot describes the previewed version (ADR-0024) and the rules run
+    // against it: what is wrong with the version a reader is deciding whether to
+    // restore is a question they can act on.
+    expect(validation.getSnapshot().ready).toBe(true)
+    expect(validation.getSnapshot().all.length).toBeGreaterThan(0)
+  })
+
+  it('narrows to nothing while a run is on screen, because history is not fixable', async () => {
+    const { editing, validation } = await opened()
+
+    await editing.preview(1, { runId: 'run_8f2' })
+    await settle()
+
+    /*
+     * The card already carries a mark saying what happened when the Step ran. A
+     * diagnostic beside it is a second mark in the opposite tense, judged by
+     * today's catalogue against a version that cannot change — so the honest
+     * answer is that the rules did not run, not that nothing is wrong.
+     */
+    expect(validation.getSnapshot().ready).toBe(false)
+    expect(validation.getSnapshot().all).toEqual([])
+  })
+
+  it('answers again the moment the run is left', async () => {
+    const { editing, validation } = await opened()
+    await editing.preview(1, { runId: 'run_8f2' })
+    await settle()
+
+    editing.exitPreview()
+    await settle()
+
+    expect(validation.getSnapshot().ready).toBe(true)
+  })
+})
+
 describe('the answer', () => {
   it('indexes the diagnostics by Step, and flattens them for a count', async () => {
     const { validation } = await opened()

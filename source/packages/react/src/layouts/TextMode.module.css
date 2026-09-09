@@ -1,0 +1,129 @@
+@layer hatua {
+  .text {
+    display: flex;
+    flex-direction: column;
+    block-size: 100%;
+    min-block-size: 0;
+    background: var(--hatua-surface-card);
+  }
+
+  /*
+   * The two layers, exactly on top of each other.
+   *
+   * A textarea cannot hold styled ranges, so the text is drawn twice: coloured
+   * underneath, and typed into on top with transparent glyphs. Everything that
+   * decides where a character lands — the face, the size, the line height, the
+   * padding, the wrapping — must therefore be identical on both, so each of
+   * those is declared once below and inherited by both rather than written
+   * twice and kept level by inspection.
+   */
+  .stack {
+    position: relative;
+    flex: 1 1 auto;
+    min-block-size: 0;
+    background: var(--hatua-surface-sunken);
+  }
+
+  .stack > * {
+    position: absolute;
+    inset: 0;
+    padding: 12px 16px;
+    overflow: auto;
+    /* The scrollbar belongs to the box on top, which owns the caret. Two
+       scrollable layers with the same text drift the moment either is scrolled
+       by something the other cannot see. */
+    scrollbar-width: none;
+  }
+
+  .paint {
+    /* Selection is the textarea's — a second highlight underneath it would show
+       through as a doubled, slightly offset band. */
+    user-select: none;
+    pointer-events: none;
+  }
+
+  .box {
+    inline-size: 100%;
+    border: 0;
+    resize: none;
+    background: none;
+    /*
+     * Transparent glyphs over the paint, with the caret left alone: `color`
+     * paints the text and `caret-color` the cursor. So the reader types into
+     * this box, sees the coloured layer, and every affordance a textarea has
+     * still works.
+     *
+     * `-webkit-text-fill-color` as well as `color`, because WebKit lets a form
+     * control's fill colour win — without it the glyphs are painted anyway in
+     * Safari and every line reads as doubled against the layer beneath.
+     */
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    caret-color: var(--hatua-text-primary);
+    font-family: var(--hatua-font-mono);
+    font-size: 0.8125rem;
+    line-height: 1.6;
+    tab-size: 2;
+    /* YAML is significant at the start of a line, so nothing may be re-wrapped
+       into a column the user did not type. */
+    white-space: pre;
+  }
+
+  /*
+   * The selection is drawn by the box on top, over the colour underneath — so
+   * both halves of it have to leave that colour alone.
+   *
+   * The band is translucent, because an opaque one covers exactly what it is
+   * selecting: drag across a line and the line goes blank.
+   *
+   * And the glyphs stay transparent. A `::selection` that sets only a background
+   * leaves the text colour to the browser, which paints its own contrasting one
+   * — so the box's own characters appear on top of the painted ones, slightly
+   * off, and a selected line reads as doubled.
+   */
+  .box::selection {
+    background: var(--hatua-code-selection);
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .box:focus-visible {
+    outline: var(--hatua-focus-ring);
+    outline-offset: -2px;
+  }
+
+  /* Nothing may be typed, and everything may still be read and copied — which
+     is the escape from a session that has ended. */
+  .stack:has(.box:read-only) {
+    background: var(--hatua-surface-card);
+  }
+
+  /*
+   * What the document is doing, under the box rather than over it: the first
+   * line of a file is where a reader looks, and a strip above it would move the
+   * text down every time the state changed.
+   */
+  .foot {
+    flex: none;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 8px 16px;
+    border-block-start: 1px solid var(--hatua-border-subtle);
+    font-size: 0.75rem;
+    color: var(--hatua-text-muted);
+    min-block-size: 34px;
+  }
+
+  .wrong {
+    color: var(--hatua-status-error);
+  }
+
+  .said {
+    margin: 0;
+    padding: 12px 16px;
+    font-size: 0.8125rem;
+    color: var(--hatua-text-muted);
+    text-wrap: pretty;
+  }
+}

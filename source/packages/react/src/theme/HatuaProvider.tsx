@@ -4,10 +4,13 @@ import {
   type ConnectionStore,
   createConnectionStore,
   createEditingStore,
+  createExecutionStore,
   createManifestStore,
   createValidationStore,
   createVersionStore,
   type EditingStore,
+  type ExecutionSource,
+  type ExecutionStore,
   type ManifestSource,
   type ManifestStore,
   type PublishGate,
@@ -39,10 +42,9 @@ import { createTheme, type Theme } from './createTheme'
  * mounts every region bare — so a `manifests` prop would break the promise
  * those two exist to keep. The provider is the only seam both paths share.
  *
- * Only the ports something renders today are here. The rest of ports.ts —
- * ExecutionSource, the connection ports — stays out until the PR that has a
- * consumer for it, because a port with no reader is a shape guessed at rather
- * than one a screen forced.
+ * Only the ports something renders today are here. What is still out of
+ * ports.ts stays out until there is a consumer for it, because a port with no
+ * reader is a shape guessed at rather than one a screen forced.
  */
 
 export type ColorMode = 'light' | 'dark'
@@ -86,6 +88,17 @@ export interface HostPorts {
    * label and better than an empty list.
    */
   describeConnection?: ConnectionDescriber
+  /**
+   * Where the **Workflow Executions** come from. The **Runs** view reads this,
+   * and it is the whole of that seam: no port, no view, and the segmented
+   * control in the toolbar does not offer one.
+   *
+   * Whole or absent. Its two methods are not individually optional — a Host
+   * that can list runs and cannot load one has a broken implementation rather
+   * than a reduced one, and pushing that into the type would make every reader
+   * ask twice for an answer no Host has a reason to give.
+   */
+  executions?: ExecutionSource
 }
 
 const PortalContext = createContext<HTMLElement | null>(null)
@@ -122,6 +135,16 @@ const ConnectionStoreContext = createContext<ConnectionStore | null>(null)
 const VersionStoreContext = createContext<VersionStore | null>(null)
 
 /**
+ * The workflow's **Workflow Executions**, or null when the Host wired no
+ * `ExecutionSource` or named no workflow.
+ *
+ * Null is what hides the **Runs** view, which is `ports.ts`'s own rule read
+ * through the composition root: a control that switches to nothing is worse
+ * than no control. Nothing is fetched until a reader calls `load()`.
+ */
+const ExecutionStoreContext = createContext<ExecutionStore | null>(null)
+
+/**
  * The element overlays should portal into. Null until the provider has mounted,
  * so callers must handle that — render nothing rather than falling back to
  * document.body, which would land outside the themed subtree.
@@ -147,6 +170,13 @@ export const useConnectionStore = () => use(ConnectionStoreContext)
  * no `workflowId`. Nothing is fetched until a reader calls `load()`.
  */
 export const useVersionStore = () => use(VersionStoreContext)
+
+/**
+ * The workflow's **Workflow Executions**, or null when the Host supplied no
+ * `ExecutionSource` or no `workflowId`. Regions that mark a run degrade to
+ * marking nothing, and the toolbar draws no **Runs** segment.
+ */
+export const useExecutionStore = () => use(ExecutionStoreContext)
 
 /**
  * What is wrong with each Step, or null when there is no workflow or no
@@ -248,6 +278,16 @@ export function HatuaProvider({
     [workflowSource, workflowId],
   )
 
+  // Keyed on the port and the id together, because either one changing means a
+  // different history. It holds no claim and no timer, so rebuilding it costs a
+  // refetch and nothing else — and nothing at all until a reader asks.
+  const executionSource = ports?.executions
+  const executionStore = useMemo(
+    () =>
+      executionSource && workflowId ? createExecutionStore(executionSource, workflowId) : null,
+    [executionSource, workflowId],
+  )
+
   // The manifest store holds one fetch and nothing else; this one holds a lease
   // on the Host's storage and a timer renewing it, so letting a replaced store
   // keep running would leave a workflow claimed by a session that is gone.
@@ -295,10 +335,12 @@ export function HatuaProvider({
             <ConnectionStoreContext value={connectionStore}>
               <ValidationStoreContext value={validationStore}>
                 <VersionStoreContext value={versionStore}>
-                  <PortalContext value={portalHost}>
-                    {children}
-                    <div className="hatua-portals" ref={setPortalHost} />
-                  </PortalContext>
+                  <ExecutionStoreContext value={executionStore}>
+                    <PortalContext value={portalHost}>
+                      {children}
+                      <div className="hatua-portals" ref={setPortalHost} />
+                    </PortalContext>
+                  </ExecutionStoreContext>
                 </VersionStoreContext>
               </ValidationStoreContext>
             </ConnectionStoreContext>

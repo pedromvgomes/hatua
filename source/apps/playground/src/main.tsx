@@ -11,6 +11,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { SOURCES } from './catalogue'
 import { CONNECTIONS } from './connections'
+import { createLocalExecutionSource } from './executions'
 import { createLocalWorkflowStore } from './workflow-store'
 
 // The Host imports no CSS — Hatua renders its own stylesheet (ADR-0003).
@@ -51,6 +52,18 @@ import { createLocalWorkflowStore } from './workflow-store'
  * rebuilt every render would reopen the Draft — a new lease per render.
  */
 const workflows = createLocalWorkflowStore()
+
+/**
+ * The Host's run history, at module scope for the reason the store is: a port
+ * rebuilt every render is a port that has been swapped, as far as
+ * <HatuaProvider> can tell.
+ *
+ * Supplying it is what draws the **Runs** segment. `ExecutionSource` says "omit
+ * entirely and the Runs view is hidden", so a Host with no runner has a designer
+ * with two views and no dead control — which is what `/host.html` is, since it
+ * wires no runs at all.
+ */
+const executions = createLocalExecutionSource(workflows)
 
 /*
  * Logging, switched on in a way that survives a reload.
@@ -175,7 +188,7 @@ if (stored) {
 createRoot(document.getElementById('root') as HTMLElement).render(
   <StrictMode>
     <Hatua
-      ports={{ manifests: SOURCES.ready, workflows, ...CONNECTIONS.ready }}
+      ports={{ manifests: SOURCES.ready, workflows, executions, ...CONNECTIONS.ready }}
       workflowId="wf_morning"
     />
   </StrictMode>,

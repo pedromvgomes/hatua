@@ -13,6 +13,8 @@ import {
   nameOf,
   type Region,
   type RegionRef,
+  type RunStatus,
+  recordsFor,
   regionKey,
   regionsOf,
   type Segment,
@@ -23,11 +25,18 @@ import {
   segmentReturns,
   segmentSteps,
   siblingFrom,
+  statusOf,
   stepKey,
   TRY_VERB,
   troubledBlocks,
 } from '@hatua/model'
-import type { Manifest, ManifestEntry, Step, WorkflowDefinition } from '@hatua/schema'
+import type {
+  Manifest,
+  ManifestEntry,
+  Step,
+  WorkflowDefinition,
+  WorkflowExecution,
+} from '@hatua/schema'
 import { manifestsIn } from '@hatua/schema'
 import {
   type ConnectionState,
@@ -36,6 +45,7 @@ import {
   type ManifestState,
   moveStep,
   nextBlockId,
+  type OpenExecutionState,
   removeStep,
   sequence,
   unchecked,
@@ -47,6 +57,7 @@ import {
   type FocusEvent as ReactFocusEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  type ReactNode,
   type PointerEvent as ReactPointerEvent,
   type SetStateAction,
   useCallback,
@@ -61,6 +72,7 @@ import { cx } from '../primitives/classNames'
 import {
   useConnectionStore,
   useEditingStore,
+  useExecutionStore,
   useManifestStore,
   useValidationStore,
 } from '../theme/HatuaProvider'
@@ -218,6 +230,15 @@ export interface FlowMapProps extends Omit<ComponentPropsWithRef<'section'>, 'on
   defaultCollapsed?: readonly StepRef[]
   onCollapseChange?: (collapsed: StepRef[]) => void
   /**
+   * A control the composing view puts at the head of the zoom strip.
+   *
+   * Chrome, and a slot rather than a named control: the canvas owns where that
+   * strip sits, and what else belongs beside the zoom is the view's question.
+   * `views/Build` puts the toggle that swaps this column between the map and the
+   * YAML there, and nothing here has to know that.
+   */
+  leadingControl?: ReactNode
+  /**
    * Which individual columns are folded shut, and a way to hear about it.
    *
    * Beside `collapsed` and not merged with it, because the two are different
@@ -321,6 +342,32 @@ const readNoConnections = (): ConnectionState => NO_CONNECTIONS
 // `subscribe` changes identity, and re-renders forever if `getSnapshot` returns
 // a fresh object each call.
 const subscribeToNothing = () => () => {}
+
+/**
+ * What a canvas with no `ExecutionSource` reads instead of a store. Stable,
+ * because `useSyncExternalStore` cannot tolerate a fresh snapshot per call.
+ */
+const NO_RUN = { status: 'none' } as const
+const readNoRun = (): OpenExecutionState => NO_RUN
+
+/**
+ * What one Step did in the run being read, or undefined when it has no record.
+ *
+ * Undefined is a real answer: a Step inside a **Branch** that was not taken
+ * never ran, and the version the run is drawn against still holds it, so an
+ * unmarked card is what says so. Both halves come from `@hatua/model`, where the
+ * pane beside this map reads them too — one question, one function, so a card
+ * and a pane cannot disagree about what a Step did.
+ */
+const runMark = (
+  execution: WorkflowExecution | null,
+  stepId: string,
+): { status: RunStatus; passes: number } | undefined => {
+  if (!execution) return undefined
+  const records = recordsFor(execution, stepId)
+  const status = statusOf(records)
+  return status ? { status, passes: records.length } : undefined
+}
 const NO_PROBLEMS: ReadonlyMap<string, Diagnostic[]> = new Map()
 /** The same, for the Blocks a call may report as unable to run. */
 const NO_TROUBLE: ReadonlySet<string> = new Set()
@@ -350,12 +397,23 @@ export function FlowMap({
   onDropComponent,
   defaultViewports,
   onViewportChange,
+  leadingControl,
   className,
   ...rest
 }: FlowMapProps) {
   const store = useEditingStore()
   const catalogue = useManifestStore()
   const validation = useValidationStore()
+  /*
+   * What the run being read did, when one is. Absent for every Host that serves
+   * no `ExecutionSource`, and absent in the designer, where nothing has opened a
+   * run — so the cards carry no marks and this costs a null check.
+   *
+   * A store rather than a prop, because per-Step status is DATA: it is the whole
+   * of what the Host handed over, and `layouts/README` puts data behind the
+   * provider and keeps props for chrome.
+   */
+  const executions = useExecutionStore()
   const [ownBoard, setOwnBoard] = useState<BoardId>(defaultBoardId)
   /*
    * Which Boards are open, root first.
@@ -444,6 +502,29 @@ export function FlowMap({
   // Absent, not empty. Every Step is an unknown component until the manifests
   // land, so painting `byStep` before `ready` marks every card on every load.
   const problems = checks.ready ? checks.byStep : NO_PROBLEMS
+
+  const run = useSyncExternalStore(
+    executions ? executions.subscribe : subscribeToNothing,
+    executions ? () => executions.getSnapshot().open : readNoRun,
+    readNoRun,
+  )
+  /*
+   * The execution whose marks the cards carry, and null unless one is fully
+   * open AND the document on screen is the version it references.
+   *
+   * Both halves, because a record held on its own says nothing about what is
+   * being drawn: opening a run is two steps (ADR-0025), so between them the
+   * record exists and the map is still on the **Draft** — and marks painted
+   * there would say Steps of a document that never ran had run. The snapshot is
+   * the authority on what is on screen, so it is what this asks.
+   */
+  const execution =
+    run.status === 'ready' &&
+    state.status === 'ready' &&
+    state.workflow.previewing?.because === 'run' &&
+    state.workflow.previewing.runId === run.runId
+      ? run.execution
+      : null
 
   const definition = state.status === 'ready' ? (state.workflow.definition ?? null) : null
 
@@ -930,6 +1011,8 @@ export function FlowMap({
             folded={folded}
             foldedRegions={foldedRegions}
             problems={problems}
+            execution={execution}
+            leadingControl={leadingControl}
             troubled={troubled}
             redraws={redraws}
             dragging={dragging}
@@ -968,6 +1051,8 @@ function Canvas({
   folded,
   foldedRegions,
   problems,
+  execution,
+  leadingControl,
   troubled,
   redraws,
   dragging,
@@ -996,6 +1081,8 @@ function Canvas({
   onView: Dispatch<SetStateAction<Viewport | null>>
   manifests: ReadonlyMap<string, Manifest>
   selection: Segment | undefined
+  execution: WorkflowExecution | null
+  leadingControl: ReactNode
   folded: readonly StepRef[]
   foldedRegions: readonly RegionRef[]
   problems: ReadonlyMap<string, Diagnostic[]>
@@ -1258,6 +1345,7 @@ function Canvas({
                 expanded={!collapsed.has(placement.ref.id)}
                 opens={opens && blockOf(definition, opens) ? opens : undefined}
                 problems={problems.get(key)}
+                run={runMark(execution, placement.ref.id)}
                 callsBrokenBlock={opens !== null && troubled.has(opens)}
                 onSelect={(extend) => onSelect(placement.ref, extend)}
                 onToggle={() => onToggle(placement.ref)}
@@ -1290,6 +1378,7 @@ function Canvas({
         onZoomOut={canvas.zoomOut}
         onZoomTo={canvas.snapTo}
         onFit={canvas.fit}
+        leading={leadingControl}
       />
     </div>
   )

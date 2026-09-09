@@ -1,0 +1,58 @@
+@layer hatua {
+  /*
+   * The control itself, sized to sit level with the zoom buttons beside it when
+   * it is the head of that strip. It brings no corner and no shell of its own,
+   * because in that position the strip owns both.
+   */
+  .toggle {
+    display: grid;
+    place-items: center;
+    block-size: 26px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: var(--hatua-radius-sm);
+    background: transparent;
+    color: var(--hatua-text-secondary);
+    font: inherit;
+    font-size: 0.75rem;
+    line-height: 1;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+  }
+
+  .toggle:hover {
+    background: var(--hatua-surface-sunken);
+    color: var(--hatua-text-primary);
+  }
+
+  .toggle:focus-visible {
+    outline: var(--hatua-focus-ring);
+    outline-offset: -1px;
+  }
+
+  /*
+   * The shell it brings in Text Mode, where the strip it would sit in is not
+   * drawn — there is no canvas to zoom.
+   *
+   * Deliberately the same box as `CanvasControls`: same corner, same insets,
+   * same border, radius, padding and shadow. One control has to look like one
+   * control wherever the column has put it, and the reader who pressed it in the
+   * strip finds it exactly where they left it.
+   *
+   * Logical insets, like every other floating control here, because a control
+   * belongs at the end of the reading direction and moves with it.
+   */
+  .shell {
+    position: absolute;
+    inset-block-end: 16px;
+    inset-inline-end: 16px;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    padding: 3px;
+    border: 1px solid var(--hatua-border-subtle);
+    border-radius: var(--hatua-radius-md);
+    background: var(--hatua-surface-card);
+    box-shadow: 0 4px 14px var(--hatua-shadow-color);
+  }
+}

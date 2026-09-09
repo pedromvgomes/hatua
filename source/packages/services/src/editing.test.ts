@@ -2755,6 +2755,50 @@ steps:
     name: "Fetch mail"
 `
 
+describe('previewing a run', () => {
+  it('says why the version is on screen, so the bar and the checker can tell', async () => {
+    const host = recorder({ versionYaml: VERSION_TWO })
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+
+    await store.preview(2, { runId: 'run_8f2' })
+
+    // The document half is identical to a chosen preview — a run IS a preview,
+    // which is what keeps every region from being taught about runs. What is
+    // added is the reason, for the two readers a number cannot serve.
+    const shown = ready(store)
+    expect(shown.previewing).toEqual({ version: 2, because: 'run', runId: 'run_8f2' })
+    expect(shown.definition?.name).toBe('Overnight triage')
+  })
+
+  it('is read-only and refuses an edit, on the guard a chosen version already has', async () => {
+    const host = recorder({ versionYaml: VERSION_TWO })
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+
+    await store.preview(2, { runId: 'run_8f2' })
+    store.apply(setWorkflowName('Renamed'))
+
+    expect(ready(store).definition?.name).toBe('Overnight triage')
+    expect(ready(store).previewing).not.toBeNull()
+  })
+
+  it('goes when a Draft is claimed under it, because a claim puts one on screen', async () => {
+    const host = recorder({ versionYaml: VERSION_TWO })
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+    await store.preview(2, { runId: 'run_8f2' })
+
+    store.reopen()
+    await settle()
+
+    expect(ready(store).previewing).toBeNull()
+  })
+})
+
 describe('previewing a version', () => {
   it('describes the previewed version, so every region follows without being told', async () => {
     const host = recorder({ versionYaml: VERSION_TWO })
@@ -2765,7 +2809,7 @@ describe('previewing a version', () => {
     await store.preview(2)
 
     const shown = ready(store)
-    expect(shown.previewing).toBe(2)
+    expect(shown.previewing).toEqual({ version: 2, because: 'chosen' })
     expect(shown.definition?.name).toBe('Overnight triage')
     expect(shown.text).toContain('The first pass, before the fork.')
   })
@@ -2928,7 +2972,7 @@ describe('previewing a version', () => {
     await store.release()
     await showing
 
-    expect(ready(store).previewing).toBe(2)
+    expect(ready(store).previewing).toEqual({ version: 2, because: 'chosen' })
     expect(ready(store).claimed).toBe(false)
   })
 
@@ -2958,7 +3002,7 @@ describe('previewing a version', () => {
 
     await store.preview(2)
 
-    expect(ready(store).previewing).toBe(2)
+    expect(ready(store).previewing).toEqual({ version: 2, because: 'chosen' })
     expect(ready(store).claimed).toBe(false)
   })
 })
@@ -3057,7 +3101,7 @@ describe('restoring a version', () => {
     store.open()
     await settle()
     await store.preview(4)
-    expect(ready(store).previewing).toBe(4)
+    expect(ready(store).previewing).toEqual({ version: 4, because: 'chosen' })
 
     await store.restoreVersion(4)
 
@@ -3165,5 +3209,169 @@ describe('how a session ended', () => {
     await settle()
 
     expect(ready(store).ended).toBeNull()
+  })
+})
+
+describe('writing the whole document as text', () => {
+  /*
+   * ADR-0001's central promise, and the one this path is most able to break:
+   * "we never re-serialise the whole document from typed objects", so the
+   * user's comments, key order and style survive a round trip.
+   *
+   * A text edit is the case where that is not a nicety. The user IS the
+   * serialiser — they typed the bytes — so a document that came back
+   * re-serialised would be Hatua rewriting a file it does not own, on a quiet
+   * 800ms timer, while they are looking at it.
+   */
+  const BYTES: Record<string, string> = {
+    'flow style':
+      'id: wf_morning\nname: n\nversion: 4\nstatus: draft\nsteps: [{id: s1, use: a.b}]\n',
+    'no trailing newline': 'id: wf_morning\nname: n\nversion: 4\nstatus: draft\nsteps: []',
+    'blank lines the author left':
+      'id: wf_morning\n\n\nname: n\nversion: 4\nstatus: draft\nsteps: []\n',
+    'a comment aligned by hand':
+      'id: wf_morning\nname: n\nversion: 4\nstatus: draft\nsteps:\n  - id: s1\n    use: a.b\n    with:\n      folder: INBOX      # not Archive\n',
+    'quoting the author chose': `id: wf_morning\nname: 'n'\nversion: 4\nstatus: draft\nsteps: []\n`,
+  }
+
+  for (const [what, typed] of Object.entries(BYTES)) {
+    it(`gives back the bytes that were typed — ${what}`, async () => {
+      const host = recorder()
+      const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 0 })
+      store.open()
+      await settle()
+
+      expect(store.setText(typed)).toBeNull()
+
+      // What the reader sees, and what the Host is sent, are the bytes they
+      // wrote — not a serialisation of what those bytes parsed into.
+      expect(ready(store).text).toBe(typed)
+      await store.flush()
+      expect(host.writes.at(-1)).toBe(typed)
+    })
+  }
+
+  it('takes a source that is not a Workflow Definition, which is what it exists for', async () => {
+    const host = recorder()
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+
+    // ADR-0019's backstop refuses a command that breaks the projection. A text
+    // edit is the one write that may: the surface sending it renders the text,
+    // and the fault is under the caret.
+    const refusal = store.setText('id: wf_morning\nname: "Half typed"\nsteps: nonsense\n')
+
+    expect(refusal).toBeNull()
+    expect(ready(store).definition).toBeNull()
+    expect(ready(store).invalid).not.toBeNull()
+    expect(ready(store).text).toContain('nonsense')
+  })
+
+  it('refuses a source that is not one YAML document, leaving the draft untouched', async () => {
+    const host = recorder()
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+    const before = ready(store).text
+
+    const refusal = store.setText('id: a\n---\nid: b\n')
+
+    expect(refusal).not.toBeNull()
+    expect(ready(store).text).toBe(before)
+    expect(ready(store).definition?.name).toBe('Morning inbox triage')
+  })
+
+  it('keeps the keys that say which document this is, whatever the source says', async () => {
+    const host = recorder()
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+
+    store.setText('id: something_else\nname: Typed\nversion: 99\nstatus: published\nsteps: []\n')
+
+    // `publish()` sends the document's own bytes, so a text edit that renumbered
+    // the Draft would promote a version claiming to be an already-published one.
+    const shown = ready(store).definition
+    expect(shown?.id).toBe('wf_morning')
+    expect(shown?.version).toBe(4)
+    expect(shown?.status).toBe('draft')
+    expect(shown?.name).toBe('Typed')
+  })
+
+  it('is one entry on the undo stack, not one per keystroke', async () => {
+    const host = recorder()
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+
+    store.setText('id: wf_morning\nname: Typed\nsteps: []\n')
+    expect(ready(store).undoLabel).toBe('Edit the text')
+
+    store.undo()
+    expect(ready(store).definition?.name).toBe('Morning inbox triage')
+  })
+
+  it('autosaves like any other edit', async () => {
+    const host = recorder()
+    const store = createEditingStore(host.port, 'wf_morning', { autosaveDelayMs: 0 })
+    store.open()
+    await settle()
+
+    store.setText('id: wf_morning\nname: Typed\nsteps: []\n')
+    await store.flush()
+
+    expect(host.writes.at(-1)).toContain('Typed')
+  })
+
+  it('is dropped while a version is on screen, because the edit would be invisible', async () => {
+    const host = recorder({ versionYaml: VERSION_TWO })
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+    await store.preview(2)
+
+    // Not a refusal of what was typed, so nothing comes back to report: the
+    // document that would take it is not the one being read.
+    expect(store.setText('id: wf_morning\nname: Typed\nsteps: []\n')).toBeNull()
+    store.exitPreview()
+    expect(ready(store).definition?.name).toBe('Morning inbox triage')
+  })
+
+  it('is dropped once the session has ended, because there is nowhere to write it', async () => {
+    const host = recorder()
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+    await store.release()
+
+    expect(store.setText('id: wf_morning\nname: Typed\nsteps: []\n')).toBeNull()
+    expect(ready(store).definition?.name).toBe('Morning inbox triage')
+  })
+
+  it('may write what a command may not, and only it may', async () => {
+    const WITH_VAR = `id: wf_morning\nname: n\nversion: 1\nstatus: draft\nvars:\n  - key: digest_to\n    t: text\n    value: ""\nsteps: []\n`
+    const host = recorder({ yaml: WITH_VAR })
+    const store = createEditingStore(host.port, 'wf_morning')
+    store.open()
+    await settle()
+
+    // A key the schema's `identifier` refuses, reached two ways. The backstop is
+    // untouched for the path a gesture takes: the command is refused and the
+    // document does not move.
+    store.apply({
+      label: 'Rename',
+      apply(document: WorkflowDocument) {
+        document.ast.setIn(['vars', 0, 'key'], 'Variable 1')
+      },
+    })
+    expect(ready(store).definition).not.toBeNull()
+    expect(ready(store).refused).not.toBeNull()
+
+    // Typed into the file, the same document is taken, because the reader can
+    // see what they broke and fix it.
+    store.setText(WITH_VAR.replace('digest_to', 'Variable 1'))
+    expect(ready(store).definition).toBeNull()
+    expect(ready(store).text).toContain('Variable 1')
   })
 })

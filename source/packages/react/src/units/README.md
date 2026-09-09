@@ -2,8 +2,24 @@
 
 Presentational domain units — `NodeCard`, `Connectors`, `InsertDot`,
 `RegionBand`, `RegionNest`, `JoinMarker`, `RootNode`, `IconCoin`,
-`CanvasControls`, `SegmentBar`, and the `boxOf` helper that turns a `Rect` into
-the style that puts a box where it says.
+`CanvasControls`, `SegmentBar`, `Code`, `TextToggle`, and the `boxOf` helper
+that turns a `Rect` into the style that puts a box where it says.
+
+`TextToggle` swaps the column between the two ways of editing one document, and
+reads **YAML**. It is here rather than in the toolbar because the bar asks which
+*document* is on screen and this asks how it is *drawn*. It shares the lower end
+with `CanvasControls` rather than joining it: a corner shared is what makes it
+read as chrome, while a pill shared would put it inside a control that Text Mode
+does not draw at all — and this is the way back out of it (ADR-0026).
+
+`Code` is the odd one: it draws no part of the canvas. It is here because it is
+what the tier is — props in, events out, and it decides nothing about what a
+token *is*. Two surfaces feed it and they arrive at their tokens completely
+differently (`layouts/highlight.ts`), which is exactly why the rendering is one
+component: a string has to look like a string on **Text Mode**'s document and on
+a run's payload alike. It carries no line numbers, no gutter and no scrolling of
+its own, because one caller puts it *under* a textarea where chrome of its own
+would be chrome the caret does not know about (ADR-0027).
 
 **Rule:** props in, events out. No reaching into `@hatua/services`. Enforced by
 `noRestrictedImports` in the workspace `biome.json`.

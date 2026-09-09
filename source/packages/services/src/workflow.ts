@@ -245,10 +245,12 @@ export function setTriggerField(
 const IDENTITY = ['id', 'version', 'status'] as const
 
 /**
- * Replace the **Draft**'s content with an earlier version's, keeping the
- * **Draft**'s own identity.
+ * Write a whole YAML source into the **Draft**, keeping the **Draft**'s own
+ * identity.
  *
- * One command, so it is one entry on the undo stack and one autosave, rather
+ * Both whole-document edits take this shape: a **Restore** carrying an earlier
+ * version's bytes, and a **Text Mode** edit carrying what the user typed. One
+ * command, so either is one entry on the undo stack and one autosave rather
  * than a rewrite the user watches happen in pieces.
  *
  * ## Why the identity keys do not come across
@@ -276,14 +278,48 @@ const IDENTITY = ['id', 'version', 'status'] as const
  * they are that version's, and the ones they replace described steps that are
  * no longer here.
  */
-export function restoreContent(version: number, yaml: string): EditCommand {
+/**
+ * Give `incoming` the identity the **Draft** holds, and touch it otherwise not
+ * at all.
+ *
+ * The "not at all" is the point. `@hatua/document` returns a document that
+ * stringifies byte-identically *while untouched*, so a single write anywhere in
+ * the tree costs the whole file its comment alignment, its blank lines and its
+ * flow style. A text edit is exactly where that matters, because the user IS the
+ * serialiser: they typed the bytes, and handing back a re-serialisation is Hatua
+ * rewriting a file it does not own.
+ *
+ * So each key is compared before it is written. The overwhelmingly common case —
+ * a reader editing a document that already carries the right `id`, `version` and
+ * `status`, and not touching any of them — writes nothing and keeps every byte.
+ * A reader who DID change one gets it put back, and pays a re-serialisation for
+ * it, which is the honest cost of correcting a key that is not theirs
+ * (ADR-0005).
+ */
+export function alignIdentity(incoming: WorkflowDocument, from: WorkflowDocument): void {
+  for (const key of IDENTITY) {
+    const wanted = readAt(from, [key])
+    if (readAt(incoming, [key]) === wanted) continue
+
+    if (typeof wanted === 'string' || typeof wanted === 'number' || typeof wanted === 'boolean') {
+      setScalarIn(incoming, [], key, KEY_ORDER, wanted)
+    } else {
+      // A key the Draft does not have is not invented — it is removed from what
+      // was typed, so the two documents disagree about nothing.
+      incoming.ast.deleteIn([key])
+    }
+  }
+}
+
+export function replaceContent(label: string, yaml: string): EditCommand {
   return {
-    label: `Restore version ${version}`,
+    label,
     apply(document) {
-      // Parsed BEFORE anything is written, so a version the Host cannot serve
-      // as a single YAML document throws with the draft untouched — the store
-      // then restores nothing and reports the refusal, which is what every
-      // command here does when it cannot address what it was given.
+      // Parsed BEFORE anything is written, so a source the Host cannot serve —
+      // or a user cannot yet type — as a single YAML document throws with the
+      // draft untouched. The store then changes nothing and reports the
+      // refusal, which is what every command here does when it cannot address
+      // what it was given.
       const incoming = parseWorkflow(yaml)
 
       const kept = IDENTITY.map((key) => [key, readAt(document, [key])] as const)
@@ -301,4 +337,15 @@ export function restoreContent(version: number, yaml: string): EditCommand {
       }
     },
   }
+}
+
+/**
+ * Replace the **Draft**'s content with an earlier version's, keeping the
+ * **Draft**'s own identity.
+ *
+ * One command, so it is one entry on the undo stack and one autosave, rather
+ * than a rewrite the user watches happen in pieces.
+ */
+export function restoreContent(version: number, yaml: string): EditCommand {
+  return replaceContent(`Restore version ${version}`, yaml)
 }

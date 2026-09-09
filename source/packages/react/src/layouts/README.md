@@ -1,8 +1,8 @@
 # layouts
 
 The regions a screen is assembled from — `TopBar`, `StepList`, `Components`,
-`Workflow`, `Data`, `FlowMap`, `Inspector`, and the `TabbedPanel` that arranges
-the side panel.
+`Workflow`, `Data`, `FlowMap`, `Inspector`, `RunList`, `RunStep`, `TextMode`,
+and the `TabbedPanel` that arranges the side panel.
 
 `views/Build` puts them in the shape the design handoff specifies: the toolbar
 across the top, then three columns that are all on screen at once.
@@ -130,6 +130,9 @@ because neither needs a catalogue.
 | `Components` | The Component Manifests a Host serves, as cards. Components only — a Trigger is not a Step, and adding one is the Workflow tab's job. |
 | `Workflow` | Everything scoped to a **Board** rather than to a Step: the name and slug, the Board's root, the variables. |
 | `Data` | The reference tree the step editor expands into, announced as **References**. Read-only: drag out of it, and a variable is *edited* in the Workflow tab. Not a tab. |
+| `RunList` | This workflow's **Workflow Executions**, a page at a time. It chooses a run and opens none. |
+| `RunStep` | The pane about the run: the execution itself, or one Step's record. Edits nothing. |
+| `TextMode` | The open document as YAML. The one region that renders `text` rather than `definition`. |
 
 `Fields` is not a region and is never exported: it is the form for one Component
 Manifest's fields, over one set of values. A Trigger's fields and a Step's are
@@ -149,8 +152,71 @@ open this form in the step editor without `triggers[]` moving into `steps[]`,
 which is what would otherwise force `once`/`fixed` back and a special case into
 `removeStep`, `walkSteps`, `unknownComponents` and the layout.
 
-A run drawer belongs to `views/Runs`, not to `Build`. A **Workflow Execution**
-is read-only history; nothing in the designer edits one.
+### The Runs view, and why it taught no region about runs
+
+`views/Runs` mounts `TopBar`, a `TabbedPanel` of `RunList` and `Workflow`, the
+same `FlowMap`, and `RunStep` where `Build` puts the `Inspector`. A **Workflow
+Execution** is read-only history; nothing in the designer edits one, and nothing
+here does either.
+
+**A run is a Preview** (ADR-0025). An execution references its definition by
+version, so opening one loads the record and then puts that version on screen
+through the editing store — which is what a **Preview** already is. So the map
+draws it, the **Workflow** tab reads it, `useReadOnly()` already says no, and
+`apply()` and `publish()` already refuse. Holding a second `WorkflowDocument` in
+a runs store instead is the shape ADR-0024 rejected one level up: every region
+would coalesce, and the one that forgot would draw the **Draft**'s Steps under a
+run's marks.
+
+What the **Preview** gained is a *reason*, because two readers cannot work from a
+version number alone — the toolbar, whose preview cluster offers to restore a
+version the reader never chose, and `createValidationStore`, which would report
+today's problems against three-week-old history.
+
+**Per-Step status reaches `<FlowMap>` through a store, not a prop.** It is data —
+the whole of what the Host handed over — and this tier's rule is that data
+arrives through `<HatuaProvider>` and props carry chrome. No `ExecutionSource`,
+no marks.
+
+**The view owns the Preview for as long as it is mounted**, and both directions
+matter: arriving leaves a version chosen from the bar's list, and leaving drops
+the run's. Two ways to have a not-the-Draft document on screen is the thing
+ADR-0025 exists to avoid, and a view that left one behind would be the second.
+
+### Text Mode renders `text`, and is the only thing that does
+
+`TextMode` is the region ADR-0001 was written for. Everything else here reads
+`definition` and is empty when the document does not project; this one reads the
+text, which is why `views/Text` gives it the whole screen rather than a column
+between two blank ones.
+
+It is also the only caller of `EditingStore.setText`, which is exempt from
+ADR-0019's projection backstop. That backstop exists because a broken projection
+empties every surface and leaves the user nothing to click on to undo it, and
+neither half is true of a surface that renders the text and puts the fault under
+the caret (ADR-0026). `apply()` is untouched, and the exemption is a path of its
+own rather than a flag any command can reach for.
+
+Whether the box is holding text the document has not taken is reported out —
+`onUnsavedChange` — because a region cannot refuse to be unmounted and should not
+try. `views/Text` is what asks before the screen changes.
+
+**The colour is a second layer, not a second editor** (ADR-0027). A textarea
+cannot hold styled ranges, so the text is drawn twice: `units/Code` underneath in
+colour, and the textarea above with transparent glyphs and a real caret. Which
+means everything deciding where a character lands — face, size, line height,
+padding, wrapping — is declared once and inherited by both, and `highlight.ts` is
+held to a reassembly property rather than to appearance: a dropped character is a
+caret between the wrong glyphs, not a mis-colour.
+
+`highlight.ts` holds both producers, because the two source surfaces reach their
+tokens completely differently and must not disagree about what a string looks
+like. `yamlTokens` lexes text through `@hatua/document`, then cuts the runs
+holding a `{{ … }}` finer through `compounds/templateSpans` — derived from the
+parse, never scanned (ADR-0008). `valueTokens` walks a **Workflow Execution**'s
+payload while serialising it, so a string is coloured as a string because it is
+one; stringifying and re-reading would throw that away and make a tokeniser guess
+from quotes it had just written.
 
 ### The shape of each region on the map
 

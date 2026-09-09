@@ -75,4 +75,43 @@
     min-block-size: 0;
     border-inline-start: 1px solid var(--hatua-border-subtle);
   }
+
+  /*
+   * The map's column has to be a positioned box, because the chrome that floats
+   * over it is positioned against it: the Board tabs at the upper start, the
+   * Text toggle at the upper end, the selection's actions and the zoom below.
+   */
+  .map,
+  .column {
+    position: relative;
+  }
+
+  /*
+   * **Text Mode**: the toolbar, and the document filling everything under it.
+   *
+   * The side panel and the step editor are not merely hidden — they are absent,
+   * and the reason is not width. Every one of them WRITES to the document the
+   * text box is holding: the catalogue applies `addStep`, the Workflow tab edits
+   * the name and the Triggers, the step editor writes a Step's fields. Any of
+   * them landing while text is uncommitted replaces it, because the box adopts
+   * a change that is not its own — two writers on one document, and the one
+   * being looked at loses.
+   *
+   * They are also the map's tools: a Component is chosen to put on the canvas,
+   * and the step editor needs a selection the canvas makes. In Text Mode their
+   * subject does not exist.
+   */
+  .text {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    min-inline-size: 1240px;
+    block-size: 100%;
+    min-block-size: 0;
+    background: var(--hatua-surface-page);
+  }
+
+  .column {
+    min-inline-size: 0;
+    min-block-size: 0;
+  }
 }
