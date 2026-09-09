@@ -1,19 +1,20 @@
 @layer hatua {
   /*
-   * Floating at the upper end of whatever holds the column, which therefore has
+   * Floating at the lower end of whatever holds the column, which therefore has
    * to be a positioned box — the same bargain `CanvasControls` and `SegmentBar`
    * make, and the same logical insets, because a control belongs at the end of
    * the reading direction and moves with it.
    *
-   * The four corners of the canvas each do one job now: the Board tabs at the
-   * upper start, this at the upper end, the selection's actions at the lower
-   * start, the zoom at the lower end. It is deliberately NOT in the zoom
-   * cluster: that cluster is about scale, this is about which of the two ways of
-   * editing is on screen, and one command gets one home.
+   * With the zoom, and not in it. Sharing a corner is what makes it read as
+   * chrome rather than as something left behind in the middle of an empty
+   * canvas; sharing the pill would put it inside a control that is not drawn at
+   * all in Text Mode, which is exactly where this one still has to be — it is
+   * the way back. So the caller lifts it clear of the cluster where there is
+   * one, and it takes the corner itself where there is not.
    */
   .toggle {
     position: absolute;
-    inset-block-start: 16px;
+    inset-block-end: 16px;
     inset-inline-end: 16px;
     z-index: 1;
     padding: 4px 10px;

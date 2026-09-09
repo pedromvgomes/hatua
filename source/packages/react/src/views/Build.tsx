@@ -415,7 +415,11 @@ export function Build({ className, view = 'build', onViewChange, ...rest }: Buil
               onCollapsedRegionsChange={setFoldedRegions}
               onCollapseChange={setCollapsed}
             />
-            <TextToggle pressed={false} onToggle={() => setText(true)} />
+            <TextToggle
+              className={styles.clearsZoom}
+              pressed={false}
+              onToggle={() => setText(true)}
+            />
           </div>
           {/*
             The Data panel is the step editor's left extension, not a tab. Its

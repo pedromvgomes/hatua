@@ -181,7 +181,7 @@ export function TextMode({ className, onUnsavedChange, ...rest }: TextModeProps)
     // Misconfiguration copy: a shipped product has its ports wired, so the only
     // possible reader is the integrator — and it names what fixes it.
     return (
-      <section aria-label="Text" className={cx(styles.text, className)} {...rest}>
+      <section aria-label="YAML" className={cx(styles.text, className)} {...rest}>
         <style href="hatua-text-mode" precedence="hatua">
           {css}
         </style>
@@ -194,7 +194,7 @@ export function TextMode({ className, onUnsavedChange, ...rest }: TextModeProps)
   }
 
   return (
-    <section aria-label="Text" className={cx(styles.text, className)} {...rest}>
+    <section aria-label="YAML" className={cx(styles.text, className)} {...rest}>
       <style href="hatua-text-mode" precedence="hatua">
         {css}
       </style>

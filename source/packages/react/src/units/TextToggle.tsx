@@ -25,6 +25,19 @@ import css from './TextToggle.module.css?inline'
  * exactly the call the **References** control on the Data panel makes, for the
  * reason stated there: a control that swaps its verb *and* reports pressed
  * announces the state twice.
+ *
+ * ## Why it reads YAML
+ *
+ * Naming the format rather than the idea. *Text* is ambiguous on a canvas, where
+ * it reads as "add a text box" before it reads as "show me the file"; *Source* is
+ * short for source code and is on **Text Mode**'s avoid list in CONTEXT.md, for
+ * the reason `attempt` beat `try` — every one of these words renders inside
+ * somebody else's product, to people who have never written code. YAML is what
+ * is behind the button.
+ *
+ * The concept is still **Text Mode**, and the two are allowed to differ: `Data`
+ * announces itself as *References* for the same reason. What may NOT differ is
+ * this label and the landmark it opens, so the region answers to YAML too.
  */
 export interface TextToggleProps {
   /** Whether the column is showing the text. */
@@ -45,7 +58,7 @@ export function TextToggle({ pressed, onToggle, className }: TextToggleProps) {
         aria-pressed={pressed}
         onClick={onToggle}
       >
-        Text
+        YAML
       </button>
     </>
   )

@@ -46,6 +46,10 @@ that is not a **Workflow Definition** yet is still open and still editable here,
 surface it can be repaired on. What is typed is the file, so a text edit may leave the document
 unreadable everywhere else; what it may not change is which version the **Draft** is, which Hatua
 owns.
+The control that opens it reads **YAML**, and the landmark answers to the same word: *Text* is
+ambiguous on a canvas, where it reads as "add a text box" first. The concept keeps its name here —
+a rendered label and a domain term are allowed to differ, the way the **Data** panel announces
+itself as **References**.
 _Avoid_: code mode, source view, raw editor
 
 **Runs**:

@@ -168,7 +168,7 @@ describe('what is typed', () => {
     // through the AST, and there would be no AST.
     expect(box().value).toContain('---')
     expect(wired.writes).toEqual([])
-    expect(screen.getByRole('region', { name: 'Text' }).textContent).toContain('document')
+    expect(screen.getByRole('region', { name: 'YAML' }).textContent).toContain('document')
   })
 
   it('commits on blur, because that is the reader saying they are done', async () => {

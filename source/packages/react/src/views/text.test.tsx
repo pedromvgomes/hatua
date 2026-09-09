@@ -73,12 +73,12 @@ const box = () => screen.getByRole('textbox', { name: 'Workflow YAML' }) as HTML
 const openText = async () => {
   render(<Hatua ports={{ workflows: workflows() }} workflowId="wf_morning" />)
   await settle()
-  fireEvent.click(screen.getByRole('button', { name: 'Text' }))
+  fireEvent.click(screen.getByRole('button', { name: 'YAML' }))
   await settle()
 }
 
 /** The toggle, which is on screen in both of the states it switches between. */
-const toggle = () => screen.getByRole('button', { name: 'Text' })
+const toggle = () => screen.getByRole('button', { name: 'YAML' })
 
 beforeEach(() => {
   vi.useFakeTimers()

@@ -70,4 +70,17 @@
     text-align: center;
     text-wrap: pretty;
   }
+
+  /*
+   * Lifted to clear `CanvasControls`, which owns the corner itself.
+   *
+   * Placement is the container's job — the same rule that keeps a region from
+   * drawing its own column divider — because only the thing composing both
+   * knows they share a corner. In Text Mode there is no zoom cluster and the
+   * toggle takes the corner, which is why this is a class the caller adds
+   * rather than a state the unit holds.
+   */
+  .clearsZoom {
+    inset-block-end: 58px;
+  }
 }

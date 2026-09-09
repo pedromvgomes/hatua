@@ -1138,12 +1138,16 @@ bar says *which document*, and the toggle says *how this column draws it*. Putti
 column is what makes "the document did not change" visible rather than a rule to remember — and it is
 why a **Preview**, or the version a run ran against, can be read as text with nothing to decide.
 
-**One button, not two segments**, with `aria-pressed` saying which state it is in — the call the
+**One button reading YAML**, with `aria-pressed` saying which state it is in — the call the
 **References** control already makes, because a control that swaps its verb *and* reports pressed
-announces the state twice. It floats at the column's upper end, which leaves the canvas's four
-corners each doing one job: Board tabs upper start, this upper end, the selection's actions lower
-start, the zoom lower end. Not in the zoom cluster: that is about scale, and one command gets one
-home.
+announces the state twice. *Text* is ambiguous on a canvas, where it reads as "add a text box"
+before it reads as "show me the file"; the concept is still **Text Mode**, and the landmark answers
+to YAML too, because a label and the thing it opens must not be two names for one thing.
+
+It sits in the canvas's lower end **with** the zoom cluster and not **in** it. Sharing the corner is
+what makes it read as chrome rather than as something left in the middle of an empty canvas; sharing
+the pill would put it inside a control that is not drawn at all in Text Mode — which is exactly where
+it still has to be, because it is the way back.
 
 **Pressing it takes the side panel and the step editor with it, and not for width.** Every one of
 them *writes* to the document the box is holding — the catalogue applies `addStep`, the **Workflow**
