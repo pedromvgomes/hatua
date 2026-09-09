@@ -169,17 +169,15 @@ export function Runs({ className, view = 'runs', onViewChange, ...rest }: RunsPr
                 collapsedRegions={foldedRegions}
                 onCollapsedRegionsChange={setFoldedRegions}
                 onCollapseChange={setCollapsed}
+                leadingControl={<TextToggle pressed={false} onToggle={() => setText(true)} />}
               />
             )}
-            {/* Only once there is a version to draw: with no run open the column
-                is saying what to do, and a control that swapped how nothing is
-                drawn would be one more thing to press for no effect. */}
-            {open === 'ready' ? (
-              <TextToggle
-                className={text ? undefined : styles.clearsZoom}
-                pressed={text}
-                onToggle={() => setText((was) => !was)}
-              />
+            {/* Only once there is a version to draw, and only where the strip
+                that would otherwise hold it is not drawn: with no run open the
+                column is saying what to do, and a control that swapped how
+                nothing is drawn would be one more thing to press for no effect. */}
+            {open === 'ready' && text ? (
+              <TextToggle variant="pill" pressed onToggle={() => setText(false)} />
             ) : null}
           </div>
           <div className={styles.aside}>

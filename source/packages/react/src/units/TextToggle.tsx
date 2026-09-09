@@ -26,6 +26,14 @@ import css from './TextToggle.module.css?inline'
  * reason stated there: a control that swaps its verb *and* reports pressed
  * announces the state twice.
  *
+ * ## Two shapes, one control
+ *
+ * On the canvas it is the first member of the zoom strip — `YAML | − 100% + ⛶` —
+ * because a control sharing that corner reads as chrome, where one floating
+ * alone reads as something left behind. In **Text Mode** the strip is not drawn
+ * at all (there is no canvas to zoom), so it takes the corner itself. One
+ * component either way, so the label and the state it reports cannot drift.
+ *
  * ## Why it reads YAML
  *
  * Naming the format rather than the idea. *Text* is ambiguous on a canvas, where
@@ -43,10 +51,20 @@ export interface TextToggleProps {
   /** Whether the column is showing the text. */
   pressed: boolean
   onToggle: () => void
+  /**
+   * Where it is drawn.
+   *
+   * `inline` is a member of the canvas's control strip, which owns the corner
+   * and the shell. `pill` stands on its own, which is what **Text Mode** needs:
+   * the strip is the canvas's and the canvas is not drawn there, and this is the
+   * control that gets back out — so it cannot only exist inside the thing it
+   * leaves.
+   */
+  variant?: 'inline' | 'pill'
   className?: string
 }
 
-export function TextToggle({ pressed, onToggle, className }: TextToggleProps) {
+export function TextToggle({ pressed, onToggle, variant = 'inline', className }: TextToggleProps) {
   return (
     <>
       <style href="hatua-text-toggle" precedence="hatua">
@@ -54,7 +72,7 @@ export function TextToggle({ pressed, onToggle, className }: TextToggleProps) {
       </style>
       <button
         type="button"
-        className={cx(styles.toggle, className)}
+        className={cx(styles.toggle, variant === 'pill' && styles.pill, className)}
         aria-pressed={pressed}
         onClick={onToggle}
       >

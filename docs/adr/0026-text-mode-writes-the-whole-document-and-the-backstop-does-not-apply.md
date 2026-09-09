@@ -42,13 +42,19 @@ beat `try`: these words render inside somebody else's product, to people who hav
 never written code. The concept keeps its name; the landmark follows the control,
 because a label and the thing it opens must not be two names for one thing.
 
-**It shares the lower corner with the zoom cluster rather than joining it.**
-Sharing the corner is what stops it reading as something left in the middle of an
-empty canvas. Sharing the pill would put it inside `CanvasControls`, which Text
-Mode does not draw at all — and this is the control that gets back out of Text
-Mode, so it is the one thing that may not live there. Which of the two positions
-it takes is the composing view's to say, because only the thing rendering both
-knows they share a corner.
+**On the canvas it is the head of the zoom strip** — `YAML | − 100% + ⛶`.
+Floating alone it read as something left behind in an empty canvas; in the strip
+it reads as chrome, which is what it is.
+
+It cannot only live there. `CanvasControls` is not drawn in **Text Mode** at all
+— there is no canvas to zoom — and this is the control that gets back *out* of
+Text Mode, so it takes the corner itself there. One component in both places, so
+the label and the state it reports cannot drift.
+
+`CanvasControls` therefore takes a `leading` slot rather than a `yaml` prop, and
+`<FlowMap>` forwards one: the canvas owns where that strip *sits*, and what else
+belongs beside the zoom is the composing view's question. Neither has to know
+what Text Mode is.
 
 ## Why the columns beside it go
 
