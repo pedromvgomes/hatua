@@ -2,8 +2,14 @@
 
 Presentational domain units — `NodeCard`, `Connectors`, `InsertDot`,
 `RegionBand`, `RegionNest`, `JoinMarker`, `RootNode`, `IconCoin`,
-`CanvasControls`, `SegmentBar`, `Code`, and the `boxOf` helper that turns a
-`Rect` into the style that puts a box where it says.
+`CanvasControls`, `SegmentBar`, `Code`, `TextToggle`, and the `boxOf` helper
+that turns a `Rect` into the style that puts a box where it says.
+
+`TextToggle` swaps the column between the two ways of editing one document. It is
+here rather than in the toolbar because the bar asks which *document* is on
+screen and this asks how it is *drawn* — and floating at the column's upper end
+leaves the canvas's four corners each doing one job: Board tabs upper start, this
+upper end, the selection's actions lower start, the zoom lower end (ADR-0026).
 
 `Code` is the odd one: it draws no part of the canvas. It is here because it is
 what the tier is — props in, events out, and it decides nothing about what a

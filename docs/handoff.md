@@ -58,7 +58,9 @@ by the playground.
 | --- | --- |
 | Build | **Workflow**, **Components** |
 | Runs | **Runs**, **Workflow** |
-| Text | none — the editor is the whole screen |
+
+Either view's column draws the document as the map or as text; **Build** in Text Mode has no tabs at
+all, because the panels go with the map (below).
 
 The **Workflow** tab is not made read-only for the Runs view. It asks `useReadOnly()` like every
 other region, and a run is a **Preview** (ADR-0025), so it already answers no.
@@ -428,10 +430,13 @@ control — `v5 · Draft`, opening to a list from `listVersions`, newest first, 
 status spelled `draft | published | archived` as the schema spells it.
 
 Right cluster carries **Publish**, **Release**, **Discard**, and the segmented control that says
-which of the three views is up — **Build**, **Text**, **Runs**. **Runs** is drawn only where the Host
-serves an `ExecutionSource`, which is what "omit entirely and the Runs view is hidden" means; **Text**
-is always drawn, because the store always has text. Which view is up is chrome the bar reports and
-`<Hatua>` holds (ADR-0011, ADR-0025).
+which *document* is on screen — **Build** or **Runs**. It is drawn only where the Host serves an
+`ExecutionSource`, which is what "omit entirely and the Runs view is hidden" means, and with no port
+the whole control goes rather than one segment: **Runs** is the only thing it can switch to. Which
+view is up is chrome the bar reports and `<Hatua>` holds (ADR-0011, ADR-0025).
+
+**Text Mode is not one of the segments.** How a column draws the document it already has is the
+column's own question, and it is asked by a toggle sitting on the column.
 
 There is no **Save changes** button. Editing autosaves (ADR-0005), and the flag behind that button
 is not a thing to render.
@@ -1124,15 +1129,33 @@ of a version nobody picked.
 
 ## Text Mode
 
-The same **Workflow Definition**, as the YAML it is. Whole-screen, and reached from the same
-segmented control: **Build**, **Text**, **Runs** are three answers to *what is the whole screen
-showing*.
+The same **Workflow Definition**, as the YAML it is — reached from a **toggle on the column**, not
+from the toolbar.
 
-**Whole-screen is the decision, not a simplification.** The state this view exists for is a document
-that is not a **Workflow Definition** yet — and there the side panel, the canvas and the step editor
-are all empty, because every one of them reads `definition`. A text box between two blank columns is
-what the alternative arrangement draws. ADR-0011 already refused the side panel for a whole-document
-control, at 304px and scrolling.
+**The map and the text are two ways of editing one document** (ADR-0001, and CONTEXT.md defines both
+that way), while **Runs** puts a different document on screen. Two questions, so two controls: the
+bar says *which document*, and the toggle says *how this column draws it*. Putting the toggle on the
+column is what makes "the document did not change" visible rather than a rule to remember — and it is
+why a **Preview**, or the version a run ran against, can be read as text with nothing to decide.
+
+**One button, not two segments**, with `aria-pressed` saying which state it is in — the call the
+**References** control already makes, because a control that swaps its verb *and* reports pressed
+announces the state twice. It floats at the column's upper end, which leaves the canvas's four
+corners each doing one job: Board tabs upper start, this upper end, the selection's actions lower
+start, the zoom lower end. Not in the zoom cluster: that is about scale, and one command gets one
+home.
+
+**Pressing it takes the side panel and the step editor with it, and not for width.** Every one of
+them *writes* to the document the box is holding — the catalogue applies `addStep`, the **Workflow**
+tab edits the name and the Triggers, the step editor writes a Step's fields — and the box adopts any
+change that is not its own commit, so one landing mid-edit replaces what was typed. Two writers on
+one document, and the one being looked at loses. They are also the map's tools: a Component is chosen
+to put on the canvas, and the step editor edits what a canvas selection names. In Text Mode their
+subject does not exist.
+
+**In the Runs view they stay**, on the rule that decides it — *hide what cannot act*. Nothing there
+writes, and reading a failed Step's record beside the YAML of the version that ran is what that view
+is for.
 
 **What is typed becomes the document on a quiet period**, the same 800ms autosave waits — there is no
 Save button (ADR-0005), and a commit per keystroke is an undo entry per keystroke over YAML that is

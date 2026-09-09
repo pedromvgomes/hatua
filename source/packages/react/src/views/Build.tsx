@@ -6,13 +6,16 @@ import { Data } from '../layouts/Data'
 import { FlowMap } from '../layouts/FlowMap'
 import { Inspector } from '../layouts/Inspector'
 import { TabbedPanel } from '../layouts/TabbedPanel'
+import { TextMode } from '../layouts/TextMode'
 import type { BarView } from '../layouts/TopBar'
 import { TopBar } from '../layouts/TopBar'
 import { boardTabLabel, Workflow } from '../layouts/Workflow'
 import { cx } from '../primitives/classNames'
 import { useEditingStore } from '../theme/HatuaProvider'
+import { TextToggle } from '../units/TextToggle'
 import styles from './Build.module.css'
 import css from './Build.module.css?inline'
+import { useLeavingText } from './leavingText'
 
 export interface BuildProps extends ComponentPropsWithRef<'div'> {
   /**
@@ -139,6 +142,17 @@ export function Build({ className, view = 'build', onViewChange, ...rest }: Buil
   const [highlight, setHighlight] = useState<string | null>(null)
   const selected = selectedOn[boardKey(board)]
 
+  /*
+   * Which of the two ways of editing is on screen.
+   *
+   * Held here rather than lifted, because nothing outside this view has an
+   * opinion about it: the bar asks which DOCUMENT is up and this asks how it is
+   * drawn, and ADR-0001 pairs the map and the text as two ways of editing one
+   * (ADR-0026). A caller that wanted to choose has the other embedding.
+   */
+  const [text, setText] = useState(false)
+  const leaving = useLeavingText()
+
   /**
    * Read at click time, not at render time. <Build> deliberately does not
    * subscribe to the editing store — it places regions, and a re-render of the
@@ -162,6 +176,36 @@ export function Build({ className, view = 'build', onViewChange, ...rest }: Buil
     }
   }
 
+  /**
+   * The bar's own switch, wrapped so the question about unapplied text is asked
+   * before the screen changes rather than after.
+   */
+  const changeView = onViewChange
+    ? (next: BarView) => leaving.guard(text, () => onViewChange(next))
+    : undefined
+
+  if (text) {
+    return (
+      <>
+        <style href="hatua-build" precedence="hatua">
+          {css}
+        </style>
+        <div className={cx(styles.scroller, className)} {...rest}>
+          <div className={styles.text}>
+            <div className={styles.bar}>
+              <TopBar view={view} onViewChange={changeView} />
+            </div>
+            <div className={styles.column}>
+              <TextMode onUnsavedChange={leaving.onUnsavedChange} />
+              <TextToggle pressed onToggle={() => leaving.guard(true, () => setText(false))} />
+            </div>
+          </div>
+        </div>
+        {leaving.dialog}
+      </>
+    )
+  }
+
   return (
     <>
       <style href="hatua-build" precedence="hatua">
@@ -172,7 +216,7 @@ export function Build({ className, view = 'build', onViewChange, ...rest }: Buil
           <div className={styles.bar}>
             <TopBar
               view={view}
-              onViewChange={onViewChange}
+              onViewChange={changeView}
               /*
                * Where a blocking problem actually is.
                *
@@ -371,6 +415,7 @@ export function Build({ className, view = 'build', onViewChange, ...rest }: Buil
               onCollapsedRegionsChange={setFoldedRegions}
               onCollapseChange={setCollapsed}
             />
+            <TextToggle pressed={false} onToggle={() => setText(true)} />
           </div>
           {/*
             The Data panel is the step editor's left extension, not a tab. Its

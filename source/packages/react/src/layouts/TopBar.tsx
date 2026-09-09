@@ -74,16 +74,19 @@ export interface TopBarProps extends ComponentPropsWithRef<'section'> {
 }
 
 /**
- * The three whole-screen states, which is what the segmented control switches
- * between. **Text** is always one of them because the store always has text;
- * **Runs** is one only where the Host serves the port (ADR-0011, ADR-0025).
+ * Which document is on screen: the one being edited, or one that ran.
+ *
+ * Two and not three. **Text Mode** is not here, and that is the distinction the
+ * control exists to keep: ADR-0001 has a user editing one **Workflow
+ * Definition** two ways, on the map and as text, so which of those is drawn is a
+ * question about *how* — asked by the toggle on the column, where the answer is
+ * visible. This asks *which*, and only **Runs** changes it (ADR-0011, ADR-0025).
  */
-export type BarView = 'build' | 'text' | 'runs'
+export type BarView = 'build' | 'runs'
 
 /** What each segment reads. `Build` is the designer, as the design of record names it. */
 const VIEW_LABEL: Record<BarView, string> = {
   build: 'Build',
-  text: 'Text',
   runs: 'Runs',
 }
 
@@ -158,19 +161,21 @@ type Layer = { kind: 'versions' | 'problems'; anchor: HTMLElement } | null
  * No **Save changes** button — editing autosaves (ADR-0005) and the flag behind
  * that button is not a thing to render.
  *
- * ## The segmented control says which screen is up, and owns none of them
+ * ## The segmented control says which document is on screen, and owns neither
  *
- * **Build**, **Text** and **Runs** are three answers to *what is the whole
- * screen showing*, so one control switches between them and a caller holds
- * which one it is — the shape `<TabbedPanel>` uses for which tab is open. Drawn
- * only where it goes somewhere: without `onViewChange` there is nothing above
- * this to switch, and without an `ExecutionSource` there is no **Runs** view, so
- * that segment is absent rather than dead. **Text** is always offered, because
- * the store always has text.
+ * **Build** and **Runs**, and deliberately not **Text Mode**: this asks *which*
+ * document, and how that document is drawn — on the map or as text — is the
+ * column's own question, asked by the toggle that sits on it. One control
+ * carrying both would say the two were the same kind of choice.
+ *
+ * Drawn only where it goes somewhere: without `onViewChange` there is nothing
+ * above this to switch, and without an `ExecutionSource` there is no **Runs**
+ * view, so that segment is absent rather than dead — leaving one segment, which
+ * is why the whole control goes with it.
  *
  * It sits inside the cluster that is drawn once a document is open, and that is
- * the honest place for it: all three views draw the document, so with none open
- * there is nothing to switch between.
+ * the honest place for it: both views draw a document, so with none open there
+ * is nothing to switch between.
  *
  * ## Three clusters, not two
  *
@@ -805,36 +810,39 @@ export function TopBar({
               ) : null}
 
               {/*
-               * Which whole-screen state is up.
+               * Which document is on screen.
                *
                * First in the cluster, because it is the only control here that
-               * is not about the document — the three below act on the Draft,
-               * and this says which screen the reader is on. Drawn only where
-               * it goes somewhere: no handler, no control, and no
-               * `ExecutionSource`, no **Runs** segment.
+               * is not about the Draft — the three below act on it, and this
+               * says which document is being read.
+               *
+               * Drawn only where it goes somewhere, which takes the whole
+               * control and not just a segment: **Runs** is the only thing it
+               * can switch to, so without the port one segment would be left
+               * alone and its every press would do nothing. That is worse than
+               * no control, and it is the same call the version list makes
+               * about a row that goes nowhere.
                */}
-              {onViewChange ? (
+              {onViewChange && executions ? (
                 // A fieldset is a form control grouping and wants a legend.
                 // These are navigation buttons in a toolbar, and a fieldset here
-                // would put a form landmark in the Host's page for three of them.
+                // would put a form landmark in the Host's page for two of them.
                 // biome-ignore lint/a11y/useSemanticElements: a group of buttons is not a form
                 <div className={styles.views} role="group" aria-label="View">
-                  {(['build', 'text', 'runs'] as const).map((one) =>
-                    one === 'runs' && !executions ? null : (
-                      <button
-                        key={one}
-                        type="button"
-                        className={styles.view}
-                        // A pressed toggle rather than a tab: there is no
-                        // tabpanel here — what changes is the whole screen under
-                        // the bar, which several regions draw.
-                        aria-pressed={view === one}
-                        onClick={() => onViewChange(one)}
-                      >
-                        {VIEW_LABEL[one]}
-                      </button>
-                    ),
-                  )}
+                  {(['build', 'runs'] as const).map((one) => (
+                    <button
+                      key={one}
+                      type="button"
+                      className={styles.view}
+                      // A pressed toggle rather than a tab: there is no tabpanel
+                      // here — what changes is the whole screen under the bar,
+                      // which several regions draw.
+                      aria-pressed={view === one}
+                      onClick={() => onViewChange(one)}
+                    >
+                      {VIEW_LABEL[one]}
+                    </button>
+                  ))}
                 </div>
               ) : null}
 

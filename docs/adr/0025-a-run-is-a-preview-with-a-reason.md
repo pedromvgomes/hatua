@@ -68,6 +68,11 @@ is already not drawn during a preview, so the markers on the canvas are the only
   with no run there is no version — so the middle column is a placeholder rather than `<FlowMap>`.
   Drawing the **Draft** there would answer "which run am I looking at" with a document that is not a
   run at all.
+- **The run's version can be read as text, and no rule was needed to allow it.** The toggle that
+  swaps a column between the map and the text belongs to the column and not to the toolbar
+  (ADR-0026), so pressing it in the **Runs** view draws the version the run references as YAML —
+  read-only, because `useReadOnly()` already says so. Nothing about which document is on screen
+  changed, which is precisely why there is nothing to decide.
 - **The segmented control is drawn only where it goes somewhere.** `ExecutionSource` says "omit
   entirely and the **Runs** view is hidden", and that stays the rule: the port is absent, the segment
   is absent. Its methods are not individually optional — a Host that can list runs and not load one

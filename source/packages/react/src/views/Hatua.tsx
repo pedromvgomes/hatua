@@ -4,20 +4,24 @@ import type { Theme } from '../theme/createTheme'
 import { type ColorMode, HatuaProvider, type HostPorts } from '../theme/HatuaProvider'
 import { Build } from './Build'
 import { Runs } from './Runs'
-import { Text } from './Text'
 
 /**
  * The Hatua workflow designer.
  *
- * Renders the whole screen for the common case: the provider, and one of the
- * three views inside it. A Host writes this and nothing else.
+ * Renders the whole screen for the common case: the provider, and one of the two
+ * views inside it. A Host writes this and nothing else.
  *
  * **Which view is up is held here**, because this is the only thing that renders
- * all three. It is chrome and never reaches the document, the same line ADR-0001
- * draws around node positions — and it is not a prop, because a Host that wants
- * to decide has the other embedding, where it mounts the view it wants inside its
- * own <HatuaProvider>. The bar draws the control and owns none of the views
+ * both. It is chrome and never reaches the document, the same line ADR-0001 draws
+ * around node positions — and it is not a prop, because a Host that wants to
+ * decide has the other embedding, where it mounts the view it wants inside its
+ * own <HatuaProvider>. The bar draws the control and owns neither view
  * (ADR-0011).
+ *
+ * **Text Mode is not one of them.** It is how a view's column draws the document
+ * it already has, so each view holds that for itself and the toggle sits on the
+ * column — which is what makes "the document did not change" visible rather than
+ * a rule to remember (ADR-0026).
  *
  * It takes no children, and that is a decision rather than an omission. Until
  * now children were the only thing it could render, because there was no screen
@@ -73,8 +77,6 @@ export function Hatua({ theme, colorMode, ports, workflowId }: HatuaProps) {
       */}
       {view === 'runs' ? (
         <Runs view={view} onViewChange={setView} />
-      ) : view === 'text' ? (
-        <Text view={view} onViewChange={setView} />
       ) : (
         <Build view={view} onViewChange={setView} />
       )}

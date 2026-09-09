@@ -10,21 +10,66 @@ We decided **Text Mode** is a whole-screen view, that a text edit is one command
 document, and that [ADR-0019](0019-a-command-may-not-break-the-projection.md)'s backstop does not
 stand in its way.
 
-## Why the whole screen
+## Why it is a toggle on the column, and not a view
 
-A text edit is an edit to the same document the canvas edits, so putting the editor in the middle
-column beside the catalogue and the step editor is the arrangement that reads as most consistent. It
-is wrong for the state this screen exists for.
+The map and the text are **two ways of editing one document**. ADR-0001 opens with
+exactly that, and CONTEXT.md defines **Canvas Mode** and **Text Mode** as editing
+the same **Workflow Definition**. **Runs** is not a way of editing anything: it
+puts a *different document* on screen.
 
-A document that is not a **Workflow Definition** yet empties the side panel, the canvas and the step
-editor at once — every one of them reads `definition`, and `definition` is null. Text Mode is the
-only surface with anything to say, and in the arrangement above it would say it in a box between two
-blank columns. The same argument answers the side panel: [ADR-0011](0011-version-navigation-lives-in-the-top-bar.md)
-already refused putting a whole-document control in a 304px column that scrolls.
+So there are two questions, not one — *which document* and *how it is drawn* — and
+a single control offering Build, Text and Runs says they are the same kind of
+choice. The toolbar keeps `Build | Runs`, which is what
+[ADR-0011](0011-version-navigation-lives-in-the-top-bar.md) says its segmented
+control is for, and how a column draws what it already has belongs to the column.
 
-So Text Mode is a peer of the designer and of **Runs**, reached from the same segmented control,
-because all three are answers to *what is the whole screen showing*. Unlike **Runs** it is always
-offered: the store always has text, including when it has nothing else.
+Putting the control there is also what makes *the document did not change* visible
+rather than a rule to remember: it is inside the thing showing the document. And
+it falls out that a **Preview** — a version chosen from the list, or the version a
+run ran against — can be read as text without any rule about what a view switch
+does to it, because switching representation was never a question about which
+document is up.
+
+**One button, not two segments.** One label in both states with `aria-pressed`
+saying which one it is in, which is the call the **References** control already
+makes: a control that swaps its verb *and* reports pressed announces the state
+twice.
+
+## Why the columns beside it go
+
+Pressing it takes the side panel and the step editor with it, and the reason is
+not width.
+
+**Every one of them writes to the document the text box is holding.** The
+catalogue applies `addStep`, the **Workflow** tab edits the name, the Triggers and
+the variables, the step editor writes a Step's fields. `<TextMode>` holds what is
+typed until the quiet period and adopts any change that is not its own commit — so
+one of those landing mid-edit replaces what the reader typed. Two writers on one
+document, and the one being looked at loses.
+
+Leaving them on screen but inert is not the answer either: a control that is live
+and does nothing reads as a fault, which is the argument `CanvasControls` makes
+about the ends of the zoom range.
+
+There is a second reason that makes it read as intended rather than arbitrary:
+they are **the map's tools**. A Component is chosen from the catalogue to put on
+the canvas; the step editor edits the Step a canvas selection names. In Text Mode
+their subject does not exist.
+
+**In the Runs view they stay**, and the rule that decides it is *hide what cannot
+act*. Nothing there writes: `RunList` picks which run, `RunStep` describes it, and
+the text shows the version it ran against — three readers on one subject, and
+reading a failed Step's record beside the YAML of the version that ran is what
+that view is for.
+
+## Why the document, not a box in a column
+
+The state this screen exists for is a document that is not a **Workflow
+Definition** yet — and there the side panel's **Workflow** tab and the step editor
+have nothing to draw, because both read `definition`. Giving the text the room is
+therefore not a concession to width; it is the same fact as the paragraph above,
+seen from the other side. What the reader needs on that screen is the text and the
+catalogue, and the catalogue is the one panel that would still work.
 
 ## Why the backstop does not apply
 
@@ -78,6 +123,19 @@ served in error.
   *readable*, which is the point: the handoff's open question — "a halt the claim cannot resume has
   no escape", where the in-memory document is intact and saved nowhere — is answered by being able to
   select the text and take it away.
+- **A text edit gives back the bytes that were typed.** The document becomes the source rather than
+  the source being written into the document, so `toString()` returns what the reader wrote. Splicing
+  parsed contents into the document already held discards the CST that makes `@hatua/document`'s
+  round trip exact, and everything the serialiser has an opinion about comes back its way instead of
+  the author's — flow style respaced, blank lines collapsed, a trailing newline supplied, a comment
+  aligned by hand pulled back to one space. On a quiet 800ms timer, while they watch. That is
+  ADR-0001's promise inverted, and it is worst here of all places, because in **Text Mode** the
+  author IS the serialiser.
+  `alignIdentity` writes `id`, `version` and `status` back **only where they differ**, because a
+  single write anywhere costs the whole file its formatting — so the common case, editing a document
+  that already carries them, touches nothing. A **Restore** still splices, and is right to: it
+  carries another version's bytes into the document the **Draft** already is, and the reader did not
+  type them.
 - **No dirty flag.** Whether the document has moved is `toString()` against what the Host last
   accepted, which is how the store already asks. A flag a caller has to remember to set is the
   anti-pattern this repository names by example.

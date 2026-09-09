@@ -46,6 +46,9 @@
     grid-column: 2;
     min-inline-size: 0;
     min-block-size: 0;
+    /* Positioned, because the chrome floating over it — the Board tabs, the
+       zoom, the Text toggle — is positioned against it. */
+    position: relative;
   }
 
   .aside {

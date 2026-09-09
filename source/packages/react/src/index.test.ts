@@ -27,7 +27,6 @@ describe('@hatua/react exports', () => {
       'Select',
       'StepList',
       'TabbedPanel',
-      'Text',
       'TextMode',
       'Toast',
       'Toggle',

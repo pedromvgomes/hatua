@@ -1,0 +1,50 @@
+@layer hatua {
+  /*
+   * Floating at the upper end of whatever holds the column, which therefore has
+   * to be a positioned box — the same bargain `CanvasControls` and `SegmentBar`
+   * make, and the same logical insets, because a control belongs at the end of
+   * the reading direction and moves with it.
+   *
+   * The four corners of the canvas each do one job now: the Board tabs at the
+   * upper start, this at the upper end, the selection's actions at the lower
+   * start, the zoom at the lower end. It is deliberately NOT in the zoom
+   * cluster: that cluster is about scale, this is about which of the two ways of
+   * editing is on screen, and one command gets one home.
+   */
+  .toggle {
+    position: absolute;
+    inset-block-start: 16px;
+    inset-inline-end: 16px;
+    z-index: 1;
+    padding: 4px 10px;
+    border: 1px solid var(--hatua-border-subtle);
+    border-radius: var(--hatua-radius-md);
+    /* Opaque, because in Text Mode it floats over the document's first lines
+       and a translucent control there would leave characters showing through
+       its own label. */
+    background: var(--hatua-surface-card);
+    box-shadow: 0 4px 14px var(--hatua-shadow-color);
+    color: var(--hatua-text-secondary);
+    font: inherit;
+    font-size: 0.75rem;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .toggle:hover {
+    color: var(--hatua-text-primary);
+  }
+
+  .toggle:focus-visible {
+    outline: var(--hatua-focus-ring);
+    outline-offset: 1px;
+  }
+
+  /* On. The same lift the segmented control's chosen segment takes, so "this is
+     the state you are in" reads the same way wherever it is said. */
+  .toggle[aria-pressed="true"] {
+    border-color: var(--hatua-border-accent);
+    background: var(--hatua-accent-wash);
+    color: var(--hatua-text-accent);
+  }
+}
