@@ -1584,16 +1584,21 @@ describe('which screen is up', () => {
     expect(screen.queryByRole('group', { name: 'View' })).toBeNull()
   })
 
-  it('offers Build and Text, and not Runs, when the Host serves no run history', async () => {
+  it('draws no control at all when the Host serves no run history', async () => {
     mount(host(), { onViewChange: () => {} })
     await screen.findByText('Morning inbox triage')
 
-    // `ExecutionSource` says "omit entirely and the Runs view is hidden", and
-    // this is that rule read through the composition root. **Text** is always
-    // offered, because the store always has text.
-    expect(screen.getByRole('button', { name: 'Build' })).toBeDefined()
-    expect(screen.getByRole('button', { name: 'Text' })).toBeDefined()
-    expect(screen.queryByRole('button', { name: 'Runs' })).toBeNull()
+    /*
+     * `ExecutionSource` says "omit entirely and the Runs view is hidden", and
+     * **Runs** is the only thing this control can switch to — so without the
+     * port the whole control goes, not just a segment. One segment left alone is
+     * a control whose every press does nothing.
+     *
+     * **Text Mode** is not among the segments either way: this asks which
+     * document is on screen, and how it is drawn is the column's own question.
+     */
+    expect(screen.queryByRole('group', { name: 'View' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Text' })).toBeNull()
   })
 
   it('offers Runs once the port is there', async () => {
@@ -1605,15 +1610,15 @@ describe('which screen is up', () => {
 
   it('says which one is up, and reports a press rather than acting on it', async () => {
     const asked: BarView[] = []
-    mount(host(), { onViewChange: (next) => asked.push(next), view: 'build' })
+    mount(host(), { onViewChange: (next) => asked.push(next), view: 'build', executions: RUNS })
     await screen.findByText('Morning inbox triage')
 
     // Pressed rather than selected: there is no tabpanel here, and what changes
-    // is the whole screen under the bar.
+    // is which document every region under the bar is reading.
     expect(screen.getByRole('button', { name: 'Build' }).getAttribute('aria-pressed')).toBe('true')
-    expect(screen.getByRole('button', { name: 'Text' }).getAttribute('aria-pressed')).toBe('false')
+    expect(screen.getByRole('button', { name: 'Runs' }).getAttribute('aria-pressed')).toBe('false')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Text' }))
-    expect(asked).toEqual(['text'])
+    fireEvent.click(screen.getByRole('button', { name: 'Runs' }))
+    expect(asked).toEqual(['runs'])
   })
 })

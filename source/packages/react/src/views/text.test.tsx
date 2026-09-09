@@ -12,8 +12,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Hatua } from './Hatua'
 
 /**
- * The one thing `views/Text` adds over the region it mounts: it asks before the
- * screen changes under text the document has not taken.
+ * **Text Mode** as a view composes it: reached from the toggle on the column,
+ * taking the columns beside it with it, and asking before the screen changes
+ * under text the document has not taken.
+ *
+ * The toggle is on the column rather than in the toolbar because the map and
+ * the text are two ways of editing ONE document (ADR-0001) — so switching
+ * between them changes nothing about which document is on screen, and the
+ * control sits inside the thing showing it (ADR-0026).
  *
  * `<TextMode>` commits on a quiet period, so the only text it can still be
  * holding is text that will not parse — and nothing else on screen could ever
@@ -63,13 +69,16 @@ const settle = async () => {
 
 const box = () => screen.getByRole('textbox', { name: 'Workflow YAML' }) as HTMLTextAreaElement
 
-/** Open the designer and switch to Text Mode, which is how a reader arrives. */
+/** Open the designer and press the toggle, which is how a reader arrives. */
 const openText = async () => {
   render(<Hatua ports={{ workflows: workflows() }} workflowId="wf_morning" />)
   await settle()
   fireEvent.click(screen.getByRole('button', { name: 'Text' }))
   await settle()
 }
+
+/** The toggle, which is on screen in both of the states it switches between. */
+const toggle = () => screen.getByRole('button', { name: 'Text' })
 
 beforeEach(() => {
   vi.useFakeTimers()
@@ -79,15 +88,43 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-describe('the Text view', () => {
-  it('is reached from the segmented control and takes the whole screen', async () => {
+describe('Text Mode in the designer', () => {
+  it('is reached from a toggle on the column, not from the toolbar', async () => {
+    render(<Hatua ports={{ workflows: workflows() }} workflowId="wf_morning" />)
+    await settle()
+
+    // The bar asks which DOCUMENT is on screen and this asks how it is drawn.
+    // With no `ExecutionSource` there is no other document, so the bar carries
+    // no view control at all — and the toggle is still here.
+    expect(screen.queryByRole('group', { name: 'View' })).toBeNull()
+    expect(toggle()).toBeDefined()
+    expect(toggle().getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('takes the columns beside it, because they cannot act on the text', async () => {
     await openText()
 
     expect(box()).toBeDefined()
-    // Whole-screen: the state this view exists for empties the side panel, the
-    // canvas and the step editor at once, so none of them is beside it.
+    expect(toggle().getAttribute('aria-pressed')).toBe('true')
+    /*
+     * Not merely hidden — absent, and not for width. Each of them WRITES to the
+     * document the box is holding, so one landing while text is uncommitted
+     * would replace it: two writers, and the one being looked at loses. They are
+     * also the map's tools, and in Text Mode their subject does not exist.
+     */
     expect(screen.queryByRole('region', { name: 'Flow map' })).toBeNull()
     expect(screen.queryByRole('region', { name: 'Components' })).toBeNull()
+    expect(screen.queryByRole('complementary', { name: 'Inspector' })).toBeNull()
+  })
+
+  it('goes back to the map, on the same control', async () => {
+    await openText()
+
+    fireEvent.click(toggle())
+    await settle()
+
+    expect(screen.getByRole('region', { name: 'Flow map' })).toBeDefined()
+    expect(screen.queryByRole('textbox', { name: 'Workflow YAML' })).toBeNull()
   })
 
   it('leaves without asking when the document has taken what was typed', async () => {
@@ -97,7 +134,7 @@ describe('the Text view', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(2000)
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Build' }))
+    fireEvent.click(toggle())
     await settle()
 
     expect(screen.queryByRole('dialog')).toBeNull()
@@ -114,7 +151,7 @@ describe('the Text view', () => {
       await vi.advanceTimersByTimeAsync(2000)
     })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Build' }))
+    fireEvent.click(toggle())
     await settle()
 
     expect(screen.getByRole('dialog')).toBeDefined()
@@ -128,7 +165,7 @@ describe('the Text view', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(2000)
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Build' }))
+    fireEvent.click(toggle())
     await settle()
 
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
@@ -144,7 +181,7 @@ describe('the Text view', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(2000)
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Build' }))
+    fireEvent.click(toggle())
     await settle()
 
     fireEvent.click(screen.getByRole('button', { name: 'Leave' }))

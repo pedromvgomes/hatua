@@ -4,11 +4,13 @@ import { FlowMap } from '../layouts/FlowMap'
 import { RunList } from '../layouts/RunList'
 import { RunStep } from '../layouts/RunStep'
 import { TabbedPanel } from '../layouts/TabbedPanel'
+import { TextMode } from '../layouts/TextMode'
 import type { BarView } from '../layouts/TopBar'
 import { TopBar } from '../layouts/TopBar'
 import { boardTabLabel, Workflow } from '../layouts/Workflow'
 import { cx } from '../primitives/classNames'
 import { useEditingStore, useExecutionStore } from '../theme/HatuaProvider'
+import { TextToggle } from '../units/TextToggle'
 import styles from './Runs.module.css'
 import css from './Runs.module.css?inline'
 
@@ -56,6 +58,20 @@ export function Runs({ className, view = 'runs', onViewChange, ...rest }: RunsPr
   const [foldedRegions, setFoldedRegions] = useState<readonly RegionRef[]>([])
   const [tab, setTab] = useState('runs')
   const selected = selectedOn[boardKey(board)]
+
+  /*
+   * Which of the two ways of drawing the version is on screen.
+   *
+   * The panels stay either way, and that is the difference from the designer:
+   * there they are the map's tools and a second writer on the document, and here
+   * nothing writes at all. `RunList` picks which run, `RunStep` describes it, and
+   * the text shows the version it ran against — three readers on one subject,
+   * which is what this view is for.
+   *
+   * No leave guard for the same reason: `useReadOnly()` is true throughout, so
+   * the box never holds an edit to lose.
+   */
+  const [text, setText] = useState(false)
 
   const open = useSyncExternalStore(
     executions ? executions.subscribe : subscribeToNothing,
@@ -131,7 +147,11 @@ export function Runs({ className, view = 'runs', onViewChange, ...rest }: RunsPr
             />
           </div>
           <div className={styles.map}>
-            {open === 'ready' ? (
+            {open !== 'ready' ? (
+              <p className={styles.empty}>Pick a run to see it on the map.</p>
+            ) : text ? (
+              <TextMode />
+            ) : (
               <FlowMap
                 boardId={board}
                 onBoardChange={setBoard}
@@ -150,9 +170,13 @@ export function Runs({ className, view = 'runs', onViewChange, ...rest }: RunsPr
                 onCollapsedRegionsChange={setFoldedRegions}
                 onCollapseChange={setCollapsed}
               />
-            ) : (
-              <p className={styles.empty}>Pick a run to see it on the map.</p>
             )}
+            {/* Only once there is a version to draw: with no run open the column
+                is saying what to do, and a control that swapped how nothing is
+                drawn would be one more thing to press for no effect. */}
+            {open === 'ready' ? (
+              <TextToggle pressed={text} onToggle={() => setText((was) => !was)} />
+            ) : null}
           </div>
           <div className={styles.aside}>
             <RunStep selected={selected ?? null} />

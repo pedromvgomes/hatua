@@ -74,13 +74,20 @@ whatever the history holds, because its other job is the readout, and because `l
 fetched until the list is opened: a bar that hid itself would have to pay for that request on every
 mount, on every screen carrying the toolbar, for every user who never opens it.
 
-The segmented control beside them is **not** this bar's decision about versions, and it is drawn:
-`ExecutionSource` gives **Runs** a view to switch to, and ADR-0001's second way of editing gives
-**Text Mode** one. Which of the three is up is chrome the bar reports and a caller holds, the way
-`<TabbedPanel>` lifts which tab is open — the bar draws the control and owns none of the views. The
-port's rule is unchanged and is what hides a segment: no `ExecutionSource`, no **Runs**. **Text
-Mode** is always offered, because the store always has text — including when it has nothing else,
-which is the state that view exists for.
+The segmented control beside them is **not** this bar's decision about versions, and it is drawn
+where it goes somewhere: `ExecutionSource` gives **Runs** a view to switch to. Which of the two is up
+is chrome the bar reports and a caller holds, the way `<TabbedPanel>` lifts which tab is open — the
+bar draws the control and owns neither view.
+
+**Two segments, not three.** What this control asks is *which document is on screen*, and **Text
+Mode** is not an answer to that: the map and the text are two ways of editing one **Workflow
+Definition** (ADR-0001), so how a column draws what it already has is the column's own question and
+is asked by a toggle there ([ADR-0026](0026-text-mode-writes-the-whole-document-and-the-backstop-does-not-apply.md)).
+One control carrying both would have said the two were the same kind of choice.
+
+The port's rule then takes the whole control rather than a segment: **Runs** is the only thing this
+can switch to, so with no `ExecutionSource` one segment would be left alone and its every press would
+do nothing — which is the same call this ADR already makes about a version row that goes nowhere.
 
 ## Three things in the design handoff our decisions have already overtaken
 

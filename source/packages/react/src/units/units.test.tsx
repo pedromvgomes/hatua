@@ -11,6 +11,7 @@ import { NodeCard } from './NodeCard'
 import { RegionBand } from './RegionBand'
 import { RegionNest } from './RegionNest'
 import { RootNode } from './RootNode'
+import { TextToggle } from './TextToggle'
 
 /**
  * The presentational units the canvas is drawn from: props in, events out.
@@ -538,5 +539,25 @@ describe('Code', () => {
     )
     const classes = [...container.querySelectorAll('span')].map((span) => span.className)
     expect(new Set(classes).size).toBe(3)
+  })
+})
+
+describe('TextToggle', () => {
+  it('is one button in both states, saying which one it is in', () => {
+    // The call the References control makes, for the reason stated there: a
+    // control that swaps its verb AND reports pressed announces the state twice.
+    const { rerender } = render(<TextToggle pressed={false} onToggle={() => {}} />)
+    const button = screen.getByRole('button', { name: 'Text' })
+    expect(button.getAttribute('aria-pressed')).toBe('false')
+
+    rerender(<TextToggle pressed onToggle={() => {}} />)
+    expect(screen.getByRole('button', { name: 'Text' }).getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('reports the press and switches nothing itself', () => {
+    let pressed = 0
+    render(<TextToggle pressed={false} onToggle={() => pressed++} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Text' }))
+    expect(pressed).toBe(1)
   })
 })
