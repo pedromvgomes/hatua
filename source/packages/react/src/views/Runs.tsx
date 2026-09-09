@@ -62,14 +62,18 @@ export function Runs({ className, view = 'runs', onViewChange, ...rest }: RunsPr
   /*
    * Which of the two ways of drawing the version is on screen.
    *
-   * The panels stay either way, and that is the difference from the designer:
-   * there they are the map's tools and a second writer on the document, and here
-   * nothing writes at all. `RunList` picks which run, `RunStep` describes it, and
-   * the text shows the version it ran against — three readers on one subject,
-   * which is what this view is for.
+   * The YAML takes the screen here exactly as it does in the designer, and the
+   * point is that the control means ONE thing: press it anywhere and you get the
+   * file. Two views that answered the same button differently would be a rule to
+   * remember rather than a control to press.
    *
-   * No leave guard for the same reason: `useReadOnly()` is true throughout, so
-   * the box never holds an edit to lose.
+   * The reason the designer's panels go is that they write to the document the
+   * box is holding, and nothing here writes at all — so this view could keep
+   * its own. It does not, because "what does this button do" is a better thing
+   * to keep steady than one panel's usefulness on one screen.
+   *
+   * No leave guard either way: `useReadOnly()` is true throughout, so the box
+   * never holds an edit to lose.
    */
   const [text, setText] = useState(false)
 
@@ -112,6 +116,27 @@ export function Runs({ className, view = 'runs', onViewChange, ...rest }: RunsPr
     }
   }
 
+  if (text) {
+    return (
+      <>
+        <style href="hatua-runs-view" precedence="hatua">
+          {css}
+        </style>
+        <div className={cx(styles.scroller, className)} {...rest}>
+          <div className={styles.text}>
+            <div className={styles.bar}>
+              <TopBar view={view} onViewChange={onViewChange} />
+            </div>
+            <div className={styles.column}>
+              <TextMode />
+              <TextToggle showing="yaml" onToggle={() => setText(false)} />
+            </div>
+          </div>
+        </div>
+      </>
+    )
+  }
+
   return (
     <>
       <style href="hatua-runs-view" precedence="hatua">
@@ -149,8 +174,6 @@ export function Runs({ className, view = 'runs', onViewChange, ...rest }: RunsPr
           <div className={styles.map}>
             {open !== 'ready' ? (
               <p className={styles.empty}>Pick a run to see it on the map.</p>
-            ) : text ? (
-              <TextMode />
             ) : (
               <FlowMap
                 boardId={board}
@@ -169,16 +192,13 @@ export function Runs({ className, view = 'runs', onViewChange, ...rest }: RunsPr
                 collapsedRegions={foldedRegions}
                 onCollapsedRegionsChange={setFoldedRegions}
                 onCollapseChange={setCollapsed}
-                leadingControl={<TextToggle pressed={false} onToggle={() => setText(true)} />}
+                /* Only once there is a version to draw: with no run open this
+                   column is saying what to do, and a control that swapped how
+                   nothing is drawn would be one more thing to press for no
+                   effect. */
+                leadingControl={<TextToggle showing="flow" onToggle={() => setText(true)} />}
               />
             )}
-            {/* Only once there is a version to draw, and only where the strip
-                that would otherwise hold it is not drawn: with no run open the
-                column is saying what to do, and a control that swapped how
-                nothing is drawn would be one more thing to press for no effect. */}
-            {open === 'ready' && text ? (
-              <TextToggle variant="pill" pressed onToggle={() => setText(false)} />
-            ) : null}
           </div>
           <div className={styles.aside}>
             <RunStep selected={selected ?? null} />

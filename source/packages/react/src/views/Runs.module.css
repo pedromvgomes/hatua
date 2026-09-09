@@ -70,4 +70,23 @@
     text-align: center;
     text-wrap: pretty;
   }
+
+  /*
+   * The YAML, filling everything under the toolbar — the same shape the designer
+   * takes, because the control means one thing in both.
+   */
+  .text {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    min-inline-size: 1240px;
+    block-size: 100%;
+    min-block-size: 0;
+    background: var(--hatua-surface-page);
+  }
+
+  .column {
+    position: relative;
+    min-inline-size: 0;
+    min-block-size: 0;
+  }
 }

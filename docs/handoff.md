@@ -1157,9 +1157,9 @@ one document, and the one being looked at loses. They are also the map's tools: 
 to put on the canvas, and the step editor edits what a canvas selection names. In Text Mode their
 subject does not exist.
 
-**In the Runs view they stay**, on the rule that decides it — *hide what cannot act*. Nothing there
-writes, and reading a failed Step's record beside the YAML of the version that ran is what that view
-is for.
+**The Runs view does the same**, and its panels are not writers — so it could have kept them. It does
+not, because *what does this button do* is a better thing to hold steady than one panel's usefulness
+on one screen. Press it anywhere and the file takes the screen.
 
 **What is typed becomes the document on a quiet period**, the same 800ms autosave waits — there is no
 Save button (ADR-0005), and a commit per keystroke is an undo entry per keystroke over YAML that is

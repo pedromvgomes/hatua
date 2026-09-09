@@ -30,13 +30,15 @@ run ran against — can be read as text without any rule about what a view switc
 does to it, because switching representation was never a question about which
 document is up.
 
-**One button, not two segments.** One label in both states with `aria-pressed`
-saying which one it is in, which is the call the **References** control already
-makes: a control that swaps its verb *and* reports pressed announces the state
-twice.
+**The label is where it goes, not where you are** — `YAML` on the map, `Flow` in
+the editor, and no `aria-pressed`. A control that swaps its verb *and* reports
+pressed announces the state twice, which is the **References** control's
+argument; that control keeps one label precisely because it opens and closes one
+panel rather than swapping between two peers, which these are.
 
-**It reads YAML.** *Text* is ambiguous on a canvas, where it reads as "add a text
-box" before it reads as "show me the file", and *Source* is short for source code
+**It reads YAML rather than Text or Source.** *Text* is ambiguous on a canvas,
+where it reads as "add a text box" before it reads as "show me the file", and
+*Source* is short for source code
 — which CONTEXT.md puts on **Text Mode**'s avoid list for the reason `attempt`
 beat `try`: these words render inside somebody else's product, to people who have
 never written code. The concept keeps its name; the landmark follows the control,
@@ -77,11 +79,15 @@ they are **the map's tools**. A Component is chosen from the catalogue to put on
 the canvas; the step editor edits the Step a canvas selection names. In Text Mode
 their subject does not exist.
 
-**In the Runs view they stay**, and the rule that decides it is *hide what cannot
-act*. Nothing there writes: `RunList` picks which run, `RunStep` describes it, and
-the text shows the version it ran against — three readers on one subject, and
-reading a failed Step's record beside the YAML of the version that ran is what
-that view is for.
+**The Runs view does the same, and it is the weaker case that decides it.**
+Nothing there writes — `RunList` picks which run and `RunStep` describes it — so
+that view could keep its panels without risking anything, and reading a failed
+Step's record beside the YAML of the version that ran is a real use.
+
+It gives them up anyway. One control that behaved differently in two views would
+be a rule to remember rather than a control to press, and *what does this button
+do* is worth more than one panel's usefulness on one screen. The safety argument
+above is why the panels must go in the designer; this is why they go everywhere.
 
 ## Why the document, not a box in a column
 

@@ -77,8 +77,12 @@ const openText = async () => {
   await settle()
 }
 
-/** The toggle, which is on screen in both of the states it switches between. */
-const toggle = () => screen.getByRole('button', { name: 'YAML' })
+/**
+ * The toggle, which names where it goes rather than where you are — so it reads
+ * YAML on the map and Flow in the editor.
+ */
+const toggle = () =>
+  screen.queryByRole('button', { name: 'YAML' }) ?? screen.getByRole('button', { name: 'Flow' })
 
 beforeEach(() => {
   vi.useFakeTimers()
@@ -97,15 +101,16 @@ describe('Text Mode in the designer', () => {
     // With no `ExecutionSource` there is no other document, so the bar carries
     // no view control at all — and the toggle is still here.
     expect(screen.queryByRole('group', { name: 'View' })).toBeNull()
-    expect(toggle()).toBeDefined()
-    expect(toggle().getAttribute('aria-pressed')).toBe('false')
+    // It names where it goes, so on the map it offers the YAML.
+    expect(screen.getByRole('button', { name: 'YAML' })).toBeDefined()
   })
 
   it('takes the columns beside it, because they cannot act on the text', async () => {
     await openText()
 
     expect(box()).toBeDefined()
-    expect(toggle().getAttribute('aria-pressed')).toBe('true')
+    // And in the editor it offers the way back.
+    expect(screen.getByRole('button', { name: 'Flow' })).toBeDefined()
     /*
      * Not merely hidden — absent, and not for width. Each of them WRITES to the
      * document the box is holding, so one landing while text is uncommitted

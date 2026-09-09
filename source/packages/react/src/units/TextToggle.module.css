@@ -1,21 +1,8 @@
 @layer hatua {
   /*
-   * Floating at the lower end of whatever holds the column, which therefore has
-   * to be a positioned box — the same bargain `CanvasControls` and `SegmentBar`
-   * make, and the same logical insets, because a control belongs at the end of
-   * the reading direction and moves with it.
-   *
-   * With the zoom, and not in it. Sharing a corner is what makes it read as
-   * chrome rather than as something left behind in the middle of an empty
-   * canvas; sharing the pill would put it inside a control that is not drawn at
-   * all in Text Mode, which is exactly where this one still has to be — it is
-   * the way back. So the caller lifts it clear of the cluster where there is
-   * one, and it takes the corner itself where there is not.
-   */
-  /*
-   * A member of the canvas's control strip: `YAML | − 100% + ⛶`. The strip owns
-   * the corner, the shell and the shadow, so this brings none of them — it is
-   * sized to sit level with the zoom buttons beside it.
+   * The control itself, sized to sit level with the zoom buttons beside it when
+   * it is the head of that strip. It brings no corner and no shell of its own,
+   * because in that position the strip owns both.
    */
   .toggle {
     display: grid;
@@ -33,42 +20,39 @@
     cursor: pointer;
   }
 
-  /*
-   * On its own, which is what Text Mode leaves it: the strip is the canvas's and
-   * there is no canvas, so this takes the corner and the shell with it.
-   */
-  .pill {
-    position: absolute;
-    inset-block-end: 16px;
-    inset-inline-end: 16px;
-    z-index: 1;
-    block-size: auto;
-    padding: 7px 12px;
-    border: 1px solid var(--hatua-border-subtle);
-    border-radius: var(--hatua-radius-md);
-    /* Opaque, because it floats over the document's own lines and a translucent
-       control there would leave characters showing through its label. */
-    background: var(--hatua-surface-card);
-    box-shadow: 0 4px 14px var(--hatua-shadow-color);
-  }
-
   .toggle:hover {
+    background: var(--hatua-surface-sunken);
     color: var(--hatua-text-primary);
   }
 
   .toggle:focus-visible {
     outline: var(--hatua-focus-ring);
-    outline-offset: 1px;
+    outline-offset: -1px;
   }
 
-  /* On. The same lift the segmented control's chosen segment takes, so "this is
-     the state you are in" reads the same way wherever it is said. */
-  .toggle[aria-pressed="true"] {
-    background: var(--hatua-accent-wash);
-    color: var(--hatua-text-accent);
-  }
-
-  .pill[aria-pressed="true"] {
-    border-color: var(--hatua-border-accent);
+  /*
+   * The shell it brings in Text Mode, where the strip it would sit in is not
+   * drawn — there is no canvas to zoom.
+   *
+   * Deliberately the same box as `CanvasControls`: same corner, same insets,
+   * same border, radius, padding and shadow. One control has to look like one
+   * control wherever the column has put it, and the reader who pressed it in the
+   * strip finds it exactly where they left it.
+   *
+   * Logical insets, like every other floating control here, because a control
+   * belongs at the end of the reading direction and moves with it.
+   */
+  .shell {
+    position: absolute;
+    inset-block-end: 16px;
+    inset-inline-end: 16px;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    padding: 3px;
+    border: 1px solid var(--hatua-border-subtle);
+    border-radius: var(--hatua-radius-md);
+    background: var(--hatua-surface-card);
+    box-shadow: 0 4px 14px var(--hatua-shadow-color);
   }
 }

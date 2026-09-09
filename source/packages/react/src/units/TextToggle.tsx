@@ -19,65 +19,64 @@ import css from './TextToggle.module.css?inline'
  * That placement is also what makes "the document does not change" obvious
  * rather than a rule to remember: the control is inside the thing showing it.
  *
- * ## One button, not two segments
+ * ## The label is where it goes, not where you are
  *
- * One label in both states, with `aria-pressed` saying which one it is in —
- * exactly the call the **References** control on the Data panel makes, for the
- * reason stated there: a control that swaps its verb *and* reports pressed
- * announces the state twice.
+ * `YAML` while the flow is drawn, `Flow` while the YAML is. Two peers, and a
+ * button that names its destination is the plainest thing to press.
  *
- * ## Two shapes, one control
+ * So no `aria-pressed`: a control that swaps its verb *and* reports pressed
+ * announces the state twice, which is the argument the **References** control
+ * makes — and that control keeps one label precisely because it opens and closes
+ * one panel rather than swapping between two equals.
  *
- * On the canvas it is the first member of the zoom strip — `YAML | − 100% + ⛶` —
- * because a control sharing that corner reads as chrome, where one floating
- * alone reads as something left behind. In **Text Mode** the strip is not drawn
- * at all (there is no canvas to zoom), so it takes the corner itself. One
- * component either way, so the label and the state it reports cannot drift.
- *
- * ## Why it reads YAML
- *
- * Naming the format rather than the idea. *Text* is ambiguous on a canvas, where
- * it reads as "add a text box" before it reads as "show me the file"; *Source* is
+ * It reads YAML rather than *Text* or *Source*. Text is ambiguous on a canvas,
+ * where it reads as "add a text box" before it reads as "show me the file";
+ * Source is
  * short for source code and is on **Text Mode**'s avoid list in CONTEXT.md, for
  * the reason `attempt` beat `try` — every one of these words renders inside
- * somebody else's product, to people who have never written code. YAML is what
- * is behind the button.
+ * somebody else's product, to people who have never written code.
  *
- * The concept is still **Text Mode**, and the two are allowed to differ: `Data`
- * announces itself as *References* for the same reason. What may NOT differ is
- * this label and the landmark it opens, so the region answers to YAML too.
+ * The concept is still **Text Mode**, and a rendered label may differ from a
+ * domain term: `Data` announces itself as *References* for the same reason. What
+ * may not differ is this label and the landmark it opens, so the region answers
+ * to YAML too.
+ *
+ * ## One control, two shells
+ *
+ * Drawn as the head of the zoom strip — `YAML | − 100% + ⛶` — because a control
+ * sharing that corner reads as chrome where one floating alone reads as
+ * something left behind. In **Text Mode** there is no strip, because there is no
+ * canvas to zoom, so it brings a shell of its own that matches. Which of the two
+ * it is follows from what is on screen and is never asked for separately: when
+ * the flow is showing there is a strip to sit in, and when it is not there is
+ * not.
  */
 export interface TextToggleProps {
-  /** Whether the column is showing the text. */
-  pressed: boolean
+  /** What the column is drawing now. The button offers the other one. */
+  showing: 'flow' | 'yaml'
   onToggle: () => void
-  /**
-   * Where it is drawn.
-   *
-   * `inline` is a member of the canvas's control strip, which owns the corner
-   * and the shell. `pill` stands on its own, which is what **Text Mode** needs:
-   * the strip is the canvas's and the canvas is not drawn there, and this is the
-   * control that gets back out — so it cannot only exist inside the thing it
-   * leaves.
-   */
-  variant?: 'inline' | 'pill'
   className?: string
 }
 
-export function TextToggle({ pressed, onToggle, variant = 'inline', className }: TextToggleProps) {
+export function TextToggle({ showing, onToggle, className }: TextToggleProps) {
+  const button = (
+    <button type="button" className={styles.toggle} onClick={onToggle}>
+      {showing === 'flow' ? 'YAML' : 'Flow'}
+    </button>
+  )
+
   return (
     <>
       <style href="hatua-text-toggle" precedence="hatua">
         {css}
       </style>
-      <button
-        type="button"
-        className={cx(styles.toggle, variant === 'pill' && styles.pill, className)}
-        aria-pressed={pressed}
-        onClick={onToggle}
-      >
-        YAML
-      </button>
+      {showing === 'flow' ? (
+        button
+      ) : (
+        // Its own shell, shaped like the strip it is standing in for, so the one
+        // control looks like one control wherever the column has put it.
+        <div className={cx(styles.shell, className)}>{button}</div>
+      )}
     </>
   )
 }

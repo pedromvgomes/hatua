@@ -543,20 +543,34 @@ describe('Code', () => {
 })
 
 describe('TextToggle', () => {
-  it('is one button in both states, saying which one it is in', () => {
-    // The call the References control makes, for the reason stated there: a
-    // control that swaps its verb AND reports pressed announces the state twice.
-    const { rerender } = render(<TextToggle pressed={false} onToggle={() => {}} />)
-    const button = screen.getByRole('button', { name: 'YAML' })
-    expect(button.getAttribute('aria-pressed')).toBe('false')
+  it('names where it goes, not where you are', () => {
+    const { rerender } = render(<TextToggle showing="flow" onToggle={() => {}} />)
+    expect(screen.getByRole('button', { name: 'YAML' })).toBeDefined()
 
-    rerender(<TextToggle pressed onToggle={() => {}} />)
-    expect(screen.getByRole('button', { name: 'YAML' }).getAttribute('aria-pressed')).toBe('true')
+    rerender(<TextToggle showing="yaml" onToggle={() => {}} />)
+    expect(screen.getByRole('button', { name: 'Flow' })).toBeDefined()
+  })
+
+  it('reports no pressed state, because the label already swapped', () => {
+    // A control that swaps its verb AND reports pressed announces the state
+    // twice — the argument the References control makes, which keeps one label
+    // precisely because it opens a panel rather than swapping between two peers.
+    render(<TextToggle showing="flow" onToggle={() => {}} />)
+    expect(screen.getByRole('button', { name: 'YAML' }).hasAttribute('aria-pressed')).toBe(false)
+  })
+
+  it('brings a shell of its own only where there is no strip to sit in', () => {
+    const { container, rerender } = render(<TextToggle showing="flow" onToggle={() => {}} />)
+    // A member of the zoom strip, which owns the corner and the box.
+    expect(container.querySelector('div')).toBeNull()
+
+    rerender(<TextToggle showing="yaml" onToggle={() => {}} />)
+    expect(container.querySelector('div')).not.toBeNull()
   })
 
   it('reports the press and switches nothing itself', () => {
     let pressed = 0
-    render(<TextToggle pressed={false} onToggle={() => pressed++} />)
+    render(<TextToggle showing="flow" onToggle={() => pressed++} />)
     fireEvent.click(screen.getByRole('button', { name: 'YAML' }))
     expect(pressed).toBe(1)
   })
