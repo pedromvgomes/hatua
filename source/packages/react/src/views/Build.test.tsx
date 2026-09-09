@@ -177,12 +177,20 @@ describe('Build wires the Components tab to the canvas', () => {
   }
 
   /** The name on every card the canvas draws, in DOM order. */
+  /**
+   * The Steps on the map, in order.
+   *
+   * Scoped to the cards rather than to "unlabelled buttons on the canvas": the
+   * canvas also carries chrome that names itself in ink — the zoom strip's
+   * `YAML` toggle among it — and a filter that only asked about `aria-label`
+   * collected those too. A card is an `<li>`, which is the thing this is really
+   * asking for.
+   */
   const rowNames = () =>
     screen
       .getAllByRole('button')
-      .filter(
-        (button) => !button.hasAttribute('aria-label') && button.closest('[aria-label="Flow map"]'),
-      )
+      .filter((button) => button.closest('[aria-label="Flow map"]') && button.closest('li'))
+      .filter((button) => !button.hasAttribute('aria-label'))
       .map((button) => button.firstElementChild?.textContent)
 
   /**

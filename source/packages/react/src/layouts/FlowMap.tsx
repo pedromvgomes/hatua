@@ -57,6 +57,7 @@ import {
   type FocusEvent as ReactFocusEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  type ReactNode,
   type PointerEvent as ReactPointerEvent,
   type SetStateAction,
   useCallback,
@@ -229,6 +230,15 @@ export interface FlowMapProps extends Omit<ComponentPropsWithRef<'section'>, 'on
   defaultCollapsed?: readonly StepRef[]
   onCollapseChange?: (collapsed: StepRef[]) => void
   /**
+   * A control the composing view puts at the head of the zoom strip.
+   *
+   * Chrome, and a slot rather than a named control: the canvas owns where that
+   * strip sits, and what else belongs beside the zoom is the view's question.
+   * `views/Build` puts the toggle that swaps this column between the map and the
+   * YAML there, and nothing here has to know that.
+   */
+  leadingControl?: ReactNode
+  /**
    * Which individual columns are folded shut, and a way to hear about it.
    *
    * Beside `collapsed` and not merged with it, because the two are different
@@ -387,6 +397,7 @@ export function FlowMap({
   onDropComponent,
   defaultViewports,
   onViewportChange,
+  leadingControl,
   className,
   ...rest
 }: FlowMapProps) {
@@ -1001,6 +1012,7 @@ export function FlowMap({
             foldedRegions={foldedRegions}
             problems={problems}
             execution={execution}
+            leadingControl={leadingControl}
             troubled={troubled}
             redraws={redraws}
             dragging={dragging}
@@ -1040,6 +1052,7 @@ function Canvas({
   foldedRegions,
   problems,
   execution,
+  leadingControl,
   troubled,
   redraws,
   dragging,
@@ -1069,6 +1082,7 @@ function Canvas({
   manifests: ReadonlyMap<string, Manifest>
   selection: Segment | undefined
   execution: WorkflowExecution | null
+  leadingControl: ReactNode
   folded: readonly StepRef[]
   foldedRegions: readonly RegionRef[]
   problems: ReadonlyMap<string, Diagnostic[]>
@@ -1364,6 +1378,7 @@ function Canvas({
         onZoomOut={canvas.zoomOut}
         onZoomTo={canvas.snapTo}
         onFit={canvas.fit}
+        leading={leadingControl}
       />
     </div>
   )

@@ -1144,10 +1144,10 @@ announces the state twice. *Text* is ambiguous on a canvas, where it reads as "a
 before it reads as "show me the file"; the concept is still **Text Mode**, and the landmark answers
 to YAML too, because a label and the thing it opens must not be two names for one thing.
 
-It sits in the canvas's lower end **with** the zoom cluster and not **in** it. Sharing the corner is
-what makes it read as chrome rather than as something left in the middle of an empty canvas; sharing
-the pill would put it inside a control that is not drawn at all in Text Mode — which is exactly where
-it still has to be, because it is the way back.
+On the canvas it is the **head of the zoom strip** — `YAML | − 100% + ⛶`. Floating alone it read as
+something left behind in an empty canvas; in the strip it reads as chrome. It cannot only live there:
+the strip is not drawn in Text Mode at all, and this is the control that gets back out, so it takes
+the corner itself there.
 
 **Pressing it takes the side panel and the step editor with it, and not for width.** Every one of
 them *writes* to the document the box is holding — the catalogue applies `addStep`, the **Workflow**

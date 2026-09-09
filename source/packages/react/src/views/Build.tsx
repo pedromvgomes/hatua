@@ -197,7 +197,11 @@ export function Build({ className, view = 'build', onViewChange, ...rest }: Buil
             </div>
             <div className={styles.column}>
               <TextMode onUnsavedChange={leaving.onUnsavedChange} />
-              <TextToggle pressed onToggle={() => leaving.guard(true, () => setText(false))} />
+              <TextToggle
+                variant="pill"
+                pressed
+                onToggle={() => leaving.guard(true, () => setText(false))}
+              />
             </div>
           </div>
         </div>
@@ -414,11 +418,10 @@ export function Build({ className, view = 'build', onViewChange, ...rest }: Buil
               collapsedRegions={foldedRegions}
               onCollapsedRegionsChange={setFoldedRegions}
               onCollapseChange={setCollapsed}
-            />
-            <TextToggle
-              className={styles.clearsZoom}
-              pressed={false}
-              onToggle={() => setText(true)}
+              // At the head of the zoom strip: `YAML | − 100% + fit`. Sharing
+              // that corner is what makes it read as chrome; it takes the corner
+              // itself in Text Mode, where there is no strip.
+              leadingControl={<TextToggle pressed={false} onToggle={() => setText(true)} />}
             />
           </div>
           {/*
