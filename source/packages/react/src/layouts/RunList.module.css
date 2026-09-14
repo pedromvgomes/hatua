@@ -1,0 +1,117 @@
+@layer hatua {
+  .runs {
+    display: flex;
+    flex-direction: column;
+    block-size: 100%;
+    min-block-size: 0;
+    background: var(--hatua-surface-card);
+  }
+
+  .list {
+    flex: 1 1 auto;
+    min-block-size: 0;
+    overflow-y: auto;
+    margin: 0;
+    padding: 8px;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  /* A whole row is the target, because the thing being chosen is the run and
+     not any one fact about it. */
+  .row {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 4px 8px;
+    align-items: baseline;
+    inline-size: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--hatua-border-subtle);
+    border-radius: var(--hatua-radius-md);
+    background: var(--hatua-surface-card);
+    color: var(--hatua-text-primary);
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+
+  .row:hover {
+    background: var(--hatua-surface-raised);
+  }
+
+  .row:focus-visible {
+    outline: var(--hatua-focus-ring);
+    outline-offset: 1px;
+  }
+
+  /*
+   * The run already on screen. Marked rather than removed from the list: it is
+   * where the reader is, and a row that vanished would make the list shorter
+   * every time one was opened.
+   */
+  .row[aria-current="true"] {
+    border-color: var(--hatua-border-accent);
+    background: var(--hatua-accent-wash);
+  }
+
+  .dot {
+    inline-size: 8px;
+    block-size: 8px;
+    border-radius: 50%;
+    align-self: center;
+    background: var(--hatua-text-muted);
+  }
+
+  .succeeded {
+    background: var(--hatua-status-ok);
+  }
+
+  .failed {
+    background: var(--hatua-status-error);
+  }
+
+  /* A run still going, which is the one status that is not yet a fact. */
+  .running {
+    background: var(--hatua-status-warn);
+  }
+
+  .when {
+    font-size: 0.8125rem;
+    color: var(--hatua-text-primary);
+  }
+
+  .took {
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--hatua-text-muted);
+  }
+
+  .what {
+    grid-column: 2 / -1;
+    font-size: 0.75rem;
+    color: var(--hatua-text-secondary);
+  }
+
+  .foot {
+    flex: none;
+    padding: 8px;
+    border-block-start: 1px solid var(--hatua-border-subtle);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .said {
+    margin: 0;
+    padding: 12px;
+    font-size: 0.8125rem;
+    color: var(--hatua-text-muted);
+    text-wrap: pretty;
+  }
+
+  .wrong {
+    color: var(--hatua-status-error);
+  }
+}

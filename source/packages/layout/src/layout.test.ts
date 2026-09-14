@@ -1,3 +1,4 @@
+/** biome-ignore-all lint/correctness/noProcessGlobal: a Node test measuring the CPU time a pass costs; nothing here ships to a browser. */
 import { type Board, boards, regionKey, regionsOf, stepKey, walkSteps } from '@hatua/model'
 import type { Step, WorkflowDefinition } from '@hatua/schema'
 import { describe, expect, it } from 'vitest'
@@ -1016,21 +1017,30 @@ describe('the cost of laying out a Board', () => {
     })) as Step[]
 
   /**
-   * The fastest of several runs, which is the only honest way to time anything
-   * while the rest of the monorepo's suites are running beside it.
+   * The CPU time of the fastest of several layout passes, in microseconds.
    *
-   * A single sample measures this machine's scheduler as much as this function:
-   * every interruption makes a run slower and none makes one faster, so the
-   * minimum is the sample least polluted by everything else. Taking a mean here
-   * fails the build on a loaded laptop for a property that has not changed.
+   * CPU time rather than elapsed time, because the suite runs a vitest process
+   * per package and there are several times more of them than there are cores.
+   * Elapsed time then measures how often this process was handed one: the large
+   * pass is long enough to be descheduled partway through on every run, while
+   * the small one is short enough to fit between two interruptions, so a
+   * minimum rescues one measurement and not the other — and the ratio of the
+   * two is what is asserted. This clock does not advance while the process
+   * waits for a core, so what it leaves is the work.
+   *
+   * The fastest of several, still, for the interruptions that do cost cycles: a
+   * compilation on a function's first call, a garbage collection, a page fault.
+   * Every one of those makes a pass slower and none makes one faster, so the
+   * minimum is the least polluted sample.
    */
   const timed = (n: number): number => {
     const board = { id: null, steps: containers(n) } as Board
     let best = Number.POSITIVE_INFINITY
     for (let run = 0; run < 5; run++) {
-      const started = performance.now()
+      const started = process.cpuUsage()
       layout(board, { manifests: new Map() })
-      best = Math.min(best, performance.now() - started)
+      const spent = process.cpuUsage(started)
+      best = Math.min(best, spent.user + spent.system)
     }
     return best
   }
@@ -1044,8 +1054,9 @@ describe('the cost of laying out a Board', () => {
     const large = timed(800)
 
     // Four times the Steps. Linear predicts about 4×, quadratic about 16×; the
-    // bound sits between them so that noise cannot fail it and the old shape
-    // cannot pass it.
-    expect(large / Math.max(small, 0.1)).toBeLessThan(10)
+    // bound sits between them so that noise cannot fail it and a quadratic pass
+    // cannot pass it. The floor is the clock's resolution, one microsecond, so
+    // that a machine fast enough to report nothing divides by something.
+    expect(large / Math.max(small, 1)).toBeLessThan(10)
   })
 })

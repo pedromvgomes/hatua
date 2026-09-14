@@ -4,6 +4,7 @@ import type {
   Cursor,
   DraftSession,
   EditToken,
+  ExecutionSource,
   Lease,
   ManifestSource,
   PublishedVersion,
@@ -15,7 +16,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { useEffect } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { HatuaProvider, useEditingStore } from '../theme/HatuaProvider'
-import { TopBar } from './TopBar'
+import { type BarView, TopBar } from './TopBar'
 
 /**
  * The toolbar against a Host's ports.
@@ -197,16 +198,32 @@ function Fixes() {
   )
 }
 
+/** A Host that serves run history. Only its presence matters to this bar. */
+const RUNS: ExecutionSource = {
+  async listExecutions() {
+    return { items: [] }
+  },
+  async loadExecution() {
+    throw new Error('Not part of this test.')
+  },
+}
+
 const mount = (
   source?: Host,
   {
     manifests = CATALOGUE,
     onRevealDiagnostic,
     onBrowseWorkflows,
+    onViewChange,
+    view,
+    executions,
   }: {
     manifests?: Manifest[] | null
     onRevealDiagnostic?: (diagnostic: Diagnostic) => void
     onBrowseWorkflows?: () => void
+    onViewChange?: (view: BarView) => void
+    view?: BarView
+    executions?: ExecutionSource
   } = {},
 ) =>
   render(
@@ -214,10 +231,16 @@ const mount = (
       ports={{
         ...(source ? { workflows: source.port } : {}),
         ...(manifests ? { manifests: serving(manifests) } : {}),
+        ...(executions ? { executions } : {}),
       }}
       workflowId={source ? 'wf_morning' : undefined}
     >
-      <TopBar onRevealDiagnostic={onRevealDiagnostic} onBrowseWorkflows={onBrowseWorkflows} />
+      <TopBar
+        onRevealDiagnostic={onRevealDiagnostic}
+        onBrowseWorkflows={onBrowseWorkflows}
+        view={view}
+        onViewChange={onViewChange}
+      />
     </HatuaProvider>,
   )
 
@@ -1547,5 +1570,55 @@ describe('what became of the draft', () => {
     const second = (await screen.findByText(/no longer editing/)).textContent
 
     expect(first).not.toBe(second)
+  })
+})
+
+describe('which screen is up', () => {
+  it('draws no control when there is nothing above it to switch', async () => {
+    mount(host())
+    await screen.findByText('Morning inbox triage')
+
+    // A live control that does nothing reads as a fault — the argument
+    // `CanvasControls` makes about the ends of the zoom range. A bar mounted
+    // bare has nowhere to send anybody.
+    expect(screen.queryByRole('group', { name: 'View' })).toBeNull()
+  })
+
+  it('draws no control at all when the Host serves no run history', async () => {
+    mount(host(), { onViewChange: () => {} })
+    await screen.findByText('Morning inbox triage')
+
+    /*
+     * `ExecutionSource` says "omit entirely and the Runs view is hidden", and
+     * **Runs** is the only thing this control can switch to — so without the
+     * port the whole control goes, not just a segment. One segment left alone is
+     * a control whose every press does nothing.
+     *
+     * **Text Mode** is not among the segments either way: this asks which
+     * document is on screen, and how it is drawn is the column's own question.
+     */
+    expect(screen.queryByRole('group', { name: 'View' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'YAML' })).toBeNull()
+  })
+
+  it('offers Runs once the port is there', async () => {
+    mount(host(), { onViewChange: () => {}, executions: RUNS })
+    await screen.findByText('Morning inbox triage')
+
+    expect(screen.getByRole('button', { name: 'Runs' })).toBeDefined()
+  })
+
+  it('says which one is up, and reports a press rather than acting on it', async () => {
+    const asked: BarView[] = []
+    mount(host(), { onViewChange: (next) => asked.push(next), view: 'build', executions: RUNS })
+    await screen.findByText('Morning inbox triage')
+
+    // Pressed rather than selected: there is no tabpanel here, and what changes
+    // is which document every region under the bar is reading.
+    expect(screen.getByRole('button', { name: 'Build' }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('button', { name: 'Runs' }).getAttribute('aria-pressed')).toBe('false')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Runs' }))
+    expect(asked).toEqual(['runs'])
   })
 })

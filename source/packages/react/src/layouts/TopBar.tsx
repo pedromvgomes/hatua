@@ -26,6 +26,7 @@ import { cx } from '../primitives/classNames'
 import { place } from '../primitives/placement'
 import {
   useEditingStore,
+  useExecutionStore,
   usePortalContainer,
   useValidationStore,
   useVersionStore,
@@ -53,6 +54,40 @@ export interface TopBarProps extends ComponentPropsWithRef<'section'> {
    * and a selection is chrome the caller holds, and `views/Build` holds it.
    */
   onRevealDiagnostic?: (diagnostic: Diagnostic) => void
+  /**
+   * Which of the views is on screen. Chrome, held by whatever composes them —
+   * the same shape `<TabbedPanel>` takes for which tab is open and `<FlowMap>`
+   * for which Board is drawn, and for the same reason: the bar draws the
+   * control and owns none of the views.
+   */
+  view?: BarView
+  /**
+   * The segmented control was pressed.
+   *
+   * Optional, and absent means the control is not drawn at all — a bar mounted
+   * with nothing above it to switch has nowhere to send anybody, and a live
+   * control that does nothing reads as a fault. The **Runs** segment needs an
+   * `ExecutionSource` as well: `ports.ts` says "omit entirely and the Runs view
+   * is hidden", so no port, no segment.
+   */
+  onViewChange?: (view: BarView) => void
+}
+
+/**
+ * Which document is on screen: the one being edited, or one that ran.
+ *
+ * Two and not three. **Text Mode** is not here, and that is the distinction the
+ * control exists to keep: ADR-0001 has a user editing one **Workflow
+ * Definition** two ways, on the map and as text, so which of those is drawn is a
+ * question about *how* — asked by the toggle on the column, where the answer is
+ * visible. This asks *which*, and only **Runs** changes it (ADR-0011, ADR-0025).
+ */
+export type BarView = 'build' | 'runs'
+
+/** What each segment reads. `Build` is the designer, as the design of record names it. */
+const VIEW_LABEL: Record<BarView, string> = {
+  build: 'Build',
+  runs: 'Runs',
 }
 
 /** "The Host wired nothing" is not a phase of the load, so it is not the store's to report. */
@@ -124,10 +159,23 @@ type Layer = { kind: 'versions' | 'problems'; anchor: HTMLElement } | null
  * ## What it does not carry
  *
  * No **Save changes** button — editing autosaves (ADR-0005) and the flag behind
- * that button is not a thing to render. No **Build / Runs** segmented control:
- * `ExecutionSource` says "omit entirely and the Runs view is hidden", no Host
- * can wire one, and a control that switches to nothing is worse than no
- * control.
+ * that button is not a thing to render.
+ *
+ * ## The segmented control says which document is on screen, and owns neither
+ *
+ * **Build** and **Runs**, and deliberately not **Text Mode**: this asks *which*
+ * document, and how that document is drawn — on the map or as text — is the
+ * column's own question, asked by the toggle that sits on it. One control
+ * carrying both would say the two were the same kind of choice.
+ *
+ * Drawn only where it goes somewhere: without `onViewChange` there is nothing
+ * above this to switch, and without an `ExecutionSource` there is no **Runs**
+ * view, so that segment is absent rather than dead — leaving one segment, which
+ * is why the whole control goes with it.
+ *
+ * It sits inside the cluster that is drawn once a document is open, and that is
+ * the honest place for it: both views draw a document, so with none open there
+ * is nothing to switch between.
  *
  * ## Three clusters, not two
  *
@@ -136,11 +184,29 @@ type Layer = { kind: 'versions' | 'problems'; anchor: HTMLElement } | null
  * Preview** replaces all three with Restore and a way back, because all three
  * are about the Draft and the Draft is not what is on screen (ADR-0024).
  * **Ended** is a sentence saying what became of the draft, and Edit.
+ *
+ * A **Preview** set because a run is being read is a fourth, and the shortest:
+ * it offers nothing at all. **Restore** is about a version, and the reader chose
+ * a run rather than a version — the way out is the segmented control beside it,
+ * because leaving the **Runs** view is what puts the Draft back (ADR-0025).
  */
-export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...rest }: TopBarProps) {
+export function TopBar({
+  className,
+  onBrowseWorkflows,
+  onRevealDiagnostic,
+  view = 'build',
+  onViewChange,
+  ...rest
+}: TopBarProps) {
   const store = useEditingStore()
   const validation = useValidationStore()
   const versions = useVersionStore()
+  /*
+   * Read for its presence and never for its contents: whether the Host serves
+   * run history is what decides whether the **Runs** segment exists. Nothing is
+   * fetched — the list is the **Runs** region's to load when someone opens it.
+   */
+  const executions = useExecutionStore()
 
   /*
    * The history, read here as well as in the panel, because whether a **Draft**
@@ -667,27 +733,44 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
                    * 5`. `previewing` is what was asked for and cannot disagree
                    * with the row that was pressed.
                    */}
-                  <button
-                    type="button"
-                    ref={versionButton}
-                    className={styles.version}
-                    aria-haspopup="dialog"
-                    aria-expanded={layer?.kind === 'versions'}
-                    onClick={(event) => {
-                      if (layer?.kind === 'versions') {
-                        closeLayer()
-                        return
-                      }
-                      versions?.load()
-                      setLayer({ kind: 'versions', anchor: event.currentTarget })
-                    }}
-                  >
-                    {previewing !== null
-                      ? `v${String(previewing)} · ${statusLabel(definition.status)}`
-                      : claimed
-                        ? `v${String(definition.version)} · ${statusLabel(definition.status)}`
-                        : 'Versions'}
-                  </button>
+                  {previewing?.because === 'run' ? (
+                    /*
+                     * A run is on screen, so the readout stays and the list goes.
+                     *
+                     * "Nothing is offered that does not go anywhere" (ADR-0011)
+                     * lands here once a run can be what is being read: picking a
+                     * row would replace the run's version with a chosen one
+                     * while the map still carried the run's marks and the pane
+                     * still described the run — one screen saying two things
+                     * about what it is showing. There is one way out of a run
+                     * and it is the segmented control.
+                     */
+                    <p className={styles.version}>
+                      {`v${String(previewing.version)} · ${statusLabel(definition.status)}`}
+                    </p>
+                  ) : (
+                    <button
+                      type="button"
+                      ref={versionButton}
+                      className={styles.version}
+                      aria-haspopup="dialog"
+                      aria-expanded={layer?.kind === 'versions'}
+                      onClick={(event) => {
+                        if (layer?.kind === 'versions') {
+                          closeLayer()
+                          return
+                        }
+                        versions?.load()
+                        setLayer({ kind: 'versions', anchor: event.currentTarget })
+                      }}
+                    >
+                      {previewing !== null
+                        ? `v${String(previewing.version)} · ${statusLabel(definition.status)}`
+                        : claimed
+                          ? `v${String(definition.version)} · ${statusLabel(definition.status)}`
+                          : 'Versions'}
+                    </button>
+                  )}
                 </>
               ) : (
                 /*
@@ -726,7 +809,61 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
                 </Button>
               ) : null}
 
-              {previewing !== null ? (
+              {/*
+               * Which document is on screen.
+               *
+               * First in the cluster, because it is the only control here that
+               * is not about the Draft — the three below act on it, and this
+               * says which document is being read.
+               *
+               * Drawn only where it goes somewhere, which takes the whole
+               * control and not just a segment: **Runs** is the only thing it
+               * can switch to, so without the port one segment would be left
+               * alone and its every press would do nothing. That is worse than
+               * no control, and it is the same call the version list makes
+               * about a row that goes nowhere.
+               */}
+              {onViewChange && executions ? (
+                // A fieldset is a form control grouping and wants a legend.
+                // These are navigation buttons in a toolbar, and a fieldset here
+                // would put a form landmark in the Host's page for two of them.
+                // biome-ignore lint/a11y/useSemanticElements: a group of buttons is not a form
+                <div className={styles.views} role="group" aria-label="View">
+                  {(['build', 'runs'] as const).map((one) => (
+                    <button
+                      key={one}
+                      type="button"
+                      className={styles.view}
+                      // A pressed toggle rather than a tab: there is no tabpanel
+                      // here — what changes is the whole screen under the bar,
+                      // which several regions draw.
+                      aria-pressed={view === one}
+                      onClick={() => onViewChange(one)}
+                    >
+                      {VIEW_LABEL[one]}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+
+              {previewing?.because === 'run' ? (
+                /*
+                 * A version is on screen because a run is being read against it
+                 * (ADR-0025), and none of the four controls below is about that.
+                 *
+                 * **Restore is not offered here either.** It is about the
+                 * version, and the reader did not choose a version — they chose
+                 * a run, and the version came with it. The way to restore one is
+                 * the list, where the row that was pressed is the thing being
+                 * restored.
+                 *
+                 * The way out is the segmented control, which is the control
+                 * immediately before this one: leaving the **Runs** view is what
+                 * puts the Draft back, because that view owns the preview for as
+                 * long as it is mounted.
+                 */
+                <p className={styles.muted}>You are viewing a past run of this version.</p>
+              ) : previewing !== null ? (
                 /*
                  * Publish, Release and Discard are all about the Draft, and the
                  * Draft is not what is on screen — so a Publish pressed here
@@ -752,7 +889,7 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
                     size="sm"
                     variant="primary"
                     disabled={busy}
-                    onClick={(event) => beginRestore(previewing, event.currentTarget)}
+                    onClick={(event) => beginRestore(previewing.version, event.currentTarget)}
                   >
                     Restore this version
                   </Button>
@@ -872,7 +1009,6 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
           </>
         ) : null}
       </section>
-
       {/* Only while the readout it hangs from is drawn. The identity cluster
           swaps for "This workflow cannot be read yet." the moment the document
           stops projecting, taking the version button with it — and a panel left
@@ -882,13 +1018,12 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
         <VersionLayer
           anchor={layer.anchor}
           store={versions}
-          current={previewing ?? onScreen}
+          current={previewing?.version ?? onScreen}
           busy={busy}
           onSelect={(version) => void showVersion(version)}
           onClose={closeLayer}
         />
       ) : null}
-
       {/* Only while its anchor is still on the page. The claim is the wrong
           question: the version button anchors this too and outlives the session,
           so a failed preview or restore reported while unclaimed would set a
@@ -903,7 +1038,6 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
           onClose={closeProblems}
         />
       ) : null}
-
       {/* Tone is `danger` for what it destroys and not for how final it is: the
           version being restored FROM is untouched and still in the list, which
           is what separates this from a Discard. The copy says so rather than
@@ -935,7 +1069,6 @@ export function TopBar({ className, onBrowseWorkflows, onRevealDiagnostic, ...re
           void runRestore(asked.version, asked.from)
         }}
       />
-
       <ConfirmDialog
         open={confirming}
         tone="danger"

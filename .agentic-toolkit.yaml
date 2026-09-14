@@ -6,3 +6,6 @@ extends:
   - github.com/pedromvgomes/agentic-toolkit.git/stacks/rtk.yaml
 mcp:
   - github.com/pedromvgomes/agentic-toolkit.git/definitions/mcp/chrome-devtools.yaml@main
+memory:
+  agent: claudecode
+  root: .agents/memory

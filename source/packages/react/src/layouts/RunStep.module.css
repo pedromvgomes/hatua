@@ -1,0 +1,177 @@
+@layer hatua {
+  .pane {
+    display: flex;
+    flex-direction: column;
+    block-size: 100%;
+    min-block-size: 0;
+    overflow-y: auto;
+    background: var(--hatua-surface-card);
+  }
+
+  .head {
+    padding: 12px;
+    border-block-end: 1px solid var(--hatua-border-subtle);
+  }
+
+  .title {
+    margin: 0;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--hatua-text-primary);
+    text-wrap: pretty;
+  }
+
+  /* The status and the duration read as one line, because they answer one
+     question: what happened, and how long it took. */
+  .facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    margin: 6px 0 0;
+    font-size: 0.75rem;
+    color: var(--hatua-text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .succeeded {
+    color: var(--hatua-status-ok);
+  }
+
+  .failed {
+    color: var(--hatua-status-error);
+  }
+
+  .running {
+    color: var(--hatua-status-warn);
+  }
+
+  .section {
+    padding: 12px;
+    border-block-end: 1px solid var(--hatua-border-subtle);
+  }
+
+  .legend {
+    margin: 0 0 8px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--hatua-text-muted);
+  }
+
+  .rows {
+    margin: 0;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 4px 10px;
+    font-size: 0.75rem;
+  }
+
+  .key {
+    color: var(--hatua-text-muted);
+  }
+
+  .value {
+    margin: 0;
+    color: var(--hatua-text-primary);
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+  }
+
+  /*
+   * A payload is JSON and is read as JSON. It scrolls in its own box rather than
+   * widening the pane, which is the rule every wide thing here follows.
+   */
+  .payload {
+    padding: 8px;
+    max-block-size: 240px;
+    overflow: auto;
+    border-radius: var(--hatua-radius-sm);
+    background: var(--hatua-surface-sunken);
+    /* Smaller than the editor's, because a payload is read in a 404px column
+       beside the map rather than filling a screen. The face, the line height and
+       the wrapping are `Code`'s and are deliberately not restated. */
+    font-size: 0.6875rem;
+  }
+
+  .fault {
+    margin: 0;
+    font-size: 0.75rem;
+    color: var(--hatua-status-error);
+    text-wrap: pretty;
+  }
+
+  .code {
+    font-family: var(--hatua-font-mono);
+    font-size: 0.6875rem;
+    color: var(--hatua-text-muted);
+  }
+
+  .passes {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .pass {
+    display: grid;
+    grid-template-columns: auto auto 1fr;
+    gap: 8px;
+    align-items: baseline;
+    padding: 6px 8px;
+    border: 1px solid var(--hatua-border-subtle);
+    border-radius: var(--hatua-radius-sm);
+    font-size: 0.75rem;
+  }
+
+  .index {
+    font-family: var(--hatua-font-mono);
+    color: var(--hatua-text-muted);
+  }
+
+  .log {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .entry {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 8px;
+    font-size: 0.6875rem;
+  }
+
+  .at {
+    font-family: var(--hatua-font-mono);
+    color: var(--hatua-text-muted);
+    white-space: nowrap;
+  }
+
+  .message {
+    color: var(--hatua-text-secondary);
+    overflow-wrap: anywhere;
+  }
+
+  .channel {
+    color: var(--hatua-text-muted);
+  }
+
+  .said {
+    margin: 0;
+    padding: 12px;
+    font-size: 0.8125rem;
+    color: var(--hatua-text-muted);
+    text-wrap: pretty;
+  }
+
+  .wrong {
+    color: var(--hatua-status-error);
+  }
+}

@@ -57,7 +57,13 @@ by the playground.
 | View | Tabs |
 | --- | --- |
 | Build | **Workflow**, **Components** |
-| Runs | **Workflow** (read-only), **Runs** |
+| Runs | **Runs**, **Workflow** |
+
+Either view's column draws the document as the map or as text; **Build** in Text Mode has no tabs at
+all, because the panels go with the map (below).
+
+The **Workflow** tab is not made read-only for the Runs view. It asks `useReadOnly()` like every
+other region, and a run is a **Preview** (ADR-0025), so it already answers no.
 
 `<TabbedPanel>` arranges regions and owns none of them, so which tabs exist is the caller's
 decision. A Host mounting one region gets no tab strip at all.
@@ -423,9 +429,14 @@ Left cluster carries identity: `workflows /`, the workflow's name, its slug, the
 control — `v5 · Draft`, opening to a list from `listVersions`, newest first, paged, each with its
 status spelled `draft | published | archived` as the schema spells it.
 
-Right cluster carries **Publish**, **Release**, **Discard**. The **Build / Runs** segmented control
-is not drawn: `ExecutionSource` already says "omit entirely and the Runs view is hidden", and there
-is no Runs view to switch to.
+Right cluster carries **Publish**, **Release**, **Discard**, and the segmented control that says
+which *document* is on screen — **Build** or **Runs**. It is drawn only where the Host serves an
+`ExecutionSource`, which is what "omit entirely and the Runs view is hidden" means, and with no port
+the whole control goes rather than one segment: **Runs** is the only thing it can switch to. Which
+view is up is chrome the bar reports and `<Hatua>` holds (ADR-0011, ADR-0025).
+
+**Text Mode is not one of the segments.** How a column draws the document it already has is the
+column's own question, and it is asked by a toggle sitting on the column.
 
 There is no **Save changes** button. Editing autosaves (ADR-0005), and the flag behind that button
 is not a thing to render.
@@ -1041,6 +1052,167 @@ relationship between them.
 
 ---
 
+## The Runs view
+
+A **Workflow Execution** is history: Hatua renders what the **Host** hands over and never produces
+one. What makes it drawable at all is that an execution **references** its definition by version, so
+the map is drawn against the version that ran and not against today's Draft — a three-week-old run
+painted on the current definition puts durations on Steps that did not exist and silently drops the
+ones that did.
+
+**A run is a Preview** (ADR-0025). The version is resolved through `loadVersion` and put on screen by
+the editing store, which is what a **Preview** already is — so the map, the **Workflow** tab and
+`useReadOnly()` all follow without being taught anything about runs, and there is one way to have a
+document that is not the **Draft** in front of a reader rather than two.
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│ TopBar  workflows / Nightly digest · v4 · Published  [Build|Text|Runs]│
+├───────────────┬──────────────────────────────┬───────────────────────┤
+│ Runs          │ The run, on version 4        │ Run pane              │
+│ Workflow      │                              │ 404px                 │
+│ 304px         │  cards marked with what      │                       │
+│               │  each Step did               │  the run, or one Step │
+└───────────────┴──────────────────────────────┴───────────────────────┘
+```
+
+**The middle column waits.** With no run open there is no version to draw against, and the **Draft**
+is not an answer to *which run am I looking at* — so the column says what to do and the canvas mounts
+when a run opens.
+
+**A card is marked and never resized.** Two heights exist and the manifest alone decides which
+(`slotsFor`), so the map stays a function of the document and the catalogue: a run paints inside the
+head the card already has. The mark says the status in ink as well as in colour, because a colour is
+the one thing a reader may not have. A Step the run never reached — inside a **Branch** that was not
+taken, or after the failure that ended it — is left unmarked, which is what says so.
+
+**A Step under a loop shows the worst of its passes, and a count.** `iterations` exists because a
+flat `stepId → status` list cannot say *succeeded 23 times and failed once*, and a card that is one
+shape cannot say it either. `succeeded` outranks `skipped` in that ordering, deliberately: a Step
+skipped on its twenty-fourth pass did run.
+
+**No diagnostics are drawn.** The card already carries a mark saying what happened; a
+`COMPONENT_UNKNOWN` beside it is a second mark in the opposite tense, judged by today's catalogue
+against a version that cannot change. `createValidationStore` narrows to nothing while a run is on
+screen, which is ADR-0022's answer whenever the rules cannot say something true. A **Preview** the
+reader *chose* keeps its diagnostics, because that version is what a **Restore** would bring across.
+
+**A payload is coloured by walking the value, not by re-reading the text** (ADR-0027). `output` is
+`{}` in the schema — anything at all — so there is nothing to render against and nothing to label the
+parts of; JSON is what it is. Walking the value while serialising it is what lets a string be
+coloured as a string because it *is* one, and it is what handles the shapes a **Host** can send that
+JSON has no spelling for: a cycle, a `BigInt`, `NaN`. It lands on the same five tokens the document
+does, so a string looks the same on either screen.
+
+**The pane has two subjects and one home.** With nothing selected it draws the run — status, when it
+started, how long it took, what fired it and its payload, and the totals derived from every Step's
+metadata — and the whole log under it. With one Step selected it draws that Step's record and narrows
+the log to the entries naming it, which is what `logEntry.step` is for. A **Segment** of several is a
+question with several answers, so it says so rather than describing the first.
+
+**Totals are derived, never reported.** `workflow-execution.schema.yaml` refuses a run-level metadata
+block outright: a Component declares each metadata key as a `measure` or a `dimension`, and per-Step
+values plus those roles are enough for Hatua to compute the totals itself. Runners each inventing
+their own summary shape is a pane that can render none of them generically.
+
+**The pane is not the Inspector in another mode.** That region is the step *editor*, and nothing here
+edits: `Runs` and `RunStep` are regions of their own, and the **Workflow** tab is the same region the
+designer mounts rather than a read-only variant — it asks `useReadOnly()` like everything else, and a
+run is a **Preview**, so it is already answering no.
+
+**Leaving takes the run with it.** The view owns the **Preview** for as long as it is mounted:
+arriving leaves any version chosen from the bar's list, and leaving drops the run's. The two never
+coexist, and a run's version drawn under **Build** would carry no marks and be captioned as a preview
+of a version nobody picked.
+
+---
+
+## Text Mode
+
+The same **Workflow Definition**, as the YAML it is — reached from a **toggle on the column**, not
+from the toolbar.
+
+**The map and the text are two ways of editing one document** (ADR-0001, and CONTEXT.md defines both
+that way), while **Runs** puts a different document on screen. Two questions, so two controls: the
+bar says *which document*, and the toggle says *how this column draws it*. Putting the toggle on the
+column is what makes "the document did not change" visible rather than a rule to remember — and it is
+why a **Preview**, or the version a run ran against, can be read as text with nothing to decide.
+
+**One button reading YAML**, with `aria-pressed` saying which state it is in — the call the
+**References** control already makes, because a control that swaps its verb *and* reports pressed
+announces the state twice. *Text* is ambiguous on a canvas, where it reads as "add a text box"
+before it reads as "show me the file"; the concept is still **Text Mode**, and the landmark answers
+to YAML too, because a label and the thing it opens must not be two names for one thing.
+
+On the canvas it is the **head of the zoom strip** — `YAML | − 100% + ⛶`. Floating alone it read as
+something left behind in an empty canvas; in the strip it reads as chrome. It cannot only live there:
+the strip is not drawn in Text Mode at all, and this is the control that gets back out, so it takes
+the corner itself there.
+
+**Pressing it takes the side panel and the step editor with it, and not for width.** Every one of
+them *writes* to the document the box is holding — the catalogue applies `addStep`, the **Workflow**
+tab edits the name and the Triggers, the step editor writes a Step's fields — and the box adopts any
+change that is not its own commit, so one landing mid-edit replaces what was typed. Two writers on
+one document, and the one being looked at loses. They are also the map's tools: a Component is chosen
+to put on the canvas, and the step editor edits what a canvas selection names. In Text Mode their
+subject does not exist.
+
+**The Runs view does the same**, and its panels are not writers — so it could have kept them. It does
+not, because *what does this button do* is a better thing to hold steady than one panel's usefulness
+on one screen. Press it anywhere and the file takes the screen.
+
+**What is typed becomes the document on a quiet period**, the same 800ms autosave waits — there is no
+Save button (ADR-0005), and a commit per keystroke is an undo entry per keystroke over YAML that is
+half-typed most of the time. A blur commits sooner, because that is the reader saying they are done.
+
+**A text edit may break the projection, and it is the only edit that may.** ADR-0019 refuses a command
+that turns a document that projects into one that does not, because every surface reads `definition`
+and the user is left with nothing to click on to undo it. Neither half holds here: this surface reads
+the *text*, and what broke it is under the caret. Refusing would make the one screen that exists to
+repair a broken document the one screen that cannot save the repair (ADR-0026).
+
+**What will not parse at all stays in the box.** A source that is not YAML, or two documents in one
+file, cannot be held: every command reaches through the AST and there would be no AST. The document
+does not move, the text stays under the caret, and the line below the box says why. Leaving with such
+text asks first, because nothing else on screen could ever show it again.
+
+**The identity keys are the Draft's.** `id`, `version` and `status` say *which* document this is
+rather than what is in it, and a whole-document write keeps them whatever the source says — the same
+rule a **Restore** follows, and the same command. `publish()` sends the document's own bytes, so a
+text edit that renumbered the Draft would promote a version claiming to be an already-published one.
+
+**There is no dirty flag.** Whether the document has moved is `toString()` against what the Host last
+accepted, which is how the store already asks.
+
+**Read-only is `useReadOnly()`'s answer.** A **Preview** and an ended session both make it
+uneditable — and both leave it *readable*, which is the point: that is the escape from a halt the
+claim cannot resume, where the in-memory document is intact, saved nowhere, and every action on the
+bar discards it.
+
+**The colour is ours, and it is a layer rather than an editor** (ADR-0027). A textarea cannot hold
+styled ranges, so the document is drawn twice — coloured underneath, typed into on top with
+transparent glyphs and a real caret. Six tokens carry the palette: `--hatua-code-key`, `-string`,
+`-number`, `-comment`, `-reference` and `-selection`; punctuation and plain scalars use the text
+aliases that already exist, because a highlighter that colours everything says nothing about
+anything.
+
+**The selection is translucent, and the selected glyphs stay transparent.** Both follow from the band
+being drawn by the layer above the colour: an opaque band covers what it selects, and a `::selection`
+that sets only a background lets the browser paint the box's own characters over the painted ones.
+
+A `{{ … }}` **Reference** is the one span with the accent on it, and the one no off-the-shelf
+grammar knows about: to a YAML grammar `"{{ var.digest_to }}"` is one flat string. The holes come
+from `templateShape`, which derives them from the parse rather than scanning for delimiters
+(ADR-0008) — so the highlighter and the checker cannot disagree about `{{ '{{' }}`.
+
+The **lexer**, not the parser. A reader spends most of their keystrokes on text that does not parse,
+and colour that flickered off between two valid states would be worse than none.
+
+What it does not do: no folding, no bracket matching, no autocomplete, no find-and-replace, no
+gutter. Each is a reason to revisit ADR-0027, and none of them is asked for.
+
+---
+
 ## Selection
 
 `selected` and `onSelect` as **props**, with the composition root holding the state, exactly as
@@ -1090,6 +1262,7 @@ positions.
 | --- | --- |
 | `ManifestSource` | Components, Triggers, and Run Context declarations — one flat array of `ManifestEntry`, every entry carrying `kind` |
 | `WorkflowStore` | The Draft, its lease, versions, publish/release/discard |
+| `ExecutionSource` | The **Workflow Executions**: the list, paged, and one record. Omit it and the **Runs** segment is not drawn |
 
 Every field on `HostPorts` is optional and a region whose port is missing degrades rather than
 throws. **Two absences are different states**: "the Host wired nothing" and "the Host declared
@@ -1099,6 +1272,10 @@ The **Workflow tab** is the first region other than validation to read **two** s
 says which Triggers a workflow declares, and only the catalogue says what a Trigger's fields are. The
 Data panel is the second, because scope needs both. A Host supplying one and not the other is a real
 case; render it as an empty state, not a crash.
+
+`ExecutionSource` is whole or absent. Its two methods are not individually optional: a Host that can
+list runs and cannot load one has a broken implementation rather than a reduced one, and pushing that
+into the type would make every reader ask twice for an answer no Host has a reason to give.
 
 Function Manifests have a format and no port. The first surface to read Host-declared Functions is
 the completion list, and that is when the port becomes justified — a port with no reader is a shape
@@ -1146,18 +1323,16 @@ Recorded here so the two documents cannot disagree quietly. ADR-0011 already lis
   the port's shape.
 - **`Ctrl`+`Space`** conflicts with input-source switching for multilingual macOS users. `Ctrl`+`.` is
   the fallback if it bites.
-- **The read-only version mode.** ADR-0011 describes selecting a version and loading it through
-  `loadVersion`; the top bar lists versions and does not select one, because read-only is a state of
-  the canvas, the step editor and the **Workflow** tab together rather than of the bar. The PR that
-  designs it is the one that justifies `loadVersion`.
-- **A halt the claim cannot resume has no escape.** Where the session has ended, the in-memory
-  document is intact, editable and saved nowhere, and every action available discards it. Getting the
-  text out is **Text Mode**'s job, which is why that is the answer rather than a button in the bar.
 - **`WorkflowStore.publish` carries no typed conflict.** ADR-0005 makes publish the one moment
   conflict is detected, but the port rejects with a plain error, so Hatua cannot tell "someone else
   published" from "your claim was taken" and renders the Host's message for both. A code on the
   rejection would change a contract `sdk/go` shares.
 
-Two that were open here are now settled and recorded above: the **Run Context schema**, in
+Four that were open here are settled and recorded elsewhere: the **Run Context schema**, in
 [ADR-0012](adr/0012-run-context-is-a-fourth-manifest-kind.md) and under [Run Context](#run-context);
-and **mixed text and the type marking**, under [The type marking](#the-type-marking).
+**mixed text and the type marking**, under [The type marking](#the-type-marking); **the read-only
+version mode**, in [ADR-0024](adr/0024-the-editing-snapshot-describes-whichever-version-is-on-screen.md),
+which makes it a property of the snapshot rather than of any region; and **the escape from a halt the
+claim cannot resume**, which is **Text Mode**
+([ADR-0026](adr/0026-text-mode-writes-the-whole-document-and-the-backstop-does-not-apply.md)) — the
+document is intact and the text is selectable there whatever the claim says.

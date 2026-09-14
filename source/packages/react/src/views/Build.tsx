@@ -6,14 +6,29 @@ import { Data } from '../layouts/Data'
 import { FlowMap } from '../layouts/FlowMap'
 import { Inspector } from '../layouts/Inspector'
 import { TabbedPanel } from '../layouts/TabbedPanel'
+import { TextMode } from '../layouts/TextMode'
+import type { BarView } from '../layouts/TopBar'
 import { TopBar } from '../layouts/TopBar'
 import { boardTabLabel, Workflow } from '../layouts/Workflow'
 import { cx } from '../primitives/classNames'
 import { useEditingStore } from '../theme/HatuaProvider'
+import { TextToggle } from '../units/TextToggle'
 import styles from './Build.module.css'
 import css from './Build.module.css?inline'
+import { useLeavingText } from './leavingText'
 
-export type BuildProps = ComponentPropsWithRef<'div'>
+export interface BuildProps extends ComponentPropsWithRef<'div'> {
+  /**
+   * Which view is on screen, forwarded to the bar's segmented control.
+   *
+   * Chrome, and held one level out for the reason the Board and the selection
+   * are held here: the thing that renders the views is the only thing that can
+   * answer it. Absent means no control is drawn, which is what a Host mounting
+   * this alone gets — it has no other view to switch to.
+   */
+  view?: BarView
+  onViewChange?: (view: BarView) => void
+}
 
 /**
  * The designer screen: the toolbar across the top, then three columns — the
@@ -53,7 +68,7 @@ export type BuildProps = ComponentPropsWithRef<'div'>
  * that wants different columns imports the regions and writes its own grid,
  * which is strictly more capable. See views/README.
  */
-export function Build({ className, ...rest }: BuildProps) {
+export function Build({ className, view = 'build', onViewChange, ...rest }: BuildProps) {
   const store = useEditingStore()
 
   /*
@@ -127,6 +142,17 @@ export function Build({ className, ...rest }: BuildProps) {
   const [highlight, setHighlight] = useState<string | null>(null)
   const selected = selectedOn[boardKey(board)]
 
+  /*
+   * Which of the two ways of editing is on screen.
+   *
+   * Held here rather than lifted, because nothing outside this view has an
+   * opinion about it: the bar asks which DOCUMENT is up and this asks how it is
+   * drawn, and ADR-0001 pairs the map and the text as two ways of editing one
+   * (ADR-0026). A caller that wanted to choose has the other embedding.
+   */
+  const [text, setText] = useState(false)
+  const leaving = useLeavingText()
+
   /**
    * Read at click time, not at render time. <Build> deliberately does not
    * subscribe to the editing store — it places regions, and a re-render of the
@@ -150,6 +176,39 @@ export function Build({ className, ...rest }: BuildProps) {
     }
   }
 
+  /**
+   * The bar's own switch, wrapped so the question about unapplied text is asked
+   * before the screen changes rather than after.
+   */
+  const changeView = onViewChange
+    ? (next: BarView) => leaving.guard(text, () => onViewChange(next))
+    : undefined
+
+  if (text) {
+    return (
+      <>
+        <style href="hatua-build" precedence="hatua">
+          {css}
+        </style>
+        <div className={cx(styles.scroller, className)} {...rest}>
+          <div className={styles.text}>
+            <div className={styles.bar}>
+              <TopBar view={view} onViewChange={changeView} />
+            </div>
+            <div className={styles.column}>
+              <TextMode onUnsavedChange={leaving.onUnsavedChange} />
+              <TextToggle
+                showing="yaml"
+                onToggle={() => leaving.guard(true, () => setText(false))}
+              />
+            </div>
+          </div>
+        </div>
+        {leaving.dialog}
+      </>
+    )
+  }
+
   return (
     <>
       <style href="hatua-build" precedence="hatua">
@@ -159,6 +218,8 @@ export function Build({ className, ...rest }: BuildProps) {
         <div className={styles.build}>
           <div className={styles.bar}>
             <TopBar
+              view={view}
+              onViewChange={changeView}
               /*
                * Where a blocking problem actually is.
                *
@@ -356,6 +417,10 @@ export function Build({ className, ...rest }: BuildProps) {
               collapsedRegions={foldedRegions}
               onCollapsedRegionsChange={setFoldedRegions}
               onCollapseChange={setCollapsed}
+              // At the head of the zoom strip: `YAML | − 100% + fit`. Sharing
+              // that corner is what makes it read as chrome; it takes the corner
+              // itself in Text Mode, where there is no strip.
+              leadingControl={<TextToggle showing="flow" onToggle={() => setText(true)} />}
             />
           </div>
           {/*

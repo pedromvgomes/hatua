@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from 'react'
+import { type ReactNode, useId, useRef, useState } from 'react'
 import { cx } from '../primitives/classNames'
 import styles from './CanvasControls.module.css'
 import css from './CanvasControls.module.css?inline'
@@ -27,6 +27,17 @@ export interface CanvasControlsProps {
   /** Snap to exactly this scale. */
   onZoomTo: (scale: number) => void
   onFit: () => void
+  /**
+   * A control the composing view puts at the head of the strip, before the
+   * zoom.
+   *
+   * A slot rather than a named control, because what belongs beside the zoom is
+   * not the canvas's question — the canvas owns where this strip SITS, and the
+   * view composing the column owns what else is in it. Today it is the toggle
+   * that swaps the column between the map and the YAML; this unit neither knows
+   * that nor needs to.
+   */
+  leading?: ReactNode
 }
 
 /**
@@ -69,6 +80,7 @@ export function CanvasControls({
   onZoomOut,
   onZoomTo,
   onFit,
+  leading,
 }: CanvasControlsProps) {
   const [open, setOpen] = useState(false)
   const trigger = useRef<HTMLButtonElement>(null)
@@ -117,6 +129,13 @@ export function CanvasControls({
           close()
         }}
       >
+        {leading ? (
+          <>
+            {leading}
+            <span className={styles.divide} aria-hidden="true" />
+          </>
+        ) : null}
+
         <button
           type="button"
           className={styles.step}

@@ -40,8 +40,26 @@ in place.
 _Avoid_: visual mode, graph editor, builder, drawing connections
 
 **Text Mode**:
-Editing the same **Workflow Definition** as raw YAML text inside Hatua's own UI.
+Editing the same **Workflow Definition** as raw YAML text inside Hatua's own UI. It takes the whole
+screen, because the state it exists for is the one where every other surface is empty: a **Draft**
+that is not a **Workflow Definition** yet is still open and still editable here, and this is the only
+surface it can be repaired on. What is typed is the file, so a text edit may leave the document
+unreadable everywhere else; what it may not change is which version the **Draft** is, which Hatua
+owns.
+The control that opens it reads **YAML**, and the landmark answers to the same word: *Text* is
+ambiguous on a canvas, where it reads as "add a text box" first. The concept keeps its name here —
+a rendered label and a domain term are allowed to differ, the way the **Data** panel announces
+itself as **References**.
 _Avoid_: code mode, source view, raw editor
+
+**Runs**:
+The view that lists a workflow's **Workflow Executions** and draws one on the flow map against the
+version it references, resolved from the **Host**. Chrome — a peer of **Canvas Mode** and **Text
+Mode**, and a way of looking rather than anything a **Workflow Definition** holds. Nothing in it is
+editable: an execution is history, and the definition under it is a version Hatua may not change.
+The view is not the records it lists, and the word names only the view — one record is a **Workflow
+Execution**.
+_Avoid_: history, traces, executions, the run viewer
 
 **Step**:
 One node of a **Workflow Definition** — an instance of a **Component**, carrying an `id` that is

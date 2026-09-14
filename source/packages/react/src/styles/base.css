@@ -65,6 +65,33 @@
     --hatua-border-strong: oklch(from var(--hatua-seed-ink) calc(l + 0.52) calc(c * 0.4) h);
     --hatua-border-accent: var(--hatua-accent);
 
+    /*
+     * The code palette, for the two surfaces that render source: **Text Mode**'s
+     * document and a run's payloads. Five and no more — punctuation and plain
+     * scalars use the text aliases already here, because a highlighter that
+     * colours everything says nothing about anything.
+     *
+     * Hues rather than the accent, except for a Reference. The accent is the
+     * brand and marks what is interactive, so keys wearing it would read as
+     * links; a `{{ }}` Reference is the one span that names something live in
+     * the document, which is exactly what the accent is for.
+     */
+    --hatua-code-key: oklch(0.45 0.14 265);
+    --hatua-code-string: oklch(0.5 0.115 150);
+    --hatua-code-number: oklch(0.52 0.145 45);
+    --hatua-code-comment: oklch(from var(--hatua-seed-ink) calc(l + 0.42) calc(c * 0.4) h);
+    --hatua-code-reference: var(--hatua-text-accent);
+    /*
+     * Translucent, and that is the whole of it.
+     *
+     * Text Mode draws the document twice — coloured underneath, typed into on
+     * top with transparent glyphs — so a selection band belongs to the layer
+     * ABOVE the colour. An opaque one covers what it is selecting: the reader
+     * drags across a line and the line goes blank. Alpha is what lets the band
+     * read as a band while the glyphs under it stay legible.
+     */
+    --hatua-code-selection: oklch(from var(--hatua-accent) l c h / 0.26);
+
     --hatua-status-ok: oklch(0.58 0.12 150);
     --hatua-status-warn: oklch(0.75 0.135 75);
     --hatua-status-error: oklch(0.56 0.17 25);
@@ -150,6 +177,16 @@
     --hatua-text-accent: oklch(from var(--hatua-seed-accent) calc(l + 0.09) calc(c * 0.91) h);
     --hatua-focus-ring: oklch(from var(--hatua-accent) l c h / 0.5);
 
+    /* Lifted and desaturated, the same move the accent ramp makes: a light-mode
+       code colour on a near-black surface is a stain rather than a highlight. */
+    --hatua-code-key: oklch(0.79 0.11 265);
+    --hatua-code-string: oklch(0.79 0.1 150);
+    --hatua-code-number: oklch(0.82 0.11 65);
+    --hatua-code-comment: #6f7a97;
+    /* Heavier than the light band: the same alpha over a near-black surface
+       barely separates from it. */
+    --hatua-code-selection: oklch(from var(--hatua-accent) l c h / 0.38);
+
     /* The wash is a background for --hatua-text-primary to sit on, so it has to
        invert with the surfaces. Leaving the light value here puts near-white
        text on a near-white field — the first component to read it, Input's
@@ -185,6 +222,11 @@
       --hatua-accent-wash: oklch(from var(--hatua-seed-accent) 0.3 calc(c * 0.48) h);
       --hatua-text-accent: oklch(from var(--hatua-seed-accent) calc(l + 0.09) calc(c * 0.91) h);
       --hatua-focus-ring: oklch(from var(--hatua-accent) l c h / 0.5);
+      --hatua-code-key: oklch(0.79 0.11 265);
+      --hatua-code-string: oklch(0.79 0.1 150);
+      --hatua-code-number: oklch(0.82 0.11 65);
+      --hatua-code-comment: #6f7a97;
+      --hatua-code-selection: oklch(from var(--hatua-accent) l c h / 0.38);
       --hatua-status-error-wash: oklch(0.28 0.06 25);
       --hatua-shadow-color: oklch(0.02 0 0 / 0.55);
       --hatua-scrim: oklch(0.02 0 0 / 0.65);
