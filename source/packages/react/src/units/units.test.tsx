@@ -11,6 +11,7 @@ import { NodeCard } from './NodeCard'
 import { RegionBand } from './RegionBand'
 import { RegionNest } from './RegionNest'
 import { RootNode } from './RootNode'
+import { SegmentBar } from './SegmentBar'
 import { TextToggle } from './TextToggle'
 
 /**
@@ -494,6 +495,73 @@ describe('CanvasControls', () => {
     fireEvent.keyDown(trigger, { key: 'Escape' })
     expect(trigger.getAttribute('aria-expanded')).toBe('false')
     expect(document.activeElement).toBe(trigger)
+  })
+})
+
+describe('SegmentBar', () => {
+  it('says how many Steps the actions apply to, and counts in words', () => {
+    // The only thing on screen that says how many are selected once the
+    // selection runs past the edge of the viewport.
+    const { rerender } = render(<SegmentBar count={3} />)
+    expect(screen.getByText('3 steps selected')).toBeDefined()
+
+    rerender(<SegmentBar count={1} />)
+    expect(screen.getByText('1 step selected')).toBeDefined()
+  })
+
+  it('carries the count into each action name, because the verb alone does not say how much', () => {
+    render(<SegmentBar count={3} onRemove={() => {}} onExtract={() => {}} />)
+    expect(screen.getByRole('button', { name: 'Remove 3 steps' })).toBeDefined()
+    expect(screen.getByRole('button', { name: 'Make a block from 3 steps' })).toBeDefined()
+  })
+
+  it('draws only the actions it is handed', () => {
+    // A surface offering one and not the other says so by what it hands over,
+    // rather than by a flag over a fixed row.
+    render(<SegmentBar count={2} onRemove={() => {}} />)
+    expect(screen.getByRole('button', { name: 'Remove 2 steps' })).toBeDefined()
+    expect(screen.queryByRole('button', { name: /Make a block/ })).toBeNull()
+  })
+
+  it('reports each action to the surface that owns it', () => {
+    const onRemove = vi.fn()
+    const onExtract = vi.fn()
+    render(<SegmentBar count={2} onRemove={onRemove} onExtract={onExtract} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Make a block from 2 steps' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Remove 2 steps' }))
+    expect(onExtract).toHaveBeenCalledTimes(1)
+    expect(onRemove).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses extraction over a Return, and stays where it can be asked why', () => {
+    const onExtract = vi.fn()
+    render(<SegmentBar count={2} onExtract={onExtract} holdsReturn />)
+    const action = screen.getByRole('button', { name: 'Make a block from 2 steps' })
+
+    // `aria-disabled` and not `disabled`: a disabled button cannot be focused,
+    // so the explanation would exist for everyone except the readers who most
+    // need it. The handler is withheld instead, so the control is inert anyway.
+    expect(action.getAttribute('aria-disabled')).toBe('true')
+    expect(action.hasAttribute('disabled')).toBe(false)
+    fireEvent.click(action)
+    expect(onExtract).not.toHaveBeenCalled()
+  })
+
+  it('says why, rather than leaving the refusal to be inferred from a control that did nothing', () => {
+    render(<SegmentBar count={2} onExtract={() => {}} holdsReturn />)
+    const action = screen.getByRole('button', { name: 'Make a block from 2 steps' })
+    const reason = document.getElementById(action.getAttribute('aria-describedby') ?? '')
+
+    expect(reason?.textContent).toBe('These steps include a Return, which ends the block it is on.')
+    expect(action.getAttribute('title')).toBe(reason?.textContent)
+  })
+
+  it('carries no reason while the selection is extractable', () => {
+    render(<SegmentBar count={2} onExtract={() => {}} />)
+    const action = screen.getByRole('button', { name: 'Make a block from 2 steps' })
+    expect(action.hasAttribute('aria-describedby')).toBe(false)
+    expect(action.hasAttribute('title')).toBe(false)
   })
 })
 

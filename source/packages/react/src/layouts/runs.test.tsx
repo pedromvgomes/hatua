@@ -142,7 +142,11 @@ const workflows = (yaml = SOURCE): WorkflowStore => ({
 })
 
 const runs = (
-  options: { pages?: Cursor<ExecutionSummary>[]; failLoad?: Error } = {},
+  options: {
+    pages?: Cursor<ExecutionSummary>[]
+    failLoad?: Error
+    execution?: WorkflowExecution
+  } = {},
 ): ExecutionSource => {
   const pages = options.pages ?? [{ items: SUMMARIES }]
   let index = 0
@@ -154,7 +158,7 @@ const runs = (
     },
     async loadExecution() {
       if (options.failLoad) throw options.failLoad
-      return EXECUTION
+      return options.execution ?? EXECUTION
     },
   }
 }
@@ -354,5 +358,84 @@ describe('the pane about the run', () => {
     // A Host that keeps summaries longer than it keeps bodies is ordinary, and
     // one failure must not empty a list that was answering.
     expect(screen.getAllByRole('button')).toHaveLength(2)
+  })
+})
+
+describe('a Step that ran exactly once', () => {
+  /** One pass, which is the shape the pane draws without a Passes list. */
+  const ONCE = {
+    ...EXECUTION,
+    steps: [
+      {
+        id: 's4',
+        status: 'failed',
+        iterations: [
+          {
+            index: 0,
+            status: 'failed',
+            steps: [
+              {
+                id: 's5',
+                status: 'failed',
+                error: { message: 'timed out', code: 'UPSTREAM_TIMEOUT' },
+                metadata: { tokens: 1840, model: 'haiku', cost: 12 },
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  } as unknown as WorkflowExecution
+
+  const openOnly = async (execution: WorkflowExecution, steps: string[]) => {
+    mount(
+      <>
+        <Opening />
+        <RunStep selected={{ board: null, steps }} />
+      </>,
+      { executions: runs({ execution }) },
+    )
+    await openNewest()
+  }
+
+  it('says what went wrong and the code that came with it', async () => {
+    await openOnly(ONCE, ['s5'])
+
+    // The code is the half a Host's support desk can act on, and it is separate
+    // from the message because only one of the two is written for the reader.
+    await waitFor(() => expect(screen.getByText('timed out')).toBeDefined())
+    expect(screen.getByText('UPSTREAM_TIMEOUT')).toBeDefined()
+    // One record, so the head answers for the Step and there is no list of
+    // passes to read it from.
+    expect(screen.queryByText('Passes')).toBeNull()
+  })
+
+  it('labels the metadata the way the Component Manifest labels it, unit and all', async () => {
+    await openOnly(ONCE, ['s5'])
+
+    await waitFor(() => expect(screen.getByText('Tokens used')).toBeDefined())
+    expect(screen.getByText('1840 tokens')).toBeDefined()
+    expect(screen.getByText('Model')).toBeDefined()
+    expect(screen.getByText('haiku')).toBeDefined()
+  })
+
+  it('says nothing about a key the catalogue does not declare', async () => {
+    await openOnly(ONCE, ['s5'])
+
+    // A record carries values alone: the label, the type and the unit are the
+    // manifest's. An undeclared key has none of them, so there is nothing
+    // honest to write beside it.
+    await waitFor(() => expect(screen.getByText('Tokens used')).toBeDefined())
+    expect(screen.queryByText('12')).toBeNull()
+  })
+
+  it('says a Step the run never reached did not run, rather than saying nothing', async () => {
+    // A Branch that was not taken, or everything after the failure that ended
+    // the run. An unmarked pane would read as a Step that succeeded silently.
+    await openOnly({ ...EXECUTION, steps: [] } as unknown as WorkflowExecution, ['s1'])
+
+    await waitFor(() => expect(screen.getByText('Did not run')).toBeDefined())
+    const pane = within(screen.getByRole('region', { name: 'Run' }))
+    expect(pane.queryByText('Succeeded')).toBeNull()
   })
 })

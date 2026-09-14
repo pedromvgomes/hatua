@@ -11,7 +11,7 @@ import type {
   VersionSummary,
   WorkflowStore,
 } from '@hatua/services'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { HatuaProvider } from '../theme/HatuaProvider'
 import { Hatua } from './Hatua'
@@ -113,11 +113,12 @@ const SUMMARY: ExecutionSummary = {
   durationMs: 1470,
 }
 
-const executions = (): ExecutionSource => ({
+const executions = (options: { failLoad?: Error } = {}): ExecutionSource => ({
   async listExecutions(): Promise<Cursor<ExecutionSummary>> {
     return { items: [SUMMARY] }
   },
   async loadExecution() {
+    if (options.failLoad) throw options.failLoad
     return {
       run_id: 'run_8f2',
       status: 'succeeded',
@@ -143,13 +144,13 @@ const catalogue = (manifests: ManifestEntry[]): ManifestSource => ({
   loadManifests: async () => manifests,
 })
 
-const mount = () =>
+const mount = (options: { failLoad?: Error } = {}) =>
   render(
     <HatuaProvider
       ports={{
         workflows: workflows(),
         manifests: catalogue(CATALOGUE),
-        executions: executions(),
+        executions: executions(options),
       }}
       workflowId="wf_morning"
     >
@@ -296,5 +297,108 @@ describe('what the bar offers while a run is up', () => {
      */
     expect(screen.getByText('v4 · Published')).toBeDefined()
     expect(screen.queryByRole('button', { name: /v4 · Published/ })).toBeNull()
+  })
+})
+
+describe('the Step being read', () => {
+  it('describes the Step picked on the map, so the map and the pane agree', async () => {
+    mount()
+    await openRun()
+    await waitFor(() => expect(screen.getByRole('region', { name: 'Flow map' })).toBeDefined())
+
+    const map = within(screen.getByRole('region', { name: 'Flow map' }))
+    fireEvent.click(await map.findByText('Fetch the mail'))
+
+    const pane = within(screen.getByRole('region', { name: 'Run' }))
+    expect(await pane.findByText('Fetch the mail')).toBeDefined()
+    expect(pane.queryByText('This run')).toBeNull()
+  })
+
+  it('goes back to the run itself when the selection is cleared', async () => {
+    mount()
+    await openRun()
+    await waitFor(() => expect(screen.getByRole('region', { name: 'Flow map' })).toBeDefined())
+
+    const region = screen.getByRole('region', { name: 'Flow map' })
+    fireEvent.click(await within(region).findByText('Fetch the mail'))
+    await waitFor(() =>
+      expect(within(screen.getByRole('region', { name: 'Run' })).getByText('Fetch the mail')),
+    )
+
+    // Escape is the gesture that clears a selection, and the pane must not be
+    // left describing a Step nothing on the map is showing as picked.
+    fireEvent.keyDown(region, { key: 'Escape' })
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole('region', { name: 'Run' })).getByText('This run'),
+      ).toBeDefined(),
+    )
+  })
+})
+
+describe('the run as text', () => {
+  it('shows the run’s version as the YAML it is, without leaving the view', async () => {
+    mount()
+    await openRun()
+    await waitFor(() => expect(screen.getByRole('region', { name: 'Flow map' })).toBeDefined())
+
+    fireEvent.click(screen.getByRole('button', { name: 'YAML' }))
+
+    const box = screen.getByRole('textbox', { name: 'Workflow YAML' }) as HTMLTextAreaElement
+    expect(box.value).toContain('version: 4')
+    expect(box.value).toContain('Something retired')
+    // Which document is on screen has not changed — only how it is drawn — so
+    // the bar stays and the map goes.
+    expect(screen.getByRole('region', { name: 'Toolbar' })).toBeDefined()
+    expect(screen.getByText('You are viewing a past run of this version.')).toBeDefined()
+    expect(screen.queryByRole('region', { name: 'Flow map' })).toBeNull()
+  })
+
+  it('offers nothing to type into, because a run is history', async () => {
+    mount()
+    await openRun()
+    await waitFor(() => expect(screen.getByRole('region', { name: 'Flow map' })).toBeDefined())
+
+    fireEvent.click(screen.getByRole('button', { name: 'YAML' }))
+    // `useReadOnly()` is already true throughout this view, so the box is
+    // readable and the text can be taken, and nothing here can be edited.
+    expect(
+      (screen.getByRole('textbox', { name: 'Workflow YAML' }) as HTMLTextAreaElement).readOnly,
+    ).toBe(true)
+  })
+
+  it('goes back to the map on the same control, which names where it goes', async () => {
+    mount()
+    await openRun()
+    await waitFor(() => expect(screen.getByRole('region', { name: 'Flow map' })).toBeDefined())
+
+    fireEvent.click(screen.getByRole('button', { name: 'YAML' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Flow' }))
+
+    await waitFor(() => expect(screen.getByRole('region', { name: 'Flow map' })).toBeDefined())
+    expect(screen.queryByRole('textbox', { name: 'Workflow YAML' })).toBeNull()
+  })
+
+  it('is not offered before a run is picked, because there is no version to draw', async () => {
+    mount()
+    await waitFor(() => expect(screen.getByText('Pick a run to see it on the map.')).toBeDefined())
+
+    // With nothing on the map the control would swap one empty column for
+    // another, which is one more thing to press for no effect.
+    expect(screen.queryByRole('button', { name: 'YAML' })).toBeNull()
+  })
+})
+
+describe('a record the Host will not serve', () => {
+  it('leaves the map exactly as it was, and reports it where the row was pressed', async () => {
+    mount({ failLoad: new Error('That run has expired.') })
+    await openRun()
+
+    await waitFor(() =>
+      expect(screen.getAllByText('That run has expired.').length).toBeGreaterThan(0),
+    )
+    // The record first, the screen second: a run whose record cannot be loaded
+    // must not put a version on the map that nothing describes.
+    expect(screen.getByText('Pick a run to see it on the map.')).toBeDefined()
   })
 })
