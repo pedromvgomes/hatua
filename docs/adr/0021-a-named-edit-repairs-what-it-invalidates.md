@@ -27,9 +27,15 @@ A rename that does not rewrite breaks every consumer at once, as an unavoidable 
 whose purpose is to change a name and nothing else. The user's repair is to retype by hand exactly
 the substitution the command already knew how to make.
 
-That is ADR-0018's argument about extraction, and nothing in it was about extraction. It applies
-wherever an edit is discrete, unambiguous and named — which is what makes extraction an *instance* of
-this rule rather than an exception to a different one.
+The three properties are what carry that, and **unambiguous** is the one that does the work.
+A rename is *given* its answer: the new name is supplied, every site that read the old one is
+mechanically determined, and the rewrite invents nothing.
+
+Extraction is given none of that, which is where this rule stops. Which of a Segment's outside
+References should become parameters, what each is called, and what it carries are decisions the
+document does not hold, so extraction moves the Steps and leaves the contract to the author
+(ADR-0018). It is this rule's **boundary** and not an instance of it: Hatua repairs what it can
+derive, and refuses to invent what it cannot.
 
 ## What the surviving half of the rule forbids
 
@@ -51,8 +57,8 @@ nothing else — no document, no **Board**, no projection. That last one is load
 `EditCommand` must work on a document that does **not** project (ADR-0019 is about what a command may
 produce, not what it may assume), so every "where are the Templates" answer in `@hatua/model` is
 unavailable to it. `@hatua/services` walks the YAML AST and decides *which* scalars are in scope;
-`@hatua/expressions` decides what a path is. Extraction needs the same function with different
-arguments, so building it anywhere else would mean building it twice.
+`@hatua/expressions` decides what a path is. Three rename commands need it and none of them owns
+the grammar, so building it beside any one of them would mean building it three times.
 
 The walk is over `Name` and `Member` nodes, not over whole Templates. `{{ var.x + 1 }}` is not a
 **Reference** — `isReference` is false — and it names the variable exactly as much as `{{ var.x }}`

@@ -45,6 +45,18 @@ export interface NodeCardProps {
   /** This Step's diagnostics; a Step with none is handed nothing. */
   problems?: readonly Diagnostic[]
   /**
+   * Whether the Block this Step calls will not run — a problem on its own Board,
+   * or on the Board of something it calls in turn.
+   *
+   * A boolean and not a `Diagnostic`, because there is no diagnostic to hand
+   * over: the problem is reported once, on the Board that holds it, and raising
+   * a second one here would report it twice and make a Block called from five
+   * places look five times as broken (`troubledBlocks`). What this draws is the
+   * same marker for a different reason, because the consequence is the same —
+   * a card that looks fine on a workflow that does not run.
+   */
+  callsBrokenBlock?: boolean
+  /**
    * Selected, with whether the gesture asked to *extend* a selection rather
    * than replace it — `shiftKey`, reported and not interpreted.
    *
@@ -88,6 +100,7 @@ export function NodeCard({
   expanded = true,
   opens,
   problems,
+  callsBrokenBlock,
   onSelect,
   onToggle,
   onOpen,
@@ -97,9 +110,18 @@ export function NodeCard({
   const container = isContainer(step)
   const name = nameOf(step)
   const chips = chipsFor(step, manifest, connections)
-  const summary = problems?.length
-    ? problems.map((problem) => problem.message).join(' ')
-    : undefined
+  /*
+   * Everything wrong with this card, whether it is wrong here or behind the
+   * doorway. Both drive the same marker and the same border: the distinction
+   * matters to whoever fixes it and not to whoever is reading the Board, and a
+   * call that quietly looks fine on a workflow that cannot run is the state
+   * this exists to end.
+   */
+  const reasons = [
+    ...(problems ?? []).map((problem) => problem.message),
+    ...(callsBrokenBlock ? [CALLS_BROKEN_BLOCK] : []),
+  ]
+  const summary = reasons.length > 0 ? reasons.join(' ') : undefined
 
   return (
     <>
@@ -184,7 +206,7 @@ export function NodeCard({
             <span className={styles.verb}>{step.use}</span>
           </button>
 
-          {problems?.length ? (
+          {reasons.length > 0 ? (
             <svg
               className={styles.marker}
               viewBox="0 0 16 16"
@@ -247,9 +269,9 @@ export function NodeCard({
           `alert`: an unfilled field is the normal state of a Step somebody just
           added, and ADR-0009 has this block Publish and never editing.
         */}
-        {problems?.length ? (
+        {reasons.length > 0 ? (
           <span className={styles.offscreen} role="status">
-            {`${name}: ${problems.length === 1 ? '1 problem' : `${problems.length} problems`}. ${summary}`}
+            {`${name}: ${reasons.length === 1 ? '1 problem' : `${reasons.length} problems`}. ${summary}`}
           </span>
         ) : null}
       </li>
@@ -303,3 +325,13 @@ function chipsFor(
 
   return chips
 }
+
+/**
+ * What a call card says when the Block behind it will not run.
+ *
+ * Says "opens" because that is the word on the control beside it, and says
+ * nothing about which Step or which Reference: those are on another Board, and
+ * a sentence naming them here would describe something the reader cannot see
+ * and cannot act on without going there first.
+ */
+const CALLS_BROKEN_BLOCK = 'The block this opens has problems inside it.'

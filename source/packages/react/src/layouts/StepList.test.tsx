@@ -818,3 +818,58 @@ describe('marking a Step that is not filled in', () => {
     expect(reports()).toHaveLength(0)
   })
 })
+
+/**
+ * A call is a doorway (ADR-0013). The list draws the doorway and never what is
+ * behind it, so a row that looks finished can name a Block that cannot run.
+ */
+describe('a row that calls a Block which will not run', () => {
+  const CATALOGUE: Manifest[] = [
+    {
+      kind: 'component',
+      use: 'component.email.send',
+      name: 'Send',
+      fields: [{ k: 'to', label: 'To', kind: 'text' }],
+      outputs: [],
+    },
+  ]
+
+  const BROKEN = `id: wf_morning
+name: W
+version: 1
+status: draft
+steps:
+  - { id: call, use: block.broken, name: "Go through" }
+  - { id: fine, use: component.email.send, name: "Stays fine", with: { to: "a@b.c" } }
+blocks:
+  - id: broken
+    steps:
+      - { id: inside, use: component.email.send, name: "Inside", with: { to: "{{ var.nope }}" } }
+`
+
+  const reports = () =>
+    screen
+      .queryAllByRole('status')
+      .map((mark) => mark.textContent ?? '')
+      .filter((text) => text.includes('problem'))
+
+  it('marks the row, though nothing is wrong with the row itself', async () => {
+    mount(host(BROKEN), {}, CATALOGUE)
+    await screen.findByText('Go through')
+
+    await waitFor(() => expect(reports().length).toBeGreaterThan(0))
+    const report = reports().find((text) => text.startsWith('Go through:')) as string
+    expect(report).toContain('problems inside it')
+    // The row beside it is untouched: this is about what a call reaches.
+    expect(reports().some((text) => text.startsWith('Stays fine:'))).toBe(false)
+  })
+
+  it('says nothing when the Block it calls is fine', async () => {
+    mount(host(BROKEN.replace('{{ var.nope }}', 'someone@example.com')), {}, CATALOGUE)
+    await screen.findByText('Go through')
+
+    // Waited for, so this is "checked and clean" rather than "not checked yet".
+    await waitFor(() => expect(screen.getByText('Stays fine')).toBeDefined())
+    expect(reports()).toEqual([])
+  })
+})

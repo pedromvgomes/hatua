@@ -1,8 +1,15 @@
 import { validate } from '@hatua/expressions'
 import type { Manifest, WorkflowDefinition } from '@hatua/schema'
 import { describe, expect, it } from 'vitest'
-import { callSitesOf, callSlots, contractSummary, cyclicBlocks, returnSlots } from './blocks'
-import { indexManifests } from './connections'
+import {
+  callSitesOf,
+  callSlots,
+  contractSummary,
+  cyclicBlocks,
+  returnSlots,
+  troubledBlocks,
+} from './blocks'
+import { type Diagnostic, indexManifests } from './connections'
 import { blockOutputType, boardScope, scopeFor } from './scope'
 import { boards, stepKey, walkDocument } from './tree'
 import { validateDefinition } from './validity'
@@ -802,5 +809,65 @@ describe('the contract in a line', () => {
     // draws a node, and a summary that vanishes reads as a Board with no
     // contract instead of one that is not there.
     expect(contractSummary(undefined)).toBe('0 params · 0 outputs')
+  })
+})
+
+/**
+ * A call is a doorway, and a doorway says nothing about what is behind it. This
+ * is what lets a surface say so.
+ */
+describe('troubledBlocks', () => {
+  const broken = (blockId: string, stepId: string): Diagnostic =>
+    ({ code: 'X', message: '', blocks: 'publish', blockId, stepId }) as Diagnostic
+
+  const doc = (blocks: { id: string; calls?: string[] }[]): WorkflowDefinition =>
+    ({
+      id: 'wf',
+      name: 'W',
+      version: 1,
+      status: 'draft',
+      blocks: blocks.map((one) => ({
+        id: one.id,
+        steps: (one.calls ?? []).map((to, i) => ({ id: `c${i}`, use: `block.${to}` })),
+      })),
+      steps: [],
+    }) as unknown as WorkflowDefinition
+
+  it('is empty when nothing is wrong', () => {
+    expect([...troubledBlocks(doc([{ id: 'a' }]), [])]).toEqual([])
+  })
+
+  it('holds a Block with a diagnostic on its own Board', () => {
+    expect([...troubledBlocks(doc([{ id: 'a' }]), [broken('a', 's1')])]).toEqual(['a'])
+  })
+
+  /*
+   * The reason it is transitive. A Block whose own Steps are all fine but which
+   * calls a broken one does not run either — and marking only the immediate
+   * caller leaves every Board above it clean, with nothing suggesting the walk
+   * down to the level that says so.
+   */
+  it('holds every caller that reaches one, however far', () => {
+    const tree = doc([{ id: 'top', calls: ['mid'] }, { id: 'mid', calls: ['low'] }, { id: 'low' }])
+    expect([...troubledBlocks(tree, [broken('low', 's1')])].sort()).toEqual(['low', 'mid', 'top'])
+  })
+
+  it('leaves a Block that reaches nothing broken alone', () => {
+    const tree = doc([{ id: 'a', calls: ['fine'] }, { id: 'fine' }, { id: 'bad' }])
+    expect([...troubledBlocks(tree, [broken('bad', 's1')])]).toEqual(['bad'])
+  })
+
+  it('terminates on Blocks that call each other', () => {
+    const tree = doc([
+      { id: 'a', calls: ['b'] },
+      { id: 'b', calls: ['a'] },
+    ])
+    expect([...troubledBlocks(tree, [broken('a', 's1')])].sort()).toEqual(['a', 'b'])
+  })
+
+  it('reads a diagnostic about the Block itself, which carries no stepId', () => {
+    const tree = doc([{ id: 'caller', calls: ['a'] }, { id: 'a' }])
+    const own = { code: 'X', message: '', blocks: 'publish', blockId: 'a' } as Diagnostic
+    expect([...troubledBlocks(tree, [own])].sort()).toEqual(['a', 'caller'])
   })
 })

@@ -19,7 +19,7 @@ import {
   mapEntries,
   variableType,
 } from './slots'
-import { type BoardId, boardOf, own, type StepRef, stepKey, TRY_VERB } from './tree'
+import { type BoardId, boardKey, boardOf, own, type StepRef, stepKey, TRY_VERB } from './tree'
 
 /**
  * What a step may reference. The reference tree is built from this, which is
@@ -109,21 +109,37 @@ function collectUpstream(steps: readonly Step[], id: string, ancestors: Step[]):
   for (const step of steps) {
     if (step.id === id) return [...ancestors, ...earlier]
 
-    const above = [...ancestors, ...earlier]
-    // The try alone, and not every binding Step: a loop's body is exactly where
-    // `{{steps.<loop id>.item}}` means something, while a try's body is what
-    // produces its `error` and cannot read it.
-    const outside = step.use === TRY_VERB ? above : [...above, step]
+    const branches = step.branches ?? []
+    const body = step.steps ?? []
+    const handler = step.handler ?? []
 
-    const regions: readonly (readonly [readonly Step[], Step[]])[] = [
-      ...(step.branches ?? []).map((branch) => [branch.steps, outside] as const),
-      [step.steps ?? [], outside] as const,
-      // The handler, and the only place the try itself is in scope.
-      [step.handler ?? [], [...above, step]] as const,
-    ]
-    for (const [children, visible] of regions) {
-      const hit = collectUpstream(children, id, visible)
-      if (hit) return hit
+    /*
+     * What is visible inside a region is everything above this Step, and
+     * building it copies all of it. A Step with no region has nowhere to
+     * descend, so doing that for one costs a copy per Step and turns a flat
+     * list of n Steps into n²/2 copies — per call, and a whole-document pass
+     * asks once per Step.
+     *
+     * Descending into an empty region and descending into none are the same
+     * answer: the loop below finds nothing in `[]` and returns null.
+     */
+    if (branches.length > 0 || body.length > 0 || handler.length > 0) {
+      const above = [...ancestors, ...earlier]
+      // The try alone, and not every binding Step: a loop's body is exactly where
+      // `{{steps.<loop id>.item}}` means something, while a try's body is what
+      // produces its `error` and cannot read it.
+      const outside = step.use === TRY_VERB ? above : [...above, step]
+
+      const regions: readonly (readonly [readonly Step[], Step[]])[] = [
+        ...branches.map((branch) => [branch.steps, outside] as const),
+        [body, outside] as const,
+        // The handler, and the only place the try itself is in scope.
+        [handler, [...above, step]] as const,
+      ]
+      for (const [children, visible] of regions) {
+        const hit = collectUpstream(children, id, visible)
+        if (hit) return hit
+      }
     }
 
     if (!binds(step)) earlier.push(step)
@@ -278,9 +294,40 @@ export function scopeFor(
   ref: StepRef,
   manifests: readonly Manifest[] = [],
   context: readonly ContextKey[] = [],
+  memo: ScopeMemo = newScopeMemo(),
 ): ScopeEntry[] {
-  return scopeAt(doc, ref, manifests, context, new Set(), new Map())
+  return scopeAt(doc, ref, manifests, context, new Set(), memo)
 }
+
+/**
+ * What one walk has already worked out, so a second walk over the same document
+ * does not work it out again.
+ *
+ * A scope is *positional*, so asking for every Step's is asking n times — and
+ * each answer names every Step upstream of it, so the answers together hold
+ * n²/2 entries. Recomputing each one costs a fresh type tree per upstream Step
+ * per Step, which is what makes a whole-document pass superlinear: a thousand
+ * Steps take a second, and `validateDefinition` runs on every keystroke.
+ *
+ * Shared by passing one of these to every `scopeFor` in the pass. Created per
+ * pass and never held in the module: the document is an argument, and a cache
+ * outliving the call would be answering about a document that has since been
+ * edited.
+ */
+export interface ScopeMemo {
+  /** One loop's element type, which is what makes nested loops linear. */
+  readonly elements: ElementMemo
+  /** One upstream Step's entry, keyed by `stepKey`. */
+  readonly entries: Map<string, ScopeEntry>
+  /** One Board's unpositioned scope: its Triggers, its contract, its variables. */
+  readonly boards: Map<string, ScopeEntry[]>
+}
+
+export const newScopeMemo = (): ScopeMemo => ({
+  elements: new Map(),
+  entries: new Map(),
+  boards: new Map(),
+})
 
 /**
  * `scopeFor`, plus the set of loops already being resolved and what has already
@@ -305,26 +352,69 @@ function scopeAt(
   manifests: readonly Manifest[],
   context: readonly ContextKey[],
   resolving: ReadonlySet<string>,
-  elements: ElementMemo,
+  memo: ScopeMemo,
 ): ScopeEntry[] {
   const byUse = new Map(manifests.map((manifest) => [manifest.use, manifest]))
 
+  const board = boardKey(ref.board)
+  let unpositioned = memo.boards.get(board)
+  if (!unpositioned) {
+    unpositioned = boardScope(doc, ref.board, manifests, context)
+    memo.boards.set(board, unpositioned)
+  }
+
   return [
-    ...boardScope(doc, ref.board, manifests, context),
-    ...upstreamOf(doc, ref).map(
-      (step): ScopeEntry => ({
-        path: `steps.${step.id}`,
-        kind: 'step',
-        label: step.name ?? step.id,
-        type: stepOutputType(doc, ref.board, step, byUse.get(step.use), {
-          manifests,
-          context,
-          resolving,
-          elements,
-        }),
+    ...unpositioned,
+    ...upstreamOf(doc, ref).map((step) =>
+      entryFor(doc, ref.board, step, byUse.get(step.use), {
+        manifests,
+        context,
+        resolving,
+        elements: memo.elements,
+        entries: memo.entries,
       }),
     ),
   ]
+}
+
+/**
+ * One upstream Step's scope entry, which is the same entry whichever downstream
+ * Step is asking.
+ *
+ * **Cached only for an unguarded walk.** Inside one, `loopElementType` answers
+ * null for a loop already being resolved, which is a fact about the path that
+ * reached it rather than about the Step — the same distinction that generator
+ * draws about what it may remember. Storing a guarded answer would let one
+ * path's cycle guard decide the type every later reader sees.
+ */
+function entryFor(
+  doc: WorkflowDefinition,
+  board: BoardId,
+  step: Step,
+  manifest: Manifest | undefined,
+  through: {
+    manifests: readonly Manifest[]
+    context: readonly ContextKey[]
+    resolving: ReadonlySet<string>
+    elements: ElementMemo
+    entries: Map<string, ScopeEntry>
+  },
+): ScopeEntry {
+  const cacheable = through.resolving.size === 0
+  const key = stepKey({ board, id: step.id })
+  if (cacheable) {
+    const held = through.entries.get(key)
+    if (held) return held
+  }
+
+  const entry: ScopeEntry = {
+    path: `steps.${step.id}`,
+    kind: 'step',
+    label: step.name ?? step.id,
+    type: stepOutputType(doc, board, step, manifest, through),
+  }
+  if (cacheable) through.entries.set(key, entry)
+  return entry
 }
 
 /**
@@ -406,7 +496,11 @@ export function loopElementType(
     manifests,
     context,
     new Set([...resolving, key]),
-    elements,
+    {
+      elements,
+      entries: new Map(),
+      boards: new Map(),
+    },
   )
   const node = typeAtPath(scope, path)
   if (!node || node.type !== 'list') return remember(elements, key, null)

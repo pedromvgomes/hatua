@@ -552,6 +552,49 @@ describe('the Blocks a document declares', () => {
     expect(headings).toContain('Email')
   })
 
+  /*
+   * `byBlock` holds what is wrong with a Block ITSELF — a path without a
+   * return, a cycle, a repeated key. A Block whose Steps are broken has none of
+   * those, so its card drew clean while the workflow could not run.
+   *
+   * Its own catalogue, declaring the structural verbs the shared one leaves
+   * out: with `core.return` unknown, every Block holding one is already
+   * troubled and the assertion would pass without the rule under test.
+   */
+  const whole = [
+    ...CATALOGUE,
+    component({ use: 'core.return', name: 'Return' }),
+    component({ use: 'core.fork', name: 'Branch' }),
+  ]
+
+  const withWholeCatalogue = (yaml: string) =>
+    render(
+      <HatuaProvider
+        ports={{ manifests: { loadManifests: async () => whole }, workflows: storing(yaml).port }}
+        workflowId="wf_blocks"
+      >
+        <Components />
+      </HatuaProvider>,
+    )
+
+  it('marks a Block whose own Board will not run', async () => {
+    withWholeCatalogue(
+      DOCUMENT.replace('url: "https://archive.example.com/x"', 'url: "{{ var.nope }}"'),
+    )
+
+    const group = await blocksGroup()
+    await waitFor(() => expect(group.getByText(/problems on its own board/i)).toBeDefined())
+  })
+
+  it('says nothing about a Block whose Board is fine', async () => {
+    withWholeCatalogue(DOCUMENT)
+
+    const group = await blocksGroup()
+    // Waited for, so this is "checked and clean" rather than "not checked yet".
+    await waitFor(() => expect(group.getByText('1 param · 1 output')).toBeDefined())
+    expect(group.queryByText(/problems on its own board/i)).toBeNull()
+  })
+
   it('names a Block by its id when it has no name of its own', async () => {
     withDocument(<Components />)
     expect((await blocksGroup()).getByText('spare')).toBeDefined()

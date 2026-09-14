@@ -1,6 +1,7 @@
 import {
   type Board,
   type BoardId,
+  blockIdOf,
   boardOf,
   type Diagnostic,
   nameOf,
@@ -12,6 +13,7 @@ import {
   segmentOf,
   stepKey,
   summaryOf,
+  troubledBlocks,
 } from '@hatua/model'
 import type { Branch, Step } from '@hatua/schema'
 import {
@@ -26,6 +28,7 @@ import {
   Fragment,
   type KeyboardEvent,
   useEffect,
+  useMemo,
   useState,
   useSyncExternalStore,
 } from 'react'
@@ -168,6 +171,8 @@ const OPENING = { status: 'opening' } as const
 // returns a fresh object each call.
 const subscribeToNothing = () => () => {}
 const NO_PROBLEMS: ReadonlyMap<string, Diagnostic[]> = new Map()
+/** The same, for the Blocks a row may report as unable to run. */
+const NO_TROUBLE: ReadonlySet<string> = new Set()
 const UNCHECKED: ValidationState = {
   byStep: NO_PROBLEMS,
   byTrigger: NO_PROBLEMS,
@@ -239,6 +244,18 @@ export function StepList({
   // painting `byStep` before `ready` would flash a marker on every row of a
   // perfectly good workflow on each load.
   const problems = checks.ready ? checks.byStep : NO_PROBLEMS
+
+  /*
+   * The Blocks that will not run, so a call into one says so rather than
+   * looking finished. Derived and never a diagnostic: the problem is reported
+   * on the Board that holds it, and a second one per call site would count one
+   * fault once per doorway (`troubledBlocks`). Absent, not empty, for the same
+   * reason `problems` is.
+   */
+  const troubled = useMemo(
+    () => (checks.ready && definition ? troubledBlocks(definition, checks.all) : NO_TROUBLE),
+    [checks.ready, checks.all, definition],
+  )
 
   const select = (id: string) => {
     const picked = segmentOf(refOf(id))
@@ -391,6 +408,7 @@ export function StepList({
               at={{ board: listed?.id ?? null, index: 0 }}
               selection={selection}
               problems={problems}
+              troubled={troubled}
               collapsed={foldedHere}
               dragging={dragging}
               onSelect={select}
@@ -422,6 +440,8 @@ interface SequenceProps {
   selection: Segment | undefined
   /** Diagnostics per `stepKey`; a Step with none is absent. */
   problems: ReadonlyMap<string, Diagnostic[]>
+  /** The Blocks that will not run, so a call into one can say so. */
+  troubled: ReadonlySet<string>
   /** The ids collapsed on THIS Board. A Board is already `at.board`. */
   collapsed: ReadonlySet<string>
   dragging: string | null
@@ -445,7 +465,7 @@ interface SequenceProps {
  * inside branches, and there is no way to say otherwise outside `role="tree"`.
  */
 function Sequence({ steps, scope, at, ...handlers }: SequenceProps) {
-  const { selection, problems, collapsed, dragging, onInsert, onDropStep } = handlers
+  const { selection, problems, troubled, collapsed, dragging, onInsert, onDropStep } = handlers
 
   return (
     <ul className={styles.sequence}>
@@ -499,6 +519,7 @@ function Sequence({ steps, scope, at, ...handlers }: SequenceProps) {
               <Row
                 step={step}
                 problems={problems.get(stepKey({ board: at.board ?? null, id: step.id }))}
+                callsBrokenBlock={callsTrouble(step, troubled)}
                 selected={segmentHolds(selection, { board: at.board ?? null, id: step.id })}
                 expanded={open}
                 dragging={dragging === step.id}
@@ -690,6 +711,7 @@ function Gap({
 function Row({
   step,
   problems,
+  callsBrokenBlock,
   selected,
   expanded,
   dragging,
@@ -699,6 +721,8 @@ function Row({
 }: {
   step: Step
   problems?: Diagnostic[]
+  /** Whether the Block this row calls will not run — a boolean, never a Diagnostic. */
+  callsBrokenBlock?: boolean
   selected: boolean
   expanded: boolean
   dragging: boolean
@@ -708,11 +732,16 @@ function Row({
 }) {
   const container = Boolean(step.branches?.length || step.steps || step.handler)
 
-  // Hovering anywhere on the row explains the marker, rather than asking anyone
-  // to find a 3px edge with a pointer.
-  const summary = problems?.length
-    ? problems.map((problem) => problem.message).join(' ')
-    : undefined
+  /*
+   * Everything wrong with this row, whether it is wrong here or behind the
+   * doorway. Hovering anywhere on the row explains the marker, rather than
+   * asking anyone to find a 3px edge with a pointer.
+   */
+  const reasons = [
+    ...(problems ?? []).map((problem) => problem.message),
+    ...(callsBrokenBlock ? [CALLS_BROKEN_BLOCK] : []),
+  ]
+  const summary = reasons.length > 0 ? reasons.join(' ') : undefined
 
   return (
     <div
@@ -756,7 +785,7 @@ function Row({
         <span className={styles.meta}>{summaryOf(step)}</span>
       </button>
 
-      {problems?.length ? <Problems problems={problems} name={nameOf(step)} /> : null}
+      {reasons.length > 0 ? <Problems reasons={reasons} name={nameOf(step)} /> : null}
       {container ? (
         <button
           type="button"
@@ -818,9 +847,9 @@ function Row({
  * would make the builder unusable. ADR-0009 draws the same line — this blocks
  * Publish, never editing.
  */
-function Problems({ problems, name }: { problems: Diagnostic[]; name: string }) {
-  const summary = problems.map((problem) => problem.message).join(' ')
-  const label = `${name}: ${problems.length === 1 ? '1 problem' : `${problems.length} problems`}. ${summary}`
+function Problems({ reasons, name }: { reasons: readonly string[]; name: string }) {
+  const summary = reasons.join(' ')
+  const label = `${name}: ${reasons.length === 1 ? '1 problem' : `${reasons.length} problems`}. ${summary}`
 
   return (
     <span className={styles.offscreen} role="status">
@@ -858,3 +887,18 @@ const regionNoun = (region: Region): string =>
  */
 const boardScopeName = (board: Board | undefined): string =>
   board?.id == null ? 'the workflow' : `the “${board.block?.name || board.id}” block`
+
+/** Whether a row's Step calls a Block that will not run. */
+const callsTrouble = (step: Step, troubled: ReadonlySet<string>): boolean => {
+  const called = blockIdOf(step.use)
+  return called !== null && troubled.has(called)
+}
+
+/**
+ * What a call row says when the Block behind it will not run.
+ *
+ * The same sentence `NodeCard` carries, because it is the same fact about the
+ * same Step drawn by another region — and two spellings of one sentence is two
+ * things to keep in step.
+ */
+const CALLS_BROKEN_BLOCK = 'The block this opens has problems inside it.'

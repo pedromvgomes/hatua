@@ -67,7 +67,7 @@ export const clampScale = (scale: number): number => Math.min(ZOOM.max, Math.max
  * A viewport a Host supplied, made safe to build on — or `null` when it is not
  * a viewport at all.
  *
- * `defaultViewport` is the one place a number this region did not compute
+ * `defaultViewports` is the one place a number this region did not compute
  * reaches the transform, and a Host that persists what `onViewportChange`
  * reported is persisting it somewhere Hatua does not own. A `scale` of `0`
  * comes back as `Infinity` from `zoomAbout`'s `next / view.scale` on the first

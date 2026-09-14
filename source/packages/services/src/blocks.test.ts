@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   addBlock,
   addDeclaration,
+  extractBlock,
   nextBlockId,
   removeBlock,
   removeDeclaration,
@@ -643,5 +644,148 @@ describe('minting an id', () => {
     expect(() => addBlock({ id: 'archive_entry' }).apply(held)).toThrow(/already exists/)
     // And the document is left as it was, holding one.
     expect(held.toString().match(/- id: archive_entry/g)).toHaveLength(1)
+  })
+})
+
+/**
+ * Extraction moves the Steps and leaves a call. It writes no contract and
+ * rewrites no Template (ADR-0018), so what the Segment read from around it now
+ * names nothing — and `EXPR_UNKNOWN_REFERENCE` is what says so.
+ */
+describe('extracting a segment into a block', () => {
+  const TREE = `id: wf
+name: W
+version: 1
+status: draft
+
+steps:
+  - id: s1
+    use: component.email.fetch
+  # Keep this one.
+  - id: s2
+    use: component.email.send
+    with:
+      subject: "{{ steps.s1.subject }}"
+  - id: s3
+    use: core.fork
+    branches:
+      - label: A
+        when: "{{ steps.s2.sent }}"
+        steps:
+          - id: s4
+            use: component.email.send
+  - id: s5
+    use: component.email.send
+    with:
+      body: "{{ steps.s2.sent }}"
+`
+
+  it('moves the Steps onto the new Board and leaves a call where they were', () => {
+    const out = apply(TREE, extractBlock({ board: null, steps: ['s2', 's3'] }, { id: 'block_1' }))
+    const doc = projected(out)
+
+    expect(doc.steps.map((step) => step.id)).toEqual(['s1', 's6', 's5'])
+    expect(doc.steps[1]?.use).toBe('block.block_1')
+    expect(doc.blocks?.[0]?.id).toBe('block_1')
+    expect(doc.blocks?.[0]?.steps.map((step) => step.id)).toEqual(['s2', 's3'])
+  })
+
+  it('carries the comment the user wrote above a Step across with it', () => {
+    const out = apply(TREE, extractBlock({ board: null, steps: ['s2', 's3'] }, { id: 'block_1' }))
+    expect(out).toContain('# Keep this one.')
+    // On the Board it moved to, not left behind labelling the call.
+    expect(out.indexOf('# Keep this one.')).toBeLessThan(out.indexOf('- id: s5'))
+  })
+
+  it('writes no contract and rewrites no Template', () => {
+    const out = apply(TREE, extractBlock({ board: null, steps: ['s2', 's3'] }, { id: 'block_1' }))
+    const block = projected(out).blocks?.[0]
+
+    expect(block?.params).toBeUndefined()
+    expect(block?.outputs).toBeUndefined()
+    // Reaching out of the Segment, and left exactly as it was written.
+    expect(out).toContain('subject: "{{ steps.s1.subject }}"')
+    // Naming a Step that moved with it, so it still resolves and is untouched.
+    expect(out).toContain('when: "{{ steps.s2.sent }}"')
+    // On the Board the Segment left, now naming nothing, and equally untouched.
+    expect(out).toContain('body: "{{ steps.s2.sent }}"')
+  })
+
+  it('mints the call an id no Step on the Board it lands on is using', () => {
+    const out = projected(apply(TREE, extractBlock({ board: null, steps: ['s2'] }, { id: 'b' })))
+    // `s2` moved away, but reusing its id for the call that replaces it reads
+    // as a mistake in the diff.
+    expect(out.steps.map((step) => step.id)).toEqual(['s1', 's6', 's3', 's5'])
+  })
+
+  it('refuses a Segment holding a return, at any depth', () => {
+    const withReturn = TREE.replace(
+      '          - id: s4\n            use: component.email.send\n',
+      '          - id: s4\n            use: core.return\n',
+    )
+    expect(() =>
+      apply(withReturn, extractBlock({ board: null, steps: ['s3'] }, { id: 'block_1' })),
+    ).toThrow(/returns/)
+  })
+
+  it('refuses Steps that are not siblings, so execution cannot be reordered', () => {
+    expect(() =>
+      apply(TREE, extractBlock({ board: null, steps: ['s2', 's4'] }, { id: 'block_1' })),
+    ).toThrow(/siblings/)
+  })
+
+  /*
+   * The quiet half of the same rule. Siblings with a gap between them reorder
+   * execution exactly as two lists do, and the result still projects and still
+   * validates — so nothing downstream would report it.
+   */
+  it('refuses siblings with a Step between them', () => {
+    const flat = `id: wf
+name: W
+version: 1
+status: draft
+steps:
+  - { id: s1, use: component.email.send }
+  - { id: s2, use: component.email.send }
+  - { id: s3, use: component.email.send }
+  - { id: s4, use: component.email.send }
+`
+    // Extracted, `s2` and `s4` would leave `s1`, the call, `s3` — putting `s4`
+    // before `s3` rather than after it.
+    expect(() =>
+      apply(flat, extractBlock({ board: null, steps: ['s2', 's4'] }, { id: 'block_1' })),
+    ).toThrow(/next to each other/)
+
+    // The contiguous run through the same Steps is still allowed.
+    const out = projected(
+      apply(flat, extractBlock({ board: null, steps: ['s2', 's3'] }, { id: 'block_1' })),
+    )
+    expect(out.steps.map((step) => step.id)).toEqual(['s1', 's5', 's4'])
+  })
+
+  it('extracts from inside a Block’s Board as readily as from the root', () => {
+    const nested = `id: wf
+name: W
+version: 1
+status: draft
+
+blocks:
+  - id: inner
+    steps:
+      - { id: a, use: component.email.send }
+      - { id: b, use: component.email.send }
+
+steps: []
+`
+    const doc = projected(
+      apply(nested, extractBlock({ board: 'inner', steps: ['b'] }, { id: 'x' })),
+    )
+    // `s1` and not `c`: ids are minted `s1`, `s2`… on every Board, which is the
+    // one rule `addStep` follows too.
+    expect(doc.blocks?.find((one) => one.id === 'inner')?.steps.map((s) => s.id)).toEqual([
+      'a',
+      's1',
+    ])
+    expect(doc.blocks?.find((one) => one.id === 'x')?.steps.map((s) => s.id)).toEqual(['b'])
   })
 })
