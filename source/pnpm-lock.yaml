@@ -41,6 +41,9 @@ importers:
 
   apps/playground:
     dependencies:
+      '@hatua/log':
+        specifier: workspace:*
+        version: link:../../packages/log
       '@hatua/react':
         specifier: workspace:*
         version: link:../../packages/react
@@ -104,6 +107,8 @@ importers:
         specifier: workspace:*
         version: link:../schema
 
+  packages/log: {}
+
   packages/model:
     dependencies:
       '@hatua/document':
@@ -128,6 +133,9 @@ importers:
       '@hatua/layout':
         specifier: workspace:*
         version: link:../layout
+      '@hatua/log':
+        specifier: workspace:*
+        version: link:../log
       '@hatua/model':
         specifier: workspace:*
         version: link:../model
@@ -190,6 +198,9 @@ importers:
       '@hatua/layout':
         specifier: workspace:*
         version: link:../layout
+      '@hatua/log':
+        specifier: workspace:*
+        version: link:../log
       '@hatua/model':
         specifier: workspace:*
         version: link:../model

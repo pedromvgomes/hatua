@@ -1,4 +1,4 @@
-import type { EditToken } from '@hatua/react'
+import type { EditToken, WorkflowStore } from '@hatua/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createLocalWorkflowStore, createMemoryWorkflowStore, SEED } from './workflow-store'
 
@@ -323,6 +323,107 @@ describe('versions', () => {
     const store = createLocalWorkflowStore()
     await store.openDraft(WORKFLOW)
     await expect(store.loadVersion(WORKFLOW, 99)).rejects.toThrow(/No version 99/)
+  })
+
+  /**
+   * Publish enough times to need a second page.
+   *
+   * Each cycle publishes the draft and opens the next one, which is how a
+   * version number becomes permanent (ADR-0005).
+   */
+  const publishTimes = async (store: WorkflowStore, times: number) => {
+    for (let round = 0; round < times; round++) {
+      const session = await store.openDraft(WORKFLOW)
+      await store.publish(session.token, SEED)
+    }
+  }
+
+  it('stamps a seed that opens with a document marker without breaking it', async () => {
+    // `seed` is the caller's, and a key put in front of a `---` marker is
+    // content before the directives end — which is either invalid or a second
+    // document, and `parseWorkflow` refuses a multi-document source outright.
+    const store = createLocalWorkflowStore({
+      namespace: 'marked',
+      seed: '---\nid: wf_morning\nname: n\nsteps: []\n',
+    })
+    const { yaml } = await store.openDraft(WORKFLOW)
+
+    expect(yaml.startsWith('---')).toBe(true)
+    expect(yaml).toContain('version: 1')
+    expect(yaml).toContain('status: draft')
+    // One document still, which is all @hatua/document will accept.
+    expect(yaml.split('\n').filter((line) => line === '---')).toHaveLength(1)
+  })
+
+  it('stamps a seed whose document marker is not its first line', async () => {
+    // The scan has to pass what may legally precede the marker. Stopping at the
+    // first line that is not itself one puts the keys in front of a comment,
+    // which is content before the directives end — a two-document stream, which
+    // `parseWorkflow` refuses outright.
+    const store = createLocalWorkflowStore({
+      namespace: 'commented',
+      seed: '# what this workflow is for\n---\nid: wf_morning\nname: n\nsteps: []\n',
+    })
+    const { yaml } = await store.openDraft(WORKFLOW)
+
+    expect(yaml.startsWith('# what this workflow is for')).toBe(true)
+    expect(yaml).toContain('version: 1')
+    expect(yaml.split('\n').filter((line) => line === '---')).toHaveLength(1)
+    // Everything stamped sits after the marker, not before it.
+    expect(yaml.indexOf('version:')).toBeGreaterThan(yaml.indexOf('---'))
+  })
+
+  it('omits the cursor entirely for a workflow small enough not to need one', async () => {
+    const store = createLocalWorkflowStore()
+    await publishTimes(store, 2)
+
+    const page = await store.listVersions(WORKFLOW)
+    expect(page.next).toBeUndefined()
+    expect(page.items).toHaveLength(2)
+  })
+
+  it('pages, and the pages join up into the whole history newest first', async () => {
+    const store = createLocalWorkflowStore()
+    await publishTimes(store, 7)
+
+    const first = await store.listVersions(WORKFLOW)
+    expect(first.items).toHaveLength(5)
+    expect(first.next).toBeDefined()
+    expect(first.total).toBe(7)
+
+    const second = await store.listVersions(WORKFLOW, first.next)
+    expect(second.next).toBeUndefined()
+
+    const walked = [...first.items, ...second.items].map((entry) => entry.version)
+    expect(walked).toEqual([7, 6, 5, 4, 3, 2, 1])
+  })
+
+  it('refuses a cursor naming a version that is gone, rather than restarting', async () => {
+    // A draft discarded between two pages frees its number, so a cursor naming
+    // it resolves to nothing. Serving page one again hands back a cursor the
+    // caller has already seen, which trips the store's did-not-advance guard —
+    // reporting a paging fault in Hatua for a list that moved under the reader.
+    const store = createLocalWorkflowStore()
+    await publishTimes(store, 6)
+
+    await expect(store.listVersions(WORKFLOW, '999')).rejects.toThrow(/no longer there/)
+  })
+
+  it('stamps the draft with its own version, so the document and the list agree', async () => {
+    // `version:` and `status:` live in the YAML (ADR-0005), and a draft branched
+    // by copying the live version's bytes carries the LIVE version's numbers —
+    // which the top bar reads straight off the document.
+    const store = createLocalWorkflowStore()
+    const first = await store.openDraft(WORKFLOW)
+    await store.publish(first.token, first.yaml)
+
+    const second = await store.openDraft(WORKFLOW)
+    expect(second.yaml).toContain('version: 2')
+    expect(second.yaml).toContain('status: draft')
+
+    const live = await store.loadVersion(WORKFLOW, 1)
+    expect(live).toContain('version: 1')
+    expect(live).toContain('status: published')
   })
 })
 

@@ -181,7 +181,69 @@ const fingerprint = (text: string): string => {
 /** How long a claim survives without renewal. Short, so the expiry is watchable. */
 const LEASE_MS = 60_000
 
+/**
+ * Small on purpose. A workflow published a few times is enough to see the list
+ * page, which is the point of a reference Host implementing the port properly
+ * rather than conveniently.
+ */
+const VERSIONS_PER_PAGE = 5
+
 const now = () => new Date().toISOString()
+
+/**
+ * Write `version:` and `status:` into the document, because they belong to it.
+ *
+ * ADR-0005 puts both in the **Workflow Definition** and gives the Host the
+ * bytes, which makes keeping them level with the record this store holds the
+ * Host's job. A real one would do this server-side against its own schema; a
+ * line rewrite is enough here, and it is deliberately anchored to column zero so
+ * a `version:` nested inside a Step's `with:` is left alone.
+ */
+const stamped = (yaml: string, version: number, status: VersionSummary['status']): string => {
+  const withVersion = /^version:.*$/m.test(yaml)
+    ? yaml.replace(/^version:.*$/m, `version: ${String(version)}`)
+    : declaring(yaml, `version: ${String(version)}`)
+  return /^status:.*$/m.test(withVersion)
+    ? withVersion.replace(/^status:.*$/m, `status: ${status}`)
+    : declaring(withVersion, `status: ${status}`)
+}
+
+/**
+ * Add a top-level key to a document that has none, after anything that has to
+ * come first.
+ *
+ * `seed` is the caller's, and a YAML file may open with directives and a `---`
+ * marker. A key put in front of those is content before the directives-end
+ * marker, which is either invalid or a second document — and `parseWorkflow`
+ * refuses a multi-document source at the seam, so the failure would reach the
+ * user as a draft that will not open.
+ */
+const declaring = (yaml: string, line: string): string => {
+  const lines = yaml.split('\n')
+
+  /*
+   * After the document marker if there is one, and at the top if there is not.
+   *
+   * Found by scanning past what may legally precede it — directives, comments,
+   * blank lines — rather than stopping at the first line that is not itself a
+   * marker. Stopping there puts the key in front of a seed that opens with a
+   * comment, which is content before the directives end: a two-document stream,
+   * which `parseWorkflow` refuses outright, so the draft would not open at all.
+   */
+  let at = 0
+  while (at < lines.length) {
+    const text = lines[at] ?? ''
+    if (/^---\s*$/.test(text)) {
+      lines.splice(at + 1, 0, line)
+      return lines.join('\n')
+    }
+    if (!/^(%|#|\s*$)/.test(text)) break
+    at++
+  }
+
+  lines.splice(0, 0, line)
+  return lines.join('\n')
+}
 
 export interface LocalWorkflowStoreOptions {
   /** Namespaced so two pages of the playground do not fight over one workflow. */
@@ -275,11 +337,18 @@ export function createLocalWorkflowStore(options: LocalWorkflowStoreOptions = {}
       // calls would race: between checking whether a draft exists and claiming
       // it, another session can create one.
       if (!draft) {
+        const version = (live?.version ?? 0) + 1
         draft = {
-          version: (live?.version ?? 0) + 1,
+          version,
           status: 'draft',
           updatedAt: now(),
-          yaml: live?.yaml ?? seed,
+          // Stamped, not copied. `version:` and `status:` live in the YAML
+          // (ADR-0005), so a draft branched from the live version by copying its
+          // bytes carries the LIVE version's numbers — and the top bar reads
+          // them straight off the document. Left alone, the readout says
+          // `v1 · Published` beside a list saying `v2 draft`, which is one
+          // screen disagreeing with itself about what is open.
+          yaml: stamped(live?.yaml ?? seed, version, 'draft'),
         }
         stored.versions.push(draft)
       }
@@ -349,7 +418,10 @@ export function createLocalWorkflowStore(options: LocalWorkflowStoreOptions = {}
       for (const entry of stored.versions) {
         if (entry.status === 'published') entry.status = 'archived'
       }
-      draft.yaml = yaml
+      // Stamped for the reason `openDraft` stamps: the client sends the text it
+      // was editing, which still says `status: draft`, and the next session
+      // opens on those bytes.
+      draft.yaml = stamped(yaml, draft.version, 'published')
       draft.status = 'published'
       draft.updatedAt = now()
       stored.claim = undefined
@@ -374,14 +446,48 @@ export function createLocalWorkflowStore(options: LocalWorkflowStoreOptions = {}
       write(workflowId, stored)
     },
 
-    async listVersions(workflowId): Promise<Cursor<VersionSummary>> {
+    /**
+     * Paged, in pages small enough to see.
+     *
+     * A Host that returned everything would look identical to one that pages
+     * right up until a workflow got long, and the incremental path in
+     * `createVersionStore` would ship with nothing but its own unit tests ever
+     * walking it. `Cursor` says a Host with a small set omits `next`, so a
+     * workflow with two versions still comes back in one page and the cursor
+     * only appears once there is something to page to.
+     *
+     * The cursor is the version number the next page STARTS at, which is what
+     * makes it opaque to Hatua and meaningful only here.
+     */
+    async listVersions(workflowId, cursor): Promise<Cursor<VersionSummary>> {
       await wait()
       const stored = read(workflowId)
+      const ordered = [...stored.versions]
+        .sort((a, b) => b.version - a.version)
+        .map(({ version, status, updatedAt }) => ({ version, status, updatedAt }))
+
+      const from =
+        cursor === undefined ? 0 : ordered.findIndex((one) => `${one.version}` === cursor)
+      /*
+       * A cursor naming a version that is no longer there — a draft discarded
+       * between two pages frees its number (ADR-0005).
+       *
+       * Refused rather than restarted. Serving page one again hands back a
+       * cursor the caller has already seen, which trips `createVersionStore`'s
+       * did-not-advance guard and reports a paging fault in Hatua for what is
+       * really a list that moved under the reader. Whose fault it is, is the
+       * Host's to say, and the store renders it with what is already loaded
+       * left intact.
+       */
+      if (from < 0) throw new Error('That page of versions is no longer there. Try again.')
+      const start = from
+      const page = ordered.slice(start, start + VERSIONS_PER_PAGE)
+      const after = ordered[start + VERSIONS_PER_PAGE]
+
       return {
-        items: [...stored.versions]
-          .sort((a, b) => b.version - a.version)
-          .map(({ version, status, updatedAt }) => ({ version, status, updatedAt })),
-        total: stored.versions.length,
+        items: page,
+        ...(after ? { next: `${after.version}` } : {}),
+        total: ordered.length,
       }
     },
 
