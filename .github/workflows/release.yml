@@ -1,0 +1,137 @@
+# release — publishes a tagged version to npm and mirrors the Go module.
+#
+# A human pushes the tag; nothing else starts this. The tag is the decision, and
+# it is the only input: the nine `@hatua/*` packages, the GitHub Release and the
+# `hatua-go` mirror all carry the version the tag names.
+#
+# The steps below run in one job because their order is the safety property. The
+# notes file is checked before anything leaves the runner, and the mirror is
+# pushed only once npm has accepted every package — a mirror tagged for a
+# version npm never got is a version nobody can install.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+# Read-only by default; the release job widens this to exactly what it publishes
+# with.
+permissions:
+  contents: read
+
+# One release at a time per tag, and never cancel one in flight: a cancelled run
+# leaves some of the nine packages published and the rest not.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: release
+    runs-on: ubuntu-latest
+    permissions:
+      # Creating the GitHub Release, and nothing wider.
+      contents: write
+      # npm exchanges this OIDC token for a short-lived publish credential and
+      # attaches the provenance attestation. Without it `--provenance` has
+      # nothing to sign.
+      id-token: write
+    defaults:
+      run:
+        working-directory: source
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # `git subtree split` walks the whole history of source/sdk/go. A
+          # shallow clone gives it a truncated one and the mirror loses every
+          # commit before the cut.
+          fetch-depth: 0
+
+      # First, because it is the only step that can fail without leaving
+      # anything half-published. The GitHub Release body is a file a human
+      # wrote and reviewed; a run that reaches npm before discovering it is
+      # missing has published a version whose notes nobody can produce.
+      - name: The release notes exist
+        working-directory: .
+        run: |
+          notes="docs/release-notes/${GITHUB_REF_NAME}.md"
+          if [ ! -f "$notes" ]; then
+            echo "::error::$notes is missing — write the notes for ${GITHUB_REF_NAME} before tagging"
+            exit 1
+          fi
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          # packageManager lives in source/, not at the repo root.
+          package_json_file: source/package.json
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: source/pnpm-lock.yaml
+          # Writes the registry line NODE_AUTH_TOKEN is read through. The node
+          # version in .nvmrc ships npm >= 11.5.1, which is what performs the
+          # OIDC exchange for trusted publishing.
+          registry-url: https://registry.npmjs.org
+
+      - run: pnpm install --frozen-lockfile
+
+      # Every package publishes `files: ["dist"]`, so the whole monorepo is
+      # built — a package whose dist/ is absent publishes an empty tarball.
+      - run: pnpm turbo run build
+
+      - name: Create the GitHub Release
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --verify-tag \
+            --notes-file "docs/release-notes/${GITHUB_REF_NAME}.md"
+
+      # `pnpm -r publish` selects every non-private workspace package and orders
+      # them topologically, so a package added to the workspace later is carried
+      # along rather than missed by a list kept by hand. It also rewrites the
+      # `workspace:*` ranges into real versions, which a plain `npm publish`
+      # does not.
+      #
+      # NODE_AUTH_TOKEN is what authenticates the publish. Trusted publishing
+      # binds a publisher per package name, so a name the registry does not yet
+      # hold has no publisher to bind to and OIDC alone cannot create it; the
+      # token carries those.
+      #
+      # --access public is redundant with each manifest's publishConfig, and is
+      # passed anyway so a scoped package added without that field publishes
+      # public rather than failing as restricted.
+      - name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: pnpm --recursive publish --provenance --access public --no-git-checks
+
+      # `repositories:` is part of what this token is, not a refinement of it.
+      # The App is installed account-wide, so a token minted without it is
+      # scoped to every repository the App can see — and this one only ever
+      # pushes to hatua-go.
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: mirror
+        with:
+          # The input is named app-id and takes the App's Client ID.
+          app-id: ${{ vars.WORKFLOWS_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.WORKFLOWS_BOT_PRIVATE_KEY }}
+          owner: pedromvgomes
+          repositories: hatua-go
+
+      # `go get` resolves a module from its own repository, so the Go SDK is
+      # mirrored out of the monorepo as a repository whose root is the module.
+      # The branch is rewritten wholesale on every release; the tag is not
+      # forced, so a version already mirrored fails here instead of moving.
+      - name: Mirror the Go module to hatua-go
+        working-directory: .
+        env:
+          GIT_TOKEN: ${{ steps.mirror.outputs.token }}
+        run: |
+          split="$(git subtree split --prefix source/sdk/go)"
+          remote="https://x-access-token:${GIT_TOKEN}@github.com/pedromvgomes/hatua-go.git"
+          git push --force "$remote" "${split}:refs/heads/main"
+          git push "$remote" "${split}:refs/tags/${GITHUB_REF_NAME}"
