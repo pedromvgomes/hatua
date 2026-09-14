@@ -44,6 +44,8 @@ const SURFACE = [
   'nextStepId',
   'removeStep',
   'rootStepCount',
+  'setStepField',
+  'setStepName',
   'stepIn',
 
   // Commands: the Blocks, and the contract each one declares.

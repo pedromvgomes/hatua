@@ -5,6 +5,7 @@ import {
   FlowMap,
   HatuaProvider,
   Inspector,
+  type Segment,
   StepList,
   TabbedPanel,
   TopBar,
@@ -131,6 +132,15 @@ function HostPage() {
   const [storeName, setStoreName] = useState<StoreName>('local')
   const [connectionsName, setConnectionsName] = useState<ConnectionsName>('ready')
   const [lastSelected, setLastSelected] = useState<ComponentDrag | null>(null)
+  /*
+   * The selection, held by the Host.
+   *
+   * <Build> holds it too, and neither region knows which of them is doing it:
+   * `selected` in and `onSelect` out is the whole seam. Two pages holding one
+   * piece of chrome state their own way is what "mount the regions wherever you
+   * like" has to mean to be worth anything.
+   */
+  const [selected, setSelected] = useState<Segment | null>(null)
 
   // Memoised on the name, because <HatuaProvider> keys its editing store on the
   // port it is handed: a Host that rebuilt one every render would look exactly
@@ -228,7 +238,10 @@ function HostPage() {
           }}
         >
           <div style={{ gridColumn: 1, gridRow: 1 }}>
-            <Inspector />
+            {/* The Data panel is still not mounted, deliberately — see above.
+                The step editor works without it: the panel adds a way to find a
+                Reference, and every field stays typeable with no panel at all. */}
+            <Inspector selected={selected} />
           </div>
           <div style={{ gridColumn: 2, gridRow: 1, minWidth: 0 }}>
             <TabbedPanel
@@ -250,7 +263,7 @@ function HostPage() {
                   // Components and Flow tabs to each other; this page prints
                   // the selection instead and still edits, because removing and
                   // reordering need no catalogue.
-                  content: <StepList onSelect={(ref) => console.info('selected', ref)} />,
+                  content: <StepList onSelect={(segment) => setSelected(segment ?? null)} />,
                 },
               ]}
             />

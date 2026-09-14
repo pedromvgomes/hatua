@@ -11,7 +11,17 @@ import { type BoardId, bornRegionsOf, type InsertPoint, type StepRef } from '@ha
 export type { InsertPoint } from '@hatua/model'
 
 import type { Step } from '@hatua/schema'
-import { asObject, detachNode, insertNode, type Path, readAt, stepEntriesIn } from './ast'
+import {
+  asObject,
+  detachNode,
+  insertNode,
+  mapIn,
+  type Path,
+  readAt,
+  STEP_KEY_ORDER,
+  setScalarIn,
+  stepEntriesIn,
+} from './ast'
 import type { EditCommand } from './command'
 
 /**
@@ -138,6 +148,9 @@ export function nextStepId(document: WorkflowDocument, board: BoardId | undefine
   }
 }
 
+/** A `with:` map's keys are the manifest's to order, so nothing here reorders them. */
+const NO_KEY_ORDER: readonly string[] = []
+
 const samePath = (a: Path, b: Path) => a.length === b.length && a.every((part, i) => part === b[i])
 
 /**
@@ -243,6 +256,65 @@ export function moveStep(ref: StepRef, to: InsertPoint): EditCommand {
         samePath(found.listPath, targetBefore) && to.index > found.index ? to.index - 1 : to.index
 
       insertNode(document, targetPath, index, node)
+    },
+  }
+}
+
+/**
+ * Write one of a Step's field values, under the key its Component Manifest
+ * declares as `FieldSpec.k`.
+ *
+ * The value is whatever the field's kind holds — a Template for the kinds that
+ * accept an Expression, a literal for the rest. Which is which is the
+ * manifest's to say and never this command's: it is handed a value and writes
+ * it, exactly as a Trigger's `with:` entry is.
+ *
+ * `with:` is created when the Step has not got one, among the keys the schema
+ * documents rather than after whatever the Step happens to end with. A Workflow
+ * Definition lives in the Host's repository and a person reads the diff.
+ */
+export function setStepField(
+  ref: StepRef,
+  key: string,
+  value: string | number | boolean,
+): EditCommand {
+  return {
+    label: `Edit ${ref.id}`,
+    apply(document) {
+      const found = locate(document, ref)
+      if (!found) throw new Error(`No Step with id "${ref.id}"`)
+
+      // `with:` is created in its documented place, so it lands under `use:`
+      // rather than below the regions a container carries.
+      const withPath = mapIn(document, [...found.listPath, found.index], 'with', STEP_KEY_ORDER)
+
+      // No key order inside it, so a created key is appended: the order of a
+      // `with:` map is the manifest's field order, and a command is handed one
+      // key and never the list.
+      //
+      // `setScalarIn` rather than `setScalar`, for its refusal. A key already
+      // holding a mapping or a list is a half-typed document rather than an
+      // absent one, and `setScalar` replaces the whole node — discarding
+      // everything under it, in a file Hatua does not own. Refusing is a no-op
+      // with nothing on the undo stack, which is what every command here does
+      // when it cannot write what it was given.
+      setScalarIn(document, withPath, key, NO_KEY_ORDER, value)
+    },
+  }
+}
+
+/**
+ * Rename a Step. Its `id` is what a Reference points at, so a rename breaks
+ * nothing — which is why the name is free text and the id is not editable here
+ * at all.
+ */
+export function setStepName(ref: StepRef, name: string): EditCommand {
+  return {
+    label: `Rename ${ref.id}`,
+    apply(document) {
+      const found = locate(document, ref)
+      if (!found) throw new Error(`No Step with id "${ref.id}"`)
+      setScalarIn(document, [...found.listPath, found.index], 'name', STEP_KEY_ORDER, name)
     },
   }
 }
