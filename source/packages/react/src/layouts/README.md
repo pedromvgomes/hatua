@@ -109,6 +109,35 @@ which is what would otherwise force `once`/`fixed` back and a special case into
 A run drawer belongs to `views/Runs`, not to `Build`. A **Workflow Execution**
 is read-only history; nothing in the designer edits one.
 
+### The shape of each region on the map
+
+`@hatua/layout` decides where every card goes; this tier draws what it is handed
+and computes no geometry of its own. What each child region looks like is
+settled in `docs/handoff.md` § Flow map geometry, and the two answers this tier
+has to agree with are: a Fork's Branches are **columns** that converge, and every
+other region — a loop's body, a `core.try`'s body and handler — is **stacked**
+under the card that owns it, in document order, each under a band carrying the
+label that names it.
+
+`<StepList>` says the same thing in a list, with the chip over each region — the
+two surfaces draw differently and must not disagree about which regions a
+container has or what they are called.
+
+**Neither surface reads the verb to decide whether a region exists.** A
+`handler:` on a `core.fork` is meaningless and no runner reads it, but it is not
+invisible: `walkSteps` yields the Steps inside it, so the generic rules report
+against them by name, and a `COMPONENT_UNKNOWN` naming a Step that nothing draws
+is a problem the user cannot go and fix. Refusing to draw a region does not make
+it absent from the document — it makes it unreachable. What the verb decides is
+the *word* over a region, which is why `bodyKeywordFor` says `try` over a try's
+body and `loop` over a loop's.
+
+`@hatua/layout` asks `regionsOf` in `@hatua/model`; this region reads `branches`,
+`steps` and `handler` itself. `StepList.test.tsx` § "the list draws every region
+the document carries" holds the two together on a Step that carries all three
+keys at once, so a region added to one reading and not the other fails rather
+than quietly making the map and the list disagree.
+
 ### The list and the map are both on screen
 
 They are not redundant, and neither replaces the other. The list is scannable at

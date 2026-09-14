@@ -458,16 +458,20 @@ function Sequence({ steps, scope, at, ...handlers }: SequenceProps) {
 
               {/*
                 A `core.try`'s second region, drawn whenever the key is present —
-                the same rule the body above follows. Its own region rather than
-                a Branch: a Branch's identity is its label, which is free text a
-                user renames, and a region the user could rename out of existence
-                is not a region.
+                the same rule the body and the branches above follow. Its own
+                region rather than a Branch: a Branch's identity is its label,
+                which is free text a user renames, and a region the user could
+                rename out of existence is not a region.
 
-                Rendered only for a try. A `handler:` on any other verb means
-                nothing, and drawing one would put a region on screen that no
-                rule and no runner reads.
+                Drawn on any verb, not only on a try. A `handler:` elsewhere is
+                meaningless and no runner reads it — but `walkSteps` still yields
+                the Steps inside it, so every generic rule reports against them
+                by name. A diagnostic naming a Step no region draws is one the
+                user cannot act on, because there is nothing on screen to select
+                or delete. Hiding the region does not make it absent from the
+                document; it makes it unreachable.
               */}
-              {open && step.use === TRY_VERB && step.handler ? (
+              {open && step.handler ? (
                 <div className={styles.loop}>
                   <span className={styles.keyword}>on failure</span>
                   <Sequence

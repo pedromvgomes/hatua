@@ -622,6 +622,74 @@ steps:
         name: "Say it failed"
 `
 
+/*
+ * A Step carrying all three region keys at once. No verb owns that shape and no
+ * rule refuses it, so it is what a hand-edit reaches — and it is where the list
+ * and the map could disagree about what a region is.
+ */
+const MIXED = `id: wf_morning
+name: "Morning inbox triage"
+version: 4
+status: draft
+
+steps:
+  - id: s1
+    use: core.fork
+    name: "Confused"
+    branches:
+      - label: One
+        steps:
+          - id: s2
+            use: core.end
+            name: "In a branch"
+      - label: Two
+        steps:
+          - id: s3
+            use: core.end
+            name: "In the other"
+    steps:
+      - id: s4
+        use: core.end
+        name: "In the body"
+    handler:
+      - id: s5
+        use: core.end
+        name: "In the handler"
+`
+
+describe('the list draws every region the document carries', () => {
+  /*
+   * The list and the map must not disagree about which regions a container has.
+   * Neither reads the verb to decide: a `handler:` on a `core.fork` is
+   * meaningless and no runner reads it, but `walkSteps` yields the Steps inside
+   * it, so the generic rules report against them by name. A Step that is
+   * diagnosed and drawn nowhere is one nobody can select or delete.
+   */
+  it('draws a Step from a branch, a body and a handler on one non-try Step', async () => {
+    mount(host(MIXED))
+    expect(await screen.findByText('In a branch')).toBeDefined()
+    expect(screen.getByText('In the other')).toBeDefined()
+    expect(screen.getByText('In the body')).toBeDefined()
+    expect(screen.getByText('In the handler')).toBeDefined()
+  })
+
+  it('draws one row per Step the walk yields, and no more', async () => {
+    mount(host(MIXED))
+    await screen.findByText('Confused')
+
+    // `regionsOf` is what both surfaces enumerate regions with, so the walk over
+    // it is the list of cards the map places. The list has to match it name for
+    // name, or one surface is holding a Step the other cannot reach.
+    expect(rowNames()).toEqual([
+      'Confused',
+      'In a branch',
+      'In the other',
+      'In the body',
+      'In the handler',
+    ])
+  })
+})
+
 describe('a core.try draws two regions', () => {
   /*
    * The one Step with two child regions, so the one place the tree has to say

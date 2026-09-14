@@ -20,10 +20,11 @@
   "scripts": {
     "build": "vite build",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests",
-    "test:coverage": "vitest run --coverage --coverage.reporter=text-summary --coverage.reporter=json-summary --coverage.reporter=lcovonly --passWithNoTests"
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage --coverage.reporter=text-summary --coverage.reporter=json-summary --coverage.reporter=lcovonly"
   },
   "dependencies": {
+    "@hatua/model": "workspace:*",
     "@hatua/schema": "workspace:*"
   }
 }

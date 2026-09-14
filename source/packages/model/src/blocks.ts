@@ -1,6 +1,6 @@
 import type { Slot } from '@hatua/expressions'
 import type { Block, Declaration, Step, WorkflowDefinition } from '@hatua/schema'
-import { own } from './tree'
+import { own, regionsOf } from './tree'
 
 /**
  * Blocks: what a call takes, what a return publishes, and which Blocks reach
@@ -86,9 +86,7 @@ export function callsOf(steps: readonly Step[]): string[] {
     for (const step of list) {
       const id = blockIdOf(step.use)
       if (id !== null) found.push(id)
-      for (const branch of step.branches ?? []) walk(branch.steps)
-      if (step.steps) walk(step.steps)
-      if (step.handler) walk(step.handler)
+      for (const region of regionsOf(step)) walk(region.steps)
     }
   }
   walk(steps)
