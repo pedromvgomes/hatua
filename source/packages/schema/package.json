@@ -24,7 +24,7 @@
     "test:coverage": "vitest run --coverage --coverage.reporter=text-summary --coverage.reporter=json-summary --coverage.reporter=lcovonly --passWithNoTests"
   },
   "dependencies": {
-    "zod": "^4.1.12"
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "yaml": "^2.9.0"
