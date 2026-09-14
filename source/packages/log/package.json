@@ -4,6 +4,11 @@
   "type": "module",
   "description": "Internal to @hatua/react — published because it is an external of its build, not a supported API. Levelled, categorised diagnostics — silent unless a Host asks.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pedromvgomes/hatua.git",
+    "directory": "source/packages/log"
+  },
   "sideEffects": false,
   "files": [
     "dist"

@@ -4,6 +4,11 @@
   "type": "module",
   "description": "Internal to @hatua/react — published because it is an external of its build, not a supported API. Owns the YAML document: parse, surgical edit, serialise, source positions.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pedromvgomes/hatua.git",
+    "directory": "source/packages/document"
+  },
   "sideEffects": false,
   "files": [
     "dist"

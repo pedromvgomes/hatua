@@ -4,6 +4,11 @@
   "type": "module",
   "description": "Hatua SDK for Node backends and workflow runners \u2014 the contract plus the shared expression evaluator",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pedromvgomes/hatua.git",
+    "directory": "source/sdk/js"
+  },
   "sideEffects": false,
   "files": [
     "dist"

@@ -4,6 +4,11 @@
   "type": "module",
   "description": "Internal to @hatua/react — published because it is an external of its build, not a supported API. Pure domain rules over the step tree: references, scope, validation.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pedromvgomes/hatua.git",
+    "directory": "source/packages/model"
+  },
   "sideEffects": false,
   "files": [
     "dist"

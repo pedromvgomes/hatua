@@ -4,6 +4,11 @@
   "type": "module",
   "description": "The Hatua workflow designer: React components, hooks and theming",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pedromvgomes/hatua.git",
+    "directory": "source/packages/react"
+  },
   "sideEffects": false,
   "files": [
     "dist"
