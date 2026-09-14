@@ -25,6 +25,11 @@ dependabot:
       The pnpm workspace ROOT, not each member. There is a single lockfile at
       source/pnpm-lock.yaml, so pointing Dependabot at packages/* or apps/*
       would make every PR fail `pnpm install --frozen-lockfile`.
+    groups:
+      - name: storybook
+        patterns:
+          - storybook
+          - '@storybook/*'
   - ecosystem: npm
     directory: /brand
     note: |

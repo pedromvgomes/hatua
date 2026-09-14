@@ -41,6 +41,15 @@ updates:
     cooldown:
       default-days: 7
     open-pull-requests-limit: 25
+    # Grouped dependencies share a single PR. A group exists when its members
+    # must move together: landing one alone breaks the default branch, and the
+    # sibling PR then fails that same broken check — so auto-merge cannot
+    # recover on its own.
+    groups:
+      storybook:
+        patterns:
+          - "storybook"
+          - "@storybook/*"
 
   # Its own project with its own lockfile, outside the source workspace.
   - package-ecosystem: "npm"
