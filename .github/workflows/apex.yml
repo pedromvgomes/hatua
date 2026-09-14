@@ -1,0 +1,82 @@
+# apex — deploys the Worker that serves hatua.dev, and checks it still answers.
+#
+# Not a gt pipeline stage. `gt repo sync` owns ci-orchestration.yml, and the
+# stages it calls validate a tree; this deploys one, like pages.yml beside it.
+#
+# It deploys from main and nowhere else, so this file can be reviewed on a pull
+# request without a branch being able to take over the apex.
+name: apex
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - source/apps/apex/**
+      - .github/workflows/apex.yml
+  # The deployed Worker can be edited in the Cloudflare dashboard, its route
+  # detached, its DNS record un-proxied, or the domain left to lapse. None of
+  # that shows up in a diff, so the check runs on a schedule as well as after a
+  # deploy.
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deploy at a time, and never cancel one in flight — a cancelled deploy
+# leaves the apex serving whichever half-state it reached.
+concurrency:
+  group: apex
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: deploy
+    # A scheduled run only verifies. Redeploying on a timer would republish an
+    # older main over a newer one whenever a deploy is in flight.
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: source
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          # packageManager lives in source/, not at the repo root.
+          package_json_file: source/package.json
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: source/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      # `run` is load-bearing: `pnpm deploy` is pnpm's own command for copying a
+      # workspace package into a deployable directory, so without it this
+      # silently does something else entirely and never invokes wrangler.
+      - run: pnpm --filter @hatua/apex run deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+
+  verify:
+    name: verify
+    needs: [deploy]
+    # Runs after a deploy, and on a schedule where deploy is skipped.
+    if: always() && needs.deploy.result != 'failure' && needs.deploy.result != 'cancelled'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Cloudflare serves the new script within seconds of a successful upload,
+      # but not instantly, and a check that races the propagation reports a
+      # failure nobody can reproduce.
+      - run: sleep 20
+        if: needs.deploy.result == 'success'
+
+      - run: ./source/apps/apex/verify-go-import.sh
