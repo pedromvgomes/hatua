@@ -114,9 +114,9 @@ _Avoid_: state, global, parameter, field
 
 **Mapping**:
 A **Step** (`core.map`) whose outputs are the entries the user wrote into it rather than anything
-its **Component Manifest** declares. It is the third verb Hatua interprets structurally, alongside
-`core.fork` and `core.for_each` — and the only one read from a field's *value* rather than from its
-position in the tree. Each entry is a key, a **Template** and a declared type, so a downstream
+its **Component Manifest** declares. It is the one verb Hatua interprets structurally by reading a
+field's *value* rather than a position in the tree — `core.fork`, `core.for_each`, `core.repeat` and
+`core.try` are all read from where their children sit. Each entry is a key, a **Template** and a declared type, so a downstream
 **Step** addresses `{{steps.s8.headline}}` and type-checks against it like any other output.
 _Avoid_: transform, set variables, assign, formula step
 
@@ -149,6 +149,37 @@ distinguishes it from `core.for_each` — a list may be empty — and what lets 
 **Template** that must produce a boolean". It binds nothing: a counter is a **Variable**, written
 by `core.set_var`. Nothing in the document bounds the iterations — a runner imposes its own ceiling.
 _Avoid_: while, do-while, until-loop, retry
+
+**Try**:
+A container **Step** (`core.try`) with **two** child regions where every other container has one: a
+protected body under `steps:`, and a fallback under `handler:` that runs if the body fails.
+**Wrapping one Step is retry; wrapping a region is fallback**, so one verb serves both. The two
+regions are *siblings* — the body cannot see the handler, and the handler cannot read the body's
+**Steps**, because which of them completed before the failure is not a fact the document holds. Its
+retry policy lives under `with:` as ordinary **Component Manifest** fields, because a count and a
+delay are numbers and `number` is a mappable field kind — the argument that put a **Repeat**'s
+`until` beside `steps:` was about booleans and does not reach here. It discharges a **Block**'s
+obligation to reach a `core.return` only when *both* regions return. Error-type matching needs no
+matcher: a **Fork** inside the handler branches on the failure's `type`.
+_Avoid_: catch, rescue, error handler, on-error branch
+
+**Binding**:
+A name a container puts into the scope of the children it owns — a **Loop**'s `item`, a **Try**'s
+`error`. **A binding is an output of the container Step itself**, read as
+`{{steps.<container id>.<k>}}`, which is one mechanism rather than two and costs no namespace root
+and no bare token: ADR-0014 closed the roots precisely so a structural idea could not take a word
+away from users, and a **Step** id already sits one segment below `steps.`. Nesting needs no
+shadowing rule, because two containers are two Step ids.
+_Avoid_: variable, loop variable, context, implicit
+
+**Item**:
+A **Loop**'s **Binding**: one element of the list its `list` field names, read as
+`{{steps.<loop id>.item}}`. Declared `t: item` in the **Component Manifest**, which is the one type
+whose meaning depends on the **Step** declaring it — the shape is not in the manifest at all, but is
+resolved by following `list` to its source output's `of:`. Where it cannot resolve, `item` stays
+`item` and matches anything, and the wrongness is reported against the *list* rather than guessed
+into a shape.
+_Avoid_: element, current, each, loop var
 
 **Derived Layout**:
 The rule that a **Step**'s position on the flow map is computed from the tree on every render and

@@ -113,6 +113,19 @@ type Step struct {
 	With     map[string]any `yaml:"with,omitempty"`
 	Branches []Branch       `yaml:"branches,omitempty"`
 	Steps    []Step         `yaml:"steps,omitempty"`
+	// Handler is a core.try's fallback region, and only meaningful there. The
+	// body under Steps runs; if it fails, this runs instead of the rest of it.
+	//
+	// A key beside Steps rather than a pair of Branches under reserved labels: a
+	// branch's identity is its Label, which is free text a user renames, and
+	// putting "which region is this" into a display name makes the meaning of the
+	// document depend on one. Nothing inside a step is user-named, so a key
+	// collides with nothing.
+	//
+	// The failure is exposed to THESE children and to nothing else, as
+	// `{{steps.<try id>.error}}` — the container's own output, the way
+	// core.for_each already exposes `item`.
+	Handler []Step `yaml:"handler,omitempty"`
 	// Until is a core.repeat's termination condition, tested AFTER the body —
 	// so a repeat always runs its children at least once. A structural key
 	// beside Steps rather than a field under With, for the reason a branch's
@@ -206,7 +219,32 @@ const (
 	ForEachVerb = "core.for_each"
 	RepeatVerb  = "core.repeat"
 	SetVarVerb  = "core.set_var"
+	// TryVerb protects a region and falls back to a handler. The one container
+	// with two child regions. Its retry policy sits in With as ordinary manifest
+	// fields rather than in a structural key: `until` had to leave With because
+	// FieldKindTypes has no mappable boolean, and an attempt count is a number,
+	// which IS a mappable kind — so that argument does not reach here.
+	TryVerb = "core.try"
 )
+
+// ForEachListField is the field a core.for_each iterates, and the one `item` is
+// resolved through. A constant rather than a literal at three call sites,
+// because it is a name two languages and one manifest have to agree on: a reader
+// looking under a different key resolves `item` to nothing.
+const ForEachListField = "list"
+
+// ItemBinding is the output key a loop binds for the children it owns, read as
+// `{{steps.<loop id>.item}}`.
+//
+// An ordinary manifest output of the container step, which is the whole binding
+// mechanism and the reason it costs no namespace root: ADR-0014 closed the path
+// roots so a structural idea could not take a bare word away from users, and a
+// step id already sits one segment below `steps.`. Two nested loops cannot
+// shadow each other, because two steps cannot share an id on one Board.
+const ItemBinding = "item"
+
+// ErrorBinding is the output key a core.try binds for its handler's children.
+const ErrorBinding = "error"
 
 // VarsOn reports the variables one Board declares: the workflow's at the root, a
 // block's inside one.
@@ -252,6 +290,7 @@ func CallsOf(steps []Step) []string {
 				walk(branch.Steps)
 			}
 			walk(step.Steps)
+			walk(step.Handler)
 		}
 	}
 	walk(steps)
@@ -346,6 +385,10 @@ func BlockOf(d Definition, id string) *Block {
 }
 
 // WalkSteps visits every step depth-first, parents before children.
+//
+// Every region a container owns is walked here and nowhere else: a fork's
+// branches, a loop body, and a core.try's handler. A region this forgets is a
+// region no rule ever sees — the validator reports nothing about it, silently.
 func WalkSteps(steps []Step, visit func(Step)) {
 	for _, step := range steps {
 		visit(step)
@@ -353,5 +396,6 @@ func WalkSteps(steps []Step, visit func(Step)) {
 			WalkSteps(branch.Steps, visit)
 		}
 		WalkSteps(step.Steps, visit)
+		WalkSteps(step.Handler, visit)
 	}
 }

@@ -1,0 +1,18 @@
+# expect: SCHEMA_INVALID
+#
+# A `core.try`'s handler is a step list like any other, and the traversal has to
+# reach it. This fixture exists because a region a walk forgets is a region no
+# rule ever sees: the step below is missing the one key every step needs, and a
+# reader that only descended into `steps:` and `branches:` would load this
+# document clean while the builder refused to open it.
+id: wf
+name: W
+version: 1
+status: draft
+steps:
+  - id: guard
+    use: core.try
+    steps:
+      - { id: s1, use: component.email.send }
+    handler:
+      - id: s2

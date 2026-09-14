@@ -288,15 +288,23 @@ $defs:
           sits at the root itself, so a Host may declare `component.block.render` and collide with
           nothing — see ADR-0014.
 
-          Hatua treats most verbs as opaque, but interprets five structurally: `core.fork` creates
+          Hatua treats most verbs as opaque, but interprets six structurally: `core.fork` creates
           branches, `core.for_each` nests and exposes `item`, `core.repeat` nests and carries an
-          `until:` condition, `core.map` derives its outputs from its own `entries` field rather
-          than from its manifest, and `core.set_var` writes one of the Board's `vars` and is typed
-          by that var's declaration rather than by a manifest field.
+          `until:` condition, `core.try` nests TWICE — a body under `steps:` and a fallback under
+          `handler:` — `core.map` derives its outputs from its own `entries` field rather than from
+          its manifest, and `core.set_var` writes one of the Board's `vars` and is typed by that
+          var's declaration rather than by a manifest field.
 
-          The three nesting verbs drive reference scope and derived layout; `core.map` drives
+          The four nesting verbs drive reference scope and derived layout; `core.map` drives
           reference scope alone; `core.set_var` drives neither and is here because its `value` is
           a Slot no manifest can type.
+
+          Two of them BIND a name for the children they own, and both bind it the same way: as an
+          output of the container Step itself, read as `{{steps.<container id>.<k>}}`. A loop's
+          `item` and a try's `error` therefore cost no namespace root and no bare token — ADR-0014
+          closed the roots precisely so a structural idea could not take a word away from users —
+          and two nested containers cannot shadow each other, because two Steps cannot share an id
+          on one Board.
 
           `core.map` is the one component whose outputs a manifest cannot declare, because they are
           whatever the user named. Its `with.entries` is a list of `{key, value, type}`, and a
@@ -315,7 +323,34 @@ $defs:
         type: array
         description: >-
           Loop children, nested directly with no branch wrapper. On `core.for_each` and
-          `core.repeat`.
+          `core.repeat`, and a `core.try`'s protected body.
+        items: { $ref: "#/$defs/step" }
+      handler:
+        type: array
+        description: >-
+          A `core.try`'s fallback region, and only meaningful there. The body under `steps:` runs;
+          if it fails, this runs instead of the rest of it.
+
+          A key beside `steps:` rather than a pair of `branches:` under reserved labels. A Branch's
+          identity is its `label`, which is free text the user renames — putting "which region is
+          this" into a string a user edits makes the meaning of the document depend on a display
+          name, and it costs the schema its first reserved word. A key cannot collide with anything
+          a user chooses, because nothing inside a step is user-named.
+
+          The failure is exposed to THESE children and to nothing else, as
+          `{{steps.<try id>.error}}` — the container's own output, which is how `core.for_each`
+          already exposes `item`. The body cannot see it, because the body is what produces it; a
+          Step after the try cannot either, because whether there was a failure at all is a
+          run-time fact.
+
+          Handler children cannot read the body's Steps. The body failed somewhere, and which of
+          its Steps completed is not a property of the document — offering them would make scope an
+          intersection over paths, which is the exact analysis ADR-0013 refuses edges to avoid. It
+          is the same rule that keeps a Fork's sibling branches out of each other's scope, and it
+          needs no code of its own: the two regions are siblings.
+
+          Error-type matching needs no matcher: a `core.fork` inside the handler branches on
+          `{{steps.<try id>.error.type}}`.
         items: { $ref: "#/$defs/step" }
       until:
         type: string

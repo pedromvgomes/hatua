@@ -89,7 +89,7 @@ that gives it a reader**, and amends this ADR when it does.
   enclosing Block's `outputs:`.
 - **`core.try`** — a region with a retry policy and a fallback handler. **Wrapping one Step is retry;
   wrapping a region is fallback**, so one verb serves both. Error-type matching needs no matcher of
-  its own: a `core.fork` inside the handler branches on the failure.
+  its own: a `core.fork` inside the handler branches on the failure. Its shape is below.
 
 **Invoking a Block is not a verb.** `core.call` was the first draft and it was refused once the verb
 namespace closed (ADR-0014): a call is `use: block.<slug>`, resolved against `blocks:` instead of
@@ -103,7 +103,8 @@ not a run-time depth limit.
 
 `core.try` exposes the failure to its **handler** children and not to its body, the way
 `core.for_each` exposes `item` — a container putting a binding into the scope of children it owns,
-which the Fork's per-branch scoping already establishes.
+which the Fork's per-branch scoping already establishes. **Both bindings are the same mechanism, and
+the section below says what it is** rather than leaving one defined by analogy to the other.
 
 The names are `core.*` because **Hatua ships them**, which is what that root means (ADR-0014) —
 `core.schedule`, `core.manual` and `core.end` are `core.*` too and none of them is control flow.
@@ -196,7 +197,8 @@ condition fork is first-match-wins, so one whose every branch is conditional can
 and fall straight through. A return inside a `core.for_each` body exits the Block early and is perfectly
 legal, but it never discharges the obligation, because the list may be empty and the body may never
 run. A `core.repeat`'s body does discharge it, for the mirror-image reason, and the section below
-settles why. That is the same reasoning that keeps sibling branches out of scope, applied to time
+settles why. A `core.try` discharges it only when both its regions do, which is this same
+all-branches reasoning asked of a region that may or may not execute. That is the same reasoning that keeps sibling branches out of scope, applied to time
 instead of to paths. Steps sitting after a return on the same path can never run, and are reported the way an
 unconditional Branch that swallows the ones behind it already is.
 
@@ -239,10 +241,9 @@ different name.
 **A repeat binds nothing.** `core.for_each` exposes `item`, and it can: `item` is resolved by
 following the loop's `list` back to its source output, so its type is derivable from the document. A
 repeat has no list. An iteration index or count would therefore be a binding nothing declares and
-nothing types — and it would have to live somewhere, which under ADR-0014's closed roots means a
-seventh root or a second bare token beside `TRIGGER`. Both are a permanent cost for a counter
-`core.set_var` already writes, which is the trade the section below makes once and should not make
-twice.
+nothing types — and a binding with no type is the one thing the mechanism below cannot carry, because
+that mechanism is an ordinary manifest output. `core.set_var` already writes a counter, which is the
+trade the section on loop state makes once and should not make twice.
 
 **Nothing bounds the iterations, and that is a decision rather than an omission.** Recursion is
 refused above because it is a property of the *document* — a cycle in the call graph, decidable by
@@ -252,6 +253,118 @@ enforce, and a runner ignoring it would still be conformant, which is a promise 
 keep. **Bounding is the Host runner's obligation**: a runner imposes its own iteration ceiling and
 fails the execution when it is reached, the way it already owns timeouts and retries. Hatua does not
 execute, so that is the one place the contract can honestly sit.
+
+## A container's binding is an output of the container
+
+`core.for_each` exposes `item` and `core.try` exposes the failure. That is one idea asked twice, and
+it gets one mechanism: **a container binds a name for the children it owns by declaring it as an
+ordinary output of itself**, read as `{{ steps.<container id>.<k> }}`.
+
+```yaml
+- id: each
+  use: core.for_each
+  with: { list: "{{ steps.fetch.messages }}" }
+  steps:
+    - { id: send, use: component.email.send, with: { to: "{{ steps.each.item.address }}" } }
+
+- id: guard
+  use: core.try
+  with: { attempts: 3, backoff_ms: 500 }
+  steps:
+    - { id: publish, use: component.s3.upload }
+  handler:
+    - { id: warn, use: component.chat.post, with: { text: "{{ steps.guard.error.message }}" } }
+```
+
+**This costs no namespace root and no bare token, which is the whole reason it is the answer.**
+ADR-0014 closed the roots on the argument that "every structural idea Hatua adds is a name taken away
+from users" — and a binding owned by a container is exactly such an idea. A bare `item` is the token
+that argument refuses. A seventh root costs a word forever, for two bindings and every future one. A
+Step id already sits one segment below `steps.`, so a binding hung off the container is a name inside
+a name the user chose, and collides with nothing.
+
+**Nesting needs no rule, and that is the test the alternatives fail.** Two nested loops are two Step
+ids, so `steps.outer.item` and `steps.inner.item` are different paths and neither shadows the other.
+A bare `item` would need a shadowing rule — innermost wins — and then an escape hatch for reaching
+the outer one, which is a second concept and a worse one, because the reader has to count enclosing
+loops to know what a word means. Here they read the id and are done.
+
+**The failure's shape is declared where the verb is.** `core.try`'s manifest declares
+`error: {message, type, step}` the way any component declares its outputs, so the type checker, the
+completion list and the reference tree need no code at all for it — which is also what makes
+"a `core.fork` inside the handler branches on the failure" true rather than aspirational: `error.type`
+is an ordinary text member. Hatua ships the verb, so Hatua declares the shape, and every Host runner
+fills it in.
+
+**`item` is the one output whose type is not in the manifest**, and `t: item` is what says so. It is
+resolved by reading the loop's `list` field as a Reference, typing that path against the loop Step's
+own scope, and taking the element shape of the list it names — the `of:` the source output declared.
+This is the debt this decision pays off: `t: item` was documented, reachable and resolved by nothing,
+and because the checker treats `item` as matching everything, the gap surfaced not as an error but as
+a type check that always passed.
+
+Where it cannot resolve — `list` absent, not a plain Reference, naming nothing, or naming something
+that is not a list — `item` stays `item` and stays permissive. Guessing `object` would be a shape
+nothing declared, and every `{{ steps.each.item.<field>}}` would then type-check against members the
+manifest never had. **The wrongness is reported instead**: `LOOP_LIST_NOT_A_LIST` names a loop whose
+`list` has a known type that is not a list. It has to be its own rule because `list` is a `ref` field
+and `FIELD_KIND_TYPES` maps `ref` to `unknown`, so the ordinary Slot check accepts anything written
+there — the same "a check that always passes" failure, one layer up.
+
+## `core.try` has two regions, and both of them are `steps:`-shaped
+
+**The body is `steps:` and the handler is `handler:`.** `steps:` is already "the children a container
+owns", and a try's body is exactly that, so the traversal covers it unchanged.
+
+**Two `branches:` under reserved labels was the alternative and is refused.** A Branch's identity is
+its `label`, which is free text the user renames — so the meaning of the document would depend on a
+display name, and a region could be renamed out of existence. It also costs the schema its first
+reserved word, which is the thing ADR-0014 spent a whole decision removing. A key cannot collide with
+anything a user chooses, because **nothing inside a step is user-named**: `id`, `use`, `name`,
+`with`, `branches`, `steps`, `until` and `handler` are a closed set the schema owns.
+
+The cost is that a region is now a third thing a traversal can forget, beside a Branch's steps and a
+loop's body. That is paid where it is cheapest: `walkSteps` and `stepLists` are the only walks, in
+each language, and a `handler:` fixture in `conformance/definition/invalid/` holds both loaders to
+reaching it.
+
+**The retry policy is in `with:`, and the `until` precedent does not reach it.** `until` had to leave
+`with:` because `FIELD_KIND_TYPES` has no mappable boolean at all — a condition there would have
+type-checked as *text*, and half the contract would have been gone. An attempt count and a backoff
+are **numbers**, and `number` is a mappable field kind, so that argument is simply absent here.
+Putting them in a structural key by analogy would be copying a conclusion without its reason, and
+would cost a schema key, a diagnostic and a form control that a manifest field gives for nothing.
+
+**A `core.try` discharges a Block's return obligation only when BOTH regions return.** The body always
+runs, which on its own looks like the `core.repeat` argument — but a failure part-way through the body
+is precisely what a try exists to admit, and that path leaves the body unfinished and enters the
+handler instead. So every path out of a try goes through the body *or* through the handler, and a
+region that may skip its return leaves one of them open. That is the Fork's all-branches reasoning
+asked of two regions, one of which is conditional; it is not the repeat's "guaranteed to run at all".
+
+## What a handler's children can read
+
+**The failure, everything above the try, and nothing from the body.**
+
+The two regions are **siblings**, so the body cannot see the handler and the handler cannot see the
+body's Steps — and this needs no code, because it is the rule that already keeps a Fork's branches out
+of each other's scope. It is also the right rule for the right reason. The body failed *somewhere*;
+which of its Steps completed before it did is not a property of the document, so offering them would
+make scope an intersection over paths. That is the analysis this ADR refuses edges in order to avoid,
+arriving through a different door.
+
+The try Step itself is in scope **only** inside its handler, which is the one place its binding means
+anything:
+
+| reading from | sees `steps.<try id>` |
+| --- | --- |
+| the body | no — the body is what produces the failure |
+| the handler | yes — it is the failure being handled |
+| a Step after the try | no — whether there was a failure at all is a run-time fact |
+
+The last row is the one worth stating. A Step after the try is on a path where either the body
+succeeded or the handler ran, and "the failure, or nothing" is a value whose existence depends on the
+run. Offering it would be the same intersection, one level out.
 
 ## Loop state is a Board variable
 

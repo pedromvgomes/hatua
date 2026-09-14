@@ -1,6 +1,6 @@
 # Every section exercised: multiple triggers, a null connection ref, an
-# expression var, a condition fork with a fallback branch, a mapping step, and a
-# nested loop.
+# expression var, a condition fork with a fallback branch, a mapping step, a
+# nested loop, and a `core.try` with both of its regions.
 #
 # The `when:` below reads `{{ steps.s2.count > 0 }}`, not `{{steps.s2.count}} > 0`. That is a
 # contract edit rather than a typo fix: the second is a *text* template, and a
@@ -96,6 +96,36 @@ steps:
         - key: busy
           value: "{{ steps.s2.count > 20 }}"
           type: boolean
+  - id: s10
+    use: core.try
+    name: Publish the digest
+    # The retry policy is ordinary `with:` fields. A count and a delay are
+    # numbers, and `number` is a mappable field kind — so the argument that
+    # forced `until` out of `with:` does not reach here, and a manifest field
+    # gives the form control, the type and the validation for nothing.
+    with:
+      attempts: 3
+      backoff_ms: 500
+    steps:
+      - id: s11
+        use: component.email.send
+        name: Send the digest
+        with:
+          connection: mailbox
+          to: "{{ var.digest_to }}"
+          subject: "{{ steps.s8.headline }}"
+    # The failure is bound as the try's own output and reaches these children
+    # alone — `{{steps.s10.error}}`. The body cannot read it, because the body is
+    # what produces it, and neither can s9 below, because whether there was a
+    # failure at all is decided during a run.
+    handler:
+      - id: s12
+        use: component.email.send
+        name: Tell someone
+        with:
+          connection: notifier
+          to: ops@dane.dev
+          subject: "Digest failed at {{ steps.s10.error.step }}: {{ steps.s10.error.message }}"
   - id: s9
     use: core.end
     name: End workflow

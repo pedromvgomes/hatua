@@ -1,0 +1,18 @@
+# expect: SCHEMA_INVALID
+#
+# `handler` holds a step list. A mapping there is the shape a hand-edit reaches
+# for when it thinks of the handler as one step rather than a region — and a
+# reader that accepted it would have a `core.try` whose fallback is a step nothing
+# walks, which is the same silence an unwalked region gives.
+id: wf
+name: W
+version: 1
+status: draft
+steps:
+  - id: guard
+    use: core.try
+    steps:
+      - { id: s1, use: component.email.send }
+    handler:
+      id: s2
+      use: component.email.send

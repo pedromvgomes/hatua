@@ -1,4 +1,4 @@
-import type { Diagnostic } from '@hatua/model'
+import { type Diagnostic, TRY_VERB } from '@hatua/model'
 import type { Branch, Step } from '@hatua/schema'
 import {
   type EditingState,
@@ -446,12 +446,35 @@ function Sequence({ steps, scope, at, ...handlers }: SequenceProps) {
 
               {open && step.steps ? (
                 <div className={styles.loop}>
-                  <span className={styles.keyword}>loop</span>
+                  <span className={styles.keyword}>{bodyKeywordFor(step)}</span>
                   <Sequence
                     {...handlers}
                     steps={step.steps}
-                    scope={`the “${nameOf(step)}” loop`}
+                    scope={`the “${nameOf(step)}” ${regionNoun(step)}`}
                     at={{ parentId: step.id, index: 0 }}
+                  />
+                </div>
+              ) : null}
+
+              {/*
+                A `core.try`'s second region, drawn whenever the key is present —
+                the same rule the body above follows. Its own region rather than
+                a Branch: a Branch's identity is its label, which is free text a
+                user renames, and a region the user could rename out of existence
+                is not a region.
+
+                Rendered only for a try. A `handler:` on any other verb means
+                nothing, and drawing one would put a region on screen that no
+                rule and no runner reads.
+              */}
+              {open && step.use === TRY_VERB && step.handler ? (
+                <div className={styles.loop}>
+                  <span className={styles.keyword}>on failure</span>
+                  <Sequence
+                    {...handlers}
+                    steps={step.handler}
+                    scope={`the “${nameOf(step)}” handler`}
+                    at={{ parentId: step.id, region: 'handler', index: 0 }}
                   />
                 </div>
               ) : null}
@@ -573,7 +596,7 @@ function Row({
   onToggle: (id: string) => void
   onRemove: (id: string) => void
 }) {
-  const container = Boolean(step.branches?.length || step.steps)
+  const container = Boolean(step.branches?.length || step.steps || step.handler)
 
   // Hovering anywhere on the row explains the marker, rather than asking anyone
   // to find a 3px edge with a pointer.
@@ -723,13 +746,36 @@ function keywordFor(branches: readonly Branch[], index: number): string {
   return 'else'
 }
 
-/** `core.fork · 2 branches` — the verb, and what makes this Step structural. */
+/**
+ * What the chip over a container's first region says.
+ *
+ * `steps:` is one key holding two different ideas — a loop's body and a try's
+ * protected region — so the word comes from the verb rather than from the key.
+ * Reading "loop" over the steps a try is protecting would name the wrong
+ * control flow.
+ */
+const bodyKeywordFor = (step: Step) => (step.use === TRY_VERB ? 'try' : 'loop')
+
+/** The same word inside the sentence a screen reader hears on an insert point. */
+const regionNoun = (step: Step) => (step.use === TRY_VERB ? 'body' : 'loop')
+
+/**
+ * `core.fork · 2 branches` — the verb, and what makes this Step structural.
+ *
+ * A `core.try` says `· handler` as well as its body count, because it is the one
+ * Step whose expanded height is not what its count implies: the body count alone
+ * reads as the whole of it, and a reader scanning a collapsed list would see
+ * "1 step" on a card that opens into two regions. Absent when there is no
+ * handler — which is a diagnostic of its own, so the summary says nothing about
+ * it and lets the marker do that.
+ */
 function metaFor(step: Step): string {
   const count = step.branches?.length
   if (count) return `${step.use} · ${count} ${count === 1 ? 'branch' : 'branches'}`
 
   const nested = step.steps?.length
-  if (nested !== undefined) return `${step.use} · ${nested} ${nested === 1 ? 'step' : 'steps'}`
+  if (nested === undefined) return step.use
 
-  return step.use
+  const body = `${step.use} · ${nested} ${nested === 1 ? 'step' : 'steps'}`
+  return step.handler?.length ? `${body} · handler` : body
 }

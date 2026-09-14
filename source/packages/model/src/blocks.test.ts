@@ -3,7 +3,7 @@ import type { Manifest, WorkflowDefinition } from '@hatua/schema'
 import { describe, expect, it } from 'vitest'
 import { callSlots, cyclicBlocks, returnSlots } from './blocks'
 import { indexManifests } from './connections'
-import { boardScope, scopeFor } from './scope'
+import { blockOutputType, boardScope, scopeFor } from './scope'
 import { boards, stepKey, walkDocument } from './tree'
 import { validateDefinition } from './validity'
 
@@ -594,5 +594,30 @@ describe('the contract', () => {
       validate('{{ params.entry.headline }}', 'text', { scope, functions: new Map() }),
     ).toEqual([])
     expect(validate('{{ var.attempt_note }}', 'text', { scope, functions: new Map() })).toEqual([])
+  })
+})
+
+/**
+ * A repeated output key, which the schema permits into a file and
+ * DECLARATION_KEY_DUPLICATE only stops at Publish — so both languages have to
+ * pick the same one of the two while the document is being edited.
+ *
+ * First-wins, matching `blockOf` and `cyclicBlocks`. Which one is picked matters
+ * less than that one answer exists: last here and first in the Go SDK types the
+ * same call site `number` in one builder and `text` in the other, and a
+ * hand-edited document then checks differently depending on who opened it.
+ */
+describe('a block that declares one output twice', () => {
+  it('types the call site from the first declaration', () => {
+    const block = {
+      id: 'twice',
+      outputs: [
+        { k: 'out', label: 'Out', t: 'text' as const },
+        { k: 'out', label: 'Out', t: 'number' as const },
+      ],
+      steps: [],
+    }
+
+    expect(blockOutputType(block)).toEqual({ type: 'object', members: { out: { type: 'text' } } })
   })
 })
