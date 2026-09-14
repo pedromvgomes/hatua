@@ -139,8 +139,8 @@ function tokenStart(written: string): number {
  * necessary is not a harmless conservatism — it is a green rail withheld from
  * a row that is exactly right, which is the only signal the rail carries.
  *
- * Undefined when the field declares no type at all — a workflow variable, whose
- * type is read *from* its value, so there is nothing to check it against.
+ * Undefined when the field declares no type at all, and then no candidate is
+ * ever railed: there is nothing to judge a row against.
  *
  * `[start, end)` is the range the insertion covers: the hole being edited, or
  * the caret. Whether what results is a whole-value Template is then one

@@ -56,6 +56,7 @@ blocks:
       - { k: url, label: "Archive URL", t: text }
     vars:
       - key: attempt_note
+        t: text
         value: ""
     steps:
       - id: put
@@ -91,6 +92,59 @@ describe('a document with blocks', () => {
     expect(doc.blocks?.[0]?.params?.[0]?.of).toEqual([
       { k: 'headline', label: 'Headline', t: 'text' },
     ])
+  })
+})
+
+/*
+ * A repeat and a set_var: the two keys neither a manifest nor `with:` holds. An
+ * `until:` sits beside `steps:` and a var carries a declared `t:`, so both are
+ * structure the CST has to carry through untouched — a key silently dropped
+ * here is a condition or a type marking that vanishes the first time anything
+ * edits the file.
+ */
+const WITH_A_LOOP = `id: wf_review
+name: "Revision loop"
+version: 2
+status: draft
+
+vars:
+  # Reset by the loop body, which is the cost ADR-0013 documents.
+  - key: approved
+    t: boolean
+    value: false
+
+steps:
+  - id: revise
+    use: core.repeat
+    until: "{{ var.approved }}"   # tested after the body, so it always runs once
+    steps:
+      - id: draft
+        use: component.agent.act
+      - id: record
+        use: core.set_var
+        with: { key: approved, value: "{{ steps.draft.approved }}" }
+`
+
+describe('a document with a repeat and a set_var', () => {
+  it('reproduces it byte for byte, the condition and its comment included', () => {
+    expect(parseWorkflow(WITH_A_LOOP).toString()).toBe(WITH_A_LOOP)
+  })
+
+  it('projects the condition beside the body rather than into `with:`', () => {
+    const doc = parseWorkflow(WITH_A_LOOP).toJSON()
+    const repeat = doc.steps[0]
+
+    expect(repeat?.until).toBe('{{ var.approved }}')
+    expect(repeat?.with).toBeUndefined()
+    expect(repeat?.steps?.map((step) => step.id)).toEqual(['draft', 'record'])
+  })
+
+  it('projects a variable’s declared type, which nothing infers', () => {
+    expect(parseWorkflow(WITH_A_LOOP).toJSON().vars?.[0]).toEqual({
+      key: 'approved',
+      t: 'boolean',
+      value: false,
+    })
   })
 })
 

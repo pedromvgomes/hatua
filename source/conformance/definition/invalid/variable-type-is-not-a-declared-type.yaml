@@ -1,0 +1,16 @@
+# expect: SCHEMA_INVALID
+#
+# A variable's type is what every `{{var.<key>}}` read and every `core.set_var`
+# write is checked against, so a type outside the declared set is not a narrower
+# contract — it is no contract at all. `unknown` and `item` both match anything
+# in the checker, so accepting either here would silently switch the type gate
+# off for that variable while the builder still drew a marking beside it.
+id: wf
+name: W
+version: 1
+status: draft
+vars:
+  - key: attempt
+    t: unknown
+    value: 0
+steps: []

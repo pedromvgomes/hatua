@@ -35,8 +35,10 @@ triggers:
 
 vars:
   - key: triage_date
+    t: datetime
     value: "{{ TRIGGER == 'nightly' ? triggers.nightly.triggered_at : triggers.on_mail.received_at }}"
   - key: digest_to
+    t: text
     value: me@dane.dev
 
 steps:

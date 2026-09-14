@@ -57,12 +57,16 @@ triggers:
 vars:
   # Where the digest goes.
   - key: digest_to
+    t: text
     value: "ops@example.com"
   - key: subject_prefix
+    t: text
     value: "[triage]"
   - key: threshold
+    t: number
     value: 10
   - key: greeting
+    t: text
     value: "Morning, {{ triggers.t1.owner }}"
 
 steps:

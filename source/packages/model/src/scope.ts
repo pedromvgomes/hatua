@@ -1,4 +1,4 @@
-import type { TypeNode, ValueType } from '@hatua/expressions'
+import type { TypeNode } from '@hatua/expressions'
 import type {
   Block,
   ContextKey,
@@ -6,11 +6,12 @@ import type {
   Manifest,
   Output,
   Step,
+  Variable,
   WorkflowDefinition,
 } from '@hatua/schema'
 import { TRIGGER_BUILTIN } from '@hatua/schema'
 import { blockIdOf, blockOf } from './blocks'
-import { MAPPING_VERB, mapEntries } from './slots'
+import { MAPPING_VERB, mapEntries, variableType } from './slots'
 import { type BoardId, boardOf, type StepRef } from './tree'
 
 /**
@@ -199,7 +200,7 @@ export function boardScope(
       path: `var.${variable.key}`,
       kind: 'var',
       label: variable.key,
-      type: { type: varType(variable.value) },
+      type: variableToType(variable),
     })
   }
 
@@ -270,19 +271,19 @@ const declarationMembers = (declarations: readonly Declaration[]): Record<string
 }
 
 /**
- * A workflow variable's type, read from its literal value.
+ * A workflow variable's type, read from its declaration.
  *
- * Vars are the one addressable thing with no declaration to consult, and
- * calling them all `unknown` would make every `{{ var.x }}` in a workflow warn
- * — which trains people to ignore warnings. A var holding text is text. A var
- * holding a Template is genuinely unknown until it is evaluated, and says so.
+ * Read from `t` rather than from the value beside it, which is the decision
+ * `core.set_var` forced. A var's value is only its FIRST value: once a Step can
+ * write it, a type inferred from the literal in the document is a claim about
+ * one moment in an execution rather than about the var — the builder would say
+ * `text` while the runner produced a number, and every downstream check was
+ * answered against that. `of:` carries the shape of an object's members or a
+ * list's elements, spelled exactly as a declaration's does (ADR-0013).
  */
-function varType(value: unknown): ValueType {
-  if (typeof value === 'string') return value.includes('{{') ? 'unknown' : 'text'
-  if (typeof value === 'number') return 'number'
-  if (typeof value === 'boolean') return 'boolean'
-  if (Array.isArray(value)) return 'list'
-  return 'unknown'
+function variableToType(variable: Variable): TypeNode {
+  const members = variable.of ? declarationMembers(variable.of) : undefined
+  return { type: variableType(variable), ...(members ? { members } : {}) }
 }
 
 /**

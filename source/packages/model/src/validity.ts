@@ -2,7 +2,8 @@ import type { Block, Declaration, Manifest, Step, WorkflowDefinition } from '@ha
 import { blockIdOf, blockOf, cyclicBlocks, RETURN_VERB } from './blocks'
 import type { Diagnostic } from './connections'
 import { DEFINITION_DIAGNOSTICS, type DefinitionCode } from './generated/diagnostics'
-import { type BoardId, boards, own, stepKey, walkDocument, walkSteps } from './tree'
+import { FOR_EACH_VERB, FORK_VERB, REPEAT_VERB, SET_VAR_VERB } from './slots'
+import { type BoardId, boards, own, stepKey, varsOn, walkDocument, walkSteps } from './tree'
 
 /**
  * Whether a Workflow Definition is filled in enough to run — the rules that read
@@ -164,6 +165,19 @@ export function missingRequiredFields(
       continue
     }
 
+    if (step.use === SET_VAR_VERB) {
+      // Structural, for the reason a return's fields are: what a `core.set_var`
+      // takes is a var key and a value typed by the var that key names, and no
+      // manifest knows which Board a Step is on. Its manifest declares no
+      // fields at all, so without this a set_var with nothing in it reports
+      // nothing.
+      for (const [key, label] of SET_VAR_FIELDS) {
+        if (!unfilled(own(values, key))) continue
+        out.push(raise('FIELD_REQUIRED', { ...subject, fieldKey: key }, { label }))
+      }
+      continue
+    }
+
     fromManifest(subject, step.use, values)
   }
 
@@ -232,7 +246,7 @@ export function malformedContainers(doc: WorkflowDefinition): Diagnostic[] {
   for (const { step, board } of walkDocument(doc)) {
     const subject: Partial<Diagnostic> = { stepId: step.id, ...boardOn(board) }
 
-    if (step.use === 'core.fork') {
+    if (step.use === FORK_VERB) {
       const branches = step.branches ?? []
       // CONTEXT.md defines a Fork as "holding two or more Branches". One branch
       // is not a fork — it is the same path with a condition on it, which is
@@ -255,8 +269,30 @@ export function malformedContainers(doc: WorkflowDefinition): Diagnostic[] {
       }
     }
 
-    if (step.use === 'core.for_each' && (step.steps ?? []).length === 0) {
+    // One code for both loop verbs: the mistake is the same and so is the fix,
+    // and the message names neither.
+    if (
+      (step.use === FOR_EACH_VERB || step.use === REPEAT_VERB) &&
+      (step.steps ?? []).length === 0
+    ) {
       out.push(raise('LOOP_HAS_NO_BODY', subject))
+    }
+
+    // Read from the tree rather than from `with:`, because that is where it
+    // lives: `FIELD_KIND_TYPES` has no mappable boolean, so a condition under
+    // `with:` would type-check as text — see `repeatSlot`.
+    if (step.use === REPEAT_VERB && (step.until ?? '').trim() === '') {
+      out.push(raise('REPEAT_HAS_NO_CONDITION', subject))
+    }
+
+    if (step.use === SET_VAR_VERB) {
+      const key = own((step.with ?? {}) as Record<string, unknown>, 'key')
+      // A missing key is FIELD_REQUIRED's to report. Resolving `undefined`
+      // against the Board would say no variable is called "undefined", which
+      // names a variable the user never wrote.
+      if (typeof key === 'string' && key !== '' && !varsOn(doc, board).some((v) => v.key === key)) {
+        out.push(raise('VAR_UNKNOWN', { ...subject, fieldKey: 'key' }, { name: key }))
+      }
     }
   }
 
@@ -264,20 +300,41 @@ export function malformedContainers(doc: WorkflowDefinition): Diagnostic[] {
 }
 
 /**
+ * The fields a `core.set_var` takes. Labels rather than keys in the message,
+ * matching every other required-field diagnostic — the sentence is read by
+ * someone looking at a form, not at YAML.
+ */
+const SET_VAR_FIELDS: readonly (readonly [string, string])[] = [
+  ['key', 'Variable'],
+  ['value', 'Value'],
+]
+
+/**
  * Whether a step list, read from its own root level, always reaches a return.
  *
  * A `core.fork` discharges the obligation only when EVERY branch does, which is
  * the same all-paths reasoning `scopeFor` applies to what a Step can read.
  *
- * A `core.for_each` never discharges it, and that is the load-bearing case: a
- * return inside a loop body exits the Block early and is perfectly legal, but
- * the list may be empty and the body may never run. That is the sibling-branch
- * argument applied to time rather than to paths.
+ * The two loop verbs answer differently, and the difference is the whole rule.
+ * A `core.for_each` never discharges it: a return inside its body exits the
+ * Block early and is perfectly legal, but the list may be empty and the body
+ * may never run. A `core.repeat` does, because it tests its `until` after the
+ * body and therefore always runs it once. One question — is this region
+ * guaranteed to run at all — which is the sibling-branch argument applied to
+ * time rather than to paths.
  */
 function alwaysReturns(steps: readonly Step[]): boolean {
   return steps.some((step) => {
     if (step.use === RETURN_VERB) return true
-    if (step.use !== 'core.fork') return false
+
+    // A repeat tests its `until` AFTER the body, so the body always runs — and
+    // a region guaranteed to run discharges what it guarantees. This is the one
+    // line separating the two loop verbs, and it is the same question asked of
+    // both: a `core.for_each`'s list may be empty, a repeat's first pass is
+    // unconditional.
+    if (step.use === REPEAT_VERB) return alwaysReturns(step.steps ?? [])
+
+    if (step.use !== FORK_VERB) return false
 
     const branches = step.branches ?? []
     if (branches.length === 0) return false

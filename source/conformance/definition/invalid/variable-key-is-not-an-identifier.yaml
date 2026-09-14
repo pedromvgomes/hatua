@@ -8,5 +8,6 @@ version: 1
 status: draft
 vars:
   - key: digest-to
+    t: text
     value: me@dane.dev
 steps: []
