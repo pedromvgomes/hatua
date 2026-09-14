@@ -1,0 +1,49 @@
+@layer hatua {
+  .join {
+    display: grid;
+    place-items: center;
+    pointer-events: none;
+    /*
+      Folding and unfolding tween, because a box changing size with no motion
+      reads as a different map rather than the same one. It is on what `boxOf`
+      writes, so the map animates with no animation code. An SVG path's `d` does
+      not transition, so the connectors cannot follow and fade in over the same
+      window instead of pointing at boxes still on their way.
+    */
+    transition:
+      left 140ms ease,
+      top 140ms ease,
+      width 140ms ease,
+      height 140ms ease;
+  }
+
+  /*
+    Decoration, unlike a toast's countdown bar, which is the only thing saying
+    how long is left. Freezing this loses nothing.
+  */
+  @media (prefers-reduced-motion: reduce) {
+    .join {
+      transition: none;
+    }
+  }
+
+  .pill {
+    padding: 1px 9px;
+    border: 1px solid var(--hatua-border-subtle);
+    border-radius: 999px;
+    background: var(--hatua-surface-page);
+    color: var(--hatua-text-muted);
+    font-size: 11px;
+    font-family: var(--hatua-font-mono);
+    line-height: 1.5;
+  }
+
+  .offscreen {
+    position: absolute;
+    clip-path: inset(50%);
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+}

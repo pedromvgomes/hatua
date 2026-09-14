@@ -274,6 +274,16 @@ func UpstreamOf(doc Definition, ref StepRef) []Step {
 // something. Its body cannot read it — the body is what produces it — and
 // neither can a step after the try, because whether there was a failure at all
 // is decided during a run.
+//
+// A core.for_each is the same shape for a different reason. Its binding is one
+// ELEMENT — {{steps.<loop id>.item}} — and an element exists only while an
+// iteration is running. After the loop there is no element: not the last one,
+// which the file does not say, and not none, which has no type. So the loop is
+// in scope for its own body and out of scope after it, exactly as the try is.
+//
+// Where each one is readable differs, which is why binds is asked separately
+// from the Handler rule: a try is out of scope in its own body and in scope in
+// its handler, and a loop is in scope in its body.
 func collectUpstream(steps []Step, id string, ancestors []Step) []Step {
 	var earlier []Step
 
@@ -302,11 +312,21 @@ func collectUpstream(steps []Step, id string, ancestors []Step) []Step {
 			return found
 		}
 
-		if step.Use != TryVerb {
+		if !binds(step) {
 			earlier = append(earlier, step)
 		}
 	}
 	return nil
+}
+
+// binds reports whether a step's own outputs exist only while its region is
+// running, and therefore whether it is upstream of what comes AFTER it.
+//
+// A try's error and a loop's item are both produced inside a region and gone
+// once it is over, so neither step is upstream of anything that follows — while
+// an ordinary step's outputs are what it finished with and stay readable.
+func binds(step Step) bool {
+	return step.Use == TryVerb || step.Use == ForEachVerb
 }
 
 // BoardScope is everything a Board offers with no position in its tree.

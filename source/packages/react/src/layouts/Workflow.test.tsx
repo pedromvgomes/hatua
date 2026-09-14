@@ -1,3 +1,4 @@
+import type { BoardId } from '@hatua/model'
 import type { Manifest } from '@hatua/schema'
 import type {
   ConnectionDescriber,
@@ -11,10 +12,10 @@ import type {
   VersionSummary,
   WorkflowStore,
 } from '@hatua/services'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { HatuaProvider } from '../theme/HatuaProvider'
-import { Workflow } from './Workflow'
+import { boardTabLabel, Workflow } from './Workflow'
 
 /**
  * The Workflow tab against a Host's ports.
@@ -821,11 +822,13 @@ describe('variables', () => {
     expect(source.writes[0]).toContain('# Runs before anyone is awake.')
   })
 
-  it('renames a key and leaves every Reference to the old one alone', async () => {
-    // Settled in docs/handoff.md: a Reference is stored verbatim, so
-    // `{{ var.digest_to }}` goes stale and the checker reports it. Rewriting
-    // every Template on a keystroke would edit the file where nobody is
-    // looking, and mid-typing every intermediate key is a rename too.
+  it('renames a key and rewrites every Reference that read it', async () => {
+    /*
+     * A named edit repairs what it invalidates (ADR-0021). The box commits on
+     * blur, so the rename is one moment and one undo entry rather than a
+     * rewrite of the user's file on every character — which is the fact the
+     * never-rewrite rule was written against and which was never true here.
+     */
     const source = host(`${SOURCE}    with:\n      to: "{{ var.digest_to }}"\n`)
     mount(source)
 
@@ -833,7 +836,11 @@ describe('variables', () => {
     await waitFor(() => expect(source.writes).toHaveLength(1), AUTOSAVED)
 
     expect(source.writes[0]).toContain('key: digest_recipient')
-    expect(source.writes[0]).toContain('{{ var.digest_to }}')
+    expect(source.writes[0]).toContain('{{ var.digest_recipient }}')
+    expect(source.writes[0]).not.toContain('{{ var.digest_to }}')
+    // The rewrite is surgical: the file around it comes back as it was written.
+    expect(source.writes[0]).toContain('# Runs before anyone is awake.')
+    expect(source.writes[0]).toContain('# Where the digest goes.')
   })
 
   it('stores a value as what the text denotes, so Text Mode and this box agree', async () => {
@@ -914,5 +921,416 @@ describe('variables', () => {
     mount(host('id: wf\nname: n\nversion: 1\nstatus: draft\nsteps: []\n'))
     expect(await screen.findByText('No variables yet.')).toBeDefined()
     expect(screen.getByRole('button', { name: 'Add variable' })).toBeDefined()
+  })
+})
+
+/**
+ * The same three sections, addressed at a Block's Board.
+ *
+ * A Board's root IS its contract (CONTEXT.md), so the middle section is the
+ * Triggers at the root and a Block's `params`/`outputs` inside one. Identity and
+ * the variables are the same sections pointed at a different Board.
+ */
+describe('the tab on a Block’s Board', () => {
+  const WITH_BLOCK = `# The overnight triage.
+id: wf_morning
+name: "Morning inbox triage"
+version: 4
+status: draft
+
+triggers:
+  - id: t1
+    use: component.schedule.cron
+    name: "Every morning"
+
+vars:
+  # The workflow's own, and not the block's.
+  - key: digest_to
+    t: text
+    value: "ops@example.com"
+
+steps:
+  - id: s1
+    use: block.archive_entry
+    with: {}
+
+blocks:
+  - id: archive_entry
+    name: "Archive an entry"
+    params:
+      - { k: thread, label: "Thread", t: text }
+    outputs:
+      - { k: url, label: "Where it went", t: text }
+    vars:
+      - key: attempts
+        t: number
+        value: 0
+    steps: []
+  - id: other
+    name: "Something else"
+    steps: []
+  - id: hollow
+    name: "Nothing declared yet"
+    steps: []
+`
+
+  const onBoard = (
+    board: BoardId,
+    source: Host,
+    onBoardRename?: (from: string, to: string) => void,
+  ) =>
+    render(
+      <HatuaProvider
+        ports={{ workflows: source.port, manifests: serving(CATALOGUE) }}
+        workflowId="wf_morning"
+      >
+        <Workflow board={board} onBoardRename={onBoardRename} />
+      </HatuaProvider>,
+    )
+
+  /*
+   * The label names the KIND of thing, never which one: the canvas's tab strip
+   * already says which Block is open, and repeating it here spends the panel's
+   * width twice.
+   */
+  it('is called Workflow at the root and Block inside one', () => {
+    expect(boardTabLabel(null)).toBe('Workflow')
+    expect(boardTabLabel('archive_entry')).toBe('Block')
+  })
+
+  it('names itself for the Board it is showing, so a landmark and its tab agree', async () => {
+    onBoard('archive_entry', host(WITH_BLOCK))
+    expect(await screen.findByRole('region', { name: 'Block' })).toBeDefined()
+    expect(screen.queryByRole('region', { name: 'Workflow' })).toBeNull()
+  })
+
+  it('shows the Block’s name and slug, not the workflow’s', async () => {
+    onBoard('archive_entry', host(WITH_BLOCK))
+    expect((await screen.findByLabelText('Name')) as HTMLInputElement).toHaveProperty(
+      'value',
+      'Archive an entry',
+    )
+    expect(screen.getByLabelText('Slug')).toHaveProperty('value', 'archive_entry')
+  })
+
+  it('puts the contract where the Triggers are, because they are the same slot', async () => {
+    onBoard('archive_entry', host(WITH_BLOCK))
+    expect(await screen.findByRole('region', { name: 'Contract' })).toBeDefined()
+    expect(screen.queryByRole('region', { name: 'Triggers' })).toBeNull()
+
+    expect(screen.getByLabelText('Name of thread')).toHaveProperty('value', 'Thread')
+    expect(screen.getByLabelText('Key of thread')).toHaveProperty('value', 'thread')
+    expect(screen.getByLabelText('Type of thread')).toHaveProperty('value', 'text')
+    expect(screen.getByLabelText('Key of url')).toHaveProperty('value', 'url')
+  })
+
+  it('keeps the Triggers at the root, where the workflow’s contract is', async () => {
+    onBoard(null, host(WITH_BLOCK))
+    expect(await screen.findByRole('region', { name: 'Triggers' })).toBeDefined()
+    expect(screen.queryByRole('region', { name: 'Contract' })).toBeNull()
+  })
+
+  it('lists the Block’s variables and none of the workflow’s', async () => {
+    onBoard('archive_entry', host(WITH_BLOCK))
+    expect(await screen.findByLabelText('Name of attempts')).toBeDefined()
+    expect(screen.queryByLabelText('Name of digest_to')).toBeNull()
+  })
+
+  it('writes a contract edit into the Block, and adds at the end of its list', async () => {
+    const source = host(WITH_BLOCK)
+    onBoard('archive_entry', source)
+
+    type(await screen.findByLabelText('Name of thread'), 'The thread')
+    fireEvent.click(screen.getByRole('button', { name: 'Add output' }))
+    await waitFor(() => expect(source.writes.length).toBeGreaterThan(0), AUTOSAVED)
+
+    const written = source.writes.at(-1) as string
+    // The user's quoting comes back as they wrote it — a flow mapping stays a
+    // flow mapping and a quoted scalar stays quoted (ADR-0001).
+    expect(written).toContain('{ k: thread, label: "The thread", t: text }')
+    // Appended, never inserted above: a call site's fields are drawn in
+    // declaration order, so a new one at the top reorders a form somebody is
+    // already looking at.
+    expect(written.indexOf('k: url')).toBeLessThan(written.indexOf('new_output'))
+    // The other Block is untouched, and so is the workflow around it.
+    expect(written).toContain('# The overnight triage.')
+    expect(written).toContain('id: other')
+  })
+
+  it('writes a variable edit into the Block’s own vars, not the workflow’s', async () => {
+    const source = host(WITH_BLOCK)
+    onBoard('archive_entry', source)
+
+    type(await screen.findByLabelText('Name of attempts'), 'tries')
+    await waitFor(() => expect(source.writes).toHaveLength(1), AUTOSAVED)
+
+    const written = source.writes[0] as string
+    expect(written).toContain('key: tries')
+    expect(written).toContain('key: digest_to')
+    expect(written).toContain("# The workflow's own, and not the block's.")
+  })
+
+  /*
+   * The commands throw on a collision and `EditingStore.apply` turns a throw
+   * into a no-op, so a field wired straight to one appears to reject characters
+   * at random. The box has to detect it and say so.
+   */
+  it('refuses a key another declaration on the same side holds, and says why', async () => {
+    const source = host(WITH_BLOCK)
+    onBoard('archive_entry', source)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Add parameter' }))
+    type(await screen.findByLabelText('Key of new_parameter'), 'thread')
+
+    expect(screen.getByText('Another parameter already uses this name.')).toBeDefined()
+    // The key that is still true is what the box shows, and the row it would
+    // have collided with is untouched.
+    expect(screen.getByLabelText('Key of new_parameter')).toHaveProperty('value', 'new_parameter')
+    expect(screen.getByLabelText('Key of thread')).toHaveProperty('value', 'thread')
+  })
+
+  /*
+   * A row seeded with its key in both boxes is two identical boxes holding
+   * identical text, and no caption is enough to tell them apart when the
+   * content does not.
+   */
+  it('gives a new row a name that is not its key, and a second one its own', async () => {
+    onBoard('hollow', host(WITH_BLOCK))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Add parameter' }))
+    expect(screen.getByLabelText('Key of new_parameter')).toHaveProperty('value', 'new_parameter')
+    expect(screen.getByLabelText('Name of new_parameter')).toHaveProperty('value', 'New parameter')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add parameter' }))
+    await waitFor(() => expect(screen.getByLabelText('Key of new_parameter_2')).toBeDefined())
+    expect(screen.getByLabelText('Name of new_parameter_2')).toHaveProperty(
+      'value',
+      'New parameter 2',
+    )
+  })
+
+  /*
+   * The defect this closes: `Variable 1` is not an `identifier`, so committing
+   * it stopped the whole document projecting — and the canvas, the side panel
+   * and the step editor all read the projection, so one blur emptied the entire
+   * builder and left a raw zod pattern on screen as the only thing to read.
+   */
+  it('refuses a name the document cannot address, and says what is allowed', async () => {
+    const source = host(WITH_BLOCK)
+    onBoard(null, source)
+
+    type(await screen.findByLabelText('Name of digest_to'), 'Variable 1')
+
+    expect(screen.getByText(/letters, numbers and underscores/)).toBeDefined()
+    // The document still projects, so every other section is still on screen.
+    expect(screen.getByLabelText('Name of digest_to')).toHaveProperty('value', 'digest_to')
+    expect(screen.getByRole('region', { name: 'Triggers' })).toBeDefined()
+    // Nothing a Host would have to store, either.
+    await waitFor(() => expect(source.writes).toEqual([]))
+  })
+
+  it('says nothing about a name the schema does hold', async () => {
+    const source = host(WITH_BLOCK)
+    onBoard(null, source)
+
+    type(await screen.findByLabelText('Name of digest_to'), 'digest_cc')
+
+    expect(screen.queryByText(/letters, numbers and underscores/)).toBeNull()
+    await waitFor(() => expect(source.writes).toHaveLength(1), AUTOSAVED)
+    expect(source.writes[0]).toContain('key: digest_cc')
+  })
+
+  it('refuses one in a contract key too, because it is the same rule', async () => {
+    onBoard('archive_entry', host(WITH_BLOCK))
+
+    type(await screen.findByLabelText('Key of thread'), 'thread id')
+
+    expect(screen.getByText(/letters, numbers and underscores/)).toBeDefined()
+    expect(screen.getByLabelText('Key of thread')).toHaveProperty('value', 'thread')
+  })
+
+  it('refuses a slug another Block answers to, and says why', async () => {
+    onBoard('archive_entry', host(WITH_BLOCK))
+
+    type(await screen.findByLabelText('Slug'), 'other')
+    expect(screen.getByText('Another block already uses this slug.')).toBeDefined()
+    expect(screen.getByLabelText('Slug')).toHaveProperty('value', 'archive_entry')
+  })
+
+  /*
+   * A renamed Block is one nothing resolves under its old id, which every
+   * reader — the canvas included — reads as a deleted Block. Reported, so a
+   * caller holding the Board can follow it rather than being dropped back to
+   * the root mid-edit.
+   */
+  it('reports a slug rename, because the Board on screen is now called something else', async () => {
+    const renames: [string, string][] = []
+    onBoard('archive_entry', host(WITH_BLOCK), (from, to) => renames.push([from, to]))
+
+    type(await screen.findByLabelText('Slug'), 'archived')
+    expect(renames).toEqual([['archive_entry', 'archived']])
+  })
+
+  it('says so when the Board names a Block the document does not declare', async () => {
+    onBoard('gone', host(WITH_BLOCK))
+    expect(await screen.findByText('That block is not in this workflow.')).toBeDefined()
+    expect(screen.queryByRole('region', { name: 'Identity' })).toBeNull()
+  })
+
+  /*
+   * A Block reads only what it declares plus the Run Context — never the
+   * workflow's Triggers or its variables (ADR-0013). The value box's completion
+   * list is where that reaches a screen.
+   */
+  it('offers the Block’s scope to a variable’s value, and not the workflow’s', async () => {
+    onBoard('archive_entry', host(WITH_BLOCK))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Insert into Value of attempts' }))
+
+    expect(await screen.findByText('params.thread')).toBeDefined()
+    expect(screen.getByText('var.attempts')).toBeDefined()
+    expect(screen.queryByText('triggers.t1')).toBeNull()
+    expect(screen.queryByText('var.digest_to')).toBeNull()
+  })
+})
+
+/**
+ * Folding a row.
+ *
+ * A contract with six parameters is a page of boxes expanded, so every row in
+ * the panel folds. Folded it is one line — not just the name, which spends the
+ * width without answering "which one is this": the summary carries the whole
+ * declaration, the way the canvas already says a Board's root as
+ * `2 params · 1 output`.
+ */
+describe('a row folds', () => {
+  const WITH_BLOCK = `id: wf_morning
+name: n
+version: 1
+status: draft
+
+triggers:
+  - id: t1
+    use: component.email.received
+    name: "Every morning"
+
+vars:
+  - key: digest_to
+    t: text
+    value: "ops@example.com"
+
+steps: []
+
+blocks:
+  - id: archive_entry
+    name: "Archive an entry"
+    params:
+      - { k: thread, label: "Thread", t: text }
+    outputs:
+      - { k: url, label: "Where it went", t: text }
+    steps: []
+`
+
+  const onBoard = (board: BoardId, source: Host) =>
+    render(
+      <HatuaProvider
+        ports={{ workflows: source.port, manifests: serving(CATALOGUE) }}
+        workflowId="wf_morning"
+      >
+        <Workflow board={board} />
+      </HatuaProvider>,
+    )
+
+  /*
+   * Folding is a user managing clutter. A tab that opened folded would hide the
+   * editor from somebody who came to edit, and a Block with one parameter would
+   * hide its only field for nothing.
+   */
+  it('opens showing its fields, and says so', async () => {
+    onBoard('archive_entry', host(WITH_BLOCK))
+
+    const fold = await screen.findByRole('button', { name: 'Collapse thread' })
+    expect(fold.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByLabelText('Key of thread')).toBeDefined()
+  })
+
+  it('folds to one line carrying the name, the key and the type', async () => {
+    onBoard('archive_entry', host(WITH_BLOCK))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Collapse thread' }))
+
+    expect(screen.queryByLabelText('Key of thread')).toBeNull()
+    expect(screen.queryByLabelText('Name of thread')).toBeNull()
+    expect(screen.queryByLabelText('Type of thread')).toBeNull()
+    // The name alone would not say which parameter this is; the key is what a
+    // Template writes and the type is what it is checked against.
+    expect(screen.getByText('Thread')).toBeDefined()
+    expect(screen.getByText('thread · text')).toBeDefined()
+  })
+
+  it('unfolds again, and the row it did not touch stays as it was', async () => {
+    onBoard('archive_entry', host(WITH_BLOCK))
+
+    const fold = await screen.findByRole('button', { name: 'Collapse thread' })
+    fireEvent.click(fold)
+    expect(fold.getAttribute('aria-expanded')).toBe('false')
+    // Its neighbour on the other side of the contract is untouched.
+    expect(screen.getByLabelText('Key of url')).toBeDefined()
+
+    fireEvent.click(fold)
+    expect(fold.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByLabelText('Key of thread')).toBeDefined()
+  })
+
+  it('folds a variable to its key and its type, which is all a variable has', async () => {
+    onBoard(null, host(WITH_BLOCK))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Collapse digest_to' }))
+    expect(screen.queryByLabelText('Value of digest_to')).toBeNull()
+    expect(screen.getByText('digest_to')).toBeDefined()
+    expect(screen.getByText('text')).toBeDefined()
+  })
+
+  /*
+   * A Trigger named after its own Component — which is what adding one gives
+   * you — would fold to its name printed twice if the summary carried the type.
+   * The id is what `{{ triggers.t1.… }}` writes, so it is a Trigger's key in the
+   * sense a declaration's `k` is.
+   */
+  it('folds a Trigger to its name and its id, never its name twice', async () => {
+    const named = `id: wf_morning\nname: n\nversion: 1\nstatus: draft\ntriggers:\n  - id: t1\n    use: component.email.received\n    name: "When mail arrives"\nsteps: []\n`
+    onBoard(null, host(named))
+
+    const fold = await screen.findByRole('button', { name: 'Collapse When mail arrives' })
+    fireEvent.click(fold)
+
+    // Scoped to the folded row: the catalogue's Trigger picker offers a type
+    // under the same name, which is exactly why this Trigger is named after it.
+    const head = within(fold.parentElement as HTMLElement)
+    expect(head.getAllByText('When mail arrives')).toHaveLength(1)
+    expect(head.getByText('t1')).toBeDefined()
+  })
+
+  /*
+   * The fold manages height; it does not silence the checker. A folded row that
+   * hid its own diagnostic would let somebody tidy a problem off their screen.
+   */
+  it('keeps a Trigger’s diagnostic on screen while the row is folded', async () => {
+    onBoard(null, host(WITH_BLOCK))
+
+    const problem = await screen.findByText(/Mailbox is required/)
+    expect(problem).toBeDefined()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse Every morning' }))
+    expect(screen.queryByLabelText('Name of Every morning')).toBeNull()
+    expect(screen.getByText(/Mailbox is required/)).toBeDefined()
+  })
+
+  it('gives a newly added row its fields, because naming it is the next thing', async () => {
+    onBoard('archive_entry', host(WITH_BLOCK))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Add parameter' }))
+    const fold = await screen.findByRole('button', { name: 'Collapse new_parameter' })
+    expect(fold.getAttribute('aria-expanded')).toBe('true')
   })
 })

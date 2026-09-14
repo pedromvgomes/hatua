@@ -33,6 +33,7 @@ export type {
   WorkflowStore,
 } from '@hatua/services'
 export type {
+  ComponentDrag,
   ComponentsProps,
   DataProps,
   FlowMapProps,
@@ -41,6 +42,7 @@ export type {
   StepListProps,
   TabbedPanelProps,
   TopBarProps,
+  Viewport,
   WorkflowProps,
 } from './layouts'
 export {

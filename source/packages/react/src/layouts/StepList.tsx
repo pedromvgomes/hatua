@@ -1,4 +1,18 @@
-import { type Diagnostic, TRY_VERB } from '@hatua/model'
+import {
+  type Board,
+  type BoardId,
+  boardOf,
+  type Diagnostic,
+  nameOf,
+  type Region,
+  regionsOf,
+  type Segment,
+  type StepRef,
+  segmentHolds,
+  segmentOf,
+  stepKey,
+  summaryOf,
+} from '@hatua/model'
 import type { Branch, Step } from '@hatua/schema'
 import {
   type EditingState,
@@ -35,6 +49,22 @@ import css from './StepList.module.css?inline'
  * tabs is visible only while that tab is open and never beside the panel it is
  * edited from, which is no canvas at all.
  *
+ * ## The structural edits are here
+ *
+ * Insert, remove, drag and Alt+Arrow. A list has a gap between every two
+ * siblings and a map of cards has none, which is what makes an insert point
+ * unambiguous here and would make it an invention there — and an empty Board is
+ * a root node with no cards under it at all. The canvas selects, folds and opens
+ * a call; it reads the document and writes none of it.
+ *
+ * ## One Board, and which one
+ *
+ * `board` says which: a Block's id, or `null` for the root. A plain prop rather
+ * than state, because nothing in a list is a doorway — a call is opened on the
+ * canvas (ADR-0013) and `<Build>` holds one Board for both surfaces, so this
+ * follows it. Two surfaces showing two different Boards at once is the map and
+ * the list disagreeing about what is on screen.
+ *
  * ## Where the document comes from
  *
  * Not from props, and not from a fetch of its own. Hatua has no storage and no
@@ -66,15 +96,45 @@ export interface StepListProps extends Omit<ComponentPropsWithRef<'section'>, 'o
    * Step leaves behind. A caller holding the selection across a remount has to
    * hear that, or it keeps handing back the id of a Step that is gone.
    */
-  onSelect?: (stepId: string | undefined) => void
+  onSelect?: (segment: Segment | undefined) => void
   /**
    * Fired when an insert point is chosen. Optional — this region knows where a
    * Step would go and nothing at all about which Component to put there, so it
    * hands the point out and the Components tab fills it in.
    */
   onInsert?: (at: InsertPoint) => void
-  /** Which Step starts selected. Uncontrolled, like TabbedPanel's defaultTabId. */
-  defaultSelectedId?: string
+  /**
+   * Which Board this lists: a Block's id, or `null` for the root.
+   *
+   * A plain prop rather than state, because nothing in a list is a doorway —
+   * a call is opened on the canvas (ADR-0013), and this follows it so the two
+   * surfaces are never showing two different Boards at once.
+   */
+  board?: BoardId
+  /**
+   * What is selected, as a **Segment** and never a bare id: ids are Board-local,
+   * so two Blocks may each hold a Step called `ret` and a bare `ret` highlights
+   * a row on both Boards.
+   *
+   * A Segment because selection is one thing across this region, the canvas and
+   * the step editor (ADR-0020), and the canvas is where more than one Step is
+   * picked. **This region highlights a Segment and offers no gesture that
+   * builds one** — a list is not where a stretch of Steps is chosen, and a
+   * second way to build one would be a second answer to what a selection is.
+   * Clicking a row selects that row alone, as it always has.
+   *
+   * Controlled when given, seeded by `defaultSelected` when not. Only one of
+   * the three surfaces is remounted by the tab strip, so the region that holds
+   * it has to be able to say what the others show.
+   *
+   * `undefined` means uncontrolled; `null` is a value and means nothing is
+   * selected. Two spellings because one value cannot carry both meanings, and
+   * `onSelect` reports `undefined` when the selected Step is removed — a caller
+   * handing that straight back would otherwise be saying "nobody said" and get
+   * the row this region last highlighted itself.
+   */
+  selected?: Segment | null
+  defaultSelected?: Segment
   /**
    * Which containers start collapsed, and a way to hear about it.
    *
@@ -90,9 +150,11 @@ export interface StepListProps extends Omit<ComponentPropsWithRef<'section'>, 'o
    * it back, the way the design already has selection work. A caller that does
    * not, does nothing, and the region behaves as it always has.
    */
-  defaultCollapsedIds?: readonly string[]
+  defaultCollapsed?: readonly StepRef[]
+  /** Which containers are collapsed, when the caller wants to say. */
+  collapsed?: readonly StepRef[]
   /** Fired when a container is expanded or collapsed, with everything now collapsed. */
-  onCollapseChange?: (collapsedIds: string[]) => void
+  onCollapseChange?: (collapsed: StepRef[]) => void
 }
 
 /** "The Host wired nothing" is not a phase of the load, so it is not the store's to report. */
@@ -109,6 +171,7 @@ const NO_PROBLEMS: ReadonlyMap<string, Diagnostic[]> = new Map()
 const UNCHECKED: ValidationState = {
   byStep: NO_PROBLEMS,
   byTrigger: NO_PROBLEMS,
+  byBlock: NO_PROBLEMS,
   all: [],
   ready: false,
 }
@@ -119,18 +182,19 @@ const readOpening = (): ListState => OPENING
 export function StepList({
   onSelect,
   onInsert,
-  defaultSelectedId,
-  defaultCollapsedIds,
+  board = null,
+  selected,
+  defaultSelected,
+  defaultCollapsed,
+  collapsed,
   onCollapseChange,
   className,
   ...rest
 }: StepListProps) {
   const store = useEditingStore()
   const validation = useValidationStore()
-  const [selectedId, setSelectedId] = useState<string | undefined>(defaultSelectedId)
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(
-    () => new Set(defaultCollapsedIds),
-  )
+  const [ownSelected, setOwnSelected] = useState<Segment | undefined>(defaultSelected)
+  const [ownCollapsed, setOwnCollapsed] = useState<readonly StepRef[]>(defaultCollapsed ?? [])
   const [dragging, setDragging] = useState<string | null>(null)
 
   // The one side effect: tell the store somebody is reading. It is idempotent,
@@ -155,6 +219,15 @@ export function StepList({
 
   const workflow = state.status === 'ready' ? state.workflow : null
   const definition = workflow?.definition ?? null
+  // Resolved against the document every render. A Block deleted in Text Mode
+  // while its Board is listed would otherwise leave this drawing a tree that is
+  // gone; falling back to the root is what the canvas's breadcrumb does too.
+  const listed = definition ? (boardOf(definition, board) ?? boardOf(definition, null)) : undefined
+
+  const selection = selected !== undefined ? (selected ?? undefined) : ownSelected
+  const folded = collapsed ?? ownCollapsed
+  const foldedHere = new Set(folded.filter((ref) => ref.board === listed?.id).map((ref) => ref.id))
+  const refOf = (id: string): StepRef => ({ board: listed?.id ?? null, id })
 
   const checks = useSyncExternalStore<ValidationState>(
     validation ? validation.subscribe : subscribeToNothing,
@@ -168,23 +241,31 @@ export function StepList({
   const problems = checks.ready ? checks.byStep : NO_PROBLEMS
 
   const select = (id: string) => {
-    setSelectedId(id)
-    onSelect?.(id)
+    const picked = segmentOf(refOf(id))
+    // The internal state is kept in step even while controlled, so a caller that
+    // stops passing `selected` does not snap back to whatever was highlighted
+    // when it started.
+    setOwnSelected(picked)
+    onSelect?.(picked)
   }
 
   const toggle = (id: string) => {
-    const next = new Set(collapsed)
-    if (!next.delete(id)) next.add(id)
-    setCollapsed(next)
+    const key = stepKey(refOf(id))
+    const next = folded.some((one) => stepKey(one) === key)
+      ? folded.filter((one) => stepKey(one) !== key)
+      : [...folded, refOf(id)]
+    setOwnCollapsed(next)
     onCollapseChange?.([...next])
   }
 
   const remove = (id: string) => {
-    // <StepList> draws the root Board; a Block's Board is reached from a call
-    // chip on the canvas, which this region does not have.
-    store?.apply(removeStep({ board: null, id }))
-    if (selectedId !== id) return
-    setSelectedId(undefined)
+    store?.apply(removeStep(refOf(id)))
+    if (!segmentHolds(selection, refOf(id))) return
+    // The whole selection goes, not only the row that went: a Segment with one
+    // of its Steps taken out of the middle is no longer contiguous, and the one
+    // shape a selection has is the shape this region must not be the first to
+    // break (ADR-0020).
+    setOwnSelected(undefined)
     // Told, not just forgotten locally. <Build> holds this across the unmount
     // the tab strip forces, so a selection cleared only in here comes back on
     // the next mount naming a Step the document no longer has.
@@ -192,7 +273,7 @@ export function StepList({
   }
 
   const move = (id: string, to: InsertPoint) => {
-    store?.apply(moveStep({ board: null, id }, to))
+    store?.apply(moveStep(refOf(id), to))
     setDragging(null)
   }
 
@@ -238,9 +319,7 @@ export function StepList({
     if (target < 0 || target > count - 1) return
     // +1 on the way down, because `moveStep` reads its index against the list
     // as it stands BEFORE the Step is lifted out of it.
-    store?.apply(
-      moveStep({ board: null, id: step.id }, { ...at, index: delta > 0 ? target + 1 : target }),
-    )
+    store?.apply(moveStep(refOf(step.id), { ...at, index: delta > 0 ? target + 1 : target }))
   }
 
   const liveMessage =
@@ -299,17 +378,20 @@ export function StepList({
             </p>
           ) : null}
 
-          {workflow && definition ? (
+          {workflow && listed ? (
             // No special case for the empty workflow: a <Sequence> of nothing
             // renders exactly one insert point, and that insert point already
             // knows how to be an empty state.
             <Sequence
-              steps={definition.steps}
-              scope="the workflow"
-              at={{ index: 0 }}
-              selectedId={selectedId}
+              steps={listed?.steps ?? []}
+              scope={boardScopeName(listed)}
+              // Every insert point below is derived from this one, so naming the
+              // Board once here is what makes an edit on a Block's Board the
+              // same command as an edit on the root's.
+              at={{ board: listed?.id ?? null, index: 0 }}
+              selection={selection}
               problems={problems}
-              collapsed={collapsed}
+              collapsed={foldedHere}
               dragging={dragging}
               onSelect={select}
               onToggle={toggle}
@@ -337,9 +419,10 @@ interface SequenceProps {
   scope: string
   /** The insert point at index 0 of this list; every other one is derived from it. */
   at: Omit<InsertPoint, 'index'> & { index: number }
-  selectedId: string | undefined
-  /** Diagnostics per Step id; a Step with none is absent. */
+  selection: Segment | undefined
+  /** Diagnostics per `stepKey`; a Step with none is absent. */
   problems: ReadonlyMap<string, Diagnostic[]>
+  /** The ids collapsed on THIS Board. A Board is already `at.board`. */
   collapsed: ReadonlySet<string>
   dragging: string | null
   onSelect: (id: string) => void
@@ -362,7 +445,7 @@ interface SequenceProps {
  * inside branches, and there is no way to say otherwise outside `role="tree"`.
  */
 function Sequence({ steps, scope, at, ...handlers }: SequenceProps) {
-  const { selectedId, problems, collapsed, dragging, onInsert, onDropStep } = handlers
+  const { selection, problems, collapsed, dragging, onInsert, onDropStep } = handlers
 
   return (
     <ul className={styles.sequence}>
@@ -415,8 +498,8 @@ function Sequence({ steps, scope, at, ...handlers }: SequenceProps) {
             >
               <Row
                 step={step}
-                problems={problems.get(step.id)}
-                selected={selectedId === step.id}
+                problems={problems.get(stepKey({ board: at.board ?? null, id: step.id }))}
+                selected={segmentHolds(selection, { board: at.board ?? null, id: step.id })}
                 expanded={open}
                 dragging={dragging === step.id}
                 onSelect={handlers.onSelect}
@@ -424,64 +507,7 @@ function Sequence({ steps, scope, at, ...handlers }: SequenceProps) {
                 onRemove={handlers.onRemove}
               />
 
-              {open && step.branches?.length ? (
-                <ul className={styles.branches}>
-                  {step.branches.map((branch, branchIndex) => (
-                    // biome-ignore lint/suspicious/noArrayIndexKey: a Branch has no id in the schema and its ORDER is its meaning — "first match wins, and the last branch may be unconditional". The index is the identity here, not a stand-in for one.
-                    <li key={`${step.id}:${branchIndex}`} className={styles.branch}>
-                      <BranchHeader
-                        branch={branch}
-                        keyword={keywordFor(step.branches ?? [], branchIndex)}
-                      />
-                      <Sequence
-                        {...handlers}
-                        steps={branch.steps}
-                        scope={`the “${branch.label}” branch`}
-                        at={{ parentId: step.id, branchIndex, index: 0 }}
-                      />
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-
-              {open && step.steps ? (
-                <div className={styles.loop}>
-                  <span className={styles.keyword}>{bodyKeywordFor(step)}</span>
-                  <Sequence
-                    {...handlers}
-                    steps={step.steps}
-                    scope={`the “${nameOf(step)}” ${regionNoun(step)}`}
-                    at={{ parentId: step.id, index: 0 }}
-                  />
-                </div>
-              ) : null}
-
-              {/*
-                A `core.try`'s second region, drawn whenever the key is present —
-                the same rule the body and the branches above follow. Its own
-                region rather than a Branch: a Branch's identity is its label,
-                which is free text a user renames, and a region the user could
-                rename out of existence is not a region.
-
-                Drawn on any verb, not only on a try. A `handler:` elsewhere is
-                meaningless and no runner reads it — but `walkSteps` still yields
-                the Steps inside it, so every generic rule reports against them
-                by name. A diagnostic naming a Step no region draws is one the
-                user cannot act on, because there is nothing on screen to select
-                or delete. Hiding the region does not make it absent from the
-                document; it makes it unreachable.
-              */}
-              {open && step.handler ? (
-                <div className={styles.loop}>
-                  <span className={styles.keyword}>on failure</span>
-                  <Sequence
-                    {...handlers}
-                    steps={step.handler}
-                    scope={`the “${nameOf(step)}” handler`}
-                    at={{ parentId: step.id, region: 'handler', index: 0 }}
-                  />
-                </div>
-              ) : null}
+              {open ? <Regions step={step} at={at} handlers={handlers} /> : null}
             </li>
 
             <Gap
@@ -495,6 +521,86 @@ function Sequence({ steps, scope, at, ...handlers }: SequenceProps) {
         )
       })}
     </ul>
+  )
+}
+
+/**
+ * Every region one container owns, in document order.
+ *
+ * Enumerated with `regionsOf` rather than read off `branches:`, `steps:` and
+ * `handler:` here. That is the single answer to "what does this Step nest", and
+ * a surface that answers it for itself is one that can forget a region — a
+ * region no rule draws is a Step a diagnostic names and nobody can select or
+ * delete. `@hatua/layout` asks the same generator, so the map and this list
+ * cannot disagree about which regions there are; `Region.keyword` is the word
+ * over each, so they cannot disagree about what they are called either.
+ *
+ * The Branches are grouped into one list and everything else is stacked below
+ * it. `regionsOf` yields a Step's Branches first, so grouping them costs no
+ * second ordering rule.
+ *
+ * The canvas arranges the same regions differently — every one of them is a
+ * column in one row (ADR-0015) — and that is not a disagreement to fix. A list
+ * has one dimension and no width problem, and the two surfaces have to agree
+ * about *which* regions exist and what each is called, which `regionsOf` and
+ * `Region.keyword` guarantee. How far apart they are drawn is each surface's
+ * own question.
+ *
+ * The verb is never consulted about whether a region exists. A `handler:` on a
+ * `core.fork` is meaningless and no runner reads it, but `walkSteps` yields the
+ * Steps inside it and every generic rule reports against them by name — so
+ * hiding it does not make it absent from the document, it makes it unreachable.
+ */
+function Regions({
+  step,
+  at,
+  handlers,
+}: {
+  step: Step
+  at: SequenceProps['at']
+  handlers: Omit<SequenceProps, 'steps' | 'scope' | 'at'>
+}) {
+  const regions = [...regionsOf(step)]
+  const branches = regions.filter((region) => region.kind === 'branch')
+  const stacked = regions.filter((region) => region.kind !== 'branch')
+  const board = at.board ?? null
+
+  return (
+    <>
+      {branches.length > 0 ? (
+        <ul className={styles.branches}>
+          {branches.map((region, branchIndex) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: a Branch has no id in the schema and its ORDER is its meaning — "first match wins, and the last branch may be unconditional". The index is the identity here, not a stand-in for one.
+            <li key={`${step.id}:${branchIndex}`} className={styles.branch}>
+              <BranchHeader branch={region.branch} keyword={region.keyword} />
+              <Sequence
+                {...handlers}
+                steps={region.steps}
+                scope={`the “${region.branch?.label}” branch`}
+                at={{ board, parentId: step.id, branchIndex, index: 0 }}
+              />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {stacked.map((region) => (
+        <div key={region.kind} className={styles.loop}>
+          <span className={styles.keyword}>{region.keyword}</span>
+          <Sequence
+            {...handlers}
+            steps={region.steps}
+            scope={`the “${nameOf(step)}” ${regionNoun(region)}`}
+            at={{
+              board,
+              parentId: step.id,
+              region: region.kind === 'handler' ? 'handler' : undefined,
+              index: 0,
+            }}
+          />
+        </div>
+      ))}
+    </>
   )
 }
 
@@ -647,7 +753,7 @@ function Row({
         onClick={() => onSelect(step.id)}
       >
         <span className={styles.name}>{nameOf(step)}</span>
-        <span className={styles.meta}>{metaFor(step)}</span>
+        <span className={styles.meta}>{summaryOf(step)}</span>
       </button>
 
       {problems?.length ? <Problems problems={problems} name={nameOf(step)} /> : null}
@@ -723,63 +829,32 @@ function Problems({ problems, name }: { problems: Diagnostic[]; name: string }) 
   )
 }
 
-function BranchHeader({ branch, keyword }: { branch: Branch; keyword: string }) {
+function BranchHeader({ branch, keyword }: { branch?: Branch; keyword: string }) {
   return (
     <p className={styles.branchHeader}>
       <span className={styles.keyword}>{keyword}</span>
-      <span className={styles.branchLabel}>{branch.label}</span>
-      {branch.when ? <code className={styles.when}>{branch.when}</code> : null}
+      <span className={styles.branchLabel}>{branch?.label}</span>
+      {branch?.when ? <code className={styles.when}>{branch.when}</code> : null}
     </p>
   )
 }
 
-/** The display name, falling back to the id — which is what a Step always has. */
-const nameOf = (step: Step) => step.name || step.id
+/**
+ * The word inside the sentence a screen reader hears on an insert point.
+ *
+ * The chip's word and this are two different jobs: `attempt` is what goes over
+ * the region, and "the “Publish” attempt" is what an insert point inside it is
+ * called. Derived from the region rather than from the verb a second time.
+ */
+const regionNoun = (region: Region): string =>
+  region.kind === 'handler' ? 'handler' : region.keyword
 
 /**
- * `if` / `else if` / `else` for a condition fork, `and` for a parallel one.
+ * What the first insert point on a Board is adding to.
  *
- * Read from the branches rather than from a mode field, because the schema has
- * no mode field: "absent on the fallback branch of a condition fork — order
- * matters there, first match wins, and the last branch may be unconditional."
- * A fork where no branch carries `when` is the parallel one.
+ * "the workflow" at the root and the Block's name inside one, so the sentence a
+ * screen reader hears says which Board it is standing on — which is the whole
+ * of what changes when the canvas opens a call.
  */
-function keywordFor(branches: readonly Branch[], index: number): string {
-  if (!branches.some((branch) => branch.when)) return 'and'
-  if (branches[index]?.when) return index === 0 ? 'if' : 'else if'
-  return 'else'
-}
-
-/**
- * What the chip over a container's first region says.
- *
- * `steps:` is one key holding two different ideas — a loop's body and a try's
- * protected region — so the word comes from the verb rather than from the key.
- * Reading "loop" over the steps a try is protecting would name the wrong
- * control flow.
- */
-const bodyKeywordFor = (step: Step) => (step.use === TRY_VERB ? 'try' : 'loop')
-
-/** The same word inside the sentence a screen reader hears on an insert point. */
-const regionNoun = (step: Step) => (step.use === TRY_VERB ? 'body' : 'loop')
-
-/**
- * `core.fork · 2 branches` — the verb, and what makes this Step structural.
- *
- * A `core.try` says `· handler` as well as its body count, because it is the one
- * Step whose expanded height is not what its count implies: the body count alone
- * reads as the whole of it, and a reader scanning a collapsed list would see
- * "1 step" on a card that opens into two regions. Absent when there is no
- * handler — which is a diagnostic of its own, so the summary says nothing about
- * it and lets the marker do that.
- */
-function metaFor(step: Step): string {
-  const count = step.branches?.length
-  if (count) return `${step.use} · ${count} ${count === 1 ? 'branch' : 'branches'}`
-
-  const nested = step.steps?.length
-  if (nested === undefined) return step.use
-
-  const body = `${step.use} · ${nested} ${nested === 1 ? 'step' : 'steps'}`
-  return step.handler?.length ? `${body} · handler` : body
-}
+const boardScopeName = (board: Board | undefined): string =>
+  board?.id == null ? 'the workflow' : `the “${board.block?.name || board.id}” block`

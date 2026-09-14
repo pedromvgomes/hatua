@@ -35,6 +35,24 @@
     color: var(--hatua-text-secondary);
   }
 
+  /*
+   * The two halves of a contract, inside one section. A divider between them is
+   * deliberately absent: `.section + .section` is what separates one idea from
+   * the next in this panel, and a Block's parameters and its outputs are two
+   * halves of one.
+   */
+  .group {
+    display: grid;
+    gap: 8px;
+  }
+
+  .groupHeading {
+    margin: 0;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--hatua-text-secondary);
+  }
+
   .blurb {
     margin: 0;
     font-size: 0.75rem;
@@ -102,6 +120,24 @@
     gap: 4px;
   }
 
+  /*
+   * A field's caption, and anything belonging to the row rather than to the box
+   * beside it. The bin sits here so the box keeps the panel's whole width — a
+   * key, a Template and a friendly name each need it, and a bin in a second
+   * column takes 32px off every one of them.
+   *
+   * A minimum height, because a caption is 11px and a bin is 26px: without it
+   * the first field of a card is taller than the rest and the cards in a list
+   * stop lining up.
+   */
+  .fieldHead {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 6px;
+    min-block-size: 26px;
+  }
+
   .label {
     font-size: 0.6875rem;
     font-weight: 600;
@@ -145,20 +181,127 @@
     gap: 8px;
   }
 
-  .card {
+  .declarations {
+    list-style: none;
+    margin: 0;
+    padding: 0;
     display: grid;
     gap: 8px;
+  }
+
+  /*
+   * Every row in this panel is a card: a Trigger, a parameter, an output, a
+   * variable. Each is several boxes of identical shape, and a border around
+   * them is what says which boxes are one thing — stacked in a flat list at the
+   * gap that separates a key from its type, four parameters read as one run of
+   * twelve boxes.
+   */
+  .card {
+    display: grid;
+    gap: 4px;
     padding: 10px;
     border: 1px solid var(--hatua-border-subtle);
     border-radius: var(--hatua-radius-md);
     background: var(--hatua-surface-raised);
   }
 
+  /*
+   * The fold control, the row's caption or its summary, and the bin. Three
+   * columns, because the chevron and the bin are each a property of the row and
+   * the middle is whatever the row is currently saying about itself.
+   */
   .cardHead {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
+    /* Tighter than the panel's usual 6px. A folded row carries three facts on
+       one line inside 304px, and every pixel spent between the chevron, the
+       summary and the bin comes off the name. */
+    gap: 4px;
+    min-block-size: 26px;
+  }
+
+  /* 4px under the header caption, 8px between the fields below it: the caption
+     belongs to the box under it, and the boxes belong to each other less. */
+  .cardBody {
+    display: grid;
+    gap: 8px;
+  }
+
+  .disclosure {
+    display: grid;
+    place-items: center;
+    inline-size: 20px;
+    block-size: 20px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: var(--hatua-radius-sm);
+    background: transparent;
+    color: var(--hatua-text-muted);
+    cursor: pointer;
+  }
+
+  .disclosure:hover {
+    border-color: var(--hatua-border-subtle);
+    color: var(--hatua-text-primary);
+  }
+
+  .disclosure:focus-visible {
+    outline: 2px solid var(--hatua-focus-ring);
+    outline-offset: -2px;
+  }
+
+  .chevron {
+    rotate: 0deg;
+    transition: rotate 140ms ease;
+  }
+
+  /* Pointing at the row it is holding shut, over the same window the card takes
+     to fold. */
+  .shut {
+    rotate: -90deg;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .chevron {
+      transition: none;
+    }
+  }
+
+  /*
+   * A folded row on one line. The name shrinks before the rest does: a long
+   * name is the half a reader recognises from its start, and the key and the
+   * type are what the line exists to say.
+   */
+  .summary {
+    display: grid;
+    /* Each takes what it needs and the leftover goes between them, so a short
+       name is not padded out to the bin. Only the name may shrink: a key and a
+       type truncated to nothing are what the line exists to say. */
+    grid-template-columns: minmax(0, max-content) max-content;
+    justify-content: space-between;
+    align-items: baseline;
     gap: 6px;
+    margin: 0;
+    min-inline-size: 0;
+  }
+
+  .summaryName,
+  .summaryMeta {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .summaryName {
+    font-size: 0.8125rem;
+    color: var(--hatua-text-primary);
+  }
+
+  .summaryMeta {
+    font-family: var(--hatua-font-mono);
+    font-size: 0.6875rem;
+    color: var(--hatua-text-muted);
   }
 
   .meta {
@@ -169,42 +312,33 @@
     overflow-wrap: anywhere;
   }
 
-  /* Key 118px and the value flexible, as the design has it: a key is short and
-     a Template is not, so an even split wastes the half that needs the room. */
-  /*
-   * The key and the bin on one line, the value beneath it.
-   *
-   * A Template input is 40px tall and carries a 40px button inside its trailing
-   * edge, so a three-column row leaves it about 110px of writing space in a
-   * 304px panel — narrower than most of the paths it is there to hold, and
-   * every one of them then scrolls sideways under the caret.
-   */
-  .variable {
+  /* A name box and, under it, the reason a name was refused. `min-inline-size:
+     0` because it can sit in a `minmax(0, 1fr)` column, and a grid item defaults
+     to its content's minimum width — which a long name would push past the
+     panel. */
+  .unique {
     display: grid;
-    gap: 6px;
-  }
-
-  .variableHead {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 6px;
-  }
-
-  .key {
+    gap: 4px;
     min-inline-size: 0;
   }
 
   /*
-   * Its own row between the key and the value, rather than a third column in
-   * the head: the head is already a name box that must stay wide enough to read
-   * a key in, and squeezing a type box in beside the bin button makes both
-   * unreadable at the panel's width.
+   * A `Select` on its own row rather than beside the box above it. A Template
+   * input is 40px tall and carries a 40px button inside its trailing edge, so a
+   * two-column row leaves it about 110px of writing space in a 304px panel —
+   * narrower than most of the paths it is there to hold, and every one of them
+   * then scrolls sideways under the caret.
    */
-  .varType {
+  .control {
     inline-size: 100%;
   }
 
+  /*
+   * A picker and the button that acts on it, on one line. The button takes the
+   * field's height rather than its own: a control sitting INLINE with a field
+   * matching that field is this row's business, not <Button>'s — a button is
+   * pressed and a field holds a value, and they are not one size everywhere.
+   */
   .add {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
@@ -212,43 +346,12 @@
     gap: 6px;
   }
 
+  .addAction {
+    block-size: var(--hatua-control-height);
+  }
+
   /* Ghost until the row is hovered or the button is focused: a bin drawn at
      full strength on every row reads as the row's purpose. */
-  .remove {
-    display: grid;
-    place-items: center;
-    inline-size: 26px;
-    block-size: 26px;
-    padding: 0;
-    border: 1px solid transparent;
-    border-radius: var(--hatua-radius-sm);
-    background: transparent;
-    color: var(--hatua-text-muted);
-    cursor: pointer;
-    opacity: 0.6;
-  }
-
-  .remove:hover {
-    border-color: var(--hatua-border-subtle);
-    background: var(--hatua-status-error-wash);
-    color: var(--hatua-status-error);
-    opacity: 1;
-  }
-
-  .remove:focus-visible {
-    outline: 2px solid var(--hatua-focus-ring);
-    outline-offset: -2px;
-    opacity: 1;
-  }
-
-  .icon {
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1.25;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-  }
-
   /* Reachable and announced, never painted. `display: none` and
      `visibility: hidden` both take it out of the accessibility tree. */
   .offscreen {

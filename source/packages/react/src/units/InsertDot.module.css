@@ -1,0 +1,137 @@
+@layer hatua {
+  /*
+    Centred on the point the layout gave it: the box is placed at the point and
+    pulled back by half its own size, so `left`/`top` mean the middle of the
+    control rather than its corner.
+  */
+  /*
+    The box is placed at the point and pulled back by half its own size, so
+    `left`/`top` mean the middle of the control rather than its corner.
+
+    It is far larger than the `+` it centres, and that is the whole of its job:
+    the dot is 20px of ink and a hit area the size of its ink is one a pointer
+    has to be aimed at. Sized against the gap the layout leaves rather than
+    against the glyph — `verticalGap` is 96px and the nearest dot sideways is
+    `branchGap` away — so a slot this size reaches nothing it should not.
+
+    Overlapping a card costs nothing: the cards come after the gaps in the same
+    list, so where the two meet the card is on top and takes the pointer.
+  */
+  .slot {
+    position: absolute;
+    display: grid;
+    place-items: center;
+    inline-size: 56px;
+    block-size: 40px;
+    translate: -50% -50%;
+  }
+
+  .dot {
+    display: grid;
+    place-items: center;
+    inline-size: 20px;
+    block-size: 20px;
+    padding: 0;
+    border: 1px dashed var(--hatua-border-strong);
+    border-radius: 999px;
+    background: var(--hatua-surface-page);
+    color: var(--hatua-text-muted);
+    font: inherit;
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0.7;
+    transition:
+      opacity 120ms ease,
+      border-color 120ms ease,
+      background 120ms ease,
+      scale 120ms ease,
+      color 120ms ease;
+  }
+
+  button.dot:hover,
+  button.dot:focus-visible {
+    border-style: solid;
+    border-color: var(--hatua-border-accent);
+    color: var(--hatua-text-accent);
+    opacity: 1;
+  }
+
+  .dot:focus-visible {
+    outline: 2px solid var(--hatua-focus-ring);
+    outline-offset: 2px;
+  }
+
+  /* A drag is in progress: every gap becomes a target, so every gap says so. */
+  .live .dot {
+    border-style: solid;
+    border-color: var(--hatua-border-accent);
+    background: var(--hatua-accent-wash);
+    color: var(--hatua-text-accent);
+    opacity: 1;
+  }
+
+  /*
+    The pointer is on THIS one, and releasing here is what will happen.
+
+    A second state and not the same one every armed gap wears, because the
+    cursor does not say it. `dropEffect: 'move'` draws no badge on macOS — a
+    Step dragged across the canvas gets the ordinary arrow, the same arrow it
+    has over dead space — so without this the only account of where a drop
+    lands is which of nine identical circles the pointer happens to be inside,
+    and the drop is aimed at rather than made.
+
+    Filled rather than merely brighter: a wash against a wash is a difference a
+    reader has to look for while carrying something, and the whole point of the
+    state is that it can be read without looking away from the drag.
+  */
+  .over .dot {
+    border-color: var(--hatua-accent);
+    background: var(--hatua-accent);
+    color: var(--hatua-text-on-accent);
+    scale: 1.25;
+  }
+
+  /*
+    The bar the Step lands on, drawn out past the chip the pointer is carrying.
+
+    A filled dot alone is 20px of ink under a chip wider than it is, and a signal
+    you have to move the pointer off to read is not a signal. Its width is a
+    card's, set from `LAYOUT.nodeWidth` where it is rendered, because that is the
+    footprint of the thing being dropped.
+
+    Ink and not geometry: it takes no pointer, so the target this widens is still
+    the slot's own 96x56 and two adjacent gaps cannot both be under the pointer.
+  */
+  .bar {
+    position: absolute;
+    block-size: 2px;
+    border-radius: 2px;
+    background: var(--hatua-accent);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms ease;
+  }
+
+  .over .bar {
+    opacity: 1;
+  }
+
+  /*
+    A drag is in progress, so the target grows again. Aim stops mattering once
+    the pointer is already carrying something: the gesture ends wherever the
+    pointer is released, and a target that has to be found is a drop that gets
+    dropped on the canvas instead.
+  */
+  .live {
+    inline-size: 96px;
+    block-size: 56px;
+  }
+
+  /* The fill and the growth are decoration; the colour change carries it alone. */
+  @media (prefers-reduced-motion: reduce) {
+    .over .dot {
+      scale: 1;
+    }
+  }
+}

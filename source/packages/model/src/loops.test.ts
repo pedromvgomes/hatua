@@ -326,6 +326,37 @@ describe('what a core.for_each binds', () => {
   })
 
   /**
+   * An element exists only while an iteration is running. After the loop there
+   * is no element — not the last one, which the file does not say, and not
+   * none, which has no type — so a Reference written past it is refused here
+   * rather than type-checking clean and resolving to nothing at run time. The
+   * same rule a `core.try` follows, for the same reason and one door along.
+   */
+  it('is out of scope for a Step after the loop, while the loop’s siblings stay readable', () => {
+    const after = doc({
+      steps: [
+        { id: 'fetch', use: 'component.inbox.fetch' },
+        {
+          id: 'each',
+          use: 'core.for_each',
+          with: { list: '{{ steps.fetch.messages }}' },
+          steps: [{ id: 's1', use: 'component.email.send' }],
+        },
+        { id: 'later', use: 'component.email.send' },
+      ],
+    })
+    const scope = scopeFor(after, { board: null, id: 'later' }, listing())
+
+    expect(
+      validate('{{ steps.each.item.subject }}', 'text', { scope, functions: coreFunctions() }),
+    ).toEqual([expect.objectContaining({ code: 'EXPR_UNKNOWN_REFERENCE' })])
+    // The Step before the loop is an ordinary upstream Step and stays offered:
+    // what is withdrawn is the binding, not everything above it.
+    expect(pathsIn(scope)).toContain('steps.fetch')
+    expect(pathsIn(scope)).not.toContain('steps.each')
+  })
+
+  /**
    * The whole reason the binding is an output of the container rather than a
    * bare token: two loops are two Step ids, so nesting needs no shadowing rule
    * and there is nothing for an inner loop to hide.
@@ -396,25 +427,106 @@ describe('what a core.for_each binds', () => {
     expect(loopElementType(document, null, document.steps[1] as Step, listing())).toBeNull()
   })
 
-  /**
-   * A list with no `of:` is a list whose elements the document says nothing
-   * about, which is not the same as a list of objects with no members. `item`
-   * stays `item` and matches anything, so writing one into a `text` field is
-   * accepted and checked at run time — EXPR_TYPE_UNKNOWN, a warning, which is
-   * the code whose own summary names `item` members as its motivating case.
-   *
-   * Answering `object` here marks `item` as a shape nothing declared, and then
-   * every scalar field it is written into reports EXPR_TYPE_MISMATCH — an error
-   * that refuses Publish on a document that is correct.
+  /*
+   * A list of scalars. `tags`, `recipients`, `labels` — an output declared
+   * `t: list` with no `of:` says what it holds many of and nothing about what
+   * each one is, so there is no element shape to hand back. A memberless
+   * `{type: 'object'}` is the guess the paragraph above refuses, and it is worse
+   * than a guess in one direction: `{{ steps.<loop>.item }}` into a `text` field
+   * reads as an object against text and is reported as a conflict on a workflow
+   * with nothing wrong with it.
    */
-  it('is nothing when the list declared no `of:`, so `item` still matches anything', () => {
-    const document = looping('steps.fetch.tags')
-    expect(loopElementType(document, null, document.steps[1] as Step, listing())).toBeNull()
+  it('is nothing when the list declares no shape for its elements', () => {
+    const scalars: Manifest[] = [
+      {
+        kind: 'component',
+        use: 'component.inbox.fetch',
+        name: 'Fetch inbox',
+        fields: [],
+        outputs: [{ k: 'messages', label: 'Tags', t: 'list' }],
+      },
+      ...listing().slice(1),
+    ]
+    const document = looping('steps.fetch.messages')
 
-    const scope = scopeFor(document, { board: null, id: 's1' }, listing())
-    const found = validate('{{ steps.each.item }}', 'text', { scope, functions: coreFunctions() })
-    expect(found.map((one) => one.code)).toEqual(['EXPR_TYPE_UNKNOWN'])
-    expect(found.map((one) => one.severity)).toEqual(['warning'])
+    expect(loopElementType(document, null, document.steps[1] as Step, scalars)).toBeNull()
+  })
+
+  it('leaves `item` matching a text field, rather than conflicting with it', () => {
+    const scalars: Manifest[] = [
+      {
+        kind: 'component',
+        use: 'component.inbox.fetch',
+        name: 'Fetch inbox',
+        fields: [],
+        outputs: [{ k: 'messages', label: 'Tags', t: 'list' }],
+      },
+      ...listing().slice(1),
+    ]
+    const document = looping('steps.fetch.messages')
+    // From inside the loop, which is where a Step reads the binding.
+    const scope = scopeFor(document, { board: null, id: 's1' }, scalars)
+
+    // Unknown, which is what `item` means, rather than a mismatch — the
+    // checker treats an unresolved element as matching anything, and says so
+    // instead of reporting the workflow as wrong.
+    const reported = validate('{{ steps.each.item }}', 'text', {
+      scope,
+      functions: coreFunctions(),
+    })
+    expect(reported.map((diagnostic) => diagnostic.code)).toEqual(['EXPR_TYPE_UNKNOWN'])
+    expect(reported.every((diagnostic) => diagnostic.severity !== 'error')).toBe(true)
+  })
+
+  /**
+   * Terminating is not the same as finishing.
+   *
+   * Typing a loop's `item` asks for the scope AT that loop, which types every
+   * loop upstream of it, which asks again — so a chain of n loops costs 2ⁿ
+   * unless what has already been worked out is remembered. Twenty of them take
+   * minutes, and `validateDefinition` runs on every keystroke.
+   *
+   * Bounded rather than merely asserted to finish: without the memo this does
+   * not fail, it hangs, and a suite that hangs is a suite nobody runs. The
+   * bound is loose enough for a loaded machine and ~30 orders of magnitude
+   * under the unmemoised cost.
+   */
+  it('types a long chain of loops in one pass, not once per path that reaches it', () => {
+    /*
+     * NESTED and not a run of siblings. A loop's binding is readable inside its
+     * own body and nowhere after it, so a sibling chain reading
+     * `steps.L<n-1>.item` is a chain of References that cannot resolve — and the
+     * cost this guards is the nested shape anyway: asking for the scope at the
+     * innermost Step types every enclosing loop, and typing one asks for the
+     * scope at IT.
+     */
+    const deep = (n: number): WorkflowDefinition => {
+      const innermost: WorkflowDefinition['steps'] = [{ id: 'tail', use: 'component.email.send' }]
+      let body = innermost
+      for (let i = n - 1; i >= 0; i--) {
+        const list = i === 0 ? 'steps.fetch.messages' : `steps.L${i - 1}.item`
+        body = [{ id: `L${i}`, use: 'core.for_each', with: { list: `{{ ${list} }}` }, steps: body }]
+      }
+      return doc({ steps: [{ id: 'fetch', use: 'component.inbox.fetch' }, ...body] })
+    }
+
+    const started = performance.now()
+    const scope = scopeFor(deep(30), { board: null, id: 'tail' }, listing())
+    expect(performance.now() - started).toBeLessThan(500)
+
+    // And the answers are the answers. The first loop reads a declared list, so
+    // its element is the shape the source declared; every loop after it reads
+    // the previous one's element, which is an object rather than a list — so
+    // `item` stays `item` down the chain, which is the honest answer and not a
+    // casualty of remembering.
+    expect(scope.find((entry) => entry.path === 'steps.L0')?.type).toEqual({
+      type: 'object',
+      members: { item: { type: 'object', members: { subject: { type: 'text' } } } },
+    })
+    expect(scope.find((entry) => entry.path === 'steps.L29')?.type).toEqual({
+      type: 'object',
+      members: { item: { type: 'item' } },
+    })
   })
 
   it('is nothing when the list is not a plain Reference, or names nothing at all', () => {

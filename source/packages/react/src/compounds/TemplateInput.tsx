@@ -1111,7 +1111,7 @@ function signatureAt(
 }
 
 /**
- * The mark at a chip's leading edge: which of the four kinds this value is from.
+ * The mark at a chip's leading edge: which kind of thing this value comes from.
  *
  * Drawn rather than set in type, because the only bin-and-bolt glyphs in a text
  * font are emoji, which render at a size and colour the row does not control.
@@ -1138,6 +1138,12 @@ function KindMark({ kind }: { kind: ScopeEntry['kind'] }) {
       ) : kind === 'var' ? (
         // A value the workflow keeps, held on a shelf.
         <path d="M2.6 3.6h6.8M2.6 6h6.8M2.6 8.4h4.4" />
+      ) : kind === 'param' ? (
+        // Handed in from outside: an arrow arriving at the Board's edge. A
+        // Block's Board is the only scope that has one, and without a case here
+        // every parameter is drawn with the Run Context's mark — which says the
+        // opposite, that the value is ambient and around the whole run.
+        <path d="M2 6h5.2M5.4 3.9 7.6 6l-2.2 2.1M9.6 2.4v7.2" />
       ) : (
         // Ambient, and around the whole run.
         <>

@@ -279,6 +279,31 @@ export function createEditingStore(
     })
   }
 
+  /**
+   * Put the document back to `text`, and republish.
+   *
+   * Both halves matter. The store's own handle is re-parsed because the command
+   * has already mutated the one it was given — and the snapshot is rebuilt
+   * because `commit` publishes `workflow.document` BY REFERENCE, so a reader
+   * holding the last snapshot is otherwise holding exactly the tree that was
+   * thrown away. `views/Build` reads it to work out where a Component appends,
+   * which is a wrong answer computed off a document nothing else can see.
+   *
+   * The text is unchanged, so nothing downstream sees an edit: what changes is
+   * that the object under it is the one the text describes.
+   */
+  const restore = (text: string) => {
+    try {
+      document = parseWorkflow(text)
+    } catch {
+      // Unreachable while `text` came out of this document, and cheap insurance
+      // if it ever does not: a store holding an unparseable document has
+      // nothing left to offer.
+      return
+    }
+    commit()
+  }
+
   const setSave = (next: SaveState) => {
     save = next
     commit()
@@ -607,6 +632,16 @@ export function createEditingStore(
         return
       }
 
+      /*
+       * Whether the document projected BEFORE this command, read off the last
+       * published snapshot rather than validated again.
+       *
+       * A document that already does not project is not this command's doing
+       * and is not judged below — that state is ADR-0001's and belongs to the
+       * user's file. What is judged is a command that MAKES one.
+       */
+      const projected = state.status === 'ready' && state.workflow.definition !== null
+
       let after: string
       try {
         command.apply(document)
@@ -617,17 +652,32 @@ export function createEditingStore(
         // what it was asked to edit is not the shape it edits. Either way the
         // document is left as it was and nothing reaches the undo stack, so a
         // stale insertion point is a no-op rather than half an edit.
-        try {
-          document = parseWorkflow(before)
-        } catch {
-          // Unreachable while `before` came out of this document, and cheap
-          // insurance if it ever does not: a store holding an unparseable
-          // document has nothing left to offer.
-        }
+        restore(before)
         return
       }
 
       if (after === before) return
+
+      /*
+       * **A command may not turn a document that projects into one that does
+       * not.** Inheriting an invalid document from the Host's file is a state
+       * this store is built to hold — ADR-0001 makes the text the source of
+       * truth, and the panel has a screen that says so. MANUFACTURING one is a
+       * different thing entirely: every surface in the product reads
+       * `definition`, so a single command that breaks the projection empties
+       * the canvas, the side panel and the step editor at once, and the user is
+       * left with nothing to click on to undo it.
+       *
+       * Every command that writes a user-chosen name refuses a name the schema
+       * cannot hold, which is where a refusal can say something useful. This is
+       * the backstop under all of them, and under every command written later:
+       * a whole class of defect that would otherwise be one field's oversight
+       * each time.
+       */
+      if (projected && !document.validate().success) {
+        restore(before)
+        return
+      }
 
       history.push({ text: before, label: command.label })
       if (history.length > HISTORY_LIMIT) history.shift()

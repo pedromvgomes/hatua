@@ -1,0 +1,120 @@
+import { type BoardId, boardKey } from '@hatua/model'
+import { cx } from '../primitives/classNames'
+import styles from './BoardTabs.module.css'
+import css from './BoardTabs.module.css?inline'
+
+/** One open Board, and what the strip calls it. */
+export interface BoardTab {
+  /** `null` is the root Board. */
+  id: BoardId
+  label: string
+}
+
+export interface BoardTabsProps {
+  /** The open Boards, root first. */
+  tabs: readonly BoardTab[]
+  active: BoardId
+  onActivate: (board: BoardId) => void
+  /**
+   * Close one Block's tab. Never handed the root, which has no close control:
+   * the root Board is the one Board that always exists, so a strip that could
+   * close it would have a state with nothing in it and no way back.
+   */
+  onClose: (block: string) => void
+}
+
+/**
+ * The canvas's tab strip: which Boards are open, and which one is in front.
+ *
+ * ## Navigation, not `role="tablist"`
+ *
+ * These look like tabs and they are not ARIA tabs. A `tablist` promises a
+ * `tabpanel`, and the canvas is deliberately not one — it carries
+ * `tabIndex={-1}` so it can take focus after a pointer press without becoming a
+ * stop in the tab order, and a `tabpanel` is a stop by contract. Claiming the
+ * role and leaving the panel unmarked, or marking the canvas and breaking its
+ * focus rule, are both worse than the truthful reading: switching Board
+ * replaces what the canvas draws, which is navigation, so this is a `nav` whose
+ * buttons carry `aria-current`.
+ *
+ * The same argument `CanvasControls` makes about `role="menu"` — a keyboard
+ * contract claimed and not implemented is worse for a screen reader than no
+ * role at all — reached from the other side.
+ *
+ * ## Every tab is a tab stop
+ *
+ * A roving `tabIndex` is the `tablist` pattern, and this is a `nav`: links in a
+ * navigation region are each reachable by Tab, and a working set is small
+ * enough that this costs a keyboard user nothing. Arrow keys are the thing that
+ * would need the roving index, and adding them without the role would be the
+ * same unkept promise in the other direction.
+ *
+ * ## The label is the Board's, and the close button is its own control
+ *
+ * A close control nested inside the tab's own button is not expressible — a
+ * button cannot contain a button — and it should not be, because they are two
+ * commands. So each tab is a label button and, for a Block, a close button
+ * beside it.
+ */
+export function BoardTabs({ tabs, active, onActivate, onClose }: BoardTabsProps) {
+  return (
+    <>
+      <style href="hatua-board-tabs" precedence="hatua">
+        {css}
+      </style>
+      <nav className={styles.tabs} aria-label="Boards">
+        <ul className={styles.list}>
+          {tabs.map((tab) => {
+            const current = tab.id === active
+            return (
+              <li
+                // `boardKey` and not the bare id: the root Board is `null`
+                // and a Block whose id is the empty string would key the same.
+                // The same spelling the canvas keys a viewport by, so the two
+                // cannot disagree about which Board is which.
+                key={boardKey(tab.id)}
+                className={cx(styles.tab, current && styles.current)}
+              >
+                <button
+                  type="button"
+                  className={styles.label}
+                  // `page` rather than `true`: the strip navigates between
+                  // Boards, and this is which one is being looked at.
+                  aria-current={current ? 'page' : undefined}
+                  onClick={() => onActivate(tab.id)}
+                >
+                  {tab.label}
+                </button>
+
+                {tab.id === null ? null : (
+                  <button
+                    type="button"
+                    className={styles.close}
+                    aria-label={`Close ${tab.label}`}
+                    onClick={() => onClose(tab.id as string)}
+                  >
+                    <svg
+                      viewBox="0 0 16 16"
+                      width="11"
+                      height="11"
+                      focusable="false"
+                      aria-hidden="true"
+                    >
+                      <path
+                        d="M4 4l8 8M12 4l-8 8"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  </button>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+      </nav>
+    </>
+  )
+}

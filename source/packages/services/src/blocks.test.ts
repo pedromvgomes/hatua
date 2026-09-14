@@ -3,10 +3,14 @@ import { describe, expect, it } from 'vitest'
 import {
   addBlock,
   addDeclaration,
+  nextBlockId,
   removeBlock,
   removeDeclaration,
   renameBlock,
+  renameDeclaration,
   setBlockName,
+  setDeclarationLabel,
+  setDeclarationType,
 } from './blocks'
 import type { EditCommand } from './command'
 import { addStep, moveStep, removeStep } from './steps'
@@ -126,17 +130,70 @@ steps:
     expect(out).toContain('# Everything starts here.')
   })
 
-  /* A call site is a `use:` like any other: it goes stale and is reported. */
-  it('does not rewrite call sites when a block is renamed', () => {
+  /*
+   * A rename repairs what it invalidates (ADR-0021). A slug renamed without its
+   * call sites is a Block nothing resolves, which every reader here — the canvas
+   * included — reads as a deleted one.
+   */
+  it('rewrites every call site when a block is renamed', () => {
     const built = apply(
       SOURCE,
       addBlock({ id: 'archive' }),
       addStep({ use: 'block.archive', id: 'call' }, { index: 1 }),
+      addStep({ use: 'block.archive', id: 'again' }, { index: 2 }),
     )
     const out = apply(built, renameBlock('archive', 'archive_entry'))
 
-    expect(out).toContain('use: block.archive\n')
+    expect(out).not.toContain('use: block.archive\n')
+    expect(out.match(/use: block\.archive_entry/g)).toHaveLength(2)
     expect(projected(out).blocks?.[0]?.id).toBe('archive_entry')
+  })
+
+  /* A Block may be called from another Block's Board, so the reach is the whole
+     document rather than the root's Steps. */
+  it('rewrites a call site that sits on another block’s Board', () => {
+    const built = apply(
+      SOURCE,
+      addBlock({ id: 'archive' }),
+      addBlock({ id: 'outer' }),
+      addStep({ use: 'block.archive', id: 'call' }, { board: 'outer', index: 0 }),
+    )
+    const out = apply(built, renameBlock('archive', 'kept'))
+
+    expect(out).toContain('use: block.kept')
+    expect(out).not.toContain('use: block.archive')
+  })
+
+  /* A verb that merely begins the same way is a different Block. */
+  it('leaves a call site whose slug only starts with the renamed one', () => {
+    const built = apply(
+      SOURCE,
+      addBlock({ id: 'arch' }),
+      addBlock({ id: 'archive' }),
+      addStep({ use: 'block.archive', id: 'call' }, { index: 1 }),
+    )
+    const out = apply(built, renameBlock('arch', 'stored'))
+
+    expect(out).toContain('use: block.archive')
+  })
+
+  /*
+   * The collision throws before anything is rewritten, so a refused rename
+   * leaves every call site naming the Block it still names.
+   */
+  it('leaves call sites alone when the rename is refused', () => {
+    const built = apply(
+      SOURCE,
+      addBlock({ id: 'a' }),
+      addBlock({ id: 'b' }),
+      addStep({ use: 'block.b', id: 'call' }, { index: 1 }),
+    )
+    // Inspected after the throw rather than through `apply`, which rethrows:
+    // what is being protected is the document the command left behind, and
+    // `EditingStore` restores its text only because a command may not.
+    const document = parseWorkflow(built)
+    expect(() => renameBlock('b', 'a').apply(document)).toThrow(/already exists/)
+    expect(document.toString()).toContain('use: block.b')
   })
 
   /*
@@ -148,6 +205,36 @@ steps:
   it('refuses a rename onto an id another block already holds', () => {
     const built = apply(SOURCE, addBlock({ id: 'a' }), addBlock({ id: 'b' }))
     expect(() => apply(built, renameBlock('b', 'a'))).toThrow(/already exists/)
+  })
+
+  /*
+   * `name:` is a scalar key, and a hand-written file may hold anything under it.
+   * Writing a scalar beside the collection already there leaves TWO `name:`
+   * pairs in one mapping: yaml resolves that last-wins so `validate()` still
+   * succeeds and the projection backstop cannot see it, the text autosaves, and
+   * the next open throws out of `toString()` — a document the user can no longer
+   * load, from an edit that looked ordinary.
+   */
+  it('refuses to name a block whose `name:` holds a collection', () => {
+    const handWritten = `id: wf
+name: n
+version: 1
+status: draft
+
+blocks:
+  - id: archive
+    name:
+      - a list somebody wrote by hand
+    steps: []
+
+steps: []
+`
+    const document = parseWorkflow(handWritten)
+    expect(() => setBlockName('archive', 'Archive an entry').apply(document)).toThrow(
+      /not a scalar/i,
+    )
+    // And nothing was written on the way to refusing.
+    expect(document.toString()).toBe(handWritten)
   })
 
   it('sets a display name, which nothing references', () => {
@@ -342,5 +429,219 @@ describe('a block’s own variables', () => {
   it('still edits the workflow’s variables when no board is named', () => {
     const out = apply(SOURCE, addVariable('threshold'))
     expect(projected(out).vars?.map((v) => v.key)).toEqual(['digest_to', 'threshold'])
+  })
+})
+
+/**
+ * Editing a declaration that is already there.
+ *
+ * `addDeclaration` writes a minted key, a label and a `t`, because the schema
+ * requires all three and a row missing one stops the document projecting. So
+ * naming a parameter is these three commands and not the add — which is what
+ * makes the Contract section an editor rather than an add-and-remove list.
+ */
+describe('editing a declaration', () => {
+  const WITH_CONTRACT = apply(
+    SOURCE,
+    addBlock({ id: 'archive' }),
+    addDeclaration('archive', 'params', { k: 'thread', label: 'Thread', t: 'text' }),
+    addDeclaration('archive', 'params', { k: 'urgent', label: 'Urgent', t: 'boolean' }),
+    addDeclaration('archive', 'outputs', { k: 'url', label: 'Where it went', t: 'text' }),
+  )
+
+  const paramsOf = (yaml: string) => projected(yaml).blocks?.[0]?.params
+  const outputsOf = (yaml: string) => projected(yaml).blocks?.[0]?.outputs
+
+  /*
+   * The same contract, called twice, with a Step reading each call's output and
+   * a Step of its own holding an output under the same key. Written as YAML
+   * rather than built from commands because `NewStep` carries no `with:` —
+   * every field here is exactly what the rename has to find or leave alone.
+   */
+  const CALLED = `id: wf_morning
+name: n
+version: 4
+status: draft
+
+blocks:
+  - id: archive
+    params:
+      - { k: thread, label: "Thread", t: text }
+      - { k: urgent, label: "Urgent", t: boolean }
+    outputs:
+      - { k: url, label: "Where it went", t: text }
+    steps:
+      - id: inner
+        use: component.email.send
+        with:
+          to: "{{ params.thread }}"
+
+steps:
+  - id: s1
+    use: component.email.fetch
+  - id: first
+    use: block.archive
+    with:
+      # what the caller passes
+      thread: "the thread"
+  - id: second
+    use: block.archive
+    with:
+      thread: "another"
+  - id: reads
+    use: component.email.send
+    with:
+      a: "{{ steps.first.url }}"
+      b: "{{ steps.second.url }}"
+      c: "{{ steps.s1.url }}"
+`
+
+  it('renames a key, leaving the label and the type where they were', () => {
+    const out = apply(WITH_CONTRACT, renameDeclaration('archive', 'params', 'thread', 'subject'))
+
+    expect(paramsOf(out)).toEqual([
+      { k: 'subject', label: 'Thread', t: 'text' },
+      { k: 'urgent', label: 'Urgent', t: 'boolean' },
+    ])
+  })
+
+  /*
+   * Every reader resolves the FIRST match — `boardScope` offers it, the rename
+   * edits it, `removeDeclaration` deletes it — so two rows under one key would
+   * make the second row's bin button delete the first row's declaration, and
+   * `{{ params.<k> }}` a Reference with two answers and no diagnostic.
+   */
+  it('refuses a rename onto a key the same side already declares', () => {
+    expect(() =>
+      apply(WITH_CONTRACT, renameDeclaration('archive', 'params', 'thread', 'urgent')),
+    ).toThrow(/already declared/)
+  })
+
+  /*
+   * A parameter is read inside its Block through `params.`, and supplied at
+   * every call site as a mapping KEY under `with:` — a name, not a path. So one
+   * rename is two different edits, and only one of them is a substitution.
+   */
+  it('rewrites a parameter’s Reference inside the Block and its key at the call site', () => {
+    const out = apply(CALLED, renameDeclaration('archive', 'params', 'thread', 'subject'))
+
+    expect(out).toContain('{{ params.subject }}')
+    expect(out).not.toContain('{{ params.thread }}')
+    // The call site's key moved; its value and its comment stayed put.
+    expect(out).toContain('subject: "the thread"')
+    expect(out).not.toContain('thread: "the thread"')
+    expect(out).toContain('# what the caller passes')
+  })
+
+  /*
+   * An output is read at the call site through the CALLING Step's id, so the
+   * prefix is `steps.<call>.` and a Block called twice is two prefixes.
+   */
+  it('rewrites an output’s Reference at every call site, through each caller’s id', () => {
+    const out = apply(CALLED, renameDeclaration('archive', 'outputs', 'url', 'link'))
+
+    expect(out).toContain('{{ steps.first.link }}')
+    expect(out).toContain('{{ steps.second.link }}')
+    expect(out).not.toContain('{{ steps.first.url }}')
+    expect(out).not.toContain('{{ steps.second.url }}')
+  })
+
+  /* A Step that is not a call site keeps an output of the same name. */
+  it('leaves an output Reference belonging to another Step alone', () => {
+    const out = apply(CALLED, renameDeclaration('archive', 'outputs', 'url', 'link'))
+    expect(out).toContain('{{ steps.s1.url }}')
+  })
+
+  /* A call site that never filled the parameter in has no pair to rename, and a
+     rename that threw there would refuse the whole edit for a blank field. */
+  it('renames a parameter even where a call site left it unset', () => {
+    const out = apply(CALLED, renameDeclaration('archive', 'params', 'urgent', 'now'))
+    expect(paramsOf(out)?.map((d) => d.k)).toEqual(['thread', 'now'])
+  })
+
+  /* The two sides are two lists and two namespaces: `params.url` and
+     `steps.<call>.url` never meet. */
+  it('allows a parameter to take a key an output already uses', () => {
+    const out = apply(WITH_CONTRACT, renameDeclaration('archive', 'params', 'thread', 'url'))
+
+    expect(paramsOf(out)?.map((d) => d.k)).toEqual(['url', 'urgent'])
+    expect(outputsOf(out)?.map((d) => d.k)).toEqual(['url'])
+  })
+
+  it('writes a label, which nothing references', () => {
+    const out = apply(
+      WITH_CONTRACT,
+      setDeclarationLabel('archive', 'outputs', 'url', 'Archive link'),
+    )
+    expect(outputsOf(out)).toEqual([{ k: 'url', label: 'Archive link', t: 'text' }])
+  })
+
+  it('writes a type, which every call site is checked against', () => {
+    const out = apply(WITH_CONTRACT, setDeclarationType('archive', 'params', 'urgent', 'number'))
+    expect(paramsOf(out)?.map((d) => d.t)).toEqual(['text', 'number'])
+  })
+
+  it('refuses to edit a key the side does not declare', () => {
+    expect(() =>
+      apply(WITH_CONTRACT, setDeclarationType('archive', 'params', 'url', 'number')),
+    ).toThrow(/No "url" declared under params/)
+  })
+
+  /* A Workflow Definition lives in the Host's repository: an edit to one
+     declaration must not reformat the file around it (ADR-0001). */
+  it('leaves the rest of the document as the user wrote it', () => {
+    const out = apply(WITH_CONTRACT, renameDeclaration('archive', 'params', 'thread', 'subject'))
+
+    expect(out).toContain('# The overnight triage.')
+    expect(out).toContain('# Weekday mornings only.')
+    expect(out).toContain('name: "Morning inbox triage"')
+    expect(out).toContain('# Everything starts here.')
+  })
+})
+
+describe('naming a block that was declared without one', () => {
+  it('writes `name:` under its `id`, not below the whole Board', () => {
+    // `addBlock` writes `name:` only when it is given, so the first name a user
+    // types is a key the mapping does not have. Appended, it lands under the
+    // Block's `steps:` — on a Board with fifty Steps, fifty lines from the `id`
+    // it belongs to, in a file that lives in the Host's repository.
+    const declared = apply(SOURCE, addBlock({ id: 'block_1' }))
+    const named = apply(declared, setBlockName('block_1', 'Archive an entry'))
+
+    expect(named).toContain('  - id: block_1\n    name: Archive an entry\n    steps: []')
+    expect(projected(named).blocks?.[0]?.name).toBe('Archive an entry')
+  })
+
+  it('rewrites a name the Block already has in place, moving nothing', () => {
+    const declared = apply(SOURCE, addBlock({ id: 'block_1', name: 'First' }))
+    const named = apply(declared, setBlockName('block_1', 'Second'))
+
+    expect(named).toContain('  - id: block_1\n    name: Second\n    steps: []')
+    expect(named).not.toContain('First')
+  })
+})
+
+describe('minting an id', () => {
+  it('counts from the ids already declared, so the same edits produce the same file twice', () => {
+    const first = parseWorkflow(SOURCE)
+    expect(nextBlockId(first)).toBe('block_1')
+
+    const twice = apply(SOURCE, addBlock({ id: 'block_1' }))
+    expect(nextBlockId(parseWorkflow(twice))).toBe('block_2')
+  })
+
+  it('steps over an id a user took by hand', () => {
+    const held = apply(SOURCE, addBlock({ id: 'block_2' }))
+    expect(nextBlockId(parseWorkflow(held))).toBe('block_1')
+  })
+
+  it('refuses to declare a second block under an id already taken', () => {
+    // Every reader resolves the FIRST match, so a second block's Board would
+    // open on the first's steps and `removeBlock` would delete the wrong one.
+    const held = parseWorkflow(apply(SOURCE, addBlock({ id: 'archive_entry' })))
+
+    expect(() => addBlock({ id: 'archive_entry' }).apply(held)).toThrow(/already exists/)
+    // And the document is left as it was, holding one.
+    expect(held.toString().match(/- id: archive_entry/g)).toHaveLength(1)
   })
 })

@@ -17,10 +17,9 @@ import {
   ITEM_BINDING,
   MAPPING_VERB,
   mapEntries,
-  TRY_VERB,
   variableType,
 } from './slots'
-import { type BoardId, boardOf, own, type StepRef, stepKey } from './tree'
+import { type BoardId, boardOf, own, type StepRef, stepKey, TRY_VERB } from './tree'
 
 /**
  * What a step may reference. The reference tree is built from this, which is
@@ -96,6 +95,14 @@ export function upstreamOf(doc: WorkflowDefinition, ref: StepRef): Step[] {
  * Its body cannot read it — the body is what produces it — and neither can a
  * Step after the try, because whether there was a failure at all is decided
  * during a run and not in the file.
+ *
+ * A `core.for_each` is the same shape for a different reason. Its binding is one
+ * ELEMENT — `{{steps.<loop id>.item}}` — and an element exists only while an
+ * iteration is running. After the loop there is no element: not the last one,
+ * which the file does not say, and not none, which has no type. So the loop is
+ * in scope for its own body and out of scope after it, exactly as the try is,
+ * and a Reference written after it is refused here rather than type-checking
+ * against a binding that cannot resolve when the workflow runs.
  */
 function collectUpstream(steps: readonly Step[], id: string, ancestors: Step[]): Step[] | null {
   const earlier: Step[] = []
@@ -103,6 +110,9 @@ function collectUpstream(steps: readonly Step[], id: string, ancestors: Step[]):
     if (step.id === id) return [...ancestors, ...earlier]
 
     const above = [...ancestors, ...earlier]
+    // The try alone, and not every binding Step: a loop's body is exactly where
+    // `{{steps.<loop id>.item}}` means something, while a try's body is what
+    // produces its `error` and cannot read it.
     const outside = step.use === TRY_VERB ? above : [...above, step]
 
     const regions: readonly (readonly [readonly Step[], Step[]])[] = [
@@ -116,10 +126,24 @@ function collectUpstream(steps: readonly Step[], id: string, ancestors: Step[]):
       if (hit) return hit
     }
 
-    if (step.use !== TRY_VERB) earlier.push(step)
+    if (!binds(step)) earlier.push(step)
   }
   return null
 }
+
+/**
+ * Whether a Step's own outputs exist only while its region is running, and
+ * therefore whether it is upstream of what comes AFTER it.
+ *
+ * A try's `error` and a loop's `item` are both produced inside a region and
+ * gone once it is over, so neither Step is upstream of anything that follows —
+ * while an ordinary Step's outputs are what it finished with and stay readable.
+ *
+ * Where each one is readable differs, which is why this is not the same
+ * question as the one above: a try is out of scope in its own body and in scope
+ * in its handler, and a loop is in scope in its body.
+ */
+const binds = (step: Step): boolean => step.use === TRY_VERB || step.use === FOR_EACH_VERB
 
 /**
  * Everything a Board offers with no position in its tree.
@@ -255,11 +279,12 @@ export function scopeFor(
   manifests: readonly Manifest[] = [],
   context: readonly ContextKey[] = [],
 ): ScopeEntry[] {
-  return scopeAt(doc, ref, manifests, context, new Set())
+  return scopeAt(doc, ref, manifests, context, new Set(), new Map())
 }
 
 /**
- * `scopeFor`, plus the set of loops already being resolved.
+ * `scopeFor`, plus the set of loops already being resolved and what has already
+ * been worked out.
  *
  * `item` is typed by reading the loop's own `list` field, which means typing an
  * expression against the loop step's scope — so building one Step's scope can
@@ -268,6 +293,11 @@ export function scopeFor(
  * therefore never be its own. `resolving` is not that argument: it is the guard
  * for a document where two Steps share an id, which the schema permits into a
  * file and `STEP_ID_DUPLICATE` reports rather than refuses.
+ *
+ * **Terminating is not the same as finishing.** Every loop in the upstream is
+ * typed, and typing one asks for the scope at it — which types every loop
+ * upstream of THAT. Without `elements`, a chain of n loops costs 2ⁿ: twenty of
+ * them take minutes, and `validateDefinition` runs on every keystroke.
  */
 function scopeAt(
   doc: WorkflowDefinition,
@@ -275,6 +305,7 @@ function scopeAt(
   manifests: readonly Manifest[],
   context: readonly ContextKey[],
   resolving: ReadonlySet<string>,
+  elements: ElementMemo,
 ): ScopeEntry[] {
   const byUse = new Map(manifests.map((manifest) => [manifest.use, manifest]))
 
@@ -289,6 +320,7 @@ function scopeAt(
           manifests,
           context,
           resolving,
+          elements,
         }),
       }),
     ),
@@ -345,14 +377,27 @@ export function loopElementType(
   manifests: readonly Manifest[] = [],
   context: readonly ContextKey[] = [],
   resolving: ReadonlySet<string> = new Set(),
+  elements: ElementMemo = new Map(),
 ): TypeNode | null {
+  const key = stepKey({ board, id: step.id })
+
+  // `null` is an answer and `undefined` is "not asked yet", which is why this
+  // reads the Map rather than testing truthiness.
+  const known = elements.get(key)
+  if (known !== undefined) return known
+
   const template = own(step.with as Record<string, unknown> | undefined, FOR_EACH_LIST_FIELD)
-  if (typeof template !== 'string') return null
+  if (typeof template !== 'string') return remember(elements, key, null)
 
   const path = sourceReference(template)
-  if (path === null) return null
+  if (path === null) return remember(elements, key, null)
 
-  const key = stepKey({ board, id: step.id })
+  /*
+   * Not remembered. This null is a fact about the walk that reached here — a
+   * Step already being resolved further up — rather than about the Step, so
+   * storing it would let one path's guard answer for a path that has no cycle
+   * in it.
+   */
   if (resolving.has(key)) return null
 
   const scope = scopeAt(
@@ -361,19 +406,39 @@ export function loopElementType(
     manifests,
     context,
     new Set([...resolving, key]),
+    elements,
   )
   const node = typeAtPath(scope, path)
-  if (!node || node.type !== 'list') return null
+  if (!node || node.type !== 'list') return remember(elements, key, null)
 
-  // A list that declared no `of:` says nothing about its elements, so there is
-  // no shape to hand back. `elementOf` answers `object` for one — which is the
-  // right answer for a projection, where the question is "what does `.name`
-  // read off this?", and the wrong one here: it would mark `item` as an object
-  // nothing declared, and every scalar field it is written into would report a
-  // mismatch against a shape the document never said.
-  if (!node.members) return null
+  /*
+   * A list that declares no `of:` says nothing about its elements, and a list
+   * of scalars — `tags`, `recipients` — is exactly that. `elementOf` would hand
+   * back a memberless `{type: 'object'}`, which is the shape nothing declared
+   * that the paragraph above refuses: `{{ steps.<loop>.item }}` fed to a `text`
+   * field would then read as an object against text and be reported as a
+   * conflict on a workflow with nothing wrong with it.
+   */
+  if (!node.members) return remember(elements, key, null)
 
-  return elementOf(node)
+  return remember(elements, key, elementOf(node))
+}
+
+/**
+ * What one loop's element resolves to, for the length of one top-level walk.
+ *
+ * A Step's element type is a property of the document, so one walk asking for
+ * the same loop twice is asking the same question twice — and the walk asks for
+ * it once per path that reaches it, which is what makes the cost exponential
+ * without this. The map is created per `scopeFor` rather than held in the
+ * module: the document is an argument, and a cache outliving the call would be
+ * answering about a document that has since been edited.
+ */
+type ElementMemo = Map<string, TypeNode | null>
+
+const remember = (memo: ElementMemo, key: string, node: TypeNode | null): TypeNode | null => {
+  memo.set(key, node)
+  return node
 }
 
 /**
@@ -448,6 +513,7 @@ function stepOutputType(
     manifests: readonly Manifest[]
     context: readonly ContextKey[]
     resolving: ReadonlySet<string>
+    elements: ElementMemo
   },
 ): TypeNode {
   if (step.use === MAPPING_VERB) return mappingOutputType(step)
@@ -475,6 +541,7 @@ function stepOutputType(
     through.manifests,
     through.context,
     through.resolving,
+    through.elements,
   )
   if (!element) return declared
 

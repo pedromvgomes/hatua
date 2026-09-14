@@ -1,12 +1,12 @@
+import { type BoardId, boardKey, type Segment, type StepRef } from '@hatua/model'
 import { addStep, type InsertPoint, rootStepCount } from '@hatua/services'
 import { type ComponentPropsWithRef, useState } from 'react'
 import { Components } from '../layouts/Components'
 import { FlowMap } from '../layouts/FlowMap'
 import { Inspector } from '../layouts/Inspector'
-import { StepList } from '../layouts/StepList'
 import { TabbedPanel } from '../layouts/TabbedPanel'
 import { TopBar } from '../layouts/TopBar'
-import { Workflow } from '../layouts/Workflow'
+import { boardTabLabel, Workflow } from '../layouts/Workflow'
 import { cx } from '../primitives/classNames'
 import { useEditingStore } from '../theme/HatuaProvider'
 import styles from './Build.module.css'
@@ -18,14 +18,17 @@ export type BuildProps = ComponentPropsWithRef<'div'>
  * The designer screen: the toolbar across the top, then three columns — the
  * tabbed side panel, the canvas, and the step editor.
  *
- * The canvas has a column of its own, and did not until now. <Build> used to
- * hand the whole work area to <TabbedPanel> and mount <FlowMap> inside it as
- * the "Flow" tab, which left the screen with nowhere to put a canvas: it
- * appeared only while one of three tabs was open, and never beside the panel it
- * is edited from. The tab labelled "Flow" and the region called `FlowMap` had
- * become two different things wearing one name — the tab is the Step tree as a
- * list (<StepList>), the region is the map. Both are on screen at once now,
- * which is what the design has always shown.
+ * **The canvas is how a workflow is built.** It has a column of its own and is
+ * always on screen: every card, every `+` between two cards, and the doorway
+ * into a Block's Board are there. The side panel is **Workflow** and
+ * **Components** — everything scoped to the workflow rather than to a Step, and
+ * the catalogue a Step is chosen from.
+ *
+ * `<StepList>` is not in that set. It is a real region and a Host that wants a
+ * dense, keyboard-reorderable list of the tree mounts it — `apps/playground/src/host.tsx`
+ * does exactly that — but it is not what Hatua's own screen leads with, and a
+ * tab labelled *Flow* beside a region called `FlowMap` is the name collision
+ * this repo has already paid for once.
  *
  * <Build> is the convenience; the regions it composes are the seam. There are
  * two ways to embed and only two — write <Hatua>, which mounts this, or mount
@@ -55,7 +58,7 @@ export function Build({ className, ...rest }: BuildProps) {
    * The one thing this view does beyond placing regions: it introduces the two
    * halves of "add a Step" to each other.
    *
-   * Neither region can do it alone, and neither should. <StepList> knows where
+   * Neither region can do it alone, and neither should. The canvas knows where
    * a Step would go and nothing about the catalogue; <Components> knows the
    * Components and nothing about the tree. Both emit rather than reach — props
    * out, the rule layouts/README states — so something has to be above both,
@@ -63,22 +66,43 @@ export function Build({ className, ...rest }: BuildProps) {
    *
    * The pending point is chrome, held here and never in the document, the same
    * line drawn around which tab is open. Appending is the fallback: a Component
-   * picked with no insert point pending goes at the end of the workflow, which
-   * is what "add this" means when nowhere was named.
+   * picked with no insert point pending goes at the end of the Board on screen,
+   * which is what "add this" means when nowhere was named.
    *
-   * The Flow tab's selection and collapse are held here for a different reason,
-   * and it is this view's doing rather than that region's. <TabbedPanel>
-   * renders only the open tab, and adding a Step goes Flow → Components → Flow,
-   * so <StepList> is unmounted and remounted every time — which threw away
-   * which Step was selected and re-expanded every container the user had
-   * collapsed, on the one action most likely to follow another. The state stays
-   * chrome and never reaches the document; it just outlives the region now,
-   * which is what the design means by the composition root holding selection.
+   * Selection, collapse and which Board is open are held here for a different
+   * reason: they are one answer shared by two surfaces. The canvas and a
+   * <StepList> a Host mounts beside it must not highlight two different Steps
+   * or show two different Boards, and the step editor can only be handed one.
    */
-  const [tab, setTab] = useState('flow')
+  const [tab, setTab] = useState('components')
   const [pending, setPending] = useState<InsertPoint | null>(null)
-  const [selectedId, setSelectedId] = useState<string | undefined>(undefined)
-  const [collapsedIds, setCollapsedIds] = useState<readonly string[]>([])
+  /*
+   * What is selected on each Board, keyed by Board.
+   *
+   * One per Board rather than one shared: a `Segment` names the Board it is on,
+   * so a selection is meaningless on any other, and going through a doorway and
+   * coming back finds the Steps that were left selected rather than nothing
+   * (ADR-0017).
+   */
+  const [selectedOn, setSelectedOn] = useState<Readonly<Record<string, Segment>>>({})
+  const [collapsed, setCollapsed] = useState<readonly StepRef[]>([])
+  /*
+   * Which Board is on screen, and the reason it is up here rather than inside
+   * either region.
+   *
+   * A call is a doorway into another Board (ADR-0013) and the canvas is where
+   * that door is, so <FlowMap> is what changes it — but the Flow tab lists
+   * `definition.steps` for one Board too, and two surfaces showing two
+   * different Boards at once is the "the map and the list disagree" defect this
+   * repo has already paid for twice. So the canvas reports, this holds, and the
+   * list follows.
+   *
+   * It stays chrome and never reaches the document, the same line ADR-0001
+   * draws around node positions: a Board a session happened to be looking at is
+   * a diff in the Host's repository for nothing.
+   */
+  const [board, setBoard] = useState<BoardId>(null)
+  const selected = selectedOn[boardKey(board)]
 
   /**
    * Read at click time, not at render time. <Build> deliberately does not
@@ -93,7 +117,14 @@ export function Build({ className, ...rest }: BuildProps) {
     // while the document does not project — and `?.steps.length ?? 0` cannot
     // tell that apart from an empty workflow, so a half-written file would
     // append at index 0, which is the front.
-    return { index: state?.status === 'ready' ? rootStepCount(state.workflow.document) : 0 }
+    //
+    // On the Board that is on screen, not on the root: "add this" means "add it
+    // where I am looking", and appending to the root while a Block's Board is
+    // open puts the Step somewhere the user cannot see it land.
+    return {
+      board,
+      index: state?.status === 'ready' ? rootStepCount(state.workflow.document, board) : 0,
+    }
   }
 
   return (
@@ -114,23 +145,28 @@ export function Build({ className, ...rest }: BuildProps) {
               // layouts/README.
               tabs={[
                 {
-                  // The Flow tab is in the default set only until the canvas
-                  // can select a Step. Dropping it before then leaves no way to
-                  // choose one at all, which is why it is here and why it
-                  // leaves when the canvas arrives rather than now.
-                  id: 'flow',
-                  label: 'Flow',
+                  // The id is stable and the label is not. The label names the
+                  // KIND of thing the tab holds — the canvas's strip already
+                  // says which Block — and an id that moved with it would
+                  // reopen the Components tab every time a doorway was walked
+                  // through.
+                  id: 'workflow',
+                  label: boardTabLabel(board),
                   content: (
-                    <StepList
-                      defaultSelectedId={selectedId}
-                      onSelect={setSelectedId}
-                      defaultCollapsedIds={collapsedIds}
-                      onCollapseChange={setCollapsedIds}
-                      onInsert={(at) => {
-                        setPending(at)
-                        // The design: "Clicking it opens the Components tab
-                        // with that insertion point pending."
-                        setTab('components')
+                    <Workflow
+                      board={board}
+                      onBoardRename={(from, to) => {
+                        // A renamed Block is a Block nothing resolves under its
+                        // old id, which every reader here — the canvas included
+                        // — reads as a deleted one. Following the rename keeps
+                        // the Board on screen and its selection with it.
+                        setBoard((was) => (was === from ? to : was))
+                        setSelectedOn((was) => {
+                          const held = was[boardKey(from)]
+                          if (!held) return was
+                          const { [boardKey(from)]: _gone, ...rest } = was
+                          return { ...rest, [boardKey(to)]: { ...held, board: to } }
+                        })
                       }}
                     />
                   ),
@@ -140,20 +176,21 @@ export function Build({ className, ...rest }: BuildProps) {
                   label: 'Components',
                   content: (
                     <Components
-                      onSelect={(manifest) => {
-                        store?.apply(
-                          addStep(
-                            { use: manifest.use, name: manifest.name },
-                            pending ?? appendPoint(),
-                          ),
-                        )
+                      pending={pending !== null}
+                      onSelect={(component) => {
+                        store?.apply(addStep(component, pending ?? appendPoint()))
                         setPending(null)
-                        setTab('flow')
+                      }}
+                      onBoardOpen={(block) => {
+                        // A Block's tab opens when the Block is declared
+                        // (ADR-0017), and there is nothing on its Board yet —
+                        // so the canvas going there is what says it exists.
+                        setBoard(block)
+                        setPending(null)
                       }}
                     />
                   ),
                 },
-                { id: 'workflow', label: 'Workflow', content: <Workflow /> },
               ]}
               tabId={tab}
               onTabChange={(next) => {
@@ -175,7 +212,54 @@ export function Build({ className, ...rest }: BuildProps) {
             />
           </div>
           <div className={styles.map}>
-            <FlowMap />
+            <FlowMap
+              onInsert={(at) => {
+                // The design: "Clicking it opens the Components tab with that
+                // insertion point pending."
+                setPending(at)
+                setTab('components')
+              }}
+              onDropComponent={(component, at) => {
+                // The same introduction as the click, arriving in one gesture
+                // rather than three: the canvas already knows where and the drag
+                // carried what, so the drop answers where by itself.
+                store?.apply(addStep(component, at))
+                // Including a question somebody had already asked. A `+` pressed
+                // before the drag left an insert point outstanding, and the drop
+                // is the answer to it — kept, the panel goes on saying "pick a
+                // component" after one was picked, and the next card clicked
+                // lands at an index the drop has already shifted.
+                setPending(null)
+              }}
+              boardId={board}
+              onBoardChange={(next) => {
+                setBoard(next)
+                // The pending insert point does not survive the doorway: kept,
+                // it names a list on another Board and the next Component would
+                // land somewhere nobody chose. Selection does survive, held per
+                // Board — the step editor is handed the one belonging to the
+                // Board on screen, and never a Step nobody is looking at.
+                setPending(null)
+              }}
+              // `null` and not `undefined`: this view holds the selection, so
+              // it is saying "nothing is selected on this Board" rather than
+              // "nobody has an opinion" — and the two are different props.
+              selected={selected ?? null}
+              onSelect={(segment) =>
+                setSelectedOn((was) => {
+                  // Cleared, and dropped rather than stored as an empty entry:
+                  // `selected` below reads a missing key as `null`, which is
+                  // the one spelling for "nothing is selected on this Board".
+                  if (!segment) {
+                    const { [boardKey(board)]: _cleared, ...rest } = was
+                    return rest
+                  }
+                  return { ...was, [boardKey(board)]: segment }
+                })
+              }
+              collapsed={collapsed}
+              onCollapseChange={setCollapsed}
+            />
           </div>
           <div className={styles.aside}>
             <Inspector />

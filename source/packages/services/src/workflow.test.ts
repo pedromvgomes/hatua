@@ -183,6 +183,32 @@ describe('setTriggerName', () => {
     expect(text).toContain('# Every weekday at six.')
     expect(text).toContain('at: "0 6 * * 1-5"')
   })
+
+  /*
+   * The other door onto the same defect the Block name guards: writing a scalar
+   * beside a collection already under the key leaves two `name:` pairs in one
+   * mapping. `yaml` resolves that last-wins, so the document still projects and
+   * nothing downstream reports it — and the next open of the file throws out of
+   * `toString()`.
+   */
+  it('refuses to rename a Trigger whose `name:` holds a collection', () => {
+    const handWritten = `id: wf
+name: n
+version: 1
+status: draft
+
+triggers:
+  - id: t1
+    use: component.schedule.cron
+    name:
+      - a list somebody wrote by hand
+
+steps: []
+`
+    const document = parseWorkflow(handWritten)
+    expect(() => setTriggerName('t1', 'Weekday mornings').apply(document)).toThrow(/not a scalar/i)
+    expect(document.toString()).toBe(handWritten)
+  })
 })
 
 describe('setTriggerField', () => {
@@ -199,6 +225,32 @@ describe('setTriggerField', () => {
   it('stores a Template verbatim, holes and all', () => {
     const text = apply(SOURCE, setTriggerField('t2', 'folder', '{{ var.mailbox }}')).toString()
     expect((definitionOf(text).triggers ?? [])[1]?.with?.folder).toBe('{{ var.mailbox }}')
+  })
+})
+
+describe('naming a Trigger that was added without one', () => {
+  it('writes `name:` under its `use:`, not after the fields it was filled in with', () => {
+    // `addTrigger` writes `name:` only when it is given, so the first name a
+    // caller sets is a key the mapping does not have — and appended it lands
+    // below `with:`, away from the id and verb it identifies.
+    const bare = 'id: wf\nname: W\nversion: 1\nstatus: draft\nsteps: []\n'
+
+    // All three against ONE document, which is what the editing store does: it
+    // holds the parsed document across every command and re-parses nothing.
+    // Re-parsing between them hides the case entirely — `yaml`'s own `setIn`
+    // builds the `with:` pair with a plain string key rather than a Scalar, and
+    // a round trip through text turns it back into a Scalar. Held in memory it
+    // stays a string, reads as an unrecognised key, and lands `name:` after it.
+    const named = apply(
+      bare,
+      addTrigger({ use: 'component.email.received' }),
+      setTriggerField('t1', 'folder', 'Inbox'),
+      setTriggerName('t1', 'When mail arrives'),
+    ).toString()
+
+    expect(named).toContain(
+      '  - id: t1\n    use: component.email.received\n    name: When mail arrives\n    with:',
+    )
   })
 })
 

@@ -1,10 +1,20 @@
 import type { Manifest } from '@hatua/schema'
-import type { ManifestSource } from '@hatua/services'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import type {
+  Cursor,
+  DraftSession,
+  EditToken,
+  Lease,
+  ManifestSource,
+  PublishedVersion,
+  VersionSummary,
+  WorkflowStore,
+} from '@hatua/services'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ReactElement } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { HatuaProvider } from '../theme/HatuaProvider'
 import { Components } from './Components'
+import { COMPONENT_MIME } from './dragging'
 
 const component = (over: Partial<Manifest> & Pick<Manifest, 'use' | 'name'>): Manifest => ({
   kind: 'component',
@@ -136,6 +146,34 @@ describe('Components', () => {
     await screen.findByText('Send email')
     expect(screen.queryByText('When mail arrives')).toBeNull()
     expect(screen.queryByRole('heading', { name: 'Triggers' })).toBeNull()
+  })
+
+  it('drags the same chip the canvas does, so neither gesture covers its target', async () => {
+    // A drag ghost is the source element by default, and on the canvas the
+    // thing being aimed at is a 20px `+` on a line. One chip for both sources:
+    // the two gestures look alike, and neither hides where it is going.
+    // Draggable only when it is actionable, which is what `onSelect` makes it.
+    mount(<Components onSelect={() => {}} />, { loadManifests: async () => CATALOGUE })
+
+    await screen.findByText('Send email')
+    const row = screen.getByRole('button', { name: /Send email/ })
+    const images: { element: HTMLElement; x: number; y: number }[] = []
+    fireEvent.dragStart(row, {
+      dataTransfer: {
+        effectAllowed: 'none',
+        setData: () => {},
+        setDragImage: (element: HTMLElement, x: number, y: number) => {
+          images.push({ element, x, y })
+        },
+      },
+    })
+
+    const [image] = images
+    expect(image?.element.textContent).toBe('Send email')
+    expect(image?.element).not.toBe(row)
+    // Negative, so the pointer sits outside the chip rather than under it.
+    expect(image?.x).toBeLessThan(0)
+    expect(image?.y).toBeLessThan(0)
   })
 
   it('reads a catalogue of Triggers alone as no components, not as a fault', async () => {
@@ -318,12 +356,36 @@ describe('Components', () => {
     expect(screen.queryByText('Send email')).toBeNull()
   })
 
-  it('hands the whole manifest back on select', async () => {
+  it('hands back what writes the Step, and nothing a Block could not supply', async () => {
     const onSelect = vi.fn()
     mount(<Components onSelect={onSelect} />, { loadManifests: async () => CATALOGUE })
 
     fireEvent.click(await screen.findByRole('button', { name: /Send email/ }))
-    expect(onSelect).toHaveBeenCalledWith(CATALOGUE[0])
+    expect(onSelect).toHaveBeenCalledWith({ use: 'component.email.send', name: 'Send email' })
+  })
+
+  it('leaves an entry with no verb a row to read rather than a button that does nothing', async () => {
+    const onSelect = vi.fn()
+    mount(<Components onSelect={onSelect} />, {
+      loadManifests: async () => [{ kind: 'component', name: 'Half a manifest' } as Manifest],
+    })
+
+    // There is nothing to write a Step with, so there is nothing for a click to
+    // do — and a control that does nothing still takes a tab stop.
+    await screen.findByText('Half a manifest')
+    expect(screen.queryByRole('button', { name: /Half a manifest/ })).toBeNull()
+  })
+
+  it('carries the Host’s name into the drag, never the placeholder standing in for one', async () => {
+    const onSelect = vi.fn()
+    mount(<Components onSelect={onSelect} />, {
+      loadManifests: async () => [{ kind: 'component', use: 'component.x' } as Manifest],
+    })
+
+    // "Unnamed component" is a sentence about a broken manifest. Written into
+    // the document as a Step's name it becomes something the user has to undo.
+    fireEvent.click(await screen.findByRole('button', { name: /component\.x/ }))
+    expect(onSelect).toHaveBeenCalledWith({ use: 'component.x' })
   })
 
   it('renders cards as cards, not as dead buttons, when nothing can be selected', async () => {
@@ -378,5 +440,311 @@ describe('Components', () => {
     )
     expect(await screen.findByText('Run agent')).toBeDefined()
     expect(screen.queryByText('Send email')).toBeNull()
+  })
+})
+
+/**
+ * The Blocks this document declares, listed beside the Host's Components.
+ *
+ * A verb's root says who declares it, and two of the three roots are here — so
+ * everything below is about the one the Host does not serve: it comes off the
+ * document, it is created and deleted here, and it becomes a Step by the same
+ * two gestures a Host's Component does.
+ */
+
+const DOCUMENT = `id: wf_blocks
+name: "Morning triage"
+version: 1
+status: draft
+
+steps:
+  - id: s1
+    use: block.archive_entry
+    name: "File the thread away"
+  - id: s2
+    use: core.fork
+    branches:
+      - label: "A lot"
+        when: "{{ true }}"
+        steps:
+          - id: s3
+            use: block.archive_entry
+
+blocks:
+  - id: archive_entry
+    name: "Archive an entry"
+    params:
+      - { k: thread, label: "Thread", t: text }
+    outputs:
+      - { k: url, label: "Where it went", t: text }
+    steps:
+      - id: done
+        use: core.return
+        with:
+          url: "https://archive.example.com/x"
+  - id: spare
+    steps: []
+`
+
+const token = 'tok_test' as EditToken
+const lease: Lease = { token, expiresAt: '2099-01-01T00:00:00.000Z' }
+
+/** The Host's storage, faked, keeping every write so a test can read the file back. */
+function storing(yaml = DOCUMENT) {
+  const writes: string[] = []
+  const port: WorkflowStore = {
+    async openDraft(): Promise<DraftSession> {
+      return { token, lease, yaml, resumed: false }
+    },
+    async saveDraft(_token, text) {
+      writes.push(text)
+    },
+    async renewLease(): Promise<Lease> {
+      return lease
+    },
+    async publish(): Promise<PublishedVersion> {
+      return { version: 2, publishedAt: '2026-01-01T00:00:00.000Z' }
+    },
+    async releaseDraft() {},
+    async discardDraft() {},
+    async listVersions(): Promise<Cursor<VersionSummary>> {
+      return { items: [] }
+    },
+    async loadVersion() {
+      return yaml
+    },
+  }
+  return { port, writes }
+}
+
+const withDocument = (element: ReactElement, host = storing()) =>
+  render(
+    <HatuaProvider
+      ports={{ manifests: { loadManifests: async () => CATALOGUE }, workflows: host.port }}
+      workflowId="wf_blocks"
+    >
+      {element}
+    </HatuaProvider>,
+  )
+
+/** The Blocks group, once it has arrived. */
+const blocksGroup = async () => {
+  const heading = await screen.findByRole('heading', { name: 'Blocks' })
+  return within(heading.parentElement as HTMLElement)
+}
+
+/** Autosave waits for quiet, and a machine running every suite at once is slow. */
+const AUTOSAVED = { timeout: 5000 }
+
+describe('the Blocks a document declares', () => {
+  it('lists them, above the Host’s groups', async () => {
+    withDocument(<Components />)
+
+    const group = await blocksGroup()
+    expect(group.getByText('Archive an entry')).toBeDefined()
+    // The contract, in the words the canvas already says it in.
+    expect(group.getByText('1 param · 1 output')).toBeDefined()
+
+    // Above, not among: the Host's groups are ordered as the Host declared
+    // them, and this is not one the Host chose.
+    const headings = screen.getAllByRole('heading').map((one) => one.textContent)
+    expect(headings[0]).toBe('Blocks')
+    expect(headings).toContain('Email')
+  })
+
+  it('names a Block by its id when it has no name of its own', async () => {
+    withDocument(<Components />)
+    expect((await blocksGroup()).getByText('spare')).toBeDefined()
+  })
+
+  it('is absent when no storage is wired, and the catalogue still lists', async () => {
+    // Nothing here restates the document's own states: the Workflow tab says
+    // the Host wired no storage, and a second copy in this panel would be two
+    // sentences about one problem.
+    mount(<Components />, { loadManifests: async () => CATALOGUE })
+
+    await screen.findByText('Send email')
+    expect(screen.queryByRole('heading', { name: 'Blocks' })).toBeNull()
+  })
+
+  it('hands back the verb a call is written with', async () => {
+    const onSelect = vi.fn()
+    withDocument(<Components onSelect={onSelect} />)
+
+    const group = await blocksGroup()
+    fireEvent.click(group.getByRole('button', { name: /^Archive an entry/ }))
+    expect(onSelect).toHaveBeenCalledWith({
+      use: 'block.archive_entry',
+      name: 'Archive an entry',
+    })
+  })
+
+  it('drags what it clicks, so the two gestures cannot write two different Steps', async () => {
+    const onSelect = vi.fn()
+    withDocument(<Components onSelect={onSelect} />)
+
+    const card = (await blocksGroup()).getByRole('button', { name: /^Archive an entry/ })
+    const setData = vi.fn()
+    fireEvent.dragStart(card, {
+      dataTransfer: { setData, setDragImage: vi.fn(), effectAllowed: 'none' },
+    })
+
+    expect(setData).toHaveBeenCalledWith(
+      COMPONENT_MIME,
+      JSON.stringify({ use: 'block.archive_entry', name: 'Archive an entry' }),
+    )
+    // And the verb alone for every other editor on the page.
+    expect(setData).toHaveBeenCalledWith('text/plain', 'block.archive_entry')
+  })
+
+  it('opens the Board of a Block nothing calls, which nothing else can reach', async () => {
+    const onBoardOpen = vi.fn()
+    const onSelect = vi.fn()
+    withDocument(<Components onBoardOpen={onBoardOpen} onSelect={onSelect} />)
+
+    // `spare` has no call site, so the canvas has no doorway into it and the
+    // tab strip lists only Boards already open. Without this control it can be
+    // declared and never opened again.
+    fireEvent.click(await screen.findByRole('button', { name: 'Open spare' }))
+
+    expect(onBoardOpen).toHaveBeenCalledWith('spare')
+    // Going to the Board is not adding a call to it.
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('offers no doorway when the caller holds no Board to open', async () => {
+    // Which Board is on screen is chrome this region does not hold, so with
+    // nobody listening there is nowhere for the control to go.
+    withDocument(<Components />)
+
+    await blocksGroup()
+    expect(screen.queryByRole('button', { name: 'Open spare' })).toBeNull()
+  })
+
+  it('filters Blocks the way it filters the Host’s Components', async () => {
+    withDocument(<Components defaultQuery="archive" />)
+
+    const group = await blocksGroup()
+    expect(group.getByText('Archive an entry')).toBeDefined()
+    expect(group.queryByText('spare')).toBeNull()
+    expect(screen.queryByText('Send email')).toBeNull()
+  })
+
+  it('marks a Block the checker has something to say about', async () => {
+    const recursive = DOCUMENT.replace(
+      '  - id: spare\n    steps: []\n',
+      '  - id: spare\n    steps:\n      - id: again\n        use: block.spare\n',
+    )
+    withDocument(<Components onSelect={() => {}} />, storing(recursive))
+
+    // Marked, never withheld: a Block in a cycle is still a Block the user is
+    // working on, and a card that quietly disappeared would say the panel had
+    // changed its mind rather than what is wrong.
+    const group = await blocksGroup()
+    await waitFor(() => expect(group.getByText(/calls itself/)).toBeDefined())
+    expect(group.getByRole('button', { name: /^spare/ })).toBeDefined()
+  })
+})
+
+describe('declaring one', () => {
+  it('writes it and says which one, so its Board can be opened', async () => {
+    const onBoardOpen = vi.fn()
+    const host = storing()
+    withDocument(<Components onBoardOpen={onBoardOpen} />, host)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'New block' }))
+
+    // ADR-0017: a Block's tab opens when the Block is declared, and a caller
+    // cannot open one it does not know the name of.
+    expect(onBoardOpen).toHaveBeenCalledWith('block_1')
+    expect((await blocksGroup()).getByText('block_1')).toBeDefined()
+    await waitFor(() => expect(host.writes.at(-1)).toContain('- id: block_1'), AUTOSAVED)
+  })
+
+  it('mints against the ids already taken, twice running', async () => {
+    withDocument(<Components />)
+
+    const button = await screen.findByRole('button', { name: 'New block' })
+    fireEvent.click(button)
+    fireEvent.click(button)
+
+    const group = await blocksGroup()
+    expect(group.getByText('block_1')).toBeDefined()
+    expect(group.getByText('block_2')).toBeDefined()
+  })
+
+  it('is not offered while the list is narrowed to a search', async () => {
+    // A Block declared out of a search reads as the thing that was searched
+    // for, and lands under a filter that hides it.
+    withDocument(<Components defaultQuery="archive" />)
+
+    await blocksGroup()
+    expect(screen.queryByRole('button', { name: 'New block' })).toBeNull()
+  })
+})
+
+describe('deleting one', () => {
+  it('goes straight through when the Block is empty and nothing calls it', async () => {
+    const host = storing()
+    withDocument(<Components />, host)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete spare' }))
+
+    // Nothing is lost that was not on the card, so a dialog in front of it is
+    // friction with nothing to report.
+    expect(screen.queryByRole('dialog')).toBeNull()
+    const group = await blocksGroup()
+    await waitFor(() => expect(group.queryByText('spare')).toBeNull())
+  })
+
+  it('says what a Block with call sites costs before taking it away', async () => {
+    withDocument(<Components />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete Archive an entry' }))
+
+    const dialog = within(screen.getByRole('dialog'))
+    // Both costs are invisible from the card: the Steps on its Board are on
+    // another screen, and its call sites are wherever somebody wrote them.
+    expect(dialog.getByText(/It has 1 step on it\./)).toBeDefined()
+    expect(dialog.getByText(/2 steps call it/)).toBeDefined()
+  })
+
+  it('counts a call nested inside a container, not just the top level', async () => {
+    // A call inside a Fork branch is a call. Counted off the top level alone,
+    // the dialog would under-report exactly the sites hardest to find again.
+    withDocument(<Components />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete Archive an entry' }))
+    expect(within(screen.getByRole('dialog')).getByText(/2 steps call it/)).toBeDefined()
+  })
+
+  it('changes nothing when the confirmation is declined', async () => {
+    withDocument(<Components />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete Archive an entry' }))
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }))
+
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect((await blocksGroup()).getByText('Archive an entry')).toBeDefined()
+  })
+
+  it('removes it on confirm and leaves every call site alone', async () => {
+    const host = storing()
+    withDocument(<Components />, host)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete Archive an entry' }))
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete' }))
+
+    const group = await blocksGroup()
+    await waitFor(() => expect(group.queryByText('Archive an entry')).toBeNull())
+
+    // Stale, reported and never rewritten — the rule `removeBlock` follows.
+    // Rewriting a call site would edit the file in a place the user is not
+    // looking, which is the confirmation's job to warn about instead.
+    await waitFor(() => {
+      const written = host.writes.at(-1) ?? ''
+      expect(written).toContain('use: block.archive_entry')
+      expect(written).not.toContain('id: archive_entry')
+    }, AUTOSAVED)
   })
 })

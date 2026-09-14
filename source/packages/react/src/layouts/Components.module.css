@@ -102,6 +102,77 @@
     gap: 2px;
   }
 
+  /*
+    A Block's row: its card, and the bin beside it.
+
+    The bin is a column of its own rather than an overlay that appears on hover:
+    a control only pointer users can find is a control a keyboard user cannot,
+    and the card beside it is already the full width of the panel.
+  */
+  .row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 2px;
+  }
+
+  /*
+    The doorway into the Block's Board, in the treatment the canvas gives the
+    same control on a call site.
+
+    Sized to the bin beside it rather than to its own text, so two controls of
+    different kinds still read as one row of controls.
+  */
+  .open {
+    block-size: 26px;
+    padding: 0 8px;
+    border: 1px solid var(--hatua-border-subtle);
+    border-radius: var(--hatua-radius-sm);
+    background: var(--hatua-surface-raised);
+    color: var(--hatua-text-secondary);
+    font: inherit;
+    font-size: 11px;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .open:hover {
+    border-color: var(--hatua-border-accent);
+    color: var(--hatua-text-accent);
+  }
+
+  .open:focus-visible {
+    outline: 2px solid var(--hatua-focus-ring);
+    outline-offset: -2px;
+  }
+
+  /* What the checker says about a Block, under the card it belongs to and
+     across both columns, so a long sentence does not squeeze the bin off. */
+  .problems {
+    grid-column: 1 / -1;
+    margin: 0;
+    padding: 0 8px 6px;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: var(--hatua-status-error);
+    text-wrap: pretty;
+  }
+
+  /* A group with nothing in it yet still says so, in the panel's own voice. */
+  .empty {
+    margin: 0;
+    padding: 4px 12px 8px;
+    color: var(--hatua-text-muted);
+    font-size: 0.8125rem;
+    line-height: 1.5;
+  }
+
+  /* Inset to the cards' own gutter, so the control lines up with the list it
+     adds to rather than with the panel's edge. */
+  .action {
+    padding: 4px 8px 0;
+  }
+
   .card {
     inline-size: 100%;
     display: grid;
@@ -178,5 +249,26 @@
     line-height: 1.4;
     color: var(--hatua-text-muted);
     text-wrap: pretty;
+  }
+
+  /*
+    An insertion point on the canvas is waiting. Above everything the panel
+    scrolls, because it describes what picking a card is about to do rather than
+    anything in the list.
+
+    Inset by hand: `.body` carries no horizontal padding, so every child sets
+    its own. 8px is the cards', and this is the same bordered box at the same
+    radius — a banner whose border runs to the panel edge while the cards below
+    it stop short reads as a box that has escaped its container.
+  */
+  .pending {
+    margin: 0 8px 12px;
+    padding: 8px 10px;
+    border: 1px solid var(--hatua-border-accent);
+    border-radius: var(--hatua-radius-md);
+    background: var(--hatua-accent-wash);
+    color: var(--hatua-text-accent);
+    font-size: 12px;
+    line-height: 1.4;
   }
 }

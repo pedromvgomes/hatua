@@ -102,9 +102,6 @@ export const whenSlot = (when: string): Slot => ({
 /** The verb whose outputs come from its own configuration. */
 export const MAPPING_VERB = 'core.map'
 
-/** The verb that repeats its children until a condition holds. */
-export const REPEAT_VERB = 'core.repeat'
-
 /** The verb that iterates a collection. */
 export const FOR_EACH_VERB = 'core.for_each'
 
@@ -113,24 +110,6 @@ export const FORK_VERB = 'core.fork'
 
 /** The verb that writes one of its Board's variables. */
 export const SET_VAR_VERB = 'core.set_var'
-
-/**
- * The verb that protects a region and falls back to a handler.
- *
- * The one container with two child regions: a body under `steps:` and a handler
- * under `handler:`. Wrapping one Step is retry, wrapping a region is fallback,
- * so one verb serves both (ADR-0013).
- *
- * Its retry policy — how many attempts, how long to wait — sits in `with:` as
- * ordinary manifest fields, and deliberately NOT in a structural key. `until`
- * had to leave `with:` because `FIELD_KIND_TYPES` has no mappable boolean, so a
- * condition there would have type-checked as text. An attempt count is a number
- * and `number` IS a mappable field kind, so the argument that moved `until` does
- * not reach here at all — following it anyway would be copying a conclusion
- * without its reason, and would cost a structural key, a diagnostic and a form
- * control that the manifest already gives for nothing.
- */
-export const TRY_VERB = 'core.try'
 
 /**
  * The field a `core.for_each` iterates, and the one `item` is resolved through.

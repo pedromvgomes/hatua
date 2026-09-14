@@ -188,6 +188,28 @@ scenarios:
       - { code: BLOCK_RECURSION, blocks: publish, blockId: middle }
       - { code: BLOCK_RECURSION, blocks: publish, blockId: tail }
 
+  - name: >-
+      a block whose cycle closes through one already walked is still recursive
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      blocks:
+        - { id: b1, steps: [{ id: a, use: block.b2 }] }
+        - id: b2
+          steps:
+            - { id: b, use: block.b3 }
+            - { id: c, use: block.b4 }
+        - { id: b3, steps: [{ id: d, use: block.b1 }] }
+        - { id: b4, steps: [{ id: e, use: block.b3 }] }
+      steps: []
+    expect:
+      - { code: BLOCK_RECURSION, blocks: publish, blockId: b1 }
+      - { code: BLOCK_RECURSION, blocks: publish, blockId: b2 }
+      - { code: BLOCK_RECURSION, blocks: publish, blockId: b3 }
+      - { code: BLOCK_RECURSION, blocks: publish, blockId: b4 }
+
   - name: a return at the root has no outputs to bind
     definition:
       id: wf
@@ -209,6 +231,52 @@ scenarios:
         - id: archive
           outputs: [{ k: url, label: URL, t: text }]
           steps: [{ id: s1, use: component.email.send, with: { to: "x" } }]
+      steps: []
+    expect:
+      - { code: BLOCK_PATH_WITHOUT_RETURN, blocks: publish, blockId: archive }
+
+  - name: >-
+      every branch of a parallel fork runs, so one return in one branch
+      discharges the obligation
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      blocks:
+        - id: archive
+          outputs: [{ k: url, label: URL, t: text }]
+          steps:
+            - id: split
+              use: core.fork
+              branches:
+                - label: A
+                  steps: [{ id: ret, use: core.return, with: { url: "x" } }]
+                - label: B
+                  steps: [{ id: other, use: component.email.send, with: { to: "x" } }]
+      steps: []
+    expect: []
+
+  - name: >-
+      exactly one branch of a condition fork runs, so a return in one of them
+      leaves the other path open
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      blocks:
+        - id: archive
+          outputs: [{ k: url, label: URL, t: text }]
+          steps:
+            - id: pick
+              use: core.fork
+              branches:
+                - label: A
+                  when: "true"
+                  steps: [{ id: ret, use: core.return, with: { url: "x" } }]
+                - label: B
+                  steps: [{ id: other, use: component.email.send, with: { to: "x" } }]
       steps: []
     expect:
       - { code: BLOCK_PATH_WITHOUT_RETURN, blocks: publish, blockId: archive }

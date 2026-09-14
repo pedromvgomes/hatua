@@ -48,6 +48,9 @@ manifests:
             of:
               - { k: address, label: Address, t: text }
       - { k: count, label: Count, t: number }
+      # A list of scalars: it declares no `of:`, so it says nothing at all about
+      # its elements. That is the shape `item` must decline to guess.
+      - { k: tags, label: Tags, t: list }
   - kind: component
     use: component.inbox.threads
     name: Fetch threads
@@ -498,4 +501,23 @@ scenarios:
               with: { list: "{{ steps.fetch.messages }}" }
               steps:
                 - { id: s2, use: component.email.send, with: { to: "{{ steps.each.item.subject }}" } }
+    expect: []
+
+  - name: >-
+      a list declaring no `of:` says nothing about its elements, so `item` matches
+      anything rather than reading as a memberless object
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      steps:
+        - { id: fetch, use: component.inbox.fetch }
+        - id: each
+          use: core.for_each
+          with: { list: "{{ steps.fetch.tags }}" }
+          steps:
+            - id: send
+              use: component.email.send
+              with: { to: "{{ steps.each.item }}" }
     expect: []

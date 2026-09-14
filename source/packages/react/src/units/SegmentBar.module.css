@@ -1,0 +1,75 @@
+@layer hatua {
+  /*
+    Floating at the lower start of whatever holds the canvas, which therefore
+    has to be a positioned box.
+
+    The mirror of `CanvasControls` at the lower end, and apart from it rather
+    than beside it: a bar that shares an edge with the zoom toolbar runs into it
+    on the narrowest embed Hatua supports, which is the width the whole screen
+    is designed down to.
+
+    Logical insets for the reason that toolbar gives: a bar is not on the map,
+    so it belongs at the start of the reading direction and moves with it.
+  */
+  .bar {
+    position: absolute;
+    inset-block-end: 16px;
+    inset-inline-start: 16px;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px 3px 3px 10px;
+    border: 1px solid var(--hatua-border-subtle);
+    border-radius: var(--hatua-radius-md);
+    background: var(--hatua-surface-card);
+    box-shadow: 0 4px 14px var(--hatua-shadow-color);
+  }
+
+  /*
+    What the actions apply to. Tabular figures because the count changes while
+    a selection is extended, and a bar that shifts sideways as it grows moves
+    its own buttons out from under the pointer.
+  */
+  .count {
+    margin-inline-end: 6px;
+    color: var(--hatua-text-secondary);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .action {
+    display: grid;
+    place-items: center;
+    block-size: 26px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: var(--hatua-radius-sm);
+    background: transparent;
+    color: var(--hatua-text-secondary);
+    font: inherit;
+    font-size: 12px;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .action:hover {
+    background: var(--hatua-surface-sunken);
+    color: var(--hatua-text-primary);
+  }
+
+  .action:focus-visible {
+    outline: 2px solid var(--hatua-focus-ring);
+    outline-offset: -1px;
+  }
+
+  /* Taking Steps out of the document is the one action here that loses
+     something, and it reads as such before it is pressed rather than in a
+     dialog after. */
+  .remove:hover {
+    background: var(--hatua-status-error-wash);
+    color: var(--hatua-status-error);
+  }
+}

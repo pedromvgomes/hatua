@@ -34,6 +34,27 @@ describe('rootStepCount', () => {
     expect(rootStepCount(parse('name: nothing\n'))).toBe(0)
   })
 
+  /*
+   * A Board that is gone holds no Steps. `boardPath` throws for one, which is
+   * right for a command — an edit aimed at a Board that is not there must
+   * refuse rather than land somewhere else — and wrong for a reader: this one
+   * is called synchronously inside a click handler with nothing to catch it,
+   * so a Board deleted under a caller still holding its id threw out of an
+   * event instead of appending.
+   */
+  it('answers 0 for a Board the document does not declare, rather than throwing', () => {
+    const document = parse(VALID)
+    expect(() => rootStepCount(document, 'nowhere')).not.toThrow()
+    expect(rootStepCount(document, 'nowhere')).toBe(0)
+  })
+
+  it('still counts a Block that IS there, which is the point of taking a Board', () => {
+    const withBlock = parse(
+      'id: wf\nname: n\nversion: 1\nstatus: draft\nsteps: []\nblocks:\n  - id: b\n    steps:\n      - id: one\n        use: a\n      - id: two\n        use: a\n',
+    )
+    expect(rootStepCount(withBlock, 'b')).toBe(2)
+  })
+
   it('answers 0 when `steps:` is not a list at all', () => {
     expect(rootStepCount(parse('steps: not a list\n'))).toBe(0)
   })

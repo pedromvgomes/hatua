@@ -1,0 +1,209 @@
+@layer hatua {
+  .card {
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    overflow: hidden;
+    border: 1px solid var(--hatua-border-subtle);
+    border-radius: var(--hatua-radius-md);
+    background: var(--hatua-surface-card);
+    box-shadow: 0 1px 2px var(--hatua-shadow-color);
+    /*
+      Folding and unfolding tween, because a box changing size with no motion
+      reads as a different map rather than the same one. It is on what `boxOf`
+      writes, so the map animates with no animation code. An SVG path's `d` does
+      not transition, so the connectors cannot follow and fade in over the same
+      window instead of pointing at boxes still on their way.
+    */
+    transition:
+      left 140ms ease,
+      top 140ms ease,
+      width 140ms ease,
+      height 140ms ease;
+  }
+
+  /*
+    Decoration, unlike a toast's countdown bar, which is the only thing saying
+    how long is left. Freezing this loses nothing.
+  */
+  @media (prefers-reduced-motion: reduce) {
+    .card {
+      transition: none;
+    }
+  }
+
+  .selected {
+    border-color: var(--hatua-border-accent);
+    box-shadow: 0 0 0 1px var(--hatua-border-accent);
+    background: var(--hatua-accent-wash);
+  }
+
+  /*
+    This Step has a diagnostic against it.
+
+    The marker in the head is a 14px triangle, which is the whole of what says
+    so on a 236px card — at anything below 100% zoom it is a few pixels, and a
+    call site whose Block no longer exists reads as a healthy card. `<StepList>`
+    gives an invalid row an edge in the same colour, and one state drawn on one
+    of the two surfaces is the same defect as the two disagreeing about a Step's
+    regions.
+
+    After `.selected`, so a selected card that is also invalid still says
+    invalid: the problem is the thing the user has to act on, and selection is
+    already said by the background and by `aria-current`.
+  */
+  .invalid {
+    border-color: var(--hatua-status-error);
+    box-shadow: 0 0 0 1px var(--hatua-status-error);
+  }
+
+  /*
+    This card's own Step is the one in flight.
+
+    It stays where it is until the drop lands, so without a state of its own it
+    reads as still being there while a chip carrying its name follows the
+    pointer — two of the same Step on screen at once. Dashed and faded says what
+    a dashed edge says everywhere else here: a placeholder for something not
+    settled yet. The `+` is a dashed circle, an empty region a dashed box, and a
+    Step on its way somewhere is the same idea.
+
+    After `.selected`, so dragging the selected card still reads as dragging.
+  */
+  .dragging {
+    border-style: dashed;
+    border-color: var(--hatua-border-accent);
+    box-shadow: none;
+    opacity: 0.45;
+  }
+
+  .head {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 8px;
+    min-block-size: 0;
+    padding: 9px 8px 9px 6px;
+  }
+
+  .grip {
+    flex: none;
+    fill: var(--hatua-border-strong);
+    cursor: grab;
+  }
+
+  .identity {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 1px;
+    min-inline-size: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+
+  .identity:focus-visible {
+    outline: 2px solid var(--hatua-focus-ring);
+    outline-offset: 3px;
+    border-radius: var(--hatua-radius-sm);
+  }
+
+  .name {
+    overflow: hidden;
+    color: var(--hatua-text-primary);
+    font-weight: 600;
+    font-size: 13px;
+    line-height: 1.35;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .verb {
+    overflow: hidden;
+    color: var(--hatua-text-muted);
+    font-size: 11px;
+    font-family: var(--hatua-font-mono);
+    line-height: 1.35;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .control {
+    flex: none;
+    padding: 2px 6px;
+    border: 1px solid var(--hatua-border-subtle);
+    border-radius: var(--hatua-radius-sm);
+    background: var(--hatua-surface-raised);
+    color: var(--hatua-text-secondary);
+    font: inherit;
+    font-size: 11px;
+    line-height: 1.4;
+    cursor: pointer;
+  }
+
+  .control:hover {
+    border-color: var(--hatua-border-accent);
+    color: var(--hatua-text-accent);
+  }
+
+  .marker {
+    flex: none;
+    fill: none;
+    stroke: var(--hatua-status-error);
+    stroke-width: 1.3;
+    stroke-linejoin: round;
+  }
+
+  .markerBang {
+    stroke-linecap: round;
+  }
+
+  /*
+    The chips row, under a rule. Its presence is `LAYOUT.nodeHeightWithMeta`
+    minus `nodeHeight`, so a card either has one or is short enough not to.
+  */
+  .meta {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 8px 7px;
+    border-block-start: 1px solid var(--hatua-border-subtle);
+    overflow: hidden;
+  }
+
+  .chip {
+    flex: 0 1 auto;
+    min-inline-size: 0;
+    padding: 1px 6px;
+    border-radius: var(--hatua-radius-sm);
+    background: var(--hatua-surface-sunken);
+    color: var(--hatua-text-muted);
+    font-size: 10.5px;
+    font-family: var(--hatua-font-mono);
+    line-height: 1.5;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* A Reference names one value somewhere else, which is worth telling apart
+     from a literal the user typed. */
+  .reference {
+    color: var(--hatua-text-accent);
+    background: var(--hatua-accent-wash);
+  }
+
+  .offscreen {
+    position: absolute;
+    clip-path: inset(50%);
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+}
