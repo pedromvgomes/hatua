@@ -12,9 +12,9 @@ scenarios:
   - name: every slot resolves, each keeping the type its field declares
     slots:
       - { name: to, template: "{{ var.digest_to }}", type: text }
-      - { name: subject, template: "Digest · {{ s2.count }}", type: text }
+      - { name: subject, template: "Digest · {{ steps.s2.count }}", type: text }
       - { name: retries, template: "{{ 1 + 1 }}", type: number }
-      - { name: urgent, template: "{{ s2.count > 20 }}", type: boolean }
+      - { name: urgent, template: "{{ steps.s2.count > 20 }}", type: boolean }
     context:
       var: { digest_to: me@dane.dev }
       steps: { s2: { count: 24 } }
@@ -32,8 +32,8 @@ scenarios:
       every failure is reported, not just the first — this is the whole reason
       the error carries a list
     slots:
-      - { name: a, template: "{{ s9.missing }}", type: text }
-      - { name: b, template: "{{ s8.missing }}", type: text }
+      - { name: a, template: "{{ steps.s9.missing }}", type: text }
+      - { name: b, template: "{{ steps.s8.missing }}", type: text }
     context: { steps: {} }
     errors:
       - { slot: a, code: EVAL_MISSING_PATH }
@@ -42,7 +42,7 @@ scenarios:
   - name: failures are reported in slot order, so the report is stable
     slots:
       - { name: first, template: "{{ 1 / 0 }}", type: number }
-      - { name: second, template: "{{ s2.count }}", type: number }
+      - { name: second, template: "{{ steps.s2.count }}", type: number }
       - { name: third, template: "{{ 'a' + 'b' }}", type: text }
     context: { steps: { s2: { count: 24 } } }
     errors:
@@ -52,7 +52,7 @@ scenarios:
   - name: a failure in one slot does not suppress the others' diagnostics
     slots:
       - { name: ok, template: "plain text", type: text }
-      - { name: bad, template: "{{ s9.missing }}", type: text }
+      - { name: bad, template: "{{ steps.s9.missing }}", type: text }
     context: { steps: {} }
     errors:
       - { slot: bad, code: EVAL_MISSING_PATH }
@@ -65,8 +65,8 @@ scenarios:
 
   - name: different kinds of failure report side by side
     slots:
-      - { name: missing, template: "{{ s9.x }}", type: text }
-      - { name: mistyped, template: "{{ s2.name }}", type: number }
+      - { name: missing, template: "{{ steps.s9.x }}", type: text }
+      - { name: mistyped, template: "{{ steps.s2.name }}", type: number }
       - { name: broken, template: "{{ }}", type: text }
     context: { steps: { s2: { name: Dane } } }
     errors:

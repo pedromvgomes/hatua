@@ -39,14 +39,14 @@ scenarios:
   # ---- where the failure points -------------------------------------------
 
   - name: a missing path points at the path, not at the start of the field
-    template: "Hi {{ s9.name }}"
+    template: "Hi {{ steps.s9.name }}"
     type: text
     context: { steps: {} }
     error: EVAL_MISSING_PATH
     at: 6
 
   - name: a comparison against null points at the comparison
-    template: "{{ s2.total > 0 }}"
+    template: "{{ steps.s2.total > 0 }}"
     type: boolean
     context: { steps: { s2: { total: null } } }
     error: EVAL_COMPARE_NULL
@@ -59,7 +59,7 @@ scenarios:
     at: 8
 
   - name: a bad operand points at the operator, not at the whole expression
-    template: "{{ 1 + s2.name }}"
+    template: "{{ 1 + steps.s2.name }}"
     type: number
     context: { steps: { s2: { name: Dane } } }
     error: EVAL_OPERAND_TYPE
@@ -81,7 +81,7 @@ scenarios:
       and so does a failure raised *inside* an implementation — dt.parse knows
       the timestamp is unreadable but not where it was written, so the call site
       stamps the position on the way past
-    template: "digest for {{ dt.parse(s2.day) }}"
+    template: "digest for {{ dt.parse(steps.s2.day) }}"
     type: text
     context: { steps: { s2: { day: yesterday } } }
     error: EVAL_BAD_ARGUMENT
@@ -90,14 +90,14 @@ scenarios:
   - name: >-
       a second hole's failure points into that hole, which is the whole reason
       offsets are relative to the Template rather than to the expression
-    template: "{{ s2.a }} then {{ s9.b }}"
+    template: "{{ steps.s2.a }} then {{ steps.s9.b }}"
     type: text
     context: { steps: { s2: { a: one } } }
     error: EVAL_MISSING_PATH
-    at: 19
+    at: 25
 
   - name: a type mismatch at the slot boundary points at the expression
-    template: "{{ s2.messages }}"
+    template: "{{ steps.s2.messages }}"
     type: text
     context: { steps: { s2: { messages: [1, 2] } } }
     error: EVAL_TYPE_MISMATCH

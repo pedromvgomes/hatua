@@ -4,8 +4,8 @@ package expressions
 //
 // There is no `expr:` sigil and no marker of any kind: what makes a Reference
 // special is that it names a value and nothing more, which is exactly what lets
-// the builder draw it as a pill the user can retarget. `{{ s2.count }}` is a
-// Reference; `{{ s2.count + 1 }}` is the same language and is not.
+// the builder draw it as a pill the user can retarget. `{{ steps.s2.count }}` is a
+// Reference; `{{ steps.s2.count + 1 }}` is the same language and is not.
 
 // IsReference reports whether an expression is exactly a path.
 //
@@ -40,7 +40,7 @@ func ReferencePath(node Expression) string {
 // TemplateReference is the Reference a whole Template holds, when it holds
 // exactly one and nothing else — the case the builder renders as a pill.
 //
-// `Hi {{ s2.name }}` is not one: it is text with a hole in it, and the pill
+// `Hi {{ steps.s2.name }}` is not one: it is text with a hole in it, and the pill
 // belongs inside the field rather than instead of it.
 func TemplateReference(template *Template) string {
 	single := singleHole(template)

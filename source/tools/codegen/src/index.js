@@ -12,12 +12,19 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parse } from 'yaml'
+import {
+  definitionDiagnosticsToGo,
+  definitionDiagnosticsToTs,
+  readDefinitionDiagnostics,
+} from './definition-diagnostics.js'
 import { generateModule } from './json-schema-to-zod.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(here, '../../..')
 const SCHEMAS = path.join(ROOT, 'schemas')
 const OUT = path.join(ROOT, 'packages/schema/src/generated')
+const MODEL_OUT = path.join(ROOT, 'packages/model/src/generated')
+const GO_OUT = path.join(ROOT, 'sdk/go')
 
 const FILES = [
   { file: 'workflow-definition.schema.yaml', out: 'definition.ts' },
@@ -59,11 +66,38 @@ const index = [
 fs.writeFileSync(path.join(OUT, 'index.ts'), index, 'utf8')
 console.log('  ✓ index.ts')
 
+// The document's diagnostics reach @hatua/model and the Go SDK rather than the
+// schema package: they are rules over a parsed definition, not a shape in one.
+const diagnostics = readDefinitionDiagnostics(SCHEMAS)
+fs.mkdirSync(MODEL_OUT, { recursive: true })
+fs.writeFileSync(
+  path.join(MODEL_OUT, 'diagnostics.ts'),
+  definitionDiagnosticsToTs(diagnostics),
+  'utf8',
+)
+fs.writeFileSync(
+  path.join(GO_OUT, 'diagnostics.gen.go'),
+  definitionDiagnosticsToGo(diagnostics),
+  'utf8',
+)
+// gofmt is a convenience, not a correctness step: the emitter already writes
+// formatted Go. A machine with no Go toolchain must still be able to generate,
+// so a missing binary is a note rather than a half-written tree.
+let formatted = true
+try {
+  execFileSync('gofmt', ['-w', path.join(GO_OUT, 'diagnostics.gen.go')], { stdio: 'pipe' })
+} catch {
+  formatted = false
+}
+console.log(
+  `  ✓ diagnostics  (${diagnostics.length} codes, both languages${formatted ? '' : ', gofmt unavailable'})`,
+)
+
 // Format the output. Generated code still gets read and reviewed, and leaving
 // it unformatted would make `biome ci` fail on files nobody is allowed to edit
 // by hand. Doing it here also makes generation idempotent: regenerating twice
 // produces identical bytes, which is what the CI drift check depends on.
-execFileSync('pnpm', ['biome', 'check', '--write', '--files-ignore-unknown=true', OUT], {
+execFileSync('pnpm', ['biome', 'check', '--write', '--files-ignore-unknown=true', OUT, MODEL_OUT], {
   cwd: ROOT,
   stdio: 'pipe',
 })

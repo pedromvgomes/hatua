@@ -1,6 +1,7 @@
 import type { Slot, ValueType } from '@hatua/expressions'
 import type { Manifest, Step } from '@hatua/schema'
 import { isMappable, type MAPPABLE_FIELD_KINDS } from '@hatua/schema'
+import { own } from './tree'
 
 /**
  * The bridge between a Component Manifest and the expression language.
@@ -60,7 +61,7 @@ export function slotsFor(step: Step, manifest: Manifest): Slot[] {
 
   for (const field of manifest.fields ?? []) {
     if (!isMappable(field.kind)) continue
-    const value = values[field.k]
+    const value = own(values, field.k)
 
     if (field.kind === 'map') {
       for (const entry of mapEntries(value)) {
@@ -89,7 +90,7 @@ export function slotsFor(step: Step, manifest: Manifest): Slot[] {
  *
  * Separate from `slotsFor` because a branch is not a step and has no manifest —
  * and because its type is not declared anywhere: a condition is a boolean, and
- * that is the whole reason `when: "{{s2.count}} > 0"` can be refused at design
+ * that is the whole reason `when: "{{steps.s2.count}} > 0"` can be refused at design
  * time rather than misread at run time.
  */
 export const whenSlot = (when: string): Slot => ({
@@ -99,7 +100,7 @@ export const whenSlot = (when: string): Slot => ({
 })
 
 /** The verb whose outputs come from its own configuration. */
-export const MAPPING_VERB = 'data.map'
+export const MAPPING_VERB = 'core.map'
 
 /** The `{key, value, type}` entries of a `map` field, ignoring anything malformed. */
 export function mapEntries(value: unknown): MapEntry[] {

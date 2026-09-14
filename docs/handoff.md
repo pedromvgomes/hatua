@@ -141,7 +141,7 @@ Rows of two mono `Input size="sm"` — key 118px, value flexible — plus a ghos
 What it can read is the **unpositioned scope**: Run Context, Triggers, and earlier variables. Never
 Step outputs — a variable has no position in the tree, so no Step is guaranteed to have run. That
 subset already exists inside `scopeFor`, which computes it before appending upstream Steps; extract
-it as `workflowScope(doc, runContext)` and let `scopeFor` be that plus the Steps, so the two readers
+it as `boardScope(doc, board, manifests, runContext)` and let `scopeFor` be that plus the Steps, so the two readers
 share one definition.
 
 **A variable field is the one input with no type marking**, because `varType` in `model/scope.ts`

@@ -7,7 +7,7 @@ import type { ManifestSource } from '@hatua/react'
  *
  * This is the first port the playground implements, and the point at which
  * "the Host owns the manifest set" stops being prose: nothing in @hatua/react
- * knows what `email.send` is, and both entries below had to say where their
+ * knows what `component.email.send` is, and both entries below had to say where their
  * catalogue comes from before the Components tab could render anything at all.
  *
  * The catalogue itself is conformance/manifest/*.yaml rather than a copy: a

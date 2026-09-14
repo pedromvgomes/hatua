@@ -5,7 +5,7 @@ import {
   malformedContainers,
   missingRequiredFields,
   unknownComponents,
-  validateSteps,
+  validateDefinition,
 } from './validity'
 
 /**
@@ -27,7 +27,7 @@ const manifest = (over: Partial<Manifest> & Pick<Manifest, 'use'>): Manifest => 
 
 const CATALOGUE = indexManifests([
   manifest({
-    use: 'email.send',
+    use: 'component.email.send',
     fields: [
       { k: 'to', label: 'To', kind: 'text', req: true },
       { k: 'subject', label: 'Subject', kind: 'text', req: true },
@@ -60,7 +60,7 @@ const workflow = (steps: WorkflowDefinition['steps']): WorkflowDefinition => ({
 describe('missing required fields', () => {
   it('reports a required field with nothing in it', () => {
     const found = missingRequiredFields(
-      workflow([{ id: 's1', use: 'email.send', with: { to: 'a@b.c' } }]),
+      workflow([{ id: 's1', use: 'component.email.send', with: { to: 'a@b.c' } }]),
       CATALOGUE,
     )
     expect(found.map((d) => d.fieldKey)).toEqual(['subject'])
@@ -70,7 +70,7 @@ describe('missing required fields', () => {
 
   it('says nothing about an optional field', () => {
     const found = missingRequiredFields(
-      workflow([{ id: 's1', use: 'email.send', with: { to: 'a', subject: 'b' } }]),
+      workflow([{ id: 's1', use: 'component.email.send', with: { to: 'a', subject: 'b' } }]),
       CATALOGUE,
     )
     expect(found).toEqual([])
@@ -78,7 +78,7 @@ describe('missing required fields', () => {
 
   it('treats whitespace as empty, because a space is not an answer', () => {
     const found = missingRequiredFields(
-      workflow([{ id: 's1', use: 'email.send', with: { to: '   ', subject: 'b' } }]),
+      workflow([{ id: 's1', use: 'component.email.send', with: { to: '   ', subject: 'b' } }]),
       CATALOGUE,
     )
     expect(found.map((d) => d.fieldKey)).toEqual(['to'])
@@ -146,10 +146,16 @@ describe('missing required fields', () => {
           id: 's1',
           use: 'core.fork',
           branches: [
-            { label: 'L', steps: [{ id: 's2', use: 'email.send' }] },
+            { label: 'L', steps: [{ id: 's2', use: 'component.email.send' }] },
             {
               label: 'R',
-              steps: [{ id: 's3', use: 'core.for_each', steps: [{ id: 's4', use: 'email.send' }] }],
+              steps: [
+                {
+                  id: 's3',
+                  use: 'core.for_each',
+                  steps: [{ id: 's4', use: 'component.email.send' }],
+                },
+              ],
             },
           ],
         },
@@ -161,7 +167,7 @@ describe('missing required fields', () => {
 
   it('checks Triggers too, because their fields are required the same way', () => {
     const doc = workflow([])
-    doc.triggers = [{ id: 't1', use: 'email.send' }]
+    doc.triggers = [{ id: 't1', use: 'component.email.send' }]
     const found = missingRequiredFields(doc, CATALOGUE)
 
     // Under `triggerId`, not `stepId`: a Trigger is not a Step, and the region
@@ -187,7 +193,9 @@ describe('unknown components', () => {
   })
 
   it('says nothing when every verb is declared', () => {
-    expect(unknownComponents(workflow([{ id: 's1', use: 'email.send' }]), CATALOGUE)).toEqual([])
+    expect(
+      unknownComponents(workflow([{ id: 's1', use: 'component.email.send' }]), CATALOGUE),
+    ).toEqual([])
   })
 })
 
@@ -202,6 +210,7 @@ describe('the two structural verbs', () => {
 
   it('says something different when a fork has no Branches at all', () => {
     const found = malformedContainers(workflow([{ id: 's1', use: 'core.fork' }]))
+    expect(found[0]).toMatchObject({ code: 'FORK_HAS_NO_BRANCHES', blocks: 'publish' })
     expect(found[0]?.message).toMatch(/no branches/)
   })
 
@@ -284,7 +293,9 @@ describe('the two structural verbs', () => {
   it('accepts a loop with a body', () => {
     expect(
       malformedContainers(
-        workflow([{ id: 's1', use: 'core.for_each', steps: [{ id: 's2', use: 'email.send' }] }]),
+        workflow([
+          { id: 's1', use: 'core.for_each', steps: [{ id: 's2', use: 'component.email.send' }] },
+        ]),
       ),
     ).toEqual([])
   })
@@ -300,7 +311,7 @@ describe('the two structural verbs', () => {
             id: 's1',
             use: 'core.fork',
             branches: [
-              { label: 'A', when: '{{ x }}', steps: [{ id: 's2', use: 'email.send' }] },
+              { label: 'A', when: '{{ x }}', steps: [{ id: 's2', use: 'component.email.send' }] },
               { label: 'otherwise', steps: [] },
             ],
           },
@@ -310,14 +321,14 @@ describe('the two structural verbs', () => {
   })
 })
 
-describe('validateSteps', () => {
+describe('validateDefinition', () => {
   it('indexes every rule by the Step it belongs to', () => {
-    const { byStep } = validateSteps(
+    const { byStep } = validateDefinition(
       workflow([
-        { id: 's1', use: 'email.send', with: { to: 'a' } },
+        { id: 's1', use: 'component.email.send', with: { to: 'a' } },
         { id: 's2', use: 'core.fork', branches: [{ label: 'only', steps: [] }] },
         { id: 's3', use: 'ghost.act' },
-        { id: 's4', use: 'email.send', with: { to: 'a', subject: 'b' } },
+        { id: 's4', use: 'component.email.send', with: { to: 'a', subject: 'b' } },
       ]),
       CATALOGUE,
     )
@@ -330,13 +341,16 @@ describe('validateSteps', () => {
   })
 
   it('collects several problems on one Step', () => {
-    const { byStep } = validateSteps(workflow([{ id: 's1', use: 'email.send' }]), CATALOGUE)
+    const { byStep } = validateDefinition(
+      workflow([{ id: 's1', use: 'component.email.send' }]),
+      CATALOGUE,
+    )
     expect(byStep.get('s1')).toHaveLength(2)
   })
 
   it('is empty for a workflow with nothing wrong', () => {
-    const validity = validateSteps(
-      workflow([{ id: 's1', use: 'email.send', with: { to: 'a', subject: 'b' } }]),
+    const validity = validateDefinition(
+      workflow([{ id: 's1', use: 'component.email.send', with: { to: 'a', subject: 'b' } }]),
       CATALOGUE,
     )
     expect(validity.byStep.size).toBe(0)
@@ -352,14 +366,14 @@ describe('validateSteps', () => {
    */
   it('keeps Trigger diagnostics out of the Step map', () => {
     const doc = {
-      ...workflow([{ id: 's1', use: 'email.send', with: { to: 'a', subject: 'b' } }]),
+      ...workflow([{ id: 's1', use: 'component.email.send', with: { to: 'a', subject: 'b' } }]),
       triggers: [
         { id: 't1', use: 'ghost.received' },
         { id: 's1', use: 'ghost.received' },
       ],
     }
 
-    const { byStep, byTrigger, all } = validateSteps(doc, CATALOGUE)
+    const { byStep, byTrigger, all } = validateDefinition(doc, CATALOGUE)
 
     expect(byStep.size).toBe(0)
     expect([...byTrigger.keys()].sort()).toEqual(['s1', 't1'])

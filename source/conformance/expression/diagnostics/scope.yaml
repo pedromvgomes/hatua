@@ -6,10 +6,10 @@ about: >-
 
 scenarios:
   - name: a step in scope resolves
-    template: "{{ s2.count }}"
+    template: "{{ steps.s2.count }}"
     type: number
     scope: &wide
-      - path: s2
+      - path: steps.s2
         type:
           type: object
           members:
@@ -28,7 +28,7 @@ scenarios:
     expect: []
 
   - name: a step that is not in scope is refused
-    template: "{{ s9.count }}"
+    template: "{{ steps.s9.count }}"
     type: number
     scope: *wide
     expect:
@@ -41,6 +41,79 @@ scenarios:
     type: datetime
     scope: *wide
     expect: []
+
+  # ---- a block's board ------------------------------------------------------
+  #
+  # A block reads only what it declares, plus the Run Context. Scope arrives as
+  # an argument, so these state a block's board directly rather than building a
+  # whole Workflow Definition to imply one — but the scope below is exactly what
+  # ScopeFor emits for a step inside a block, in both languages.
+
+  - name: a block's parameter resolves, and nests through its declared shape
+    template: "{{ params.entry.headline }}"
+    type: text
+    scope: &board
+      - path: params.entry
+        type:
+          type: object
+          members:
+            headline: { type: text }
+      - path: var.attempt_note
+        type: { type: text }
+      - path: run.tenant
+        type: { type: text }
+      - path: steps.put
+        type:
+          type: object
+          members:
+            location: { type: text }
+    expect: []
+
+  - name: so does a step on the same board
+    template: "{{ steps.put.location }}"
+    type: text
+    scope: *board
+    expect: []
+
+  - name: >-
+      a step OUTSIDE the block is refused — this is the contract, and if it ever
+      resolves then scope has stopped being an exact walk
+    template: "{{ steps.s2.count }}"
+    type: number
+    scope: *board
+    expect:
+      - { code: EXPR_UNKNOWN_REFERENCE, severity: error }
+
+  - name: the workflow's variables are the call site's, not the block's
+    template: "{{ var.digest_to }}"
+    type: text
+    scope: *board
+    expect:
+      - { code: EXPR_UNKNOWN_REFERENCE, severity: error }
+
+  - name: >-
+      and neither are its Triggers — a block that needs to know what started the
+      run takes it as a parameter
+    template: "{{ triggers.nightly.triggered_at }}"
+    type: datetime
+    scope: *board
+    expect:
+      - { code: EXPR_UNKNOWN_REFERENCE, severity: error }
+
+  - name: >-
+      Run Context crosses, because nothing in the document declares it: the Host
+      supplies it to every execution, so it is exact on every path of every board
+    template: "{{ run.tenant }}"
+    type: text
+    scope: *board
+    expect: []
+
+  - name: an undeclared parameter is refused like any other unknown root member
+    template: "{{ params.missing }}"
+    type: text
+    scope: *board
+    expect:
+      - { code: EXPR_UNKNOWN_REFERENCE, severity: error }
 
   - name: an unknown trigger is refused
     template: "{{ triggers.hourly.triggered_at }}"
@@ -85,7 +158,7 @@ scenarios:
     expect: []
 
   - name: an undeclared member of a step is a warning, not an error
-    template: "{{ s2.total }}"
+    template: "{{ steps.s2.total }}"
     type: number
     scope: *wide
     expect:
@@ -105,20 +178,20 @@ scenarios:
       any other undeclared member. Reading `members.constructor` without an
       own-property check made TypeScript conclude the expression "produces
       undefined" and block publish, while Go warned and allowed it.
-    template: "{{ s2.constructor }}"
+    template: "{{ steps.s2.constructor }}"
     type: text
     scope: *wide
     expect:
       - { code: EXPR_TYPE_UNKNOWN, severity: warning }
 
   - name: and so are the other two
-    template: "{{ s2.__proto__ }}{{ s2.prototype }}"
+    template: "{{ steps.s2.__proto__ }}{{ steps.s2.prototype }}"
     type: text
     scope: *wide
     expect: []
 
   - name: several problems are all reported, not just the first
-    template: "{{ s9.a }} and {{ s8.b }}"
+    template: "{{ steps.s9.a }} and {{ steps.s8.b }}"
     type: text
     scope: *wide
     expect:

@@ -21,8 +21,13 @@ actually ran.
 
 ```
 definition/valid/*.yaml     must parse and validate clean
-definition/invalid/*.yaml   must fail; the expected diagnostic codes are in the
+definition/invalid/*.yaml   must fail the SCHEMA; the expected result is in the
                             file's own `# expect:` header
+definition/rules/*.yaml     documents that parse and are still wrong — a required
+                            field empty, a fork with one branch, a block that
+                            calls itself. Each scenario carries a definition and
+                            the diagnostics both languages must report for it,
+                            compared as a sorted set
 execution/*.yaml            must parse
 manifest/*.yaml             must parse; which schema a file is held to comes
                             from its own `kind`, since a Run Context is a

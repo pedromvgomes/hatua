@@ -26,7 +26,7 @@ import { loadDefinition, loadManifests } from './load'
 const MANIFESTS = loadManifests(`
 components:
   - kind: component
-    use: email.fetch
+    use: component.email.fetch
     name: Fetch emails
     fields:
       - { k: connection, label: Mailbox, kind: conn }
@@ -38,7 +38,7 @@ components:
         of:
           - { k: subject, label: Subject, t: text }
   - kind: component
-    use: email.send
+    use: component.email.send
     name: Send email
     fields:
       - { k: to, label: To, kind: text }
@@ -57,13 +57,13 @@ triggers:
 vars:
   - { key: digest_to, value: me@dane.dev }
 steps:
-  - { id: s2, use: email.fetch, name: Fetch, with: { connection: mailbox } }
+  - { id: s2, use: component.email.fetch, name: Fetch, with: { connection: mailbox } }
   - id: s6
-    use: email.send
+    use: component.email.send
     name: Send digest
     with:
       to: "{{ var.digest_to }}"
-      subject: "Inbox digest · {{ s2.count }} messages"
+      subject: "Inbox digest · {{ steps.s2.count }} messages"
       retries: "{{ 1 + 1 }}"
 `)
 
@@ -84,7 +84,7 @@ const manifestFor = (use: string) => {
 describe('a runner resolving a step', () => {
   it('resolves a whole `with:` map from the step and its manifest', () => {
     const step = DOC.steps[1]!
-    expect(resolveAll(CONTEXT, slotsFor(step, manifestFor('email.send')))).toEqual({
+    expect(resolveAll(CONTEXT, slotsFor(step, manifestFor('component.email.send')))).toEqual({
       to: 'me@dane.dev',
       subject: 'Inbox digest · 24 messages',
       retries: 2,
@@ -93,7 +93,7 @@ describe('a runner resolving a step', () => {
 
   it('keeps a number a number, so a downstream comparison still works', () => {
     expect(
-      resolve(CONTEXT, { name: 'n', template: '{{ s2.count }}', expectedType: 'number' }),
+      resolve(CONTEXT, { name: 'n', template: '{{ steps.s2.count }}', expectedType: 'number' }),
     ).toBe(24)
   })
 
@@ -101,8 +101,8 @@ describe('a runner resolving a step', () => {
     let thrown: unknown
     try {
       resolveAll(CONTEXT, [
-        { name: 'a', template: '{{ s9.missing }}', expectedType: 'text' },
-        { name: 'b', template: '{{ s8.missing }}', expectedType: 'text' },
+        { name: 'a', template: '{{ steps.s9.missing }}', expectedType: 'text' },
+        { name: 'b', template: '{{ steps.s8.missing }}', expectedType: 'text' },
       ])
     } catch (error) {
       thrown = error
@@ -119,37 +119,37 @@ describe('a runner resolving a step', () => {
 
 describe('a builder checking a step', () => {
   it('accepts what the manifests say is well typed', () => {
-    const scope = scopeFor(DOC, 's6', MANIFESTS)
+    const scope = scopeFor(DOC, { board: null, id: 's6' }, MANIFESTS)
     const context = { scope, functions: coreFunctions() }
 
-    for (const slot of slotsFor(DOC.steps[1]!, manifestFor('email.send'))) {
+    for (const slot of slotsFor(DOC.steps[1]!, manifestFor('component.email.send'))) {
       expect(validate(slot.template, slot.expectedType, context), slot.name).toEqual([])
     }
   })
 
   it('refuses the legacy condition, which is a text template in a boolean slot', () => {
-    const scope = scopeFor(DOC, 's6', MANIFESTS)
-    const slot = whenSlot('{{s2.count}} > 0')
+    const scope = scopeFor(DOC, { board: null, id: 's6' }, MANIFESTS)
+    const slot = whenSlot('{{steps.s2.count}} > 0')
     const found = validate(slot.template, slot.expectedType, { scope, functions: coreFunctions() })
 
     expect(found.map((d) => `${d.code}:${d.severity}`)).toEqual(['EXPR_TYPE_MISMATCH:error'])
   })
 
   it('resolves a projection through the manifest’s declared element shape', () => {
-    const scope = scopeFor(DOC, 's6', MANIFESTS)
+    const scope = scopeFor(DOC, { board: null, id: 's6' }, MANIFESTS)
     expect(
-      validate('{{ s2.messages[].subject }}', 'list', { scope, functions: coreFunctions() }),
+      validate('{{ steps.s2.messages[].subject }}', 'list', { scope, functions: coreFunctions() }),
     ).toEqual([])
   })
 })
 
 describe('references', () => {
   it('recognises a Template that is exactly one path', () => {
-    expect(sourceReference('{{ s2.count }}')).toBe('s2.count')
+    expect(sourceReference('{{ steps.s2.count }}')).toBe('steps.s2.count')
   })
 
   it('and refuses to call anything computed one', () => {
-    expect(sourceReference('{{ s2.count + 1 }}')).toBeNull()
-    expect(sourceReference('Hi {{ s2.count }}')).toBeNull()
+    expect(sourceReference('{{ steps.s2.count + 1 }}')).toBeNull()
+    expect(sourceReference('Hi {{ steps.s2.count }}')).toBeNull()
   })
 })

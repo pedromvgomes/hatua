@@ -29,7 +29,7 @@ const SCOPE: ScopeEntry[] = [
     type: { type: 'object', members: { triggered_at: { type: 'datetime' } } },
   },
   {
-    path: 's2',
+    path: 'steps.s2',
     kind: 'step',
     label: 'Fetch emails',
     type: {
@@ -53,7 +53,7 @@ describe('where the holes are', () => {
     templateShape(source).holes.map(({ start, end }) => ({ start, end }))
 
   it('finds a whole-value hole', () => {
-    expect(spans('{{ s2.count }}')).toEqual([{ start: 0, end: 14 }])
+    expect(spans('{{ steps.s2.count }}')).toEqual([{ start: 0, end: 20 }])
   })
 
   it('finds every hole in mixed text, and the text between them', () => {
@@ -73,7 +73,7 @@ describe('where the holes are', () => {
   /* Carried so a caller can ask whether the hole is a Reference — a question
      about the parsed shape, which is the only thing that answers it. */
   it('carries what each hole parsed to', () => {
-    expect(templateShape('{{ s2.count }}').holes[0]?.expr?.kind).toBe('Member')
+    expect(templateShape('{{ steps.s2.count }}').holes[0]?.expr?.kind).toBe('Member')
   })
 
   /*
@@ -86,8 +86,8 @@ describe('where the holes are', () => {
   })
 
   it('reports a `{{` with no `}}` as the unclosed tail, not as a parse failure', () => {
-    const shape = templateShape('Hi {{ s2.co')
-    expect(shape.unclosed).toEqual({ start: 3, end: 11 })
+    const shape = templateShape('Hi {{ steps.s2.co')
+    expect(shape.unclosed).toEqual({ start: 3, end: 17 })
     expect(shape.holes).toEqual([])
   })
 
@@ -125,8 +125,8 @@ describe('where the holes are', () => {
 
 describe('what the caret is inside', () => {
   it('reads the prefix from the `{{`, not from the token under the caret', () => {
-    const value = '{{ s2.messages[].su }}'
-    expect(caretContext(value, 19).prefix).toBe('s2.messages[].su')
+    const value = '{{ steps.s2.messages[].su }}'
+    expect(caretContext(value, 25).prefix).toBe('steps.s2.messages[].su')
   })
 
   it('is outside every hole when the caret sits in the surrounding text', () => {
@@ -175,7 +175,7 @@ describe('what a row is judged against', () => {
 describe('what is on offer', () => {
   it('offers the scope roots and then the namespaces, as a second block', () => {
     const labels = completionsAt('', SCOPE).map((candidate) => candidate.label)
-    expect(labels.slice(0, 4)).toEqual(['run', 'var', 'triggers', 's2'])
+    expect(labels.slice(0, 4)).toEqual(['run', 'var', 'triggers', 'steps'])
     expect(labels.slice(4)).toEqual(['dt', 'json', 'list', 'num', 'text'])
   })
 
@@ -191,25 +191,27 @@ describe('what is on offer', () => {
   })
 
   it("offers a node's members after a scope dot, and no functions", () => {
-    const labels = completionsAt('s2.', SCOPE).map((candidate) => candidate.label)
-    expect(labels).toEqual(['s2.count', 's2.messages'])
+    const labels = completionsAt('steps.s2.', SCOPE).map((candidate) => candidate.label)
+    expect(labels).toEqual(['steps.s2.count', 'steps.s2.messages'])
   })
 
   /* A list has no members — its elements do, which is what `of:` describes. */
   it('offers the whole list and `[]`, and navigates through the projection', () => {
-    expect(completionsAt('s2.messages.', SCOPE).map((c) => c.label)).toEqual(['s2.messages[]'])
-    expect(completionsAt('s2.messages[].', SCOPE).map((c) => c.label)).toEqual([
-      's2.messages[].subject',
+    expect(completionsAt('steps.s2.messages.', SCOPE).map((c) => c.label)).toEqual([
+      'steps.s2.messages[]',
+    ])
+    expect(completionsAt('steps.s2.messages[].', SCOPE).map((c) => c.label)).toEqual([
+      'steps.s2.messages[].subject',
     ])
   })
 
   it('types everything read through a projection as a list', () => {
-    const [subject] = completionsAt('s2.messages[].', SCOPE)
+    const [subject] = completionsAt('steps.s2.messages[].', SCOPE)
     expect(subject?.type).toBe('list')
   })
 
   it('narrows on what has been typed', () => {
-    expect(completionsAt('s2.co', SCOPE).map((c) => c.label)).toEqual(['s2.count'])
+    expect(completionsAt('steps.s2.co', SCOPE).map((c) => c.label)).toEqual(['steps.s2.count'])
   })
 
   it('carries the sentence a Run Context key declares', () => {
@@ -227,24 +229,24 @@ describe('what is on offer', () => {
 
 describe('the ghost', () => {
   it('completes what every remaining candidate agrees on', () => {
-    expect(ghostFor('s2.c', completionsAt('s2.c', SCOPE))).toBe('ount')
+    expect(ghostFor('steps.s2.c', completionsAt('steps.s2.c', SCOPE))).toBe('ount')
   })
 
   it('is empty at a dot with no common prefix, and the list alone answers', () => {
-    expect(ghostFor('s2.', completionsAt('s2.', SCOPE))).toBe('')
+    expect(ghostFor('steps.s2.', completionsAt('steps.s2.', SCOPE))).toBe('')
   })
 })
 
 describe('writing it in', () => {
   it('wraps a candidate chosen outside a hole', () => {
-    const edit = insertCandidate('', caretContext('', 0), 0, 's2.count')
-    expect(edit.value).toBe('{{ s2.count }}')
+    const edit = insertCandidate('', caretContext('', 0), 0, 'steps.s2.count')
+    expect(edit.value).toBe('{{ steps.s2.count }}')
   })
 
   it('replaces the typed prefix inside a hole rather than appending to it', () => {
-    const value = '{{ s2.co }}'
-    const edit = insertCandidate(value, caretContext(value, 8), 8, 's2.count')
-    expect(edit.value).toBe('{{ s2.count }}')
+    const value = '{{ steps.s2.co }}'
+    const edit = insertCandidate(value, caretContext(value, 14), 14, 'steps.s2.count')
+    expect(edit.value).toBe('{{ steps.s2.count }}')
   })
 
   it('leaves the caret inside the braces when the insertion is mid-expression', () => {
@@ -255,9 +257,9 @@ describe('writing it in', () => {
 
 describe('dropping a reference', () => {
   it('carries the bare path and the wrapped Template, for two different readers', () => {
-    expect(dragPayload('s2.count')).toEqual([
-      [REFERENCE_MIME, 's2.count'],
-      ['text/plain', '{{ s2.count }}'],
+    expect(dragPayload('steps.s2.count')).toEqual([
+      [REFERENCE_MIME, 'steps.s2.count'],
+      ['text/plain', '{{ steps.s2.count }}'],
     ])
   })
 
@@ -310,19 +312,19 @@ describe('completing inside a call', () => {
   })
 
   it('starts again after a comma, and after an operator', () => {
-    expect(caretContext('{{ dt.diff(a, s2.co }}', 19).prefix).toBe('s2.co')
-    expect(caretContext('{{ s2.count + s2.co }}', 19).prefix).toBe('s2.co')
+    expect(caretContext('{{ dt.diff(a, steps.s2.co }}', 25).prefix).toBe('steps.s2.co')
+    expect(caretContext('{{ steps.s2.count + steps.s2.co }}', 31).prefix).toBe('steps.s2.co')
   })
 
   /* `.`, `[` and `]` continue a path; a projection is one prefix, not four. */
   it('keeps a projection whole', () => {
-    expect(caretContext('{{ s2.messages[].su }}', 19).prefix).toBe('s2.messages[].su')
+    expect(caretContext('{{ steps.s2.messages[].su }}', 25).prefix).toBe('steps.s2.messages[].su')
   })
 })
 
 describe('what a Reference is called at rest', () => {
   it('reads as the Step, then the way down to the value', () => {
-    expect(chipFor('s2.count', SCOPE)).toEqual({
+    expect(chipFor('steps.s2.count', SCOPE)).toEqual({
       of: 'reference',
       kind: 'step',
       source: 'Fetch emails',
@@ -362,7 +364,7 @@ describe('what a Reference is called at rest', () => {
   })
 
   it('names a projection as each of its elements', () => {
-    const chip = chipFor('s2.messages[].subject', SCOPE)
+    const chip = chipFor('steps.s2.messages[].subject', SCOPE)
     expect(chip?.of === 'reference' && chip.leaf).toBe('messages each subject')
   })
 
@@ -372,7 +374,7 @@ describe('what a Reference is called at rest', () => {
    * longer exists hides the one fact worth seeing.
    */
   it('refuses to name a path that is no longer in scope', () => {
-    expect(chipFor('s9.gone', SCOPE)).toBeNull()
+    expect(chipFor('steps.s9.gone', SCOPE)).toBeNull()
   })
 })
 
@@ -391,8 +393,8 @@ describe('clicking a chip', () => {
   })
 
   it('works for a hole written with no spaces at all', () => {
-    const value = '{{s2.count}}'
-    expect(expressionEnd(value, templateShape(value).holes[0] as never)).toBe(10)
+    const value = '{{steps.s2.count}}'
+    expect(expressionEnd(value, templateShape(value).holes[0] as never)).toBe(16)
   })
 
   it('never lands before the opening braces, whatever is between them', () => {
@@ -406,7 +408,7 @@ describe('positions a caret can be in that are not inside a hole', () => {
    * Between the two braces the `{{` is not complete before the caret, so there
    * is no hole yet. Treated as one, the prefix began one character AFTER the
    * caret and accepting a row spliced a reversed range — `a{{b}}` came back as
-   * `a{{s2{b}}`.
+   * `a{{steps.s2{b}}`.
    */
   it('is outside when the caret is between the braces', () => {
     const context = caretContext('a{{b}}', 2)
@@ -424,7 +426,9 @@ describe('positions a caret can be in that are not inside a hole', () => {
   it('wraps a candidate rather than splicing backwards there', () => {
     // Split at the caret and nothing re-emitted: `a{` + the new hole + `{b}}`.
     const value = 'a{{b}}'
-    expect(insertCandidate(value, caretContext(value, 2), 2, 's2').value).toBe('a{{{ s2 }}{b}}')
+    expect(insertCandidate(value, caretContext(value, 2), 2, 'steps.s2').value).toBe(
+      'a{{{ steps.s2 }}{b}}',
+    )
   })
 })
 
@@ -437,20 +441,20 @@ describe('a hole the scanner found', () => {
    * precisely the state the fallback exists to serve.
    */
   it('reports offsets into the whole value, not into itself', () => {
-    const value = '{{ a. }}{{ s2.count + 1 }}'
+    const value = '{{ a. }}{{ steps.s2.count + 1 }}'
     const shape = templateShape(value)
     expect(shape.parses).toBe(false)
 
     const second = shape.holes[1]
     expect(second?.start).toBe(8)
-    // `s2.count` begins at 11 in the value, not at 3 inside its own hole.
+    // `steps.s2.count` begins at 11 in the value, not at 3 inside its own hole.
     expect((second?.expr as { at: number } | undefined)?.at).toBe(11)
   })
 
   it('still names what it can when an earlier hole is unfinished', () => {
-    const value = '{{ a. }}{{ s2.count + 1 }}'
+    const value = '{{ a. }}{{ steps.s2.count + 1 }}'
     const hole = templateShape(value).holes[1]
-    const parts = expressionChip(value, hole?.expr as never, 11, 23, SCOPE)
+    const parts = expressionChip(value, hole?.expr as never, 11, 29, SCOPE)
     expect(parts.map((part) => (part.of === 'reference' ? part.leaf : part.text))).toEqual([
       'count',
       ' + 1',

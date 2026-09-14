@@ -1,0 +1,13 @@
+# expect: SCHEMA_INVALID
+#
+# A block's id is written into a verb as `block.<id>`, so a name the expression
+# grammar cannot parse is a name nothing can ever call. Refused here rather than
+# accepted into a file and reported as a broken call on every use of it.
+id: wf
+name: W
+version: 1
+status: draft
+blocks:
+  - id: archive-entry
+    steps: []
+steps: []

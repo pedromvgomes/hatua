@@ -15,14 +15,14 @@ const component = (over: Partial<Manifest> & Pick<Manifest, 'use' | 'name'>): Ma
 
 const CATALOGUE: Manifest[] = [
   component({
-    use: 'email.send',
+    use: 'component.email.send',
     name: 'Send email',
     group: 'Email',
     icon: '/icons/mail.svg',
     blurb: 'Send a message through a connected mailbox.',
   }),
   component({
-    use: 'email.received',
+    use: 'component.email.received',
     name: 'When mail arrives',
     kind: 'trigger',
     group: 'Email',
@@ -30,7 +30,7 @@ const CATALOGUE: Manifest[] = [
     blurb: 'Starts the workflow when a message arrives.',
   }),
   component({
-    use: 'agent.act',
+    use: 'component.agent.act',
     name: 'Run agent',
     group: 'Intelligence',
     icon: '/icons/zap.svg',
@@ -208,7 +208,7 @@ describe('Components', () => {
     fireEvent.change(search, { target: { value: 'connected mailbox' } })
     expect(screen.getByText('Send email')).toBeDefined()
 
-    fireEvent.change(search, { target: { value: 'agent.act' } })
+    fireEvent.change(search, { target: { value: 'component.agent.act' } })
     expect(screen.getByText('Run agent')).toBeDefined()
   })
 

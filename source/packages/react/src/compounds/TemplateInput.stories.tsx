@@ -40,7 +40,7 @@ const SCOPE: ScopeEntry[] = [
     type: { type: 'object', members: { triggered_at: { type: 'datetime' } } },
   },
   {
-    path: 's2',
+    path: 'steps.s2',
     kind: 'step',
     label: 'Fetch emails',
     type: {
@@ -183,7 +183,10 @@ export const WholeValueReference: Story = {
  * it — which is exactly what showing a label instead of a path requires.
  */
 export const MixedText: Story = {
-  args: { value: 'Inbox digest · {{ s2.count }} messages for {{ run.id }}', expectedType: 'text' },
+  args: {
+    value: 'Inbox digest · {{ steps.s2.count }} messages for {{ run.id }}',
+    expectedType: 'text',
+  },
 }
 
 /**
@@ -195,7 +198,7 @@ export const MixedText: Story = {
  */
 export const MixedTextWhileEditing: Story = {
   args: {
-    value: 'Inbox digest · {{ s2.count }} messages for {{ run.id }}',
+    value: 'Inbox digest · {{ steps.s2.count }} messages for {{ run.id }}',
     expectedType: 'text',
     route: 'focus',
   },
@@ -210,7 +213,7 @@ export const MixedTextWhileEditing: Story = {
 export const EveryKindOfSource: Story = {
   args: {
     value:
-      '{{ s2.count }} · {{ triggers.nightly.triggered_at }} · {{ var.digest_to }} · {{ run.id }}',
+      '{{ steps.s2.count }} · {{ triggers.nightly.triggered_at }} · {{ var.digest_to }} · {{ run.id }}',
     expectedType: 'text',
   },
 }
@@ -225,7 +228,10 @@ export const EveryKindOfSource: Story = {
  * they are the only thing that can be edited back into shape.
  */
 export const NotEveryChipIsAReference: Story = {
-  args: { value: '{{ s2.count + 1 }} · {{ s9.gone }} · {{ s2. + }}', expectedType: 'text' },
+  args: {
+    value: '{{ steps.s2.count + 1 }} · {{ steps.s9.gone }} · {{ steps.s2. + }}',
+    expectedType: 'text',
+  },
 }
 
 /** The ordinary state of a Template halfway through being typed. */
@@ -235,14 +241,14 @@ export const UnclosedHole: Story = {
 
 /** The field has an issue; the border says so and the text stays editable. */
 export const WithAnIssue: Story = {
-  args: { value: '{{ s9.missing }}', expectedType: 'text', invalid: true },
+  args: { value: '{{ steps.s9.missing }}', expectedType: 'text', invalid: true },
 }
 
 /** 76px, for a `textarea` field. */
 export const Multiline: Story = {
   args: {
     multiline: true,
-    value: 'Hello {{ triggers.nightly.triggered_at }},\n\nYou have {{ s2.count }} messages.',
+    value: 'Hello {{ triggers.nightly.triggered_at }},\n\nYou have {{ steps.s2.count }} messages.',
     expectedType: 'text',
   },
 }
@@ -262,7 +268,7 @@ export const CompletionByTyping: Story = {
 
 /** Way in #2: `Ctrl`+`Space` inside a hole. */
 export const CompletionByShortcut: Story = {
-  args: { value: '{{ s2. }}', expectedType: 'text', route: 'shortcut-inside', caret: 6 },
+  args: { value: '{{ steps.s2. }}', expectedType: 'text', route: 'shortcut-inside', caret: 12 },
 }
 
 /** After a namespace's dot: that namespace's Functions, and no scope at all. */
@@ -276,10 +282,10 @@ export const CompletionAfterANamespace: Story = {
  */
 export const CompletionThroughAProjection: Story = {
   args: {
-    value: '{{ s2.messages[]. }}',
+    value: '{{ steps.s2.messages[]. }}',
     expectedType: 'text',
     route: 'shortcut-inside',
-    caret: 17,
+    caret: 23,
   },
 }
 
@@ -290,10 +296,10 @@ export const CompletionThroughAProjection: Story = {
  */
 export const RetargetByDoubleClick: Story = {
   args: {
-    value: 'Inbox digest · {{ s2.count }} messages',
+    value: 'Inbox digest · {{ steps.s2.count }} messages',
     expectedType: 'text',
     route: 'retarget',
-    caret: 22,
+    caret: 28,
   },
 }
 

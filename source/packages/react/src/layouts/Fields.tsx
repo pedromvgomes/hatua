@@ -51,7 +51,7 @@ export interface FieldsProps extends Omit<ComponentPropsWithRef<'div'>, 'onChang
    * Everything a Template in this form may read.
    *
    * A prop rather than something this form works out, because scope is a
-   * question about a *position* — `scopeFor` for a Step, `workflowScope` for a
+   * question about a *position* — `scopeFor` for a Step, `boardScope` for a
    * Trigger — and which of those applies is exactly what "one form, wherever
    * the thing being edited lives" means this form must not know.
    *
@@ -405,7 +405,7 @@ function FieldRow({
  * A `map` field, shown and not edited.
  *
  * A `map` holds a list of `{key, value, type}` entries the user builds, and it
- * decides a Step's outputs — `data.map` is the component it exists for, and
+ * decides a Step's outputs — `core.map` is the component it exists for, and
  * editing one is the step editor's own widget rather than a row in this form.
  * What it must not do is render nothing: a field drawn as an empty space is
  * indistinguishable from one this form does not know about, and a required one

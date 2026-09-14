@@ -1,0 +1,12 @@
+# expect: SCHEMA_INVALID
+#
+# A variable is read as `{{var.<key>}}`, one segment below a reserved root, so a
+# key the grammar cannot parse is a variable no Reference can name.
+id: wf
+name: W
+version: 1
+status: draft
+vars:
+  - key: digest-to
+    value: me@dane.dev
+steps: []

@@ -2,6 +2,7 @@ package hatua
 
 import (
 	"fmt"
+	"regexp"
 
 	"gopkg.in/yaml.v3"
 )
@@ -92,9 +93,15 @@ func LoadRunContext(data []byte) (*RunContextManifest, error) {
 // workflow that fails in the builder and runs anyway, which is the divergence
 // this SDK exists to prevent. conformance/definition/invalid/ pins each case.
 //
-// Cross-field rules that depend on manifests — connection type matching, empty
-// loops, unmapped required fields — belong to the builder's model layer and are
-// not duplicated here.
+// Cross-field rules belong to the builder's model layer (@hatua/model) and are
+// not duplicated here: connection type matching, empty loops, unmapped required
+// fields, and — for a block — a call naming nothing, a call graph with a cycle,
+// a path that finishes without returning, two blocks under one id, two steps
+// under one id on a board, and two declarations under one key. A runner linking
+// this package gets shape, not those rules, so a document reaching it
+// unvalidated by a builder can still hold a block that calls itself, and can
+// hold a repeated id that Boards and WalkDocument both yield while BlockOf and
+// ScopeFor resolve first-wins.
 func (d *Definition) Validate() error {
 	const prefix = "not a valid Workflow Definition"
 
@@ -122,26 +129,48 @@ func (d *Definition) Validate() error {
 		}
 	}
 	for _, t := range d.Triggers {
-		if t.ID == "" {
-			return fmt.Errorf("%s: every trigger needs an id", prefix)
+		if err := identifier(t.ID, "trigger id", prefix); err != nil {
+			return err
 		}
 		if t.Use == "" {
 			return fmt.Errorf("%s: trigger %q needs a use", prefix, t.ID)
 		}
 	}
 	for _, v := range d.Vars {
-		if v.Key == "" {
-			return fmt.Errorf("%s: every var needs a key", prefix)
+		if err := identifier(v.Key, "var key", prefix); err != nil {
+			return err
+		}
+	}
+	for _, b := range d.Blocks {
+		if err := identifier(b.ID, "block id", prefix); err != nil {
+			return err
+		}
+		if b.Steps == nil {
+			return fmt.Errorf("%s: block %q needs a steps list", prefix, b.ID)
+		}
+		for _, v := range b.Vars {
+			if err := identifier(v.Key, "var key", prefix); err != nil {
+				return err
+			}
+		}
+		for _, side := range [][]Declaration{b.Params, b.Outputs} {
+			if err := validateDeclarations(side, b.ID, prefix); err != nil {
+				return err
+			}
 		}
 	}
 
 	var err error
-	WalkSteps(d.Steps, func(s Step) {
+	WalkDocument(*d, func(_ StepRef, s Step) {
 		if err != nil {
 			return
 		}
 		if s.ID == "" {
 			err = fmt.Errorf("%s: every step needs an id — references point at it", prefix)
+			return
+		}
+		if idErr := identifier(s.ID, "step id", prefix); idErr != nil {
+			err = idErr
 			return
 		}
 		if s.Use == "" {
@@ -152,7 +181,61 @@ func (d *Definition) Validate() error {
 		return err
 	}
 
-	return validateBranches(d.Steps, prefix)
+	for _, board := range Boards(*d) {
+		if err := validateBranches(board.Steps, prefix); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// identifierPattern is schemas/workflow-definition.schema.yaml's `identifier`.
+//
+// Every user-chosen name sits one segment below a reserved root — `steps.<id>`,
+// `var.<key>`, `block.<id>` — so a name the expression grammar cannot parse is a
+// name nothing can ever address. Refused here rather than accepted into a file
+// and reported as a broken Reference on every use of it.
+var identifierPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+func identifier(value, what, prefix string) error {
+	if value == "" {
+		return fmt.Errorf("%s: every %s is required", prefix, what)
+	}
+	if !identifierPattern.MatchString(value) {
+		return fmt.Errorf("%s: %s %q is not an identifier", prefix, what, value)
+	}
+	return nil
+}
+
+// validateDeclarations holds a block's contract to the shape a manifest output
+// has. `item` is refused: it resolves by following a loop's list back to its
+// source, and a parameter is not the output of anything.
+//
+// Deliberately unbounded in depth, because the schema is: a cap here and none in
+// the JSON Schema would refuse a document the builder published, which is the
+// divergence this function exists to prevent. A bound belongs in the shared
+// contract or nowhere.
+func validateDeclarations(declarations []Declaration, block, prefix string) error {
+	for _, declaration := range declarations {
+		if err := identifier(declaration.K, "declaration key", prefix); err != nil {
+			return err
+		}
+		if declaration.Label == "" {
+			return fmt.Errorf("%s: %q in block %q needs a label", prefix, declaration.K, block)
+		}
+		switch declaration.T {
+		case "text", "number", "boolean", "datetime", "object", "list":
+		default:
+			return fmt.Errorf(
+				"%s: %q in block %q declares an unusable type %q",
+				prefix, declaration.K, block, declaration.T,
+			)
+		}
+		if err := validateDeclarations(declaration.Of, block, prefix); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func validateBranches(steps []Step, prefix string) error {

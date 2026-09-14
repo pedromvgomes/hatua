@@ -1,7 +1,7 @@
 import type { ContextKey } from '@hatua/schema'
 import { describe, expect, it } from 'vitest'
 import { DOC, MANIFESTS } from './fixtures'
-import { scopeFor, upstreamOf, workflowScope } from './scope'
+import { boardScope, scopeFor, upstreamOf } from './scope'
 import { walkSteps } from './tree'
 
 describe('tree traversal', () => {
@@ -12,16 +12,16 @@ describe('tree traversal', () => {
 
 describe('reference scope', () => {
   it('includes ancestors and earlier siblings of every ancestor', () => {
-    expect(upstreamOf(DOC, 's5').map((s) => s.id)).toEqual(['s2', 's3', 's4'])
+    expect(upstreamOf(DOC, { board: null, id: 's5' }).map((s) => s.id)).toEqual(['s2', 's3', 's4'])
   })
 
   it('excludes sibling branches', () => {
     // s7 is in the fallback branch; it must not see s4/s5/s6 in the other one.
-    expect(upstreamOf(DOC, 's7').map((s) => s.id)).toEqual(['s2', 's3'])
+    expect(upstreamOf(DOC, { board: null, id: 's7' }).map((s) => s.id)).toEqual(['s2', 's3'])
   })
 
   it('excludes later siblings', () => {
-    expect(upstreamOf(DOC, 's2')).toEqual([])
+    expect(upstreamOf(DOC, { board: null, id: 's2' })).toEqual([])
   })
 })
 
@@ -29,30 +29,30 @@ describe('scopeFor', () => {
   it('offers every trigger regardless of tree position', () => {
     // A workflow cannot run without a trigger firing, so triggers are never
     // out of scope the way an upstream step can be.
-    const paths = scopeFor(DOC, 's5').map((e) => e.path)
+    const paths = scopeFor(DOC, { board: null, id: 's5' }).map((e) => e.path)
     expect(paths).toContain('triggers.nightly')
     expect(paths).toContain('triggers.on_mail')
   })
 
   it('offers the TRIGGER built-in only when several triggers exist', () => {
-    expect(scopeFor(DOC, 's5').map((e) => e.path)).toContain('TRIGGER')
+    expect(scopeFor(DOC, { board: null, id: 's5' }).map((e) => e.path)).toContain('TRIGGER')
 
     const single = { ...DOC, triggers: [DOC.triggers![0]!] }
-    expect(scopeFor(single, 's5').map((e) => e.path)).not.toContain('TRIGGER')
+    expect(scopeFor(single, { board: null, id: 's5' }).map((e) => e.path)).not.toContain('TRIGGER')
   })
 
   it('offers workflow vars, which are scoped to the workflow not the position', () => {
-    expect(scopeFor(DOC, 's2').map((e) => e.path)).toContain('var.digest_to')
+    expect(scopeFor(DOC, { board: null, id: 's2' }).map((e) => e.path)).toContain('var.digest_to')
   })
 
   it('still constrains steps by tree position', () => {
-    const paths = scopeFor(DOC, 's7').map((e) => e.path)
-    expect(paths).toContain('s2')
-    expect(paths).not.toContain('s5')
+    const paths = scopeFor(DOC, { board: null, id: 's7' }).map((e) => e.path)
+    expect(paths).toContain('steps.s2')
+    expect(paths).not.toContain('steps.s5')
   })
 })
 
-describe('workflowScope', () => {
+describe('boardScope', () => {
   const CONTEXT: ContextKey[] = [
     { k: 'id', label: 'Run id', t: 'text', description: 'Identifies this execution.' },
     {
@@ -69,7 +69,7 @@ describe('workflowScope', () => {
    * have run by the time the value is evaluated either.
    */
   it('offers no step output at all, whatever the document holds', () => {
-    const paths = workflowScope(DOC).map((entry) => entry.path)
+    const paths = boardScope(DOC).map((entry) => entry.path)
     expect(paths).not.toContain('s2')
     expect(paths).toContain('var.digest_to')
     expect(paths).toContain('triggers.nightly')
@@ -77,20 +77,22 @@ describe('workflowScope', () => {
   })
 
   it('offers the Host Run Context as `run.<key>`', () => {
-    const paths = workflowScope(DOC, [], CONTEXT).map((entry) => entry.path)
+    const paths = boardScope(DOC, null, [], CONTEXT).map((entry) => entry.path)
     expect(paths).toContain('run.id')
     expect(paths).toContain('run.tenant')
   })
 
   it('files Run Context under its own kind, so the tree can group it apart', () => {
-    const entry = workflowScope(DOC, [], CONTEXT).find((candidate) => candidate.path === 'run.id')
+    const entry = boardScope(DOC, null, [], CONTEXT).find(
+      (candidate) => candidate.path === 'run.id',
+    )
     expect(entry?.kind).toBe('context')
     expect(entry?.label).toBe('Run id')
     expect(entry?.description).toBe('Identifies this execution.')
   })
 
   it('nests a key through `of`, the way a manifest output nests', () => {
-    const entry = workflowScope(DOC, [], CONTEXT).find(
+    const entry = boardScope(DOC, null, [], CONTEXT).find(
       (candidate) => candidate.path === 'run.tenant',
     )
     expect(entry?.type).toEqual({ type: 'object', members: { name: { type: 'text' } } })
@@ -106,13 +108,13 @@ describe('workflowScope', () => {
       { k: 'tenant', label: 'Tenant', t: 'text' },
       { k: 'tenant', label: 'Tenant again', t: 'number' },
     ]
-    const found = workflowScope(DOC, [], twice).filter((entry) => entry.path === 'run.tenant')
+    const found = boardScope(DOC, null, [], twice).filter((entry) => entry.path === 'run.tenant')
     expect(found).toHaveLength(1)
     expect(found[0]?.label).toBe('Tenant')
   })
 
   it('declares nothing when the Host declared nothing', () => {
-    expect(workflowScope(DOC).some((entry) => entry.kind === 'context')).toBe(false)
+    expect(boardScope(DOC).some((entry) => entry.kind === 'context')).toBe(false)
   })
 
   /*
@@ -120,8 +122,8 @@ describe('workflowScope', () => {
    * definition of the unpositioned half.
    */
   it('is exactly the part of scopeFor that has no position', () => {
-    const unpositioned = workflowScope(DOC, MANIFESTS, CONTEXT)
-    const positioned = scopeFor(DOC, 's5', MANIFESTS, CONTEXT)
+    const unpositioned = boardScope(DOC, null, MANIFESTS, CONTEXT)
+    const positioned = scopeFor(DOC, { board: null, id: 's5' }, MANIFESTS, CONTEXT)
     expect(positioned.slice(0, unpositioned.length)).toEqual(unpositioned)
     expect(positioned.slice(unpositioned.length).every((entry) => entry.kind === 'step')).toBe(true)
   })
