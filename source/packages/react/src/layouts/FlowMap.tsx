@@ -37,6 +37,7 @@ import {
   nextBlockId,
   removeStep,
   sequence,
+  unchecked,
   type ValidationState,
 } from '@hatua/services'
 import {
@@ -288,20 +289,12 @@ const subscribeToNothing = () => () => {}
 const NO_PROBLEMS: ReadonlyMap<string, Diagnostic[]> = new Map()
 /** The same, for the Blocks a call may report as unable to run. */
 const NO_TROUBLE: ReadonlySet<string> = new Set()
-const UNCHECKED: ValidationState = {
-  byStep: NO_PROBLEMS,
-  byTrigger: NO_PROBLEMS,
-  byBlock: NO_PROBLEMS,
-  all: [],
-  ready: false,
-}
 type CatalogueState = ManifestState | { status: 'unconfigured' }
 const CATALOGUE_UNCONFIGURED = { status: 'unconfigured' } as const
 const CATALOGUE_LOADING = { status: 'loading' } as const
 const NO_ENTRIES: ManifestEntry[] = []
 const readCatalogueUnconfigured = (): CatalogueState => CATALOGUE_UNCONFIGURED
 const readCatalogueLoading = (): CatalogueState => CATALOGUE_LOADING
-const readUnchecked = (): ValidationState => UNCHECKED
 const readUnconfigured = (): MapState => UNCONFIGURED
 const readOpening = (): MapState => OPENING
 
@@ -410,8 +403,8 @@ export function FlowMap({
 
   const checks = useSyncExternalStore<ValidationState>(
     validation ? validation.subscribe : subscribeToNothing,
-    validation ? validation.getSnapshot : readUnchecked,
-    readUnchecked,
+    validation ? validation.getSnapshot : unchecked,
+    unchecked,
   )
   // Absent, not empty. Every Step is an unknown component until the manifests
   // land, so painting `byStep` before `ready` marks every card on every load.

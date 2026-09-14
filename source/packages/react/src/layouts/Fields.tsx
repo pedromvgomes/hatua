@@ -7,14 +7,14 @@ import {
 } from '@hatua/model'
 import type { Connection, Field, Manifest } from '@hatua/schema'
 import { isMappable } from '@hatua/schema'
-import type { ConnectionState } from '@hatua/services'
+import { type ConnectionState, unchecked, type ValidationState } from '@hatua/services'
 import { type ComponentPropsWithRef, useEffect, useId, useState, useSyncExternalStore } from 'react'
 import { TemplateInput } from '../compounds/TemplateInput'
 import { cx } from '../primitives/classNames'
 import { Input } from '../primitives/Input'
 import { Select } from '../primitives/Select'
 import { Toggle } from '../primitives/Toggle'
-import { useConnectionStore } from '../theme/HatuaProvider'
+import { useConnectionStore, useValidationStore } from '../theme/HatuaProvider'
 import styles from './Fields.module.css'
 import css from './Fields.module.css?inline'
 
@@ -103,6 +103,7 @@ export function Fields({
   ...rest
 }: FieldsProps) {
   const established = useEstablished()
+  const connectionChecks = useConnectionChecks()
 
   if (!manifest) return null
 
@@ -112,6 +113,24 @@ export function Fields({
   // visible required one that stops being reported.
   const shown = (manifest.fields ?? []).filter((field) => fieldVisible(field, values))
   if (shown.length === 0) return null
+
+  /**
+   * A `conn` field's own diagnostics, plus whatever is wrong with the Connection
+   * it holds.
+   *
+   * The two are different subjects and neither implies the other: "this field
+   * wants an email connection" is about the field, and "this connection was
+   * never wired" is about the Connection, and the same Connection in two fields
+   * is one fault reported under both — which is where a reader can do something
+   * about it.
+   */
+  const problemsFor = (field: Field, value: unknown): readonly Diagnostic[] | undefined => {
+    const own = problems?.get(field.k)
+    if (field.kind !== 'conn' || typeof value !== 'string') return own
+    const aboutTheConnection = connectionChecks.get(value)
+    if (!aboutTheConnection?.length) return own
+    return own ? [...own, ...aboutTheConnection] : aboutTheConnection
+  }
 
   return (
     <>
@@ -127,7 +146,7 @@ export function Fields({
             connections={connections}
             scope={scope}
             highlighted={highlighted?.has(field.k) ?? false}
-            problems={problems?.get(field.k)}
+            problems={problemsFor(field, values[field.k])}
             established={established}
             onChange={(next) => onChange(field.k, next)}
             onDeclareConnection={
@@ -162,6 +181,37 @@ function useEstablished(): PickerState {
     store ? store.getSnapshot : readUnconfigured,
     store ? readLoading : readUnconfigured,
   )
+}
+
+/**
+ * What the checker says about the Connections themselves, rather than about a
+ * field.
+ *
+ * Read here rather than taken as a prop, unlike `problems`. A field's
+ * diagnostics are a slice of one subject's — this Step's, this Trigger's — and
+ * only the caller knows which subject is being edited. A Connection's are keyed
+ * by the Connection, which a `conn` field names in its own value, so there is
+ * nothing for a caller to decide and a prop would be forwarded unread through
+ * every one of them.
+ *
+ * It is also the only way CONNECTION_NOT_ESTABLISHED reaches a screen. That
+ * diagnostic names a Connection and no Step, so no region that draws Steps,
+ * Triggers or Blocks will ever find it — and the field pointing at an unfinished
+ * Connection is where somebody can act on it.
+ */
+function useConnectionChecks(): ReadonlyMap<string, readonly Diagnostic[]> {
+  const store = useValidationStore()
+  const checks = useSyncExternalStore<ValidationState>(
+    store ? store.subscribe : subscribeToNothing,
+    store ? store.getSnapshot : unchecked,
+    // The static snapshot on the server, matching every other region: a store
+    // built in the browser has nothing to hand a hydration render.
+    unchecked,
+  )
+  // Absent, not empty, until the answer means something: a Connection looks
+  // unestablished before the document has projected, and a form that painted it
+  // would say so about every Connection on every load.
+  return checks.ready ? checks.byConnection : NO_CHECKS
 }
 
 /**
@@ -533,6 +583,7 @@ const declaredType = (kind: MappableFieldKind) => {
 
 const NO_CONNECTIONS = { status: 'unconfigured' } as const
 const CONNECTIONS_LOADING = { status: 'loading' } as const
+const NO_CHECKS: ReadonlyMap<string, readonly Diagnostic[]> = new Map()
 
 type PickerState = ConnectionState | { status: 'unconfigured' }
 

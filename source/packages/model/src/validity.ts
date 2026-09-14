@@ -16,8 +16,8 @@ import type {
   WorkflowDefinition,
 } from '@hatua/schema'
 import { blockIdOf, blockOf, cyclicBlocks, RETURN_VERB } from './blocks'
-import type { Diagnostic } from './connections'
-import { DEFINITION_DIAGNOSTICS, type DefinitionCode } from './generated/diagnostics'
+import { type ConnectionTypes, mismatchedConnections, unresolvedConnections } from './connections'
+import { type Diagnostic, raise } from './diagnostic'
 import { newScopeMemo, scopeFor, typeAtPath } from './scope'
 import {
   FOR_EACH_LIST_FIELD,
@@ -44,7 +44,8 @@ import {
 /**
  * Whether a Workflow Definition is filled in enough to run — the rules that read
  * a Step against its Component Manifest, the verbs Hatua interprets
- * structurally, and the contract a Block declares.
+ * structurally, the contract a Block declares, and the Connections a `conn`
+ * field may hold.
  *
  * Here rather than in @hatua/services for the same reason `tree.ts` is: these
  * are pure domain rules over the typed projection, so a Host's runner can hold
@@ -65,37 +66,6 @@ import {
  */
 
 type ManifestIndex = ReadonlyMap<string, Manifest>
-
-/**
- * Fill a declared message's `{name}` holes from the fields a diagnostic carries.
- *
- * Exported because the generated table carries templates, and a Host reading
- * `DEFINITION_DIAGNOSTICS[code].message` itself would get the literal braces.
- * The Go SDK's `FormatDefinitionMessage` is the same function.
- *
- * A hole with no field keeps its braces rather than becoming empty: a sentence
- * missing a word reads as a bug in Hatua, and one still holding `{label}` reads
- * as a diagnostic raised without the field it names — which is what it is.
- */
-export const formatDefinitionMessage = (
-  code: DefinitionCode,
-  fields: Record<string, string> = {},
-): string =>
-  DEFINITION_DIAGNOSTICS[code].message.replace(/\{(\w+)\}/g, (whole, name) =>
-    Object.hasOwn(fields, name) ? (fields[name] ?? whole) : whole,
-  )
-
-/** One diagnostic, taking `blocks` from the declaration rather than restating it. */
-const raise = (
-  code: DefinitionCode,
-  subject: Partial<Diagnostic>,
-  fields?: Record<string, string>,
-): Diagnostic => ({
-  code,
-  message: formatDefinitionMessage(code, fields),
-  blocks: DEFINITION_DIAGNOSTICS[code].blocks,
-  ...subject,
-})
 
 /**
  * Whether a field is shown, and therefore whether it can be missing.
@@ -637,6 +607,23 @@ export interface Validity {
   /** The same, for what belongs to a Block rather than to any Step in it. */
   byBlock: ReadonlyMap<string, Diagnostic[]>
   /**
+   * The same, for what belongs to a Connection rather than to any Step using it.
+   *
+   * Only CONNECTION_NOT_ESTABLISHED files here: the other connection codes are
+   * raised at a field, so they name a Step or a Trigger as well and belong on
+   * the row the user can act on. A Connection declared and never wired is at
+   * fault on its own — it is unfinished whether or not anything points at it
+   * yet — and there is no Step to hang it on.
+   *
+   * A fourth map for the reason the second and third exist, and the fault is
+   * filed once here rather than raised again at every field that points at the
+   * Connection — the duplication `troubledBlocks` refuses for a call, one seam
+   * over: a Publish gate counting faults must not count one Connection five
+   * times because five Steps use it. The `conn` field that draws it looks the
+   * Connection up by the id it holds.
+   */
+  byConnection: ReadonlyMap<string, Diagnostic[]>
+  /**
    * Everything, in the order the rules ran.
    *
    * Returned rather than left to a caller to flatten out of `byStep`: a
@@ -728,10 +715,26 @@ export function expressionRules(
   return out
 }
 
+/**
+ * Every rule family over every Board, filed by the subject each one names.
+ *
+ * `connectionTypes` is the one input that is not the document or a manifest. A
+ * Connection stores an opaque `ref` and nothing more (ADR-0007), so its type
+ * comes from the Host, asynchronously, and may never come at all — a Host that
+ * wires no `ConnectionSource` is correctly configured, not broken.
+ *
+ * **Absence narrows this pass; it never stops it.** Handed no types, the two
+ * connection codes that need one go unreported and every other family runs
+ * exactly as it would have. The alternative — returning nothing until the
+ * Connections arrive — would leave a Host that wires no `ConnectionSource` with
+ * no validation whatsoever, silently, including the rules that have nothing to
+ * do with Connections. See ADR-0022.
+ */
 export function validateDefinition(
   doc: WorkflowDefinition,
   manifests: ManifestIndex,
   context: readonly ContextKey[] = [],
+  connectionTypes?: ConnectionTypes,
 ): Validity {
   const all = [
     ...unknownComponents(doc, manifests),
@@ -739,11 +742,14 @@ export function validateDefinition(
     ...malformedContainers(doc, manifests),
     ...blockRules(doc),
     ...expressionRules(doc, manifests, context),
+    ...unresolvedConnections(doc),
+    ...mismatchedConnections(doc, manifests, connectionTypes),
   ]
 
   const byStep = new Map<string, Diagnostic[]>()
   const byTrigger = new Map<string, Diagnostic[]>()
   const byBlock = new Map<string, Diagnostic[]>()
+  const byConnection = new Map<string, Diagnostic[]>()
 
   const file = (map: Map<string, Diagnostic[]>, id: string, diagnostic: Diagnostic) => {
     const held = map.get(id)
@@ -760,8 +766,12 @@ export function validateDefinition(
       )
     } else if (diagnostic.triggerId) file(byTrigger, diagnostic.triggerId, diagnostic)
     else if (diagnostic.blockId) file(byBlock, diagnostic.blockId, diagnostic)
+    // Last, because a Connection is the subject of a fault only when no Step or
+    // Trigger is. A `conn` field's diagnostic names both, and the row holding
+    // the field is where somebody can act on it.
+    else if (diagnostic.connectionId) file(byConnection, diagnostic.connectionId, diagnostic)
   }
-  return { byStep, byTrigger, byBlock, all }
+  return { byStep, byTrigger, byBlock, byConnection, all }
 }
 
 /**

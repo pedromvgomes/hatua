@@ -13,6 +13,7 @@ import {
   type ManifestState,
   nextBlockId,
   removeBlock,
+  unchecked,
   type ValidationState,
 } from '@hatua/services'
 import {
@@ -178,8 +179,8 @@ export function Components({
 
   const checks = useSyncExternalStore<ValidationState>(
     validation ? validation.subscribe : subscribeToNothing,
-    validation ? validation.getSnapshot : readUnchecked,
-    readUnchecked,
+    validation ? validation.getSnapshot : unchecked,
+    unchecked,
   )
 
   const manifests = state.status === 'ready' ? state.manifests : NONE
@@ -657,14 +658,6 @@ const NONE: ManifestEntry[] = []
 const NO_PROBLEMS: ReadonlyMap<string, Diagnostic[]> = new Map()
 /** The same, for the Blocks a card may report as unable to run. */
 const NO_TROUBLE: ReadonlySet<string> = new Set()
-const UNCHECKED: ValidationState = {
-  byStep: NO_PROBLEMS,
-  byTrigger: NO_PROBLEMS,
-  byBlock: NO_PROBLEMS,
-  all: [],
-  ready: false,
-}
-
 /**
  * The kinds an entry may declare. Anything else is a malformed catalogue.
  *
@@ -707,7 +700,6 @@ const readUnconfigured = (): CatalogueState => UNCONFIGURED
 const readLoading = (): CatalogueState => LOADING
 const readUnopened = (): DocumentState => UNCONFIGURED
 const readOpening = (): DocumentState => OPENING
-const readUnchecked = (): ValidationState => UNCHECKED
 
 interface Group {
   name: string

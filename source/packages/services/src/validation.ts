@@ -1,5 +1,11 @@
-import { type Diagnostic, indexManifests, validateDefinition } from '@hatua/model'
+import {
+  type ConnectionTypes,
+  type Diagnostic,
+  indexManifests,
+  validateDefinition,
+} from '@hatua/model'
 import { contextKeysIn, manifestsIn } from '@hatua/schema'
+import type { ConnectionStore } from './connections'
 import type { EditingStore } from './editing'
 import type { ManifestStore } from './manifests'
 import type { Store } from './store'
@@ -9,19 +15,31 @@ import type { Store } from './store'
  *
  * It orchestrates rather than decides. Every rule lives in @hatua/model, where
  * a Host's runner can reach it and hold a definition to what the builder held
- * it to; all this does is join two stores, notice when either moves, and hand
- * the answer out in a shape `useSyncExternalStore` can subscribe to.
+ * it to; all this does is join the stores it reads, notice when any of them
+ * moves, and hand the answer out in a shape `useSyncExternalStore` can subscribe
+ * to.
  *
  * More than one region reads it — the Flow tab draws a marker per Step, the
  * toolbar counts them — which is why the counting belongs in neither.
  *
+ * ## Three sources, and only two of them gate the answer
+ *
+ * The document and the catalogue decide whether ANY rule can run: a document
+ * that does not project has no Steps to attach a diagnostic to, and every Step
+ * looks like an unknown component until the manifests land. The Host's
+ * Connections decide only whether TWO codes can run, so their absence narrows
+ * this pass instead of stopping it. Folding them into `ready` would leave a Host
+ * that wires no `ConnectionSource` — a correct configuration, not a broken one —
+ * with no validation at all, silently, including every rule that has nothing to
+ * do with Connections. See ADR-0022.
+ *
  * ## Why it has no state of its own
  *
  * No listeners, no cached mutable field to invalidate, no `dispose()`. The
- * snapshot is memoised on the IDENTITY of the two source snapshots, both of
- * which are already referentially stable until something changes — so "has
- * anything moved?" is two `===` comparisons, and the answer is recomputed
- * exactly when it could differ. Subscribing forwards to both sources.
+ * snapshot is memoised on the IDENTITY of the source snapshots, each of which is
+ * already referentially stable until something changes — so "has anything
+ * moved?" is three `===` comparisons, and the answer is recomputed exactly when
+ * it could differ. Subscribing forwards to every source.
  *
  * Subscribing eagerly in the factory and publishing into a held field would
  * need the same disposal the editing store needs, for a value that is a pure
@@ -48,6 +66,17 @@ export interface ValidationState {
    * happened to match.
    */
   byBlock: ReadonlyMap<string, Diagnostic[]>
+  /**
+   * The same, per Connection, for what belongs to the Connection rather than to
+   * any Step using it — a name the workflow declares and nothing ever wired.
+   *
+   * A fourth map for the reason the second and third exist. What draws it is not
+   * a Connections region, because there is none — it is the `conn` field
+   * pointing at the Connection, which looks it up by the id it holds. Filed once
+   * here rather than raised at every such field, so a count in the toolbar does
+   * not report one Connection five times because five Steps use it.
+   */
+  byConnection: ReadonlyMap<string, Diagnostic[]>
   /** Everything — what a count in the toolbar is drawn from. */
   all: readonly Diagnostic[]
   /**
@@ -62,16 +91,39 @@ export interface ValidationState {
    * `manifests.ts` makes about "empty".
    */
   ready: boolean
+  /**
+   * Whether the two codes that need a Connection's type were actually decided.
+   *
+   * Deliberately not folded into `ready`, and deliberately three values rather
+   * than two, because a reader waiting for an answer needs to know whether one
+   * is coming:
+   *
+   * - `checked` — the Host's Connections are known, and all four connection
+   *   codes ran. An empty list still counts: a Host that has established none is
+   *   answering, not silent.
+   * - `pending` — the port has not replied yet. It will, so a Publish gate may
+   *   wait.
+   * - `undescribed` — nobody can say. No `ConnectionSource` is wired, or the one
+   *   that is would not answer. Waiting on this never ends, and the two codes go
+   *   unreported for as long as it holds.
+   *
+   * A failed fetch is `undescribed` rather than a fourth value because it is the
+   * same fact to a reader of this store: no types, and nothing here will change
+   * that. The surface that owns the Retry is the `conn` field, which reads the
+   * connection store directly and renders the Host's error.
+   */
+  connections: 'checked' | 'pending' | 'undescribed'
 }
 
 export interface ValidationStore extends Store<ValidationState> {
   /**
-   * Make sure both inputs are being fetched.
+   * Make sure every input is being fetched.
    *
-   * Idempotent, and it exists because validation needs the catalogue: a Host
-   * that mounts the Flow tab and no Library would otherwise never load a
-   * manifest, and every Step would sit silently unvalidated with nothing
-   * saying why.
+   * Idempotent, and it exists because validation needs what the other regions
+   * happen to ask for: a Host that mounts the Flow tab and no Library would
+   * otherwise never load a manifest, and one that never opens a form would never
+   * load a Connection — so every Step would sit silently unvalidated with
+   * nothing saying why.
    */
   load(): void
 }
@@ -79,22 +131,68 @@ export interface ValidationStore extends Store<ValidationState> {
 const NONE: ReadonlyMap<string, Diagnostic[]> = new Map()
 const NOTHING: readonly Diagnostic[] = []
 
-/** Not ready, and therefore empty — one object, so an unready snapshot is stable. */
-const PENDING: ValidationState = {
+/**
+ * Not ready, and therefore empty — one object, so an unready snapshot is stable.
+ *
+ * Every other field here is a placeholder, `connections` included: `ready` is
+ * what says whether any of them means anything, and a reader that paints one
+ * without checking it flashes an error on every Step of a valid workflow on
+ * every load.
+ */
+const UNCHECKED: ValidationState = {
   byStep: NONE,
   byTrigger: NONE,
   byBlock: NONE,
+  byConnection: NONE,
   all: NOTHING,
   ready: false,
+  connections: 'undescribed',
 }
+
+/**
+ * What the Host says its Connections are, and whether it has said anything.
+ *
+ * `undefined` and an empty map are different answers and must stay so: an empty
+ * map is a Host with no Connections established, while `undefined` is a Host
+ * nobody has asked or that would not reply. Collapsing the two makes every
+ * Connection in the workflow unresolvable on first paint.
+ */
+const typesFrom = (
+  connections: ConnectionStore | null | undefined,
+): { types?: ConnectionTypes; status: ValidationState['connections'] } => {
+  if (!connections) return { status: 'undescribed' }
+  const state = connections.getSnapshot()
+  if (state.status === 'loading') return { status: 'pending' }
+  if (state.status === 'failed') return { status: 'undescribed' }
+  return {
+    types: new Map(state.connections.map((one) => [one.ref, one.type])),
+    status: 'checked',
+  }
+}
+
+/**
+ * The snapshot to render when there is no validation store to read — a Host that
+ * wired no `WorkflowStore` has none.
+ *
+ * A function rather than the value, because that is the shape
+ * `useSyncExternalStore` wants for its `getSnapshot` fallback, and because it
+ * must return the SAME object every time: a fresh one per call is a new snapshot
+ * on every render, which is the one thing that hook cannot tolerate.
+ *
+ * Here rather than beside each region that subscribes, because five copies of
+ * this object are five things to keep level with `ValidationState`.
+ */
+export const unchecked = (): ValidationState => UNCHECKED
 
 export function createValidationStore(
   editing: EditingStore,
   manifests: ManifestStore,
+  connections?: ConnectionStore | null,
 ): ValidationStore {
   let lastEditing: unknown
   let lastManifests: unknown
-  let cached: ValidationState = PENDING
+  let lastConnections: unknown
+  let cached: ValidationState = UNCHECKED
   let computed = false
 
   const compute = (): ValidationState => {
@@ -104,9 +202,10 @@ export function createValidationStore(
     // A document that does not project has no Steps to attach a diagnostic to,
     // and a catalogue that has not arrived would make every Step unknown.
     // Either way the honest answer is "not yet", not "nothing is wrong".
-    if (document.status !== 'ready' || !document.workflow.definition) return PENDING
-    if (catalogue.status !== 'ready') return PENDING
+    if (document.status !== 'ready' || !document.workflow.definition) return UNCHECKED
+    if (catalogue.status !== 'ready') return UNCHECKED
 
+    const { types, status } = typesFrom(connections)
     const validity = validateDefinition(
       document.workflow.definition,
       // Only the Component Manifests: a Run Context declares no `use`, so
@@ -117,18 +216,31 @@ export function createValidationStore(
       // `run.*` is on every Board, and a checker that was not given the keys
       // would report every one of them as naming nothing.
       contextKeysIn(catalogue.manifests),
+      // Absent while the port is loading, has failed, or was never wired. The
+      // two codes that need a type are then unreported, and every other family
+      // still runs.
+      types,
     )
-    return { ...validity, ready: true }
+    return { ...validity, ready: true, connections: status }
   }
 
   return {
     getSnapshot() {
       const document = editing.getSnapshot()
       const catalogue = manifests.getSnapshot()
-      if (computed && document === lastEditing && catalogue === lastManifests) return cached
+      const established = connections?.getSnapshot()
+      if (
+        computed &&
+        document === lastEditing &&
+        catalogue === lastManifests &&
+        established === lastConnections
+      ) {
+        return cached
+      }
 
       lastEditing = document
       lastManifests = catalogue
+      lastConnections = established
       cached = compute()
       computed = true
       return cached
@@ -137,15 +249,22 @@ export function createValidationStore(
     subscribe(listener) {
       const stopEditing = editing.subscribe(listener)
       const stopManifests = manifests.subscribe(listener)
+      const stopConnections = connections?.subscribe(listener)
       return () => {
         stopEditing()
         stopManifests()
+        stopConnections?.()
       }
     },
 
     load() {
       editing.open()
       manifests.load()
+      // The manifests argument, one seam over: a Host that mounts the Flow tab
+      // and never opens a form renders no `conn` field, so nothing else would
+      // ever ask — and the two type-dependent codes would sit permanently
+      // unreported with nothing saying why.
+      connections?.load()
     },
   }
 }

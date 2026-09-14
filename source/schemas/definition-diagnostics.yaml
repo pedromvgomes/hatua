@@ -224,3 +224,56 @@ codes:
       Ids are scoped to a Board, so two blocks may each hold a step called `ret`.
       Two on ONE board make `{{steps.ret}}` name two things, which is the one
       case a Board cannot disambiguate.
+
+  # ---- connections ----------------------------------------------------------
+  #
+  # The only family whose answer is not in the document. A connection stores an
+  # opaque `ref` and nothing else (ADR-0007), so its type comes from the Host —
+  # which is why the two codes below that need one are silent when nobody has
+  # supplied it, rather than reporting the connection broken. See ADR-0022.
+
+  - code: CONNECTION_NOT_ESTABLISHED
+    blocks: publish
+    message: '"{name}" is not connected yet. Connect it before publishing.'
+    summary: >-
+      A declared connection with a null `ref`. Publish-blocking and never
+      edit-blocking: laying a whole workflow out before wiring its connections is
+      a legitimate intermediate state, and forcing the connection first would
+      make the builder unusable in a fresh environment.
+
+      The one code here answered from the document alone, so a checker holding no
+      connection types still reports it.
+
+  - code: CONNECTION_UNKNOWN
+    blocks: edit
+    message: '"{name}" is not declared in this workflow.'
+    summary: >-
+      A `conn` field naming a connection the document does not declare. Blocks
+      editing because building cannot produce it — the picker offers only what
+      `connections:` holds — so this is a hand-edit or a deleted connection.
+
+      Also answered from the document alone: it is a name that resolves to
+      nothing, not a type that fails to match.
+
+  - code: CONNECTION_UNRESOLVABLE
+    blocks: publish
+    message: '"{name}" no longer resolves. Reconnect it or pick another.'
+    summary: >-
+      A `ref` the Host lists nothing for — revoked, deleted, or belonging to
+      another environment. Publish-blocking, because a connection going away
+      outside the builder is not something building did wrong.
+
+      Reported only when the Host's connections are actually known. Raising it
+      because the answer has not arrived would say "revoked" about every
+      connection in the workflow on first paint.
+
+  - code: CONNECTION_TYPE_MISMATCH
+    blocks: edit
+    message: '{label} needs a {wanted} connection, but "{name}" is {actual}.'
+    summary: >-
+      A `conn` field holding a connection whose Host-reported type is not its
+      `conn_type` — a "send email" step handed an LLM connection. Blocks editing
+      for the COMPONENT_UNKNOWN reason: the picker filters by `conn_type`, so
+      ordinary building cannot produce this and a hand-edit can.
+
+      Like CONNECTION_UNRESOLVABLE, reported only when the types are known.

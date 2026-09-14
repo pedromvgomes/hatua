@@ -1,0 +1,388 @@
+about: >-
+  The connection rules, as both languages must report them.
+
+  These are the only rules whose answer is not in the Workflow Definition. A
+  connection stores an opaque `ref` and nothing else, and what type that handle
+  is comes from the Host — so a scenario states it as `connections:`, which is
+  `ConnectionSource.listConnections` written down.
+
+  `connections:` being ABSENT is itself a scenario, and the most important one
+  here. It is a checker that cannot describe a connection: a builder before the
+  Host has answered, a builder whose Host wires no connection port at all, or a
+  runner holding no connection state. Both languages must then report the two
+  codes the document answers on its own and stay silent about the two that need
+  a type. An empty `connections: []` is the opposite — a Host answering that it
+  has established none — where a ref it does not hold genuinely no longer
+  resolves.
+
+  Getting that distinction wrong does not merely add noise: a checker that
+  answered "unresolvable" while it was still waiting would refuse to publish a
+  workflow with nothing wrong with it, and go on refusing for as long as nobody
+  answers — which, for a Host that wires no connection port, is forever.
+
+manifests:
+  - kind: component
+    use: component.email.send
+    name: Send email
+    fields:
+      - { k: to, label: To, kind: text, req: true }
+      - { k: mailbox, label: Mailbox, kind: conn, conn_type: email }
+    outputs: []
+  - kind: component
+    use: component.llm.ask
+    name: Ask a model
+    fields:
+      - { k: model, label: Model, kind: conn, conn_type: llm }
+    outputs: []
+  - kind: component
+    use: component.any.thing
+    name: Anything
+    fields:
+      - { k: any, label: Any connection, kind: conn }
+    outputs: []
+  - kind: component
+    use: core.fork
+    name: Branch
+    fields: []
+    outputs: []
+  - kind: trigger
+    use: component.mail.arrived
+    name: Mail arrived
+    fields:
+      - { k: mailbox, label: Mailbox, kind: conn, conn_type: email }
+    outputs: []
+
+scenarios:
+  # ---- what the document answers on its own ---------------------------------
+
+  - name: a connection with no ref was never established, and blocks publish only
+    connections: [{ ref: cx_mail, type: email }]
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      connections:
+        - { id: notifier, ref: null }
+      steps: []
+    expect:
+      - { code: CONNECTION_NOT_ESTABLISHED, blocks: publish, connectionId: notifier }
+
+  - name: >-
+      it is reported against the connection and no step, because a declared
+      connection nothing uses is still unfinished
+    connections: []
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      connections:
+        - { id: notifier, ref: null }
+      steps:
+        - { id: s1, use: component.email.send, with: { to: "x", mailbox: notifier } }
+    expect:
+      - { code: CONNECTION_NOT_ESTABLISHED, blocks: publish, connectionId: notifier }
+
+  - name: a field naming a connection the document does not declare blocks editing
+    connections: [{ ref: cx_mail, type: email }]
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      connections:
+        - { id: mailbox, ref: cx_mail }
+      steps:
+        - { id: s1, use: component.email.send, with: { to: "x", mailbox: ghost } }
+    expect:
+      - {
+          code: CONNECTION_UNKNOWN,
+          blocks: edit,
+          stepId: s1,
+          connectionId: ghost,
+          fieldKey: mailbox,
+        }
+
+  - name: >-
+      a field declaring no conn_type still cannot hold a connection that does not
+      exist — the name resolves to nothing whatever the Host says
+    connections: [{ ref: cx_mail, type: email }]
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      connections: []
+      steps:
+        - { id: s1, use: component.any.thing, with: { any: ghost } }
+    expect:
+      - { code: CONNECTION_UNKNOWN, blocks: edit, stepId: s1, connectionId: ghost, fieldKey: any }
+
+  - name: but a field declaring no conn_type has no type to be wrong about
+    connections: [{ ref: cx_llm, type: llm }]
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      connections:
+        - { id: brain, ref: cx_llm }
+      steps:
+        - { id: s1, use: component.any.thing, with: { any: brain } }
+    expect: []
+
+  # ---- what only the Host can answer ----------------------------------------
+
+  - name: a matching type reports nothing
+    connections: [{ ref: cx_mail, type: email }]
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      connections:
+        - { id: mailbox, ref: cx_mail }
+      steps:
+        - { id: s1, use: component.email.send, with: { to: "x", mailbox: mailbox } }
+    expect: []
+
+  - name: an llm connection in a field wanting email blocks editing, because building cannot produce it
+    connections: [{ ref: cx_llm, type: llm }]
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      connections:
+        - { id: brain, ref: cx_llm }
+      steps:
+        - { id: s1, use: component.email.send, with: { to: "x", mailbox: brain } }
+    expect:
+      - {
+          code: CONNECTION_TYPE_MISMATCH,
+          blocks: edit,
+          stepId: s1,
+          connectionId: brain,
+          fieldKey: mailbox,
+        }
+
+  - name: >-
+      a ref the Host lists nothing for no longer resolves, and blocks publish —
+      a connection going away outside the builder is not something building did
+    connections: [{ ref: cx_mail, type: email }]
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      connections:
+        - { id: mailbox, ref: cx_gone }
+      steps:
+        - { id: s1, use: component.email.send, with: { to: "x", mailbox: mailbox } }
+    expect:
+      - {
+          code: CONNECTION_UNRESOLVABLE,
+          blocks: publish,
+          stepId: s1,
+          connectionId: mailbox,
+          fieldKey: mailbox,
+        }
+
+  - name: >-
+      an empty list is an answer, not a silence: a Host that has established none
+      resolves nothing
+    connections: []
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      connections:
+        - { id: mailbox, ref: cx_mail }
+      steps:
+        - { id: s1, use: component.email.send, with: { to: "x", mailbox: mailbox } }
+    expect:
+      - {
+          code: CONNECTION_UNRESOLVABLE,
+          blocks: publish,
+          stepId: s1,
+          connectionId: mailbox,
+          fieldKey: mailbox,
+        }
+
+  # ---- when nobody can describe a connection --------------------------------
+
+  - name: >-
+      with no connection types stated, nothing is said about a type — silence,
+      not "no longer resolves", or a valid workflow cannot be published on first
+      paint
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      connections:
+        - { id: mailbox, ref: cx_mail }
+        - { id: brain, ref: cx_llm }
+      steps:
+        - { id: s1, use: component.email.send, with: { to: "x", mailbox: brain } }
+    expect: []
+
+  - name: the two codes the document answers are still reported
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      connections:
+        - { id: notifier, ref: null }
+      steps:
+        - { id: s1, use: component.email.send, with: { to: "x", mailbox: ghost } }
+    expect:
+      - { code: CONNECTION_NOT_ESTABLISHED, blocks: publish, connectionId: notifier }
+      - {
+          code: CONNECTION_UNKNOWN,
+          blocks: edit,
+          stepId: s1,
+          connectionId: ghost,
+          fieldKey: mailbox,
+        }
+
+  - name: >-
+      and every other rule family runs untouched — a checker that cannot describe
+      a connection is not a checker that has stopped
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      connections: []
+      steps:
+        - { id: s1, use: component.email.send, with: {} }
+        - { id: s2, use: component.nothing.here }
+    expect:
+      - { code: FIELD_REQUIRED, blocks: publish, stepId: s1, fieldKey: to }
+      - { code: COMPONENT_UNKNOWN, blocks: edit, stepId: s2 }
+
+  # ---- every Board, and the triggers ----------------------------------------
+
+  - name: >-
+      a conn field inside a block is a conn field, and the diagnostic says which
+      Board it is on
+    connections: [{ ref: cx_llm, type: llm }]
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      connections:
+        - { id: brain, ref: cx_llm }
+      blocks:
+        - id: archive
+          steps:
+            - { id: send, use: component.email.send, with: { to: "x", mailbox: brain } }
+      steps: []
+    expect:
+      - {
+          code: CONNECTION_TYPE_MISMATCH,
+          blocks: edit,
+          stepId: send,
+          blockId: archive,
+          connectionId: brain,
+          fieldKey: mailbox,
+        }
+
+  - name: so is one nested inside a fork on the root Board, which carries no blockId
+    connections: [{ ref: cx_llm, type: llm }]
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      connections:
+        - { id: brain, ref: cx_llm }
+      steps:
+        - id: pick
+          use: core.fork
+          branches:
+            - label: A
+              steps:
+                - { id: send, use: component.email.send, with: { to: "x", mailbox: brain } }
+            - { label: B, steps: [] }
+    expect:
+      - {
+          code: CONNECTION_TYPE_MISMATCH,
+          blocks: edit,
+          stepId: send,
+          connectionId: brain,
+          fieldKey: mailbox,
+        }
+
+  - name: a trigger declares connections exactly as a component does, and is checked the same way
+    connections: [{ ref: cx_llm, type: llm }]
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      connections:
+        - { id: brain, ref: cx_llm }
+      triggers:
+        - { id: arrived, use: component.mail.arrived, with: { mailbox: brain } }
+      steps: []
+    expect:
+      - {
+          code: CONNECTION_TYPE_MISMATCH,
+          blocks: edit,
+          triggerId: arrived,
+          connectionId: brain,
+          fieldKey: mailbox,
+        }
+
+  - name: >-
+      an empty ref is not a handle, and is the same absence as a null one — the
+      guard is shared, so one rule cannot call it established while the other
+      calls it missing
+    connections: [{ ref: cx_mail, type: email }]
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      connections:
+        - { id: ops_mailbox, ref: "" }
+      steps:
+        - { id: s1, use: component.email.send, with: { to: "x", mailbox: ops_mailbox } }
+    expect:
+      - { code: CONNECTION_NOT_ESTABLISHED, blocks: publish, connectionId: ops_mailbox }
+
+  - name: and so is a ref of nothing but whitespace
+    connections: []
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      connections:
+        - { id: ops_mailbox, ref: "   " }
+      steps:
+        - { id: s1, use: component.email.send, with: { to: "x", mailbox: ops_mailbox } }
+    expect:
+      - { code: CONNECTION_NOT_ESTABLISHED, blocks: publish, connectionId: ops_mailbox }
+
+  - name: >-
+      an unestablished connection used by a field reports only that it was never
+      established — one gap is not described twice
+    connections: [{ ref: cx_mail, type: email }]
+    definition:
+      id: wf
+      name: W
+      version: 1
+      status: draft
+      connections:
+        - { id: mailbox, ref: null }
+      steps:
+        - { id: s1, use: component.email.send, with: { to: "x", mailbox: mailbox } }
+    expect:
+      - { code: CONNECTION_NOT_ESTABLISHED, blocks: publish, connectionId: mailbox }
