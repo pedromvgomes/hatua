@@ -6,6 +6,7 @@ import {
   addTrigger,
   declareConnection,
   removeTrigger,
+  restoreContent,
   setTriggerField,
   setTriggerName,
   setWorkflowName,
@@ -355,5 +356,87 @@ describe('sequence', () => {
         ),
       ),
     ).toThrow(/No Trigger with id/)
+  })
+})
+
+describe('restoring a version', () => {
+  const EARLIER = `# The first pass.
+id: wf_morning
+name: "Overnight triage"
+version: 2
+status: published
+
+steps:
+  - id: s9
+    use: component.email.archive
+`
+
+  it('takes the content and keeps the identity the Draft already had', () => {
+    const document = apply(SOURCE, restoreContent(2, EARLIER))
+    const workflow = definitionOf(document.toString())
+
+    expect(workflow.name).toBe('Overnight triage')
+    expect(workflow.steps?.[0]?.id).toBe('s9')
+    expect(workflow.triggers).toBeUndefined()
+    // ADR-0005 makes these two Hatua's, and the top bar reads them off the open
+    // document — so a draft carrying version 2's copies says `v2 · Published`
+    // beside a list saying `v4 draft`.
+    expect(workflow.version).toBe(4)
+    expect(workflow.status).toBe('draft')
+    expect(workflow.id).toBe('wf_morning')
+  })
+
+  it("brings the restored version's comments and leaves the ones they replace", () => {
+    const text = apply(SOURCE, restoreContent(2, EARLIER)).toString()
+
+    expect(text).toContain('The first pass.')
+    // That comment described a Trigger the restored version does not have.
+    expect(text).not.toContain('Every weekday at six.')
+  })
+
+  it('replaces rather than merges, so nothing the earlier version dropped survives', () => {
+    const withConnections = `id: wf_morning
+name: "Later"
+version: 7
+status: draft
+connections:
+  - id: mailbox
+    ref: conn_1
+steps:
+  - id: s1
+    use: component.email.fetch
+`
+    const text = apply(withConnections, restoreContent(2, EARLIER)).toString()
+
+    expect(text).not.toContain('mailbox')
+    expect(text).toContain('version: 7')
+  })
+
+  it('invents no identity the Draft did not have', () => {
+    // A document with no `status:` is one this store is built to hold (ADR-0001),
+    // and guessing one writes a wrong value into a file Hatua does not own.
+    const noStatus = `id: wf_morning
+name: "Half typed"
+version: 4
+steps: []
+`
+    const text = apply(noStatus, restoreContent(2, EARLIER)).toString()
+
+    expect(text).not.toContain('status:')
+    expect(text).toContain('version: 4')
+  })
+
+  it('refuses a version that is not a single YAML document, changing nothing', () => {
+    const document = parseWorkflow(SOURCE)
+    const before = document.toString()
+
+    expect(() => restoreContent(2, 'id: one\n---\nid: two\n').apply(document)).toThrow(
+      /single YAML document/,
+    )
+    expect(document.toString()).toBe(before)
+  })
+
+  it('names what an undo control would say', () => {
+    expect(restoreContent(3, EARLIER).label).toBe('Restore version 3')
   })
 })
