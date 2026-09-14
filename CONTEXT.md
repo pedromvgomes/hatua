@@ -372,6 +372,14 @@ collision again: one word, two meanings, in one repo. Resolution: the domain ter
 See [ADR-0013](docs/adr/0013-control-flow-nests.md), which also corrects ADR-0001's reason for the
 constraint: cross-links break exact static scope, not derived layout.
 
+**"Release" and "Publish" — the domain's, or the registry's** — this repository also tags versions,
+pushes packages to npm and cuts GitHub Releases, and both words mean something there too. The
+glossary already owns them: **Publish** promotes a **Draft**, a **Published Version** is what that
+produces, and **Release** gives up an editing claim — all about a **Workflow Definition** inside a
+**Host**. Resolution: unqualified, both words are the domain terms, always. Repository and build
+vocabulary qualifies itself — "GitHub Release", "package release", "published to npm" — and a bare
+"release" is never written where a registry sense is meant.
+
 **"Tumika" vs "Hatua"** — the design handoff names the product *Tumika workflow builder* and its
 design system *Tumika*. Tumika is a self-hostable personal assistant that runs scheduled routines;
 Hatua is this repo, the embeddable builder. Their tokens are byte-identical (ink `#232d47`, accent
