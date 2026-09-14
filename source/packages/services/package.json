@@ -1,15 +1,18 @@
 {
   "name": "@hatua/services",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
   "type": "module",
-  "description": "Editing commands, undo/redo, validation orchestration and Host ports",
+  "description": "Internal to @hatua/react — published because it is an external of its build, not a supported API. Editing commands, undo/redo, validation orchestration and Host ports.",
   "license": "MIT",
   "sideEffects": false,
+  "files": [
+    "dist"
+  ],
   "exports": {
     ".": "./src/index.ts"
   },
   "publishConfig": {
+    "access": "public",
     "exports": {
       ".": {
         "types": "./dist/index.d.ts",
