@@ -1,3 +1,4 @@
+/** biome-ignore-all lint/correctness/noProcessGlobal: a Node test measuring the CPU time a pass costs; nothing here ships to a browser. */
 import type { ContextKey, WorkflowDefinition } from '@hatua/schema'
 import { describe, expect, it } from 'vitest'
 import { DOC, MANIFESTS } from './fixtures'
@@ -158,18 +159,30 @@ describe('the cost of scoping a whole Board', () => {
     }) as unknown as WorkflowDefinition
 
   /**
-   * The fastest of several runs. A single sample measures this machine's
-   * scheduler as much as this function: every interruption makes a run slower
-   * and none makes one faster, so the minimum is the least polluted sample.
+   * The CPU time of the fastest of several passes, in microseconds.
+   *
+   * CPU time rather than elapsed time, because the suite runs a vitest process
+   * per package and there are several times more of them than there are cores.
+   * Elapsed time then measures how often this process was handed one: a pass
+   * long enough to be descheduled partway through is descheduled on every run,
+   * so taking a minimum rescues the short measurement below and not the long
+   * one — and the ratio of the two is what is asserted. The clock here does not
+   * advance while this process waits for a core, so what it leaves is the work.
+   *
+   * The fastest of several, still, for the interruptions that do cost cycles: a
+   * compilation on a function's first call, a garbage collection, a page fault.
+   * Every one of those makes a pass slower and none makes one faster, so the
+   * minimum is the least polluted sample.
    */
   const timed = (n: number): number => {
     const doc = flat(n)
     let best = Number.POSITIVE_INFINITY
     for (let run = 0; run < 5; run++) {
       const memo = newScopeMemo()
-      const started = performance.now()
+      const started = process.cpuUsage()
       for (const step of doc.steps) scopeFor(doc, { board: null, id: step.id }, [], [], memo)
-      best = Math.min(best, performance.now() - started)
+      const spent = process.cpuUsage(started)
+      best = Math.min(best, spent.user + spent.system)
     }
     return best
   }
@@ -184,7 +197,8 @@ describe('the cost of scoping a whole Board', () => {
 
     // Four times the Steps. Quadratic predicts about 16x, cubic about 64x; the
     // bound sits between them so noise cannot fail it and the cubic walk cannot
-    // pass it.
-    expect(large / Math.max(small, 0.1)).toBeLessThan(32)
+    // pass it. The floor is the clock's resolution, one microsecond, so that a
+    // machine fast enough to report nothing divides by something.
+    expect(large / Math.max(small, 1)).toBeLessThan(32)
   })
 })
