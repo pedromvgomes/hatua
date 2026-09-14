@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "hatua-apex",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+
+  // The route only fires on a proxied DNS record. With the apex record set to
+  // "DNS only" the request never reaches Cloudflare, the Worker is deployed but
+  // never invoked, and the symptom is an apex that behaves as though this file
+  // did not exist.
+  "routes": [{ "pattern": "hatua.dev/*", "zone_name": "hatua.dev" }],
+
+  // Where everything other than the module path is sent. The marketing site is
+  // the destination; until it answers, the apex redirects humans to a host that
+  // does not resolve, and changing this value is the whole fix.
+  "vars": { "MARKETING_ORIGIN": "https://www.hatua.dev" },
+
+  "observability": { "enabled": true }
+}

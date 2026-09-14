@@ -24,7 +24,9 @@ trustPolicy: no-downgrade
 trustPolicyExclude:
   - semver@6.3.1
 
-# Native binaries fetched by postinstall: esbuild and SWC both need theirs.
+# Native binaries fetched by postinstall: esbuild and SWC both need theirs, and
+# workerd is the runtime wrangler runs the apex Worker on.
 allowBuilds:
   esbuild: true
   '@swc/core': true
+  workerd: true
