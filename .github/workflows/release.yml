@@ -120,6 +120,17 @@ jobs:
           STAGE: ${{ runner.temp }}/hatua-dist
         run: |
           set -euo pipefail
+          # A list read inside a process substitution takes its failure with it:
+          # `pnpm list` or `jq` falling over leaves a loop that runs zero times
+          # and a step that passes having staged nothing.
+          packages="$(pnpm --dir source list --recursive --depth -1 --json | jq -r '.[] | select(.private == false) | .path')"
+          if [ -z "$packages" ]; then
+            echo "::error::no publishable workspace package was found"
+            exit 1
+          fi
+          # The stage carries exactly this step's output. Anything an earlier
+          # step left under it is a file the publish job would be handed.
+          rm -rf "${STAGE}"
           while IFS= read -r package; do
             relative="${package#"${GITHUB_WORKSPACE}/"}"
             if [ ! -d "${relative}/dist" ]; then
@@ -129,7 +140,7 @@ jobs:
             mkdir -p "${STAGE}/${relative}"
             cp -R "${relative}/dist" "${STAGE}/${relative}/dist"
             echo "staged ${relative}/dist"
-          done < <(pnpm --dir source list --recursive --depth -1 --json | jq -r '.[] | select(.private == false) | .path')
+          done <<< "$packages"
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -186,23 +197,74 @@ jobs:
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: dist
-          # The archive holds repository-relative paths, so it expands over the
-          # checkout and every dist/ lands beside the manifest that publishes it.
-          path: .
+          # Unpacked into a directory of its own, never over the checkout. The
+          # build job runs third-party lifecycle scripts, so a file the archive
+          # carries is a file one of them may have written — and a manifest
+          # expanded over the checkout is the manifest this job publishes, with
+          # whatever `prepublishOnly` it names.
+          path: ${{ runner.temp }}/hatua-dist
 
-      # `--provenance` signs whatever is packed. An artefact that expanded
-      # somewhere unexpected would publish empty tarballs with an attestation
-      # saying they came from this commit, which is worse than publishing
-      # nothing.
-      - name: The built dist/ arrived
+      # The manifests that are published come from this job's checkout, and the
+      # only thing the build job contributes is dist/.
+      #
+      # Which directories those are is read from the checkout too, so the
+      # archive cannot name the places it is allowed to land; anything it
+      # carries outside them ends the release here rather than reaching a
+      # package. `--provenance` signs whatever is packed, so a tarball built
+      # from a file this job did not verify would carry an attestation saying it
+      # came from this commit.
+      - name: Only dist/ crosses from the build job
+        working-directory: .
+        env:
+          STAGE: ${{ runner.temp }}/hatua-dist
         run: |
           set -euo pipefail
+          # A list read inside a process substitution takes its failure with it:
+          # `pnpm list` or `jq` falling over leaves a loop that runs zero times
+          # and a step that passes having checked nothing.
+          packages="$(pnpm --dir source list --recursive --depth -1 --json | jq -r '.[] | select(.private == false) | .path')"
+          if [ -z "$packages" ]; then
+            echo "::error::no publishable workspace package was found"
+            exit 1
+          fi
+
+          allowed=()
           while IFS= read -r package; do
-            if [ ! -d "${package}/dist" ]; then
-              echo "::error::${package#"${GITHUB_WORKSPACE}/"}/dist is missing from the build artefact"
+            relative="${package#"${GITHUB_WORKSPACE}/"}"
+            if [ ! -d "${STAGE}/${relative}/dist" ]; then
+              echo "::error::${relative}/dist is missing from the build artefact"
               exit 1
             fi
-          done < <(pnpm list --recursive --depth -1 --json | jq -r '.[] | select(.private == false) | .path')
+            allowed+=("${relative}/dist/")
+          done <<< "$packages"
+
+          # Directories are ignored: an empty one carries nothing. A symlink is
+          # not a directory to `find`, so one planted outside a dist/ is caught
+          # here rather than followed by the copy below.
+          carried="$(cd "${STAGE}" && find . ! -type d | sed 's|^\./||' | sort)"
+          stray=""
+          while IFS= read -r entry; do
+            [ -z "$entry" ] && continue
+            inside=""
+            for prefix in "${allowed[@]}"; do
+              case "$entry" in "${prefix}"*) inside=yes; break ;; esac
+            done
+            if [ -z "$inside" ]; then
+              stray="${stray}  ${entry}"$'\n'
+            fi
+          done <<< "$carried"
+          if [ -n "$stray" ]; then
+            echo "::error::the build artefact carries files outside the packages' dist/ directories"
+            printf '%s' "$stray"
+            exit 1
+          fi
+
+          while IFS= read -r package; do
+            relative="${package#"${GITHUB_WORKSPACE}/"}"
+            rm -rf "${relative}/dist"
+            cp -R "${STAGE}/${relative}/dist" "${relative}/dist"
+            echo "restored ${relative}/dist"
+          done <<< "$packages"
 
       # `pnpm -r publish` selects every non-private workspace package and orders
       # them topologically, so a package added to the workspace later is carried
@@ -218,10 +280,16 @@ jobs:
       # --access public is redundant with each manifest's publishConfig, and is
       # passed anyway so a scoped package added without that field publishes
       # public rather than failing as restricted.
+      #
+      # --ignore-scripts because everything a package ships is built in the job
+      # that holds no credentials. No manifest here names a publish lifecycle
+      # script, so nothing is suppressed — and a package that later wants one
+      # gains a step that would run with the npm token and the OIDC exchange in
+      # scope, which is a decision to take deliberately rather than inherit.
       - name: Publish to npm
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: pnpm --recursive publish --provenance --access public --no-git-checks
+        run: pnpm --recursive publish --provenance --access public --no-git-checks --ignore-scripts
 
       # `repositories:` is part of what this token is, not a refinement of it.
       # The App is installed account-wide, so a token minted without it is
