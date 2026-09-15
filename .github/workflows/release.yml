@@ -183,9 +183,9 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: source/pnpm-lock.yaml
-          # Writes the registry line NODE_AUTH_TOKEN is read through. The node
-          # version in .nvmrc ships npm >= 11.5.1, which is what performs the
-          # OIDC exchange for trusted publishing.
+          # Writes the .npmrc registry line the publish resolves against. The
+          # node version in .nvmrc ships npm >= 11.5.1, which is what performs
+          # the OIDC exchange for trusted publishing.
           registry-url: https://registry.npmjs.org
 
       # `pnpm publish` rewrites `workspace:*` into the real version by reading
@@ -272,10 +272,11 @@ jobs:
       # the registry already holds at this version, so a re-run after a partial
       # publish finishes the rest instead of failing on the ones that landed.
       #
-      # NODE_AUTH_TOKEN is what authenticates the publish. Trusted publishing
-      # binds a publisher per package name, so a name the registry does not yet
-      # hold has no publisher to bind to and OIDC alone cannot create it; the
-      # token carries those.
+      # Trusted publishing authenticates this: npm exchanges the job's OIDC
+      # token for a short-lived credential, and no npm secret exists in this
+      # repository. A publisher binds per package name and npm can only enrol
+      # one on a name the registry already holds, so every name here is created
+      # before its publisher is — which is what the 0.0.0 placeholders are for.
       #
       # --access public is redundant with each manifest's publishConfig, and is
       # passed anyway so a scoped package added without that field publishes
@@ -284,11 +285,9 @@ jobs:
       # --ignore-scripts because everything a package ships is built in the job
       # that holds no credentials. No manifest here names a publish lifecycle
       # script, so nothing is suppressed — and a package that later wants one
-      # gains a step that would run with the npm token and the OIDC exchange in
-      # scope, which is a decision to take deliberately rather than inherit.
+      # gains a step that would run with the OIDC exchange in scope, which is a
+      # decision to take deliberately rather than inherit.
       - name: Publish to npm
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: pnpm --recursive publish --provenance --access public --no-git-checks --ignore-scripts
 
       # `repositories:` is part of what this token is, not a refinement of it.
