@@ -309,8 +309,10 @@ jobs:
       - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         id: mirror
         with:
-          # The input is named app-id and takes the App's Client ID.
-          app-id: ${{ vars.WORKFLOWS_BOT_CLIENT_ID }}
+          # Both names mislead: the action's input is `app-id` and the variable
+          # is WORKFLOWS_BOT_APP_ID, but what belongs here is the App's Client
+          # ID — the `Iv…` string, not the numeric App ID beside it.
+          app-id: ${{ vars.WORKFLOWS_BOT_APP_ID }}
           private-key: ${{ secrets.WORKFLOWS_BOT_PRIVATE_KEY }}
           owner: pedromvgomes
           repositories: hatua-go
