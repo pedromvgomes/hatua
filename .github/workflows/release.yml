@@ -158,6 +158,17 @@ jobs:
       # attaches the provenance attestation. Without it `--provenance` has
       # nothing to sign.
       id-token: write
+    # The environment is what limits which refs reach these credentials, and it
+    # is part of what npm checks: a trusted publisher names the environment
+    # alongside the repository and this file, so a publish from anywhere else
+    # is refused rather than merely unreviewed.
+    #
+    # Without it the binding is owner, repository and filename only — and a run
+    # uses the workflow file from the ref that triggered it, so pushing a branch
+    # that widens the trigger would publish all nine packages with valid
+    # provenance, past review and past the checks this workflow does not repeat.
+    environment:
+      name: npm-release
     defaults:
       run:
         working-directory: source

@@ -16,9 +16,14 @@ publish has to authenticate some other way.
 
 Each of the nine was created by publishing a placeholder `0.0.0` by hand — a `package.json` and a
 README, no code — after which a trusted publisher was enrolled per package against owner
-`pedromvgomes`, repository `hatua`, workflow `release.yml`, no environment. Adding an `environment:`
-to the publish job later would invalidate all nine enrolments, which name the environment as part of
-the binding.
+`pedromvgomes`, repository `hatua`, workflow `release.yml`, environment `npm-release`.
+
+The environment is part of the binding, not a refinement of it. Changing or removing it on the job
+invalidates all nine enrolments at once, and they can only be corrected one package at a time on
+npmjs.com. It is also the only thing limiting which refs reach the credentials: a run uses the
+workflow file from the ref that triggered it, so without an environment the binding is owner,
+repository and filename alone, and a branch that widened the trigger would publish all nine with
+valid provenance.
 
 Two things surprised us and are worth knowing before adding a tenth package: npm sets the `latest`
 dist-tag on a package's *first* publish whatever `--tag` says, so a placeholder is what `npm install`
