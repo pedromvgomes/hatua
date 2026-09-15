@@ -1,6 +1,6 @@
 {
   "name": "@hatua/sdk",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "Hatua SDK for Node backends and workflow runners \u2014 the contract plus the shared expression evaluator",
   "license": "MIT",
