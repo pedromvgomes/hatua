@@ -1,6 +1,6 @@
 {
   "name": "@hatua/log",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "Internal to @hatua/react — published because it is an external of its build, not a supported API. Levelled, categorised diagnostics — silent unless a Host asks.",
   "license": "MIT",

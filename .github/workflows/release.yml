@@ -277,11 +277,23 @@ jobs:
             echo "restored ${relative}/dist"
           done <<< "$packages"
 
-      # `pnpm -r publish` selects every non-private workspace package and orders
-      # them topologically, so a package added to the workspace later is carried
-      # along rather than missed by a list kept by hand. It skips any package
-      # the registry already holds at this version, so a re-run after a partial
-      # publish finishes the rest instead of failing on the ones that landed.
+      # The package set is every non-private workspace project, read from this
+      # job's checkout the same way the steps above read it, so a package added
+      # to the workspace is carried along rather than missed by a list kept by
+      # hand. pnpm orders the selection topologically, so a package publishes
+      # after the ones it depends on.
+      #
+      # A published version is immutable: npm answers [E403] to a second PUT of
+      # a version it already holds, and one tag push can produce more than one
+      # run. So each name is probed against the registry's version endpoint —
+      # 200 published, 404 not — and only the absent ones are published. A
+      # re-run, or the second of two runs from one push, finishes what is
+      # missing rather than failing on what landed, and a run with nothing left
+      # to do succeeds.
+      #
+      # Any other answer is fatal. A probe that cannot say whether a version
+      # exists leaves publishing a guess, and a guess is how a partial publish
+      # becomes one nobody can read.
       #
       # Trusted publishing authenticates this: npm exchanges the job's OIDC
       # token for a short-lived credential, and no npm secret exists in this
@@ -299,7 +311,43 @@ jobs:
       # gains a step that would run with the OIDC exchange in scope, which is a
       # decision to take deliberately rather than inherit.
       - name: Publish to npm
-        run: pnpm --recursive publish --provenance --access public --no-git-checks --ignore-scripts
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          # A list read inside a process substitution takes its failure with it:
+          # `pnpm list` or `jq` falling over leaves a loop that runs zero times
+          # and a step that passes having published nothing.
+          packages="$(pnpm list --recursive --depth -1 --json | jq -r '.[] | select(.private == false) | .name')"
+          if [ -z "$packages" ]; then
+            echo "::error::no publishable workspace package was found"
+            exit 1
+          fi
+
+          filters=()
+          while IFS= read -r name; do
+            # The scope's slash is a path separator to the registry, so it is
+            # encoded: @hatua/react is asked for as @hatua%2Freact.
+            # A transport failure writes 000 rather than a status, which is
+            # neither 200 nor 404 and ends the release below.
+            status="$(curl --silent --show-error --output /dev/null \
+              --write-out '%{http_code}' \
+              "https://registry.npmjs.org/${name//\//%2F}/${version}" || true)"
+            case "$status" in
+              200) echo "${name}@${version} is on the registry already" ;;
+              404) filters+=(--filter "$name") ;;
+              *)
+                echo "::error::the registry answered ${status} for ${name}@${version} — whether it is published is unknown"
+                exit 1
+                ;;
+            esac
+          done <<< "$packages"
+
+          if [ "${#filters[@]}" -eq 0 ]; then
+            echo "every package is on the registry at ${version}; nothing to publish"
+            exit 0
+          fi
+
+          pnpm "${filters[@]}" publish --provenance --access public --no-git-checks --ignore-scripts
 
       # `repositories:` is part of what this token is, not a refinement of it.
       # The App is installed account-wide, so a token minted without it is
