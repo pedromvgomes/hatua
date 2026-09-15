@@ -1,11 +1,18 @@
 {
   "name": "@hatua/expressions",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
   "type": "module",
-  "description": "The {{ \u2026 }} expression language: parse, check, resolve",
+  "description": "Internal to @hatua/react — published because it is an external of its build, not a supported API. The {{ … }} expression language: parse, check, resolve.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pedromvgomes/hatua.git",
+    "directory": "source/packages/expressions"
+  },
   "sideEffects": false,
+  "files": [
+    "dist"
+  ],
   "exports": {
     ".": "./src/index.ts"
   },
@@ -14,6 +21,7 @@
     "#nodes": "./src/nodes.ts"
   },
   "publishConfig": {
+    "access": "public",
     "exports": {
       ".": {
         "types": "./dist/index.d.ts",

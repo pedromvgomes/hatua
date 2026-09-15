@@ -1,0 +1,355 @@
+# release — publishes a tagged version to npm and mirrors the Go module.
+#
+# A human pushes the tag; nothing else starts this. The tag is the decision, and
+# it is the only input: the nine `@hatua/*` packages, the GitHub Release and the
+# `hatua-go` mirror all carry the version the tag names.
+#
+# Two jobs, and the seam between them is a safety property. `build` holds no
+# credentials: it checks the tag against the manifests, installs dependencies —
+# which runs third-party lifecycle scripts — and builds, then hands `dist/` on
+# as an artefact. `publish` holds the npm token, the OIDC token and the mirror
+# App key, and publishes exactly the artefact it was handed.
+#
+# Order inside `publish` is a safety property too. The mirror is pushed and the
+# GitHub Release is announced only once npm has accepted every package: a mirror
+# tagged for a version npm never got is a version nobody can install, and a
+# GitHub Release for one is an announcement of something that does not exist.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+# Read-only by default; the publish job widens this to exactly what it publishes
+# with.
+permissions:
+  contents: read
+
+# One release at a time per tag, and never cancel one in flight: a cancelled run
+# leaves some of the nine packages published and the rest not.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    permissions:
+      # A job-level block REPLACES the workflow default rather than narrowing
+      # it, so read is stated here rather than inherited. This job reads the
+      # repository and writes nothing anywhere.
+      contents: read
+    defaults:
+      run:
+        working-directory: source
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # `pnpm install` below runs postinstall scripts from the dependency
+          # tree, and a token left in .git/config is a token they can read.
+          # Nothing in this job talks to git over the network.
+          persist-credentials: false
+
+      # First, because it is the only step that can fail without leaving
+      # anything half-published. The GitHub Release body is a file a human
+      # wrote and reviewed; a run that reaches npm before discovering it is
+      # missing has published a version whose notes nobody can produce.
+      - name: The release notes exist
+        working-directory: .
+        run: |
+          notes="docs/release-notes/${GITHUB_REF_NAME}.md"
+          if [ ! -f "$notes" ]; then
+            echo "::error::$notes is missing — write the notes for ${GITHUB_REF_NAME} before tagging"
+            exit 1
+          fi
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          # packageManager lives in source/, not at the repo root.
+          package_json_file: source/package.json
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: source/pnpm-lock.yaml
+
+      # ADR-0028: one tag sets one version everywhere. npm publishes whatever
+      # the manifests say while the GitHub Release and the mirror tag take the
+      # tag, so a tag ahead of the manifests ships three artefacts that disagree
+      # about which version they are.
+      #
+      # The package set is the one `pnpm --recursive publish` selects — every
+      # non-private workspace project — read the same way, so a package added to
+      # the workspace is checked here because it is published there.
+      - name: The manifests carry the tag's version
+        run: |
+          set -euo pipefail
+          want="${GITHUB_REF_NAME#v}"
+          packages="$(pnpm list --recursive --depth -1 --json)"
+          # A selection that matches nothing would pass this check vacuously.
+          count="$(jq -r '[.[] | select(.private == false)] | length' <<< "$packages")"
+          if [ "$count" -eq 0 ]; then
+            echo "::error::no publishable workspace package was found"
+            exit 1
+          fi
+          wrong="$(jq -r --arg want "$want" \
+            '.[] | select(.private == false) | select(.version != $want) | "  \(.name) is \(.version)"' \
+            <<< "$packages")"
+          if [ -n "$wrong" ]; then
+            echo "::error::${GITHUB_REF_NAME} names version ${want}, which not every package carries"
+            echo "$wrong"
+            exit 1
+          fi
+          echo "$count package(s) at ${want}"
+
+      - run: pnpm install --frozen-lockfile
+
+      # Every package publishes `files: ["dist"]`, so the whole monorepo is
+      # built — a package whose dist/ is absent publishes an empty tarball.
+      - run: pnpm turbo run build
+
+      # Staged under one directory whose contents mirror the repository from its
+      # root. Listing the dist/ paths on the upload directly would make
+      # upload-artifact root the archive at their common ancestor, stripping the
+      # prefix each path needs to land back where the publish job expects it.
+      - name: Stage dist/ for the publish job
+        working-directory: .
+        env:
+          STAGE: ${{ runner.temp }}/hatua-dist
+        run: |
+          set -euo pipefail
+          # A list read inside a process substitution takes its failure with it:
+          # `pnpm list` or `jq` falling over leaves a loop that runs zero times
+          # and a step that passes having staged nothing.
+          packages="$(pnpm --dir source list --recursive --depth -1 --json | jq -r '.[] | select(.private == false) | .path')"
+          if [ -z "$packages" ]; then
+            echo "::error::no publishable workspace package was found"
+            exit 1
+          fi
+          # The stage carries exactly this step's output. Anything an earlier
+          # step left under it is a file the publish job would be handed.
+          rm -rf "${STAGE}"
+          while IFS= read -r package; do
+            relative="${package#"${GITHUB_WORKSPACE}/"}"
+            if [ ! -d "${relative}/dist" ]; then
+              echo "::error::${relative}/dist is missing — the build produced no output for it"
+              exit 1
+            fi
+            mkdir -p "${STAGE}/${relative}"
+            cp -R "${relative}/dist" "${STAGE}/${relative}/dist"
+            echo "staged ${relative}/dist"
+          done <<< "$packages"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dist
+          path: ${{ runner.temp }}/hatua-dist
+
+  publish:
+    name: publish
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      # Creating the GitHub Release, and nothing wider.
+      contents: write
+      # npm exchanges this OIDC token for a short-lived publish credential and
+      # attaches the provenance attestation. Without it `--provenance` has
+      # nothing to sign.
+      id-token: write
+    # The environment is what limits which refs reach these credentials, and it
+    # is part of what npm checks: a trusted publisher names the environment
+    # alongside the repository and this file, so a publish from anywhere else
+    # is refused rather than merely unreviewed.
+    #
+    # Without it the binding is owner, repository and filename only — and a run
+    # uses the workflow file from the ref that triggered it, so pushing a branch
+    # that widens the trigger would publish all nine packages with valid
+    # provenance, past review and past the checks this workflow does not repeat.
+    environment:
+      name: npm-release
+    defaults:
+      run:
+        working-directory: source
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # `git subtree split` walks the whole history of source/sdk/go. A
+          # shallow clone gives it a truncated one and the mirror loses every
+          # commit before the cut.
+          fetch-depth: 0
+          # The mirror pushes over a remote URL carrying the App token and `gh`
+          # reads GH_TOKEN, so nothing here needs the checkout credential — and
+          # a credential in .git/config is one every subprocess inherits.
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          # packageManager lives in source/, not at the repo root.
+          package_json_file: source/package.json
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: source/pnpm-lock.yaml
+          # Writes the .npmrc registry line the publish resolves against. The
+          # node version in .nvmrc ships npm >= 11.5.1, which is what performs
+          # the OIDC exchange for trusted publishing.
+          registry-url: https://registry.npmjs.org
+
+      # `pnpm publish` rewrites `workspace:*` into the real version by reading
+      # the installed dependency, and refuses to pack without it. Scripts stay
+      # off: this job builds nothing, and the credentials it holds are the ones
+      # a dependency's postinstall must never see.
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: dist
+          # Unpacked into a directory of its own, never over the checkout. The
+          # build job runs third-party lifecycle scripts, so a file the archive
+          # carries is a file one of them may have written — and a manifest
+          # expanded over the checkout is the manifest this job publishes, with
+          # whatever `prepublishOnly` it names.
+          path: ${{ runner.temp }}/hatua-dist
+
+      # The manifests that are published come from this job's checkout, and the
+      # only thing the build job contributes is dist/.
+      #
+      # Which directories those are is read from the checkout too, so the
+      # archive cannot name the places it is allowed to land; anything it
+      # carries outside them ends the release here rather than reaching a
+      # package. `--provenance` signs whatever is packed, so a tarball built
+      # from a file this job did not verify would carry an attestation saying it
+      # came from this commit.
+      - name: Only dist/ crosses from the build job
+        working-directory: .
+        env:
+          STAGE: ${{ runner.temp }}/hatua-dist
+        run: |
+          set -euo pipefail
+          # A list read inside a process substitution takes its failure with it:
+          # `pnpm list` or `jq` falling over leaves a loop that runs zero times
+          # and a step that passes having checked nothing.
+          packages="$(pnpm --dir source list --recursive --depth -1 --json | jq -r '.[] | select(.private == false) | .path')"
+          if [ -z "$packages" ]; then
+            echo "::error::no publishable workspace package was found"
+            exit 1
+          fi
+
+          allowed=()
+          while IFS= read -r package; do
+            relative="${package#"${GITHUB_WORKSPACE}/"}"
+            if [ ! -d "${STAGE}/${relative}/dist" ]; then
+              echo "::error::${relative}/dist is missing from the build artefact"
+              exit 1
+            fi
+            allowed+=("${relative}/dist/")
+          done <<< "$packages"
+
+          # Directories are ignored: an empty one carries nothing. A symlink is
+          # not a directory to `find`, so one planted outside a dist/ is caught
+          # here rather than followed by the copy below.
+          carried="$(cd "${STAGE}" && find . ! -type d | sed 's|^\./||' | sort)"
+          stray=""
+          while IFS= read -r entry; do
+            [ -z "$entry" ] && continue
+            inside=""
+            for prefix in "${allowed[@]}"; do
+              case "$entry" in "${prefix}"*) inside=yes; break ;; esac
+            done
+            if [ -z "$inside" ]; then
+              stray="${stray}  ${entry}"$'\n'
+            fi
+          done <<< "$carried"
+          if [ -n "$stray" ]; then
+            echo "::error::the build artefact carries files outside the packages' dist/ directories"
+            printf '%s' "$stray"
+            exit 1
+          fi
+
+          while IFS= read -r package; do
+            relative="${package#"${GITHUB_WORKSPACE}/"}"
+            rm -rf "${relative}/dist"
+            cp -R "${STAGE}/${relative}/dist" "${relative}/dist"
+            echo "restored ${relative}/dist"
+          done <<< "$packages"
+
+      # `pnpm -r publish` selects every non-private workspace package and orders
+      # them topologically, so a package added to the workspace later is carried
+      # along rather than missed by a list kept by hand. It skips any package
+      # the registry already holds at this version, so a re-run after a partial
+      # publish finishes the rest instead of failing on the ones that landed.
+      #
+      # Trusted publishing authenticates this: npm exchanges the job's OIDC
+      # token for a short-lived credential, and no npm secret exists in this
+      # repository. A publisher binds per package name and npm can only enrol
+      # one on a name the registry already holds, so every name here is created
+      # before its publisher is — which is what the 0.0.0 placeholders are for.
+      #
+      # --access public is redundant with each manifest's publishConfig, and is
+      # passed anyway so a scoped package added without that field publishes
+      # public rather than failing as restricted.
+      #
+      # --ignore-scripts because everything a package ships is built in the job
+      # that holds no credentials. No manifest here names a publish lifecycle
+      # script, so nothing is suppressed — and a package that later wants one
+      # gains a step that would run with the OIDC exchange in scope, which is a
+      # decision to take deliberately rather than inherit.
+      - name: Publish to npm
+        run: pnpm --recursive publish --provenance --access public --no-git-checks --ignore-scripts
+
+      # `repositories:` is part of what this token is, not a refinement of it.
+      # The App is installed account-wide, so a token minted without it is
+      # scoped to every repository the App can see — and this one only ever
+      # pushes to hatua-go. `permission-contents: write` is the same argument
+      # about scopes: pushing is all it does.
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: mirror
+        with:
+          # The input is named app-id and takes the App's Client ID.
+          app-id: ${{ vars.WORKFLOWS_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.WORKFLOWS_BOT_PRIVATE_KEY }}
+          owner: pedromvgomes
+          repositories: hatua-go
+          permission-contents: write
+
+      # `go get` resolves a module from its own repository, so the Go SDK is
+      # mirrored out of the monorepo as a repository whose root is the module.
+      # The branch is rewritten wholesale on every release; the tag is not
+      # forced, so a version already mirrored fails here instead of moving —
+      # while a re-run of this same commit pushes the tag it already has and is
+      # simply up to date.
+      - name: Mirror the Go module to hatua-go
+        working-directory: .
+        env:
+          GIT_TOKEN: ${{ steps.mirror.outputs.token }}
+        run: |
+          split="$(git subtree split --prefix source/sdk/go)"
+          remote="https://x-access-token:${GIT_TOKEN}@github.com/pedromvgomes/hatua-go.git"
+          git push --force "$remote" "${split}:refs/heads/main"
+          git push "$remote" "${split}:refs/tags/${GITHUB_REF_NAME}"
+
+      # Last, because it is the announcement: it exists once the version it
+      # announces is installable from npm and resolvable with `go get`.
+      #
+      # `gh release create` fails on a version that already has a GitHub
+      # Release, which would strand every re-run after a partial publish at the
+      # step before the one that needs to finish. Writing the notes through
+      # `edit` when one exists converges instead.
+      - name: Announce the GitHub Release
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          notes="docs/release-notes/${GITHUB_REF_NAME}.md"
+          if gh release view "${GITHUB_REF_NAME}" > /dev/null 2>&1; then
+            gh release edit "${GITHUB_REF_NAME}" --notes-file "$notes" --draft=false
+          else
+            gh release create "${GITHUB_REF_NAME}" \
+              --verify-tag \
+              --notes-file "$notes"
+          fi

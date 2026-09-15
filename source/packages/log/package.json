@@ -1,15 +1,23 @@
 {
   "name": "@hatua/log",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
   "type": "module",
-  "description": "Levelled, categorised diagnostics — silent unless a Host asks",
+  "description": "Internal to @hatua/react — published because it is an external of its build, not a supported API. Levelled, categorised diagnostics — silent unless a Host asks.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pedromvgomes/hatua.git",
+    "directory": "source/packages/log"
+  },
   "sideEffects": false,
+  "files": [
+    "dist"
+  ],
   "exports": {
     ".": "./src/index.ts"
   },
   "publishConfig": {
+    "access": "public",
     "exports": {
       ".": {
         "types": "./dist/index.d.ts",

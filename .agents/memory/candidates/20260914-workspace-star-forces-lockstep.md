@@ -18,9 +18,8 @@ The dependency graph itself (read straight from each package.json's `dependencie
 - `@hatua/layout`, `@hatua/model` — depend on `schema` (+`model` also depends on `expressions`,
   `document`)
 - `@hatua/services` — depends on `schema`, `document`, `model`, `layout`, `expressions`, `log`
-- `@hatua/react` — depends on `document`, `expressions`, `layout`, `log`, `model`, `schema`
-  (`services` is conspicuously absent from `react`'s runtime deps despite the port types being
-  re-exported from it in `src/index.ts` — worth re-checking whether that's deliberate or a gap)
+- `@hatua/react` — depends on all seven: `document`, `expressions`, `layout`, `log`, `model`,
+  `schema` and `services`
 
 Because the rewrite is exact-pin rather than range, publishing `@hatua/schema` at a new version and
 independently leaving `@hatua/react` unpublished means every consumer installing the already-published
@@ -32,3 +31,9 @@ consumers are meant to receive the update, which in practice is everything excep
 plus `react`'s siblings, since `react` sits at the top of the graph depending on nearly all of them.
 This is a real constraint on the "independent versioning" question, not a decided policy — nothing
 in the ADRs discusses package-version lockstep.
+
+`docs/adr/0028-one-tag-one-version.md` now records the decision this forces — one tag sets one
+version across all nine, and only `@hatua/react` and `@hatua/sdk` are supported surfaces — quoting
+a packed manifest as evidence. What is not in the ADR, and is the reason this may still be worth a
+note, is the mechanism: the rewrite is pnpm's default for the bare `workspace:*` protocol, and no
+`.npmrc` in the repo sets `save-workspace-protocol` to change it.
