@@ -31,6 +31,8 @@ anchors:
         blob: 5579d1f03fd2
       - path: source/packages/react/src/layouts/Inspector.tsx
         blob: e9b0f4af854f
+      - path: source/packages/react/src/layouts/Placeholder.test.tsx
+        blob: 28bea3c31fb1
       - path: source/packages/react/src/layouts/Placeholder.tsx
         blob: c5c6d487387e
       - path: source/packages/react/src/layouts/RunList.stories.tsx
@@ -70,7 +72,7 @@ anchors:
       - path: source/packages/react/src/layouts/regions.test.tsx
         blob: 127db73f617b
       - path: source/packages/react/src/layouts/runs.test.tsx
-        blob: 6d46e8d7acef
+        blob: 0b304b11a0dd
   - path: source/packages/react/src/theme/readOnly.ts
     blob: 759fb474018e
 confidence: verified
@@ -85,7 +87,7 @@ Version, or a run's referenced version) the claim is still held, so `workflow.cl
 Every editing surface under `layouts/` uses the hook: `Workflow.tsx` (`:523`, `:660`, `:729`,
 `:848`, `:928`, `:1091`, `:1174`, `:1271`), `StepList.tsx` (`:193`, `:466`, `:732`),
 `FlowMap.tsx:1114`, `Components.tsx:153`, `Inspector.tsx:181`, `TextMode.tsx:86`.
-`TextMode.tsx:46` names deriving it locally as "the mistake the step editor made once
+`TextMode.tsx:46-52` names deriving it locally as "the mistake the step editor made once
 (ADR-0024)".
 
 The one place that reads `workflow.claimed` directly is `TopBar.tsx` (`:358`, `:801`, `:900`),
