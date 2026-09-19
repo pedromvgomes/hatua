@@ -156,14 +156,13 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
 
-# Agentic-toolkit generated outputs — rendered from .agentic-toolkit.yaml (and
-# the stacks it extends) on every toolkit sync. The config and lockfile are
-# committed; these regenerate, so they are never committed. Anchored to the
-# repo root so intentionally tracked CLAUDE.md files in subdirectories are
-# unaffected.
+# Agentic toolkit generated config
 /.claude/
 /CLAUDE.md
 /.mcp.json
+/.codex/
+/AGENTS.md
+/.agents/
 
 # Turbo task cache
 .turbo/
