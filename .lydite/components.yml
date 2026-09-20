@@ -1,0 +1,89 @@
+# What lydite builds, tests, scans and gates in hatua.
+#
+# source/ is a pnpm+turbo workspace: one lockfile (source/pnpm-lock.yaml) and one
+# Biome config (source/biome.json) for everything under it, but no single vitest
+# entrypoint — turbo's test:coverage task fans out to each package's own `vitest
+# run`, and there is no vitest.workspace.ts or vitest.config.ts at the source/
+# root to point a single component at. A component is the unit its build tool
+# treats as a whole, and here that unit is one npm package: each apps/* and
+# packages/* directory, plus sdk/js and tools/conformance, is its own vitest
+# invocation and its own component. Collapsing them into one component rooted at
+# source/ would ask lydite to run `vitest run` once over a tree vitest itself
+# never treats as one suite.
+#
+# source/sdk/go is a Go module living inside this otherwise-TypeScript workspace
+# (it carries its own go.mod and is deliberately outside pnpm-workspace.yaml's
+# package globs) — a go-test component of its own, dir set to the module root.
+#
+# tools/codegen and tools/expression are JavaScript build tooling with no test
+# script (`generate`, `check-drift`, `lint` — nothing turbo's test task reaches),
+# so no runner fits either of them. types/ is a single ambient .d.ts file
+# nothing compiles as a unit of its own. brand/ is a second, separate pnpm
+# package (own pnpm-lock.yaml, own packageManager) whose only scripts are the
+# PNG rasterizer (build:png, png) — no test script there either. All four are
+# excluded below rather than forced under a component with nothing to run.
+components:
+  - name: apex
+    dir: source/apps/apex
+    runner: vitest
+
+  - name: playground
+    dir: source/apps/playground
+    runner: vitest
+
+  - name: sdk-js
+    dir: source/sdk/js
+    runner: vitest
+
+  - name: sdk-go
+    dir: source/sdk/go
+    runner: go-test
+    args: ["./..."]
+
+  - name: pkg-document
+    dir: source/packages/document
+    runner: vitest
+
+  - name: pkg-expressions
+    dir: source/packages/expressions
+    runner: vitest
+
+  - name: pkg-layout
+    dir: source/packages/layout
+    runner: vitest
+
+  - name: pkg-log
+    dir: source/packages/log
+    runner: vitest
+
+  - name: pkg-model
+    dir: source/packages/model
+    runner: vitest
+
+  - name: pkg-react
+    dir: source/packages/react
+    runner: vitest
+
+  - name: pkg-schema
+    dir: source/packages/schema
+    runner: vitest
+
+  - name: pkg-services
+    dir: source/packages/services
+    runner: vitest
+
+  - name: tools-conformance
+    dir: source/tools/conformance
+    runner: vitest
+
+# tools/codegen and tools/expression: JavaScript source with no test script —
+# generators and a grammar build, not a suite. types/: a single ambient .d.ts
+# nothing builds or tests as a unit. brand/: a separate pnpm package (its own
+# lockfile, its own packageManager) whose scripts only rasterize the logo set to
+# PNG — no test script, no coverage story, nothing a vitest/jest component could
+# run.
+excludes:
+  - "source/tools/codegen/**"
+  - "source/tools/expression/**"
+  - "source/types/**"
+  - "brand/**"
