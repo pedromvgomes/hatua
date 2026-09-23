@@ -34,7 +34,7 @@
     "storybook:build": "storybook build -o storybook-static"
   },
   "peerDependencies": {
-    "react": "^19.2.0",
+    "react": "^19.3.0",
     "react-dom": "^19.2.0"
   },
   "dependencies": {
@@ -50,11 +50,11 @@
     "@hatua/document": "workspace:*",
     "@storybook/react-vite": "^10.6.0",
     "@testing-library/react": "^16.3.3",
-    "@types/react": "^19.2.2",
+    "@types/react": "^19.3.0",
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react-swc": "^4.3.3",
     "jsdom": "^30.0.1",
-    "react": "^19.2.0",
+    "react": "^19.3.0",
     "react-dom": "^19.2.0",
     "storybook": "^10.6.0"
   }
