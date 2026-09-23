@@ -11,6 +11,6 @@
     "test:coverage": "vitest run --coverage --coverage.reporter=text-summary --coverage.reporter=json-summary --coverage.reporter=lcovonly"
   },
   "devDependencies": {
-    "wrangler": "^4.129.1"
+    "wrangler": "^4.131.2"
   }
 }
