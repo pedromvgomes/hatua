@@ -50,7 +50,9 @@ const dropExtractedStylesheet = (): Plugin => {
 export default defineConfig({
   build: {
     lib: { entry: 'src/index.ts', formats: ['es'], fileName: 'index' },
-    rollupOptions: { external: [/^@hatua\//, 'react', 'react-dom', 'react/jsx-runtime'] },
+    rollupOptions: {
+      external: [/^@hatua\//, /^@vipengele\//, 'react', 'react-dom', 'react/jsx-runtime'],
+    },
   },
   plugins: [
     react(),

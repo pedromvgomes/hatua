@@ -136,9 +136,6 @@ importers:
       '@hatua/layout':
         specifier: workspace:*
         version: link:../layout
-      '@hatua/log':
-        specifier: workspace:*
-        version: link:../log
       '@hatua/model':
         specifier: workspace:*
         version: link:../model
@@ -148,6 +145,9 @@ importers:
       '@hatua/services':
         specifier: workspace:*
         version: link:../services
+      '@vipengele/ts-core-observability':
+        specifier: ^0.2.1
+        version: 0.2.1
     devDependencies:
       '@storybook/react-vite':
         specifier: ^10.6.0
