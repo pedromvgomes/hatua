@@ -52,10 +52,6 @@ components:
     dir: source/packages/layout
     runner: vitest
 
-  - name: pkg-log
-    dir: source/packages/log
-    runner: vitest
-
   - name: pkg-model
     dir: source/packages/model
     runner: vitest

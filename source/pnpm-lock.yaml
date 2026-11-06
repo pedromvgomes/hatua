@@ -107,8 +107,6 @@ importers:
         specifier: workspace:*
         version: link:../schema
 
-  packages/log: {}
-
   packages/model:
     dependencies:
       '@hatua/document':
