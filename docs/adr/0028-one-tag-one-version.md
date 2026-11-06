@@ -58,7 +58,7 @@ any release, because the only caller that matters shipped in the same tag.
 - **A patch to one package is a release of all of them.** Seven packages get a version bump whose
   content is unchanged. That is the cost, it is paid every time, and it is smaller than a Host
   pinned to a fix it cannot install.
-- **A partial publish is a broken release, not a reduced one.** Seven of eight on the registry
+- **A partial publish is a broken release, not a reduced one.** Six of eight on the registry
   leaves `@hatua/react` naming two exact versions that do not exist, so the release workflow runs
   the publishes in one job and refuses to cancel one in flight.
 - **The Go module shares the version without sharing the mechanism.** It carries the tag's version
