@@ -41,12 +41,12 @@ importers:
 
   apps/playground:
     dependencies:
-      '@hatua/log':
-        specifier: workspace:*
-        version: link:../../packages/log
       '@hatua/react':
         specifier: workspace:*
         version: link:../../packages/react
+      '@vipengele/ts-core-observability':
+        specifier: ^0.2.1
+        version: 0.2.1
       react:
         specifier: ^19.2.0
         version: 19.2.8
