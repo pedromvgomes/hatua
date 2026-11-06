@@ -198,15 +198,15 @@ importers:
       '@hatua/layout':
         specifier: workspace:*
         version: link:../layout
-      '@hatua/log':
-        specifier: workspace:*
-        version: link:../log
       '@hatua/model':
         specifier: workspace:*
         version: link:../model
       '@hatua/schema':
         specifier: workspace:*
         version: link:../schema
+      '@vipengele/ts-core-observability':
+        specifier: ^0.2.1
+        version: 0.2.1
 
   sdk/js:
     dependencies:
@@ -1926,6 +1926,18 @@ packages:
   '@typescript/typescript6@6.0.2':
     resolution: {integrity: sha512-mbCddXd+jm7hfx7w2YU64/Av4/NqqeG3GoRZgxPcgoTxYjhrcfJRw9ULch71SS4G+Q3bOXFhRvPqjguN0Hyp5w==}
     hasBin: true
+
+  '@vipengele/ts-core-common@0.2.1':
+    resolution: {integrity: sha512-TxCAasfBUdJT+34kqgx+yW+Gl0eErIYIdej2u0q0JFVWsYu3BI+jxeVXdjG0LYxpu+PycI7V/xgghb0pZC/skQ==}
+    engines: {node: '>=24'}
+
+  '@vipengele/ts-core-observability@0.2.1':
+    resolution: {integrity: sha512-tk8tGi+t9112U9X6kxLXJDRH4MDi1x3X8fu9gmcwp/dJwRayFbKDZQPZxSiwWVATEe3MvBPp8HrauXo93I1gew==}
+    engines: {node: '>=24'}
+
+  '@vipengele/ts-core-redaction@0.2.1':
+    resolution: {integrity: sha512-Csc5aw13+x4vklOtCISb7c8iMvUbSLd9lqVa+TSL2WNN2Z9Z/rf2cwB+NxW9EersFSpPJGh2KjFNhg4qEkJRHw==}
+    engines: {node: '>=24'}
 
   '@vitejs/plugin-react-swc@4.3.3':
     resolution: {integrity: sha512-bti8ZAcvz4Lh6/e4Uk2k3aa1TiUXbbMsahuqOHvd3MveFTkKDZOA6wQVkpj7J/+tepX/wGfe+lsGh/t24HTXMQ==}
@@ -4315,6 +4327,15 @@ snapshots:
   '@typescript/typescript6@6.0.2':
     dependencies:
       '@typescript/old': typescript@6.0.3
+
+  '@vipengele/ts-core-common@0.2.1': {}
+
+  '@vipengele/ts-core-observability@0.2.1':
+    dependencies:
+      '@vipengele/ts-core-common': 0.2.1
+      '@vipengele/ts-core-redaction': 0.2.1
+
+  '@vipengele/ts-core-redaction@0.2.1': {}
 
   '@vitejs/plugin-react-swc@4.3.3(vite@8.3.0(@types/node@26.5.0)(esbuild@0.28.2)(yaml@2.9.1))':
     dependencies:
