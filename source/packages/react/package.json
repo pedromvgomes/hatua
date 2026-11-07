@@ -41,10 +41,10 @@
     "@hatua/document": "workspace:*",
     "@hatua/expressions": "workspace:*",
     "@hatua/layout": "workspace:*",
-    "@hatua/log": "workspace:*",
     "@hatua/model": "workspace:*",
     "@hatua/schema": "workspace:*",
-    "@hatua/services": "workspace:*"
+    "@hatua/services": "workspace:*",
+    "@vipengele/ts-core-observability": "^0.2.1"
   },
   "devDependencies": {
     "@hatua/document": "workspace:*",

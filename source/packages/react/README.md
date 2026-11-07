@@ -39,7 +39,7 @@ upgrading.
 
 ## The other `@hatua/*` packages
 
-`@hatua/document`, `@hatua/expressions`, `@hatua/layout`, `@hatua/log`,
+`@hatua/document`, `@hatua/expressions`, `@hatua/layout`,
 `@hatua/model`, `@hatua/schema` and `@hatua/services` are also on npm, but
 only because this package's build treats them as externals rather than
 bundling them. They are implementation details of `@hatua/react`, not a

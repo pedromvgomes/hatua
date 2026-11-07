@@ -1,7 +1,7 @@
 # release — publishes a tagged version to npm and mirrors the Go module.
 #
 # A human pushes the tag; nothing else starts this. The tag is the decision, and
-# it is the only input: the nine `@hatua/*` packages, the GitHub Release and the
+# it is the only input: the eight `@hatua/*` packages, the GitHub Release and the
 # `hatua-go` mirror all carry the version the tag names.
 #
 # Two jobs, and the seam between them is a safety property. `build` holds no
@@ -26,7 +26,7 @@ permissions:
   contents: read
 
 # One release at a time per tag, and never cancel one in flight: a cancelled run
-# leaves some of the nine packages published and the rest not.
+# leaves some of the eight packages published and the rest not.
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
@@ -165,7 +165,7 @@ jobs:
     #
     # Without it the binding is owner, repository and filename only — and a run
     # uses the workflow file from the ref that triggered it, so pushing a branch
-    # that widens the trigger would publish all nine packages with valid
+    # that widens the trigger would publish all eight packages with valid
     # provenance, past review and past the checks this workflow does not repeat.
     environment:
       name: npm-release

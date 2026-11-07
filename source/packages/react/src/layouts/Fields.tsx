@@ -1,4 +1,3 @@
-import { logger } from '@hatua/log'
 import {
   type Diagnostic,
   FIELD_KIND_TYPES,
@@ -9,6 +8,7 @@ import {
 import type { Connection, Field, Manifest } from '@hatua/schema'
 import { isMappable } from '@hatua/schema'
 import { type ConnectionState, unchecked, type ValidationState } from '@hatua/services'
+import { Logging } from '@vipengele/ts-core-observability/logger'
 import { type ComponentPropsWithRef, useEffect, useId, useState, useSyncExternalStore } from 'react'
 import { TemplateInput } from '../compounds/TemplateInput'
 import { cx } from '../primitives/classNames'
@@ -584,7 +584,7 @@ export function splitByField(problems: readonly Diagnostic[] | undefined): {
   return { byField, aboutTheSubject }
 }
 
-const log = logger('react.fields')
+const log = Logging.logger('react.fields')
 
 const NO_SCOPE: readonly ScopeEntry[] = []
 

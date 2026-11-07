@@ -37,7 +37,7 @@ components:
   - name: playground
     dir: source/apps/playground
     runner: vitest
-    depends_on: [pkg-react, pkg-log, pkg-expressions, pkg-model, pkg-schema, sdk-js]
+    depends_on: [pkg-react, pkg-expressions, pkg-model, pkg-schema, sdk-js]
     setup:
       - sh -c 'cd "$(git rev-parse --show-toplevel)/source" && pnpm turbo run build --filter=@hatua/playground^...'
 
@@ -74,10 +74,6 @@ components:
     setup:
       - sh -c 'cd "$(git rev-parse --show-toplevel)/source" && pnpm turbo run build --filter=@hatua/layout^...'
 
-  - name: pkg-log
-    dir: source/packages/log
-    runner: vitest
-
   - name: pkg-model
     dir: source/packages/model
     runner: vitest
@@ -88,7 +84,7 @@ components:
   - name: pkg-react
     dir: source/packages/react
     runner: vitest
-    depends_on: [pkg-document, pkg-expressions, pkg-layout, pkg-log, pkg-model, pkg-schema, pkg-services]
+    depends_on: [pkg-document, pkg-expressions, pkg-layout, pkg-model, pkg-schema, pkg-services]
     setup:
       - sh -c 'cd "$(git rev-parse --show-toplevel)/source" && pnpm turbo run build --filter=@hatua/react^...'
 
@@ -99,7 +95,7 @@ components:
   - name: pkg-services
     dir: source/packages/services
     runner: vitest
-    depends_on: [pkg-schema, pkg-document, pkg-model, pkg-layout, pkg-expressions, pkg-log]
+    depends_on: [pkg-schema, pkg-document, pkg-model, pkg-layout, pkg-expressions]
     setup:
       - sh -c 'cd "$(git rev-parse --show-toplevel)/source" && pnpm turbo run build --filter=@hatua/services^...'
 
