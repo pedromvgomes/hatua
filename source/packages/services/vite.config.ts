@@ -4,7 +4,7 @@ import dts from 'vite-plugin-dts'
 export default defineConfig({
   build: {
     lib: { entry: 'src/index.ts', formats: ['es'], fileName: 'index' },
-    rollupOptions: { external: [/^@hatua\//, 'zod', 'yaml'] },
+    rollupOptions: { external: [/^@hatua\//, /^@vipengele\//, 'zod', 'yaml'] },
   },
   plugins: [dts({ rollupTypes: true })],
   test: { include: ['src/**/*.test.ts'] },

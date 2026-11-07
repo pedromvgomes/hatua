@@ -41,15 +41,16 @@
     "@hatua/document": "workspace:*",
     "@hatua/expressions": "workspace:*",
     "@hatua/layout": "workspace:*",
-    "@hatua/log": "workspace:*",
     "@hatua/model": "workspace:*",
     "@hatua/schema": "workspace:*",
-    "@hatua/services": "workspace:*"
+    "@hatua/services": "workspace:*",
+    "@vipengele/ts-core-observability": "^0.2.1"
   },
   "devDependencies": {
     "@hatua/document": "workspace:*",
     "@storybook/react-vite": "^10.6.0",
     "@testing-library/react": "^16.3.3",
+    "@types/node": "^26.5.0",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react-swc": "^4.3.3",

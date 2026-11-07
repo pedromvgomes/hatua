@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "notes": {
+    "npm-trusted-publisher-needs-an-existing-name": {
+      "count": 1,
+      "first": "2026-11-06T07:44:33.651453771Z",
+      "last": "2026-11-06T07:44:33.651453771Z"
+    },
+    "provenance-needs-repository-field": {
+      "count": 1,
+      "first": "2026-11-06T07:44:33.656139989Z",
+      "last": "2026-11-06T07:44:33.656139989Z"
+    }
+  }
+}

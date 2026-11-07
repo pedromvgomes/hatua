@@ -24,7 +24,7 @@ npm install @hatua/sdk
 
 ## The other `@hatua/*` packages
 
-`@hatua/document`, `@hatua/expressions`, `@hatua/layout`, `@hatua/log`,
+`@hatua/document`, `@hatua/expressions`, `@hatua/layout`,
 `@hatua/model`, `@hatua/schema` and `@hatua/services` are also on npm, but
 only because `@hatua/react`'s build treats them as externals rather than
 bundling them. They are implementation details, not a supported API —

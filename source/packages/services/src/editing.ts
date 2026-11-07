@@ -1,7 +1,7 @@
 import { parseWorkflow, type WorkflowDocument } from '@hatua/document'
-import { logger } from '@hatua/log'
 import type { Diagnostic } from '@hatua/model'
 import type { WorkflowDefinition } from '@hatua/schema'
+import { Logging } from '@vipengele/ts-core-observability/logger'
 import type { EditCommand } from './command'
 import type { EditToken, Lease, PublishedVersion, WorkflowStore } from './ports'
 import type { Store } from './store'
@@ -366,7 +366,7 @@ export interface EditingOptions {
   gate?: PublishGate
 }
 
-const log = logger('services.editing')
+const log = Logging.logger('services.editing')
 
 const asError = (cause: unknown): Error =>
   cause instanceof Error ? cause : new Error(String(cause))
