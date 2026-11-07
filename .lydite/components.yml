@@ -22,6 +22,13 @@
 # package (own pnpm-lock.yaml, own packageManager) whose only scripts are the
 # PNG rasterizer (build:png, png) — no test script there either. All four are
 # excluded below rather than forced under a component with nothing to run.
+#
+# Workspace packages import one another through their package.json `exports`,
+# which point at dist/. turbo's own tasks depend on `^build` (turbo.json), so CI
+# never tests a package before the packages it imports are built. lydite's
+# vitest runner has no such graph, so each component with workspace dependencies
+# lists them in `depends_on` and builds them in `setup:` — `<pkg>^...` is turbo's
+# filter for every transitive dependency of <pkg>, excluding <pkg> itself.
 components:
   - name: apex
     dir: source/apps/apex
@@ -30,10 +37,16 @@ components:
   - name: playground
     dir: source/apps/playground
     runner: vitest
+    depends_on: [pkg-react, pkg-log, pkg-expressions, pkg-model, pkg-schema, sdk-js]
+    setup:
+      - sh -c 'cd "$(git rev-parse --show-toplevel)/source" && pnpm turbo run build --filter=@hatua/playground^...'
 
   - name: sdk-js
     dir: source/sdk/js
     runner: vitest
+    depends_on: [pkg-expressions, pkg-model, pkg-schema]
+    setup:
+      - sh -c 'cd "$(git rev-parse --show-toplevel)/source" && pnpm turbo run build --filter=@hatua/sdk^...'
 
   - name: sdk-go
     dir: source/sdk/go
@@ -43,14 +56,23 @@ components:
   - name: pkg-document
     dir: source/packages/document
     runner: vitest
+    depends_on: [pkg-schema]
+    setup:
+      - sh -c 'cd "$(git rev-parse --show-toplevel)/source" && pnpm turbo run build --filter=@hatua/document^...'
 
   - name: pkg-expressions
     dir: source/packages/expressions
     runner: vitest
+    depends_on: [pkg-schema]
+    setup:
+      - sh -c 'cd "$(git rev-parse --show-toplevel)/source" && pnpm turbo run build --filter=@hatua/expressions^...'
 
   - name: pkg-layout
     dir: source/packages/layout
     runner: vitest
+    depends_on: [pkg-model, pkg-schema]
+    setup:
+      - sh -c 'cd "$(git rev-parse --show-toplevel)/source" && pnpm turbo run build --filter=@hatua/layout^...'
 
   - name: pkg-log
     dir: source/packages/log
@@ -59,10 +81,16 @@ components:
   - name: pkg-model
     dir: source/packages/model
     runner: vitest
+    depends_on: [pkg-expressions, pkg-schema, pkg-document]
+    setup:
+      - sh -c 'cd "$(git rev-parse --show-toplevel)/source" && pnpm turbo run build --filter=@hatua/model^...'
 
   - name: pkg-react
     dir: source/packages/react
     runner: vitest
+    depends_on: [pkg-document, pkg-expressions, pkg-layout, pkg-log, pkg-model, pkg-schema, pkg-services]
+    setup:
+      - sh -c 'cd "$(git rev-parse --show-toplevel)/source" && pnpm turbo run build --filter=@hatua/react^...'
 
   - name: pkg-schema
     dir: source/packages/schema
@@ -71,10 +99,16 @@ components:
   - name: pkg-services
     dir: source/packages/services
     runner: vitest
+    depends_on: [pkg-schema, pkg-document, pkg-model, pkg-layout, pkg-expressions, pkg-log]
+    setup:
+      - sh -c 'cd "$(git rev-parse --show-toplevel)/source" && pnpm turbo run build --filter=@hatua/services^...'
 
   - name: tools-conformance
     dir: source/tools/conformance
     runner: vitest
+    depends_on: [pkg-schema]
+    setup:
+      - sh -c 'cd "$(git rev-parse --show-toplevel)/source" && pnpm turbo run build --filter=@hatua/conformance^...'
 
 # tools/codegen and tools/expression: JavaScript source with no test script —
 # generators and a grammar build, not a suite. types/: a single ambient .d.ts
