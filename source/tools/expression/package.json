@@ -12,7 +12,7 @@
     "lint": "node src/lint-grammar.js"
   },
   "dependencies": {
-    "peggy": "5.1.0",
+    "peggy": "5.1.1",
     "yaml": "^2.9.1"
   }
 }
