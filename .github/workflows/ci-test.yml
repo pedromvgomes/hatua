@@ -65,7 +65,9 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: source/sdk/go/go.mod
-          cache-dependency-path: source/sdk/go/go.sum
+          cache-dependency-path: |
+            source/sdk/go/go.sum
+            source/runner/go.sum
 
       # The Go SDK runs the SAME conformance fixtures as the TypeScript suite.
       # Generation guarantees the two share a shape; only this guarantees they
@@ -85,6 +87,41 @@ jobs:
           # Written inside the module it measures: `go test -coverprofile` is
           # module-scoped, and bulwark looks for <moduleDir>/coverage.out.
           go test -coverprofile=coverage.out ./...
+
+      # The runner is built twice. This first pass runs inside the go.work
+      # workspace at the repository root, so hatua.dev/go resolves to the SDK
+      # sources in this same commit: a runner change that needs an SDK change
+      # is tested against it before either is released.
+      - name: Go runner (workspace)
+        working-directory: source/runner
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::gofmt would reformat these files:"
+            echo "$unformatted"
+            exit 1
+          fi
+          go vet ./...
+          # The workspace pass is the one whose profile reaches the coverage
+          # artifact; like the SDK's, it is written inside the module it
+          # measures, because bulwark looks for <moduleDir>/coverage.out.
+          go test -race -coverprofile=coverage.out ./...
+
+      # The second pass ignores go.work and resolves hatua.dev/go exactly as a
+      # user's `go get` does: the version go.mod requires, fetched from the
+      # mirror. A runner whose go.mod requires an SDK version that is not
+      # released, or that calls SDK code no release carries, cannot build that
+      # way — and the workspace pass hides it, because the workspace
+      # substitutes the local SDK for whatever go.mod names. Formatting does
+      # not depend on how modules resolve, so gofmt is not repeated here, and
+      # neither is the coverage profile.
+      - name: Go runner (released SDK, GOWORK=off)
+        working-directory: source/runner
+        env:
+          GOWORK: "off"
+        run: |
+          go vet ./...
+          go test -race ./...
 
       - name: Collect coverage into the artifact layout
         # Staged under one directory whose contents mirror the repository from

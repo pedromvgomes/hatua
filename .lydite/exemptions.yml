@@ -20,6 +20,8 @@ exemptions:
     paths:
       - brand/package-lock.json
       - source/package-lock.json
+      - source/runner/go.mod
+      - source/runner/go.sum
       - source/sdk/go/go.mod
       - source/sdk/go/go.sum
     versions: patch-and-minor
