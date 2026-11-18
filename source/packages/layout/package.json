@@ -34,5 +34,8 @@
   "dependencies": {
     "@hatua/model": "workspace:*",
     "@hatua/schema": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.5.0"
   }
 }
