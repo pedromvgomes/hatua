@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
+	hatua "hatua.dev/go"
 	"hatua.dev/go/expressions"
 )
 
@@ -154,7 +156,90 @@ func (e *TemplateError) Error() string {
 // Unwrap exposes the evaluator's error, so errors.As recovers its diagnostics.
 func (e *TemplateError) Unwrap() error { return e.Err }
 
-// ResolveFields resolves a Step's field map against the Scope.
+// ResolveStep resolves a Component Step's `with:` map against the Scope, typed
+// by manifest, the Component Manifest that declares the Step's verb.
+//
+// A field holds a Template only when the manifest declares it with a kind
+// hatua.FieldKindTypes maps, and its Slot is the one hatua.SlotsFor builds, so
+// the evaluator checks and coerces each value against the declared type: a
+// single-hole Template in a `text` field that evaluates to a number arrives as
+// the text "3", not the number 3.
+//
+// A `map` field arrives as one object keyed by its entries' keys, each value
+// resolved against the type its own entry declares. An entry that is not a
+// well-formed `{key, value, type}` is dropped, as hatua.MapEntries drops it.
+//
+// Every other value passes through unchanged: a field of a literal kind, a
+// non-string value in a mappable field, and a key the manifest does not
+// declare, none of which the validator checks as a Template. A blank Template
+// in a field whose type text cannot satisfy resolves to nil, because the
+// validator accepts it as "left empty" and the evaluator would refuse "".
+// The input is never modified.
+//
+// Every failing Slot is reported, as ResolveFields reports a field: a
+// *TemplateError named by the Slot — `<field>`, or `<field>.<key>` for a map
+// entry — alone or joined with the others in path order.
+func (s *Scope) ResolveStep(step hatua.Step, manifest hatua.Manifest) (map[string]any, error) {
+	ctx := s.Context()
+	slots := hatua.SlotsFor(step, manifest)
+	resolved := make(map[string]any, len(slots))
+	var failures []*TemplateError
+	for _, slot := range slots {
+		value, err := resolveSlot(ctx, slot)
+		if err != nil {
+			failures = append(failures, &TemplateError{Field: slot.Name, Err: err})
+			continue
+		}
+		resolved[slot.Name] = value
+	}
+	if len(failures) > 0 {
+		slices.SortStableFunc(failures, func(a, b *TemplateError) int { return strings.Compare(a.Field, b.Field) })
+		if len(failures) == 1 {
+			return nil, failures[0]
+		}
+		errs := make([]error, len(failures))
+		for i, failure := range failures {
+			errs[i] = failure
+		}
+		return nil, errors.Join(errs...)
+	}
+
+	out := make(map[string]any, len(step.With))
+	maps.Copy(out, step.With)
+	for _, field := range manifest.Fields {
+		value, present := step.With[field.K]
+		if !present {
+			continue
+		}
+		if field.Kind == "map" {
+			object := map[string]any{}
+			for _, entry := range hatua.MapEntries(value) {
+				object[entry.Key] = resolved[field.K+"."+entry.Key]
+			}
+			out[field.K] = object
+			continue
+		}
+		if value, ok := resolved[field.K]; ok {
+			out[field.K] = value
+		}
+	}
+	return out, nil
+}
+
+// resolveSlot resolves one typed Slot against ctx. A blank Template whose
+// expected type text does not satisfy resolves to nil: the validator skips a
+// blank Template as a field left empty, and resolving it would produce "" and
+// fail the type check the validator never ran.
+func resolveSlot(ctx expressions.Context, slot expressions.Slot) (any, error) {
+	if strings.TrimSpace(slot.Template) == "" && !expressions.Satisfies("", slot.ExpectedType) {
+		return nil, nil
+	}
+	return expressions.Resolve(ctx, slot)
+}
+
+// ResolveFields resolves a field map against the Scope with no declared
+// types, for a caller that has no Component Manifest to type it by.
+// ResolveStep is the typed path the Engine takes.
 //
 // Every string is a Template: one that is exactly a single `{{ … }}` keeps
 // the expression's own type, and any other renders as text. Maps and lists

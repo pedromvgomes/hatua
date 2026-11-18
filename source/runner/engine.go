@@ -93,6 +93,22 @@ func (e *UnsupportedStepError) Error() string {
 // Unwrap exposes ErrUnsupportedStep.
 func (e *UnsupportedStepError) Unwrap() error { return ErrUnsupportedStep }
 
+// VariableError reports a root variable whose Template value did not resolve
+// when the run seeded it. Key names the variable, and Err is the error the
+// evaluator returned.
+type VariableError struct {
+	Key string
+	Err error
+}
+
+// Error names the variable alongside the reason.
+func (e *VariableError) Error() string {
+	return fmt.Sprintf("runner: variable %q: %v", e.Key, e.Err)
+}
+
+// Unwrap exposes the evaluator's error, so errors.As recovers its diagnostics.
+func (e *VariableError) Unwrap() error { return e.Err }
+
 // StepError reports a Step that failed while the run executed it: its fields
 // did not resolve, or its Handler returned an error. Err is that error, as it
 // was returned.
@@ -138,6 +154,7 @@ func WithRunContext(keys []hatua.ContextKey) Option {
 type Engine struct {
 	registry  *Registry
 	manifests []hatua.Manifest
+	byUse     map[string]hatua.Manifest
 	functions expressions.Registry
 	context   []hatua.ContextKey
 }
@@ -152,7 +169,17 @@ func NewEngine(reg *Registry, manifests []hatua.Manifest, opts ...Option) (*Engi
 	if reg == nil {
 		return nil, ErrNilRegistry
 	}
-	e := &Engine{registry: reg, manifests: slices.Clone(manifests)}
+	e := &Engine{
+		registry:  reg,
+		manifests: slices.Clone(manifests),
+		byUse:     make(map[string]hatua.Manifest, len(manifests)),
+	}
+	// The last manifest declaring a verb wins, as it does in the SDK's
+	// validator, so a Step's fields are typed by the manifest they were
+	// checked against.
+	for _, manifest := range e.manifests {
+		e.byUse[manifest.Use] = manifest
+	}
 	for _, opt := range opts {
 		opt(e)
 	}
@@ -185,13 +212,18 @@ type RunInput struct {
 //   - the SDK's validator raises any diagnostic: *InvalidDefinitionError;
 //   - a root Board Step is not executable: *UnsupportedStepError;
 //   - a root Board verb has no Handler: *MissingHandlersError;
-//   - in.Trigger is not a Trigger the definition declares: ErrUnknownTrigger.
+//   - in.Trigger is not a Trigger the definition declares: ErrUnknownTrigger;
+//   - a root variable's Template value does not resolve: *VariableError.
 //
-// Otherwise the Scope starts with the fired Trigger, the Run Context, and
-// each root variable's literal `value`, which is not resolved as a Template.
-// Each Step then has its `with:` map resolved against the Scope, its Handler
-// called, and its output recorded under `steps.<id>`. A `core.end` stops the
-// run.
+// The Scope starts with the fired Trigger, the Run Context and the run's
+// instant, then takes each root variable in declaration order. A string
+// `value` is a Template, resolved against the type the variable declares and
+// the Scope as it stands, so it may address the Trigger, the Run Context and
+// any variable declared before it, but no Step; any other value is set as
+// written. Each Step then has its `with:` map resolved against the Scope,
+// typed by the Component Manifest declaring its verb (see Scope.ResolveStep),
+// its Handler called, and its output recorded under `steps.<id>`. A
+// `core.end` stops the run.
 //
 // Once Steps have started, Run always returns a Result, and returns its Err
 // as the error: nil for StatusSucceeded; a *StepError for StatusFailed; and
@@ -212,14 +244,18 @@ func (e *Engine) Run(ctx context.Context, def hatua.Definition, in RunInput) (Re
 	}
 	scope.SetTrigger(in.Trigger, in.Payload)
 	scope.SetRun(in.Run)
-	for _, v := range def.Vars {
-		scope.SetVar(v.Key, v.Value)
-	}
 	now := in.Now
 	if now.IsZero() {
 		now = time.Now()
 	}
 	scope.SetNow(now)
+	for _, v := range def.Vars {
+		value, err := seedValue(scope, v)
+		if err != nil {
+			return Result{}, err
+		}
+		scope.SetVar(v.Key, value)
+	}
 
 	result := Result{Steps: []StepResult{}}
 	finish := func(status Status, failed string, err error) (Result, error) {
@@ -237,7 +273,7 @@ func (e *Engine) Run(ctx context.Context, def hatua.Definition, in RunInput) (Re
 			return finish(StatusSucceeded, "", nil)
 		}
 
-		fields, err := scope.ResolveFields(step.With)
+		fields, err := scope.ResolveStep(step, e.byUse[step.Use])
 		if err != nil {
 			return finish(StatusFailed, step.ID, &StepError{StepID: step.ID, Use: step.Use, Err: err})
 		}
@@ -256,6 +292,20 @@ func (e *Engine) Run(ctx context.Context, def hatua.Definition, in RunInput) (Re
 		result.Steps = append(result.Steps, StepResult{ID: step.ID, Use: step.Use, Output: out})
 	}
 	return finish(StatusSucceeded, "", nil)
+}
+
+// seedValue is the value variable v starts the run with: its Template value
+// resolved against scope, or its literal value when that is not a string.
+func seedValue(scope *Scope, v hatua.Variable) (any, error) {
+	slot, ok := hatua.VariableSlot(v)
+	if !ok {
+		return v.Value, nil
+	}
+	value, err := resolveSlot(scope.Context(), slot)
+	if err != nil {
+		return nil, &VariableError{Key: v.Key, Err: err}
+	}
+	return value, nil
 }
 
 // check refuses a definition the engine must not start: one the validator

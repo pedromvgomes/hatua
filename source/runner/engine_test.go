@@ -24,6 +24,7 @@ components:
     fields: []
     outputs:
       - { k: name, label: Name, t: text }
+      - { k: count, label: Count, t: number }
   - kind: component
     use: core.end
     name: End
@@ -49,6 +50,14 @@ components:
       - { k: to, label: To, kind: text, req: true }
     outputs:
       - { k: sent, label: Sent, t: text }
+  - kind: component
+    use: data.shape
+    name: Shape
+    fields:
+      - { k: label, label: Label, kind: text }
+      - { k: entries, label: Entries, kind: map }
+      - { k: mode, label: Mode, kind: select, options: [{ value: "{{raw}}", label: Raw }] }
+    outputs: []
 `
 
 var engineContextKeys = []hatua.ContextKey{{K: "tenant", Label: "Tenant", T: "text"}}
@@ -482,7 +491,7 @@ func TestEngineRefusesAnUndeclaredTrigger(t *testing.T) {
 	}
 }
 
-func TestEngineSeedsVariablesFromTheirLiteralValue(t *testing.T) {
+func TestEngineSeedsAVariableWithoutAHoleAsItsText(t *testing.T) {
 	var got map[string]any
 	engine := newEngine(t, map[string]Handler{
 		"mail.send": func(_ context.Context, f map[string]any) (map[string]any, error) {
@@ -514,6 +523,172 @@ steps:
 	}
 	if want := map[string]any{"to": "ops@example.com"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("fields = %#v, want %#v", got, want)
+	}
+}
+
+// shapeEngine returns an Engine whose data.shape Handler is a typed Node with
+// a string Label, recording the fields it is called with into got.
+func shapeEngine(t *testing.T, got *map[string]any, called *bool) *Engine {
+	t.Helper()
+	type shapeIn struct {
+		Label   string
+		Entries map[string]any
+		Mode    string
+	}
+	shape, err := Node[shapeIn, map[string]any](func(_ context.Context, in shapeIn) (map[string]any, error) {
+		*called = true
+		*got = map[string]any{"label": in.Label, "entries": in.Entries, "mode": in.Mode}
+		return map[string]any{}, nil
+	}).Handler()
+	if err != nil {
+		t.Fatalf("Handler: %v", err)
+	}
+	return newEngine(t, map[string]Handler{"data.shape": shape})
+}
+
+func countInput() RunInput {
+	in := startInput()
+	in.Payload = map[string]any{"name": "Ada", "count": 3}
+	return in
+}
+
+func TestEngineCoercesANumberInATextFieldToText(t *testing.T) {
+	var got map[string]any
+	var called bool
+	engine := shapeEngine(t, &got, &called)
+	def := loadDefinition(t, `
+id: wf_text
+name: Text
+version: 1
+status: published
+triggers:
+  - id: start
+    use: core.manual
+steps:
+  - id: shape
+    use: data.shape
+    with:
+      label: "{{triggers.start.count}}"
+`)
+
+	if _, err := engine.Run(context.Background(), def, countInput()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got["label"] != "3" {
+		t.Fatalf("label = %#v, want the text \"3\"", got["label"])
+	}
+}
+
+func TestEngineHandsAMapFieldOverAsAKeyedObject(t *testing.T) {
+	var got map[string]any
+	var called bool
+	engine := shapeEngine(t, &got, &called)
+	def := loadDefinition(t, `
+id: wf_map
+name: Map
+version: 1
+status: published
+triggers:
+  - id: start
+    use: core.manual
+steps:
+  - id: shape
+    use: data.shape
+    with:
+      mode: "{{raw}}"
+      entries:
+        - { key: who, value: "{{triggers.start.name}}", type: text }
+        - { key: total, value: "{{triggers.start.count}}", type: number }
+        - { key: shown, value: "{{triggers.start.count}}", type: text }
+`)
+
+	if _, err := engine.Run(context.Background(), def, countInput()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	want := map[string]any{
+		"label":   "",
+		"entries": map[string]any{"who": "Ada", "total": float64(3), "shown": "3"},
+		"mode":    "{{raw}}",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("fields = %#v, want %#v", got, want)
+	}
+}
+
+func TestEngineResolvesVariableTemplatesInDeclarationOrder(t *testing.T) {
+	var got map[string]any
+	var called bool
+	engine := shapeEngine(t, &got, &called)
+	def := loadDefinition(t, `
+id: wf_var_templates
+name: Variable templates
+version: 1
+status: published
+triggers:
+  - id: start
+    use: core.manual
+vars:
+  - key: first
+    t: number
+    value: "{{ 1 + 1 }}"
+  - key: second
+    t: text
+    value: "{{ var.first }} for {{ triggers.start.name }}"
+steps:
+  - id: shape
+    use: data.shape
+    with:
+      label: "{{var.second}}"
+      entries:
+        - { key: first, value: "{{var.first}}", type: number }
+`)
+
+	if _, err := engine.Run(context.Background(), def, countInput()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	want := map[string]any{
+		"label":   "2 for Ada",
+		"entries": map[string]any{"first": float64(2)},
+		"mode":    "",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("fields = %#v, want %#v", got, want)
+	}
+}
+
+func TestEngineRefusesARunWhoseVariableTemplateFails(t *testing.T) {
+	var got map[string]any
+	var called bool
+	engine := shapeEngine(t, &got, &called)
+	def := loadDefinition(t, `
+id: wf_var_fails
+name: Variable fails
+version: 1
+status: published
+triggers:
+  - id: start
+    use: core.manual
+vars:
+  - key: ratio
+    t: number
+    value: "{{ 1 / 0 }}"
+steps:
+  - id: shape
+    use: data.shape
+    with:
+      label: "{{var.ratio}}"
+`)
+
+	result, err := engine.Run(context.Background(), def, countInput())
+	var varErr *VariableError
+	if !errors.As(err, &varErr) || varErr.Key != "ratio" {
+		t.Fatalf("err = %v, want a *VariableError naming ratio", err)
+	}
+	if !reflect.DeepEqual(result, Result{}) {
+		t.Fatalf("result = %+v, want the zero Result", result)
+	}
+	if called {
+		t.Fatal("a Handler ran, want none")
 	}
 }
 

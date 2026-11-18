@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	hatua "hatua.dev/go"
 	"hatua.dev/go/expressions"
 )
 
@@ -264,5 +265,71 @@ func TestNewScopeRefusesAHostFunctionShadowingACoreOne(t *testing.T) {
 	host := expressions.Registry{"text.upper": core["text.upper"]}
 	if _, err := NewScope(host); err == nil {
 		t.Fatalf("NewScope accepted a Host function named text.upper")
+	}
+}
+
+var shapeManifest = hatua.Manifest{
+	Use: "data.shape",
+	Fields: []hatua.Field{
+		{K: "label", Kind: "text"},
+		{K: "limit", Kind: "number"},
+		{K: "source", Kind: "ref"},
+		{K: "entries", Kind: "map"},
+		{K: "enabled", Kind: "bool"},
+	},
+}
+
+func TestScopeResolveStepTypesFieldsByTheManifest(t *testing.T) {
+	scope := populatedScope(t)
+	step := hatua.Step{ID: "shape", Use: "data.shape", With: map[string]any{
+		"label":  "{{steps.s1.total}}",
+		"limit":  "",
+		"source": "{{steps.s1.tags}}",
+		"entries": []any{
+			map[string]any{"key": "who", "value": "{{triggers.form.name}}", "type": "text"},
+			map[string]any{"key": "n", "value": "{{params.limit}}", "type": "number"},
+			"malformed",
+		},
+		"enabled": "{{not a template}}",
+		"extra":   "{{undeclared}}",
+	}}
+
+	got, err := scope.ResolveStep(step, shapeManifest)
+	if err != nil {
+		t.Fatalf("ResolveStep: %v", err)
+	}
+	want := map[string]any{
+		"label":   "42",
+		"limit":   nil,
+		"source":  []any{"a", "b"},
+		"entries": map[string]any{"who": "Ada", "n": float64(10)},
+		"enabled": "{{not a template}}",
+		"extra":   "{{undeclared}}",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ResolveStep =\n%#v\nwant\n%#v", got, want)
+	}
+	if _, isList := step.With["entries"].([]any); !isList {
+		t.Fatal("ResolveStep modified the Step's with: map")
+	}
+}
+
+func TestScopeResolveStepErrorsNameTheSlot(t *testing.T) {
+	scope := populatedScope(t)
+	step := hatua.Step{ID: "shape", Use: "data.shape", With: map[string]any{
+		"limit": "{{triggers.form.name}}",
+		"entries": []any{
+			map[string]any{"key": "n", "value": "{{triggers.form.name}}", "type": "number"},
+		},
+	}}
+
+	got, err := scope.ResolveStep(step, shapeManifest)
+	if got != nil || err == nil {
+		t.Fatalf("ResolveStep = %#v, %v; want only an error", got, err)
+	}
+	var fields []string
+	collectTemplateErrors(t, err, &fields)
+	if want := []string{"entries.n", "limit"}; !reflect.DeepEqual(fields, want) {
+		t.Fatalf("failing fields = %v, want %v", fields, want)
 	}
 }
