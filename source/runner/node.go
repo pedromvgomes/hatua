@@ -7,6 +7,7 @@ import (
 	"math"
 	"reflect"
 	"strconv"
+	"sync"
 	"unicode"
 	"unicode/utf8"
 )
@@ -223,9 +224,33 @@ type structField struct {
 	index int
 }
 
+// structLayout is what structFields reports for one struct type.
+type structLayout struct {
+	fields []structField
+	err    error
+}
+
+// structLayouts caches each struct type's structLayout, keyed by its
+// reflect.Type, so a Node decodes and encodes without reflecting over the same
+// struct's fields on every Step. A type's layout never changes, so two
+// goroutines computing it at once store equal values and either may win.
+var structLayouts sync.Map
+
 // structFields lists the fields of struct type t the naming rules keep, and
-// reports two fields that resolve to the same key.
+// reports two fields that resolve to the same key. The slice is shared
+// between callers and must not be modified.
 func structFields(t reflect.Type) ([]structField, error) {
+	if cached, ok := structLayouts.Load(t); ok {
+		layout := cached.(structLayout)
+		return layout.fields, layout.err
+	}
+	fields, err := computeStructFields(t)
+	structLayouts.Store(t, structLayout{fields: fields, err: err})
+	return fields, err
+}
+
+// computeStructFields reflects over t's fields by the naming rules.
+func computeStructFields(t reflect.Type) ([]structField, error) {
 	var fields []structField
 	byKey := map[string]string{}
 	for i := range t.NumField() {

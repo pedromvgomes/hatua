@@ -6,6 +6,7 @@ import (
 	"math"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -367,6 +368,57 @@ func TestNodeHandlerRejectsUnsupportedTypes(t *testing.T) {
 				t.Fatal("Handler() returned a Handler alongside its error")
 			}
 		})
+	}
+}
+
+func TestNodeHandlerReportsDuplicateKeysTheSameEveryTime(t *testing.T) {
+	type dupKeys struct {
+		A string `hatua:"x"`
+		B string `hatua:"x"`
+	}
+	adapt := Node[dupKeys, map[string]any](func(context.Context, dupKeys) (map[string]any, error) { return nil, nil }).Handler
+	_, first := adapt()
+	_, second := adapt()
+	if first == nil || second == nil || first.Error() != second.Error() {
+		t.Fatalf("Handler() errors = %v, then %v; want the same error twice", first, second)
+	}
+	if !strings.Contains(first.Error(), "fields A and B both use key \"x\"") {
+		t.Fatalf("Handler() error = %v, want it to name both fields and the key", first)
+	}
+}
+
+func TestNodeDecodesAndEncodesConcurrently(t *testing.T) {
+	type concurrentLeaf struct {
+		Name string
+	}
+	type concurrentIO struct {
+		Leaf   concurrentLeaf
+		Leaves []concurrentLeaf
+	}
+	h, err := Node[concurrentIO, concurrentIO](func(_ context.Context, in concurrentIO) (concurrentIO, error) {
+		return in, nil
+	}).Handler()
+	if err != nil {
+		t.Fatalf("Handler: %v", err)
+	}
+	fields := map[string]any{
+		"leaf":   map[string]any{"name": "a"},
+		"leaves": []any{map[string]any{"name": "b"}},
+	}
+	var wg sync.WaitGroup
+	errs := make([]error, 16)
+	outs := make([]map[string]any, 16)
+	for i := range errs {
+		wg.Go(func() { outs[i], errs[i] = h(context.Background(), fields) })
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("call %d: %v", i, err)
+		}
+		if !reflect.DeepEqual(outs[i], fields) {
+			t.Fatalf("call %d = %#v, want %#v", i, outs[i], fields)
+		}
 	}
 }
 

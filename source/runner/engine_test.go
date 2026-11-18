@@ -11,6 +11,7 @@ import (
 	"time"
 
 	hatua "hatua.dev/go"
+	"hatua.dev/go/expressions"
 )
 
 // engineManifests declares every verb the engine tests use, core verbs
@@ -754,6 +755,102 @@ steps:
 	}
 	if called {
 		t.Fatal("a Handler ran, want none")
+	}
+}
+
+// greetEngine returns an Engine given greetFunctions through WithFunctions,
+// whose data.shape Handler records the fields it is called with into got.
+func greetEngine(t *testing.T, got *map[string]any) *Engine {
+	t.Helper()
+	reg := NewRegistry()
+	err := reg.Register("data.shape", func(_ context.Context, fields map[string]any) (map[string]any, error) {
+		*got = fields
+		return map[string]any{}, nil
+	})
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	engine, err := NewEngine(reg, loadEngineManifests(t), WithFunctions(greetFunctions(t)))
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	return engine
+}
+
+func TestEngineCallsAHostFunctionFromAVariable(t *testing.T) {
+	var got map[string]any
+	engine := greetEngine(t, &got)
+	def := loadDefinition(t, `
+id: wf_host_var
+name: Host function in a variable
+version: 1
+status: published
+triggers:
+  - id: start
+    use: core.manual
+vars:
+  - key: greeting
+    t: text
+    value: "{{ crm.greet(triggers.start.name) }}"
+steps:
+  - id: shape
+    use: data.shape
+    with:
+      label: "{{var.greeting}}"
+`)
+
+	if _, err := engine.Run(context.Background(), def, startInput()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got["label"] != "Hello, Ada" {
+		t.Fatalf("label = %#v, want %q", got["label"], "Hello, Ada")
+	}
+}
+
+// The SDK's validator checks a Step's Templates against the core functions
+// alone, since no manifest kind declares a Host function, so a Step field
+// calling one names nothing in scope and is refused before the run starts. A
+// variable's value is not checked, which is why a Host function is reachable
+// from there.
+func TestEngineRefusesAHostFunctionCalledFromAStepField(t *testing.T) {
+	var got map[string]any
+	engine := greetEngine(t, &got)
+	def := loadDefinition(t, `
+id: wf_host_step
+name: Host function in a step
+version: 1
+status: published
+triggers:
+  - id: start
+    use: core.manual
+steps:
+  - id: shape
+    use: data.shape
+    with:
+      label: "{{ crm.greet(triggers.start.name) }}"
+`)
+
+	_, err := engine.Run(context.Background(), def, startInput())
+	var invalid *InvalidDefinitionError
+	if !errors.As(err, &invalid) {
+		t.Fatalf("err = %v, want *InvalidDefinitionError", err)
+	}
+	found := slices.ContainsFunc(invalid.Diagnostics, func(d hatua.Diagnostic) bool {
+		return d.Code == hatua.DefinitionCode(expressions.CodeExprUnknownReference) &&
+			d.StepID == "shape" && d.FieldKey == "label"
+	})
+	if !found {
+		t.Fatalf("diagnostics = %+v, want EXPR_UNKNOWN_REFERENCE on shape.label", invalid.Diagnostics)
+	}
+	if got != nil {
+		t.Fatalf("data.shape ran with %#v, want no Handler called", got)
+	}
+}
+
+func TestNewEngineRefusesAHostFunctionShadowingACoreOne(t *testing.T) {
+	host := expressions.Registry{"text.upper": expressions.CoreFunctions()["text.upper"]}
+	if _, err := NewEngine(NewRegistry(), nil, WithFunctions(host)); err == nil {
+		t.Fatal("NewEngine accepted a Host function named text.upper")
 	}
 }
 

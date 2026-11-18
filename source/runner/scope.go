@@ -54,11 +54,29 @@ type Scope struct {
 // name with a core function is an error, because either winner would make the
 // Workflow's behaviour depend on which registry was consulted first.
 func NewScope(host expressions.Registry) (*Scope, error) {
+	functions, err := mergeFunctions(host)
+	if err != nil {
+		return nil, err
+	}
+	return newScope(functions), nil
+}
+
+// newScope returns an empty Scope calling functions, a registry
+// mergeFunctions built. The registry is shared, not copied, so every Scope
+// given the same one must treat it as read-only.
+func newScope(functions expressions.Registry) *Scope {
+	return &Scope{functions: functions}
+}
+
+// mergeFunctions merges Hatua's core functions with the Host's functions in
+// host, which may be nil, refusing a Host function that shares a qualified
+// name with a core one.
+func mergeFunctions(host expressions.Registry) (expressions.Registry, error) {
 	functions, err := expressions.MergeRegistries(expressions.CoreFunctions(), host)
 	if err != nil {
 		return nil, fmt.Errorf("runner: host functions: %w", err)
 	}
-	return &Scope{functions: functions}, nil
+	return functions, nil
 }
 
 // SetTrigger records which Trigger fired and its payload, addressed as
@@ -118,7 +136,8 @@ func (s *Scope) SetNow(now time.Time) {
 
 // Context returns a snapshot of the Scope as an expressions.Context. Its
 // top-level maps are copies, so a later Set or RecordOutput does not change
-// a Context already handed out.
+// a Context already handed out, and a caller may modify them without changing
+// the Scope.
 func (s *Scope) Context() expressions.Context {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

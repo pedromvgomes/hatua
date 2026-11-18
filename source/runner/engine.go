@@ -133,7 +133,7 @@ type Option func(*Engine)
 // Template the engine resolves, alongside Hatua's core functions. A Host
 // builds host with expressions.HostFunctions.
 func WithFunctions(host expressions.Registry) Option {
-	return func(e *Engine) { e.functions = host }
+	return func(e *Engine) { e.host = host }
 }
 
 // WithRunContext declares the Run Context keys the Host supplies, so the
@@ -150,11 +150,16 @@ func WithRunContext(keys []hatua.ContextKey) Option {
 // any other Step is refused before anything runs, so a run never stops
 // halfway because it reached something it cannot execute.
 //
-// An Engine is safe for concurrent use: each Run builds its own Scope.
+// An Engine is safe for concurrent use: each Run builds its own Scope, and
+// every Scope shares the Engine's function registry, which nothing writes to
+// once NewEngine returns.
 type Engine struct {
 	registry  *Registry
 	manifests []hatua.Manifest
 	byUse     map[string]hatua.Manifest
+	// host is the Host's functions as WithFunctions gave them; functions is
+	// host merged with the core functions, the registry every Scope calls.
+	host      expressions.Registry
 	functions expressions.Registry
 	context   []hatua.ContextKey
 }
@@ -183,9 +188,11 @@ func NewEngine(reg *Registry, manifests []hatua.Manifest, opts ...Option) (*Engi
 	for _, opt := range opts {
 		opt(e)
 	}
-	if _, err := NewScope(e.functions); err != nil {
+	functions, err := mergeFunctions(e.host)
+	if err != nil {
 		return nil, err
 	}
+	e.functions = functions
 	return e, nil
 }
 
@@ -238,10 +245,7 @@ func (e *Engine) Run(ctx context.Context, def hatua.Definition, in RunInput) (Re
 		return Result{}, fmt.Errorf("%w: %q", ErrUnknownTrigger, in.Trigger)
 	}
 
-	scope, err := NewScope(e.functions)
-	if err != nil {
-		return Result{}, err
-	}
+	scope := newScope(e.functions)
 	scope.SetTrigger(in.Trigger, in.Payload)
 	scope.SetRun(in.Run)
 	now := in.Now

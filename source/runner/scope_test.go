@@ -4,6 +4,7 @@ import (
 	"errors"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -241,6 +242,70 @@ func TestScopeContextIsASnapshot(t *testing.T) {
 	}
 	if ctx.OnMissing != expressions.OnMissingError {
 		t.Fatalf("OnMissing = %q, want %q", ctx.OnMissing, expressions.OnMissingError)
+	}
+}
+
+func TestScopeContextIsUnaffectedByALaterRecordOutput(t *testing.T) {
+	scope, err := NewScope(nil)
+	if err != nil {
+		t.Fatalf("NewScope: %v", err)
+	}
+	scope.RecordOutput("s1", map[string]any{"n": 1})
+	first := scope.Context()
+	scope.RecordOutput("s1", map[string]any{"n": 10})
+	scope.RecordOutput("s2", map[string]any{"n": 2})
+	second := scope.Context()
+	scope.RecordOutput("s3", map[string]any{"n": 3})
+	scope.RecordOutput("s2", map[string]any{"n": 20})
+
+	if want := map[string]any{"s1": map[string]any{"n": 1.0}}; !reflect.DeepEqual(first.Steps, want) {
+		t.Fatalf("first Context's steps = %#v, want %#v", first.Steps, want)
+	}
+	want := map[string]any{"s1": map[string]any{"n": 10.0}, "s2": map[string]any{"n": 2.0}}
+	if !reflect.DeepEqual(second.Steps, want) {
+		t.Fatalf("second Context's steps = %#v, want %#v", second.Steps, want)
+	}
+	want = map[string]any{
+		"s1": map[string]any{"n": 10.0}, "s2": map[string]any{"n": 20.0}, "s3": map[string]any{"n": 3.0},
+	}
+	if got := scope.Context().Steps; !reflect.DeepEqual(got, want) {
+		t.Fatalf("current steps = %#v, want %#v", got, want)
+	}
+}
+
+func TestScopeRecordsOutputsWhileContextsAreTaken(t *testing.T) {
+	scope, err := NewScope(nil)
+	if err != nil {
+		t.Fatalf("NewScope: %v", err)
+	}
+	const writers = 8
+	var wg sync.WaitGroup
+	for i := range writers {
+		wg.Go(func() {
+			id := "s" + strings.Repeat("x", i)
+			for range 50 {
+				scope.RecordOutput(id, map[string]any{"n": i})
+				scope.SetVar(id, i)
+			}
+		})
+		wg.Go(func() {
+			for range 50 {
+				ctx := scope.Context()
+				count := len(ctx.Steps)
+				for range ctx.Steps {
+				}
+				if len(ctx.Steps) != count {
+					t.Errorf("a Context's steps changed while it was read")
+				}
+				if _, err := scope.ResolveFields(map[string]any{"f": "{{run}}"}); err != nil {
+					t.Errorf("ResolveFields: %v", err)
+				}
+			}
+		})
+	}
+	wg.Wait()
+	if got := len(scope.Context().Steps); got != writers {
+		t.Fatalf("steps recorded = %d, want %d", got, writers)
 	}
 }
 
