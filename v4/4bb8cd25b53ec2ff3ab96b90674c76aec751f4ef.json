@@ -1,0 +1,57 @@
+{
+  "apex": {
+    "covered": 26,
+    "total": 26,
+    "producer": "vitest 3.2.7, @vitest/coverage-v8 3.2.7"
+  },
+  "pkg-document": {
+    "covered": 104,
+    "total": 108,
+    "producer": "vitest 3.2.7, @vitest/coverage-v8 3.2.7"
+  },
+  "pkg-expressions": {
+    "covered": 4167,
+    "total": 4546,
+    "producer": "vitest 3.2.7, @vitest/coverage-v8 3.2.7"
+  },
+  "pkg-layout": {
+    "covered": 589,
+    "total": 595,
+    "producer": "vitest 3.2.7, @vitest/coverage-v8 3.2.7"
+  },
+  "pkg-model": {
+    "covered": 1371,
+    "total": 1433,
+    "producer": "vitest 3.2.7, @vitest/coverage-v8 3.2.7"
+  },
+  "pkg-react": {
+    "covered": 7152,
+    "total": 7313,
+    "producer": "vitest 3.2.7, @vitest/coverage-v8 3.2.7"
+  },
+  "pkg-schema": {
+    "covered": 298,
+    "total": 328,
+    "producer": "vitest 3.2.7, @vitest/coverage-v8 3.2.7"
+  },
+  "pkg-services": {
+    "covered": 2002,
+    "total": 2062,
+    "producer": "vitest 3.2.7, @vitest/coverage-v8 3.2.7"
+  },
+  "playground": {
+    "covered": 439,
+    "total": 448,
+    "producer": "vitest 3.2.7, @vitest/coverage-v8 3.2.7"
+  },
+  "sdk-go": {
+    "covered": 1604,
+    "total": 1749,
+    "producer": "go 1.26.11"
+  },
+  "sdk-js": {
+    "covered": 23,
+    "total": 29,
+    "producer": "vitest 3.2.7, @vitest/coverage-v8 3.2.7"
+  }
+}
