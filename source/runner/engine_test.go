@@ -656,6 +656,71 @@ steps:
 	}
 }
 
+func TestEngineSeedsNonStringVariablesWithTheirLiteralValues(t *testing.T) {
+	var got map[string]any
+	var called bool
+	engine := shapeEngine(t, &got, &called)
+	def := loadDefinition(t, `
+id: wf_var_literals
+name: Variable literals
+version: 1
+status: published
+triggers:
+  - id: start
+    use: core.manual
+vars:
+  - key: limit
+    t: number
+    value: 5
+  - key: ratio
+    t: number
+    value: 0.5
+  - key: on
+    t: boolean
+    value: true
+  - key: tags
+    t: list
+    value: [a, 2, false]
+  - key: config
+    t: object
+    value:
+      retries: 3
+      verbose: true
+      nested: { name: x }
+steps:
+  - id: shape
+    use: data.shape
+    with:
+      entries:
+        - { key: limit, value: "{{var.limit}}", type: number }
+        - { key: ratio, value: "{{var.ratio}}", type: number }
+        - { key: on, value: "{{var.on}}", type: boolean }
+        - { key: tags, value: "{{var.tags}}", type: list }
+        - { key: config, value: "{{var.config}}", type: object }
+`)
+
+	if _, err := engine.Run(context.Background(), def, countInput()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	want := map[string]any{
+		"limit": float64(5),
+		"ratio": 0.5,
+		"on":    true,
+		"tags":  []any{"a", float64(2), false},
+		"config": map[string]any{
+			"retries": float64(3),
+			"verbose": true,
+			"nested":  map[string]any{"name": "x"},
+		},
+	}
+	if !called {
+		t.Fatal("the Handler did not run")
+	}
+	if !reflect.DeepEqual(got["entries"], want) {
+		t.Fatalf("entries = %#v, want %#v", got["entries"], want)
+	}
+}
+
 func TestEngineRefusesARunWhoseVariableTemplateFails(t *testing.T) {
 	var got map[string]any
 	var called bool
