@@ -174,3 +174,4 @@ vite.config.ts.timestamp-*
 # path-based with no equivalent of `go test -overlay`.
 source/tools/expression/.staging/
 source/packages/expressions/src/generated.staged/
+/.agentic-toolkit.lock.yaml
