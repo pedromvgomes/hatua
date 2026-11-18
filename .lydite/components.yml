@@ -14,6 +14,8 @@
 # source/sdk/go is a Go module living inside this otherwise-TypeScript workspace
 # (it carries its own go.mod and is deliberately outside pnpm-workspace.yaml's
 # package globs) — a go-test component of its own, dir set to the module root.
+# source/runner is a second Go module beside it, with its own go.mod and its own
+# go-test component, joined to the SDK for local builds by the root go.work.
 #
 # tools/codegen and tools/expression are JavaScript build tooling with no test
 # script (`generate`, `check-drift`, `lint` — nothing turbo's test task reaches),
@@ -50,6 +52,11 @@ components:
 
   - name: sdk-go
     dir: source/sdk/go
+    runner: go-test
+    args: ["./..."]
+
+  - name: runner-go
+    dir: source/runner
     runner: go-test
     args: ["./..."]
 
