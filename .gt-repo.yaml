@@ -40,6 +40,13 @@ dependabot:
       The Go SDK module. ci-test builds, vets and tests it on the Go version
       setup-go reads out of this go.mod through go-version-file, so this entry
       is what moves that version as well as the module's dependencies.
+  - ecosystem: gomod
+    directory: /source/runner
+    note: |
+      The Go runner module. It requires a released hatua.dev/go rather than
+      the SDK beside it, so this entry is what moves it onto each new SDK
+      release as well as its other dependencies. go.work joins it to the SDK
+      for local builds; Dependabot reads this go.mod alone.
 pipeline:
   ci:
     stages:

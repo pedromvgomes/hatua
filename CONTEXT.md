@@ -4,8 +4,8 @@ An embeddable workflow designer. Hatua edits and renders workflow YAML inside a 
 application; it has no runtime, no storage and no server of its own.
 
 It is not, however, front-end only: Hatua also ships SDKs so a **Host**'s runner can read the same
-contract and evaluate the same **References** the builder wrote. Hatua still never executes a
-workflow — it provides libraries, not a runtime.
+contract and evaluate the same **References** the builder wrote. The designer and the SDKs never execute a
+workflow; a **Runner** is a separate library a **Host** adds when it wants to.
 
 ## Language
 
@@ -23,6 +23,14 @@ _Avoid_: run, history, trace, instance
 The application embedding Hatua. Owns the **Workflow Definition** file, its storage, the
 **Component Manifest** set, and the runner that executes workflows. Hatua is a guest in it.
 _Avoid_: consumer, client, parent app
+
+**Runner**:
+The program that executes a **Workflow Definition**, calling for each **Step** the handler a **Host**
+registered for its **Component**. Hatua ships one, separate from the SDKs, so that reading and
+validating a definition never carries execution with it — the SDKs themselves never execute. A Runner
+supplies the walk and nothing else: the code behind a **Component** or a **Function** is the
+**Host**'s.
+_Avoid_: engine, executor, interpreter, scheduler
 
 **Component Manifest**:
 The **Host**-supplied declaration of a step type available to a **Workflow Definition** — its

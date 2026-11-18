@@ -7,6 +7,9 @@ module. A single tag sets the same version across all of them, and only **`@hatu
 `@hatua/react`'s build treats them as externals rather than bundling them; nobody installs
 `@hatua/model` and gets a contract.
 
+The runner is outside this rule: it is its own Go module and versions on its own
+([ADR-0030](0030-the-runner-is-its-own-module.md)).
+
 ## Why not version them independently
 
 Because the lockstep is not a convenience, it is what the dependency declarations already force.
