@@ -868,3 +868,103 @@ func TestInvalidDefinitionErrorNamesTheFirstDiagnostic(t *testing.T) {
 		t.Fatalf("Error() = %q, want it to name the step and the message", msg)
 	}
 }
+
+const nowDefinition = `
+id: wf_now
+name: Now
+version: 1
+status: published
+triggers:
+  - id: start
+    use: core.manual
+vars:
+  - key: at
+    t: text
+    value: "{{ dt.now() }}"
+steps:
+  - id: shape
+    use: data.shape
+    with:
+      label: "{{dt.now()}}"
+      entries:
+        - { key: at, value: "{{var.at}}", type: text }
+`
+
+func TestEngineReadsDtNowFromRunInputNow(t *testing.T) {
+	var got map[string]any
+	var called bool
+	engine := shapeEngine(t, &got, &called)
+
+	if _, err := engine.Run(context.Background(), loadDefinition(t, nowDefinition), countInput()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	want := map[string]any{
+		"label":   "2026-01-02T03:04:05Z",
+		"entries": map[string]any{"at": "2026-01-02T03:04:05Z"},
+		"mode":    "",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("fields = %#v, want %#v", got, want)
+	}
+}
+
+func TestEngineReadsTheSystemClockOnceWhenNowIsZero(t *testing.T) {
+	var got map[string]any
+	var called bool
+	engine := shapeEngine(t, &got, &called)
+	in := countInput()
+	in.Now = time.Time{}
+
+	// dt.now() renders to the millisecond, so the bounds widen to whole
+	// milliseconds either side.
+	before := time.Now().Truncate(time.Millisecond)
+	if _, err := engine.Run(context.Background(), loadDefinition(t, nowDefinition), in); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	after := time.Now().Add(time.Millisecond)
+
+	label, _ := got["label"].(string)
+	at, err := time.Parse(time.RFC3339Nano, label)
+	if err != nil {
+		t.Fatalf("label = %q, want an RFC 3339 instant: %v", label, err)
+	}
+	if at.Before(before) || at.After(after) {
+		t.Fatalf("dt.now() = %v, want an instant between %v and %v", at, before, after)
+	}
+	if entries, _ := got["entries"].(map[string]any); entries["at"] != label {
+		t.Fatalf("variable read dt.now() as %v and the step as %q, want one instant for the whole run", entries["at"], label)
+	}
+}
+
+func TestMissingHandlersErrorListsVerbsSorted(t *testing.T) {
+	engine := newEngine(t, map[string]Handler{})
+	def := loadDefinition(t, `
+id: wf_missing
+name: Missing
+version: 1
+status: published
+triggers:
+  - id: start
+    use: core.manual
+steps:
+  - id: notify
+    use: mail.send
+    with:
+      to: ops@example.com
+  - id: shape
+    use: data.shape
+  - id: lookup
+    use: crm.lookup
+    with:
+      name: Ada
+`)
+
+	_, err := engine.Run(context.Background(), def, startInput())
+	var missing *MissingHandlersError
+	if !errors.As(err, &missing) {
+		t.Fatalf("err = %v, want *MissingHandlersError", err)
+	}
+	if want := []string{"crm.lookup", "data.shape", "mail.send"}; !slices.Equal(missing.Verbs, want) {
+		t.Fatalf("missing verbs = %v, want %v", missing.Verbs, want)
+	}
+}

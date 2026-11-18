@@ -387,6 +387,166 @@ func TestNodeHandlerReportsDuplicateKeysTheSameEveryTime(t *testing.T) {
 	}
 }
 
+func TestNodeHandlerNamesWhereAnUnsupportedTypeSits(t *testing.T) {
+	type dupKeys struct {
+		A string `hatua:"x"`
+		B string `hatua:"x"`
+	}
+	type nested struct {
+		Inner dupKeys `hatua:"inner"`
+	}
+	_, top := Node[dupKeys, map[string]any](func(context.Context, dupKeys) (map[string]any, error) { return nil, nil }).Handler()
+	if want := `node input type is not supported: top level: runner.dupKeys fields A and B both use key "x"`; top == nil || top.Error() != want {
+		t.Fatalf("Handler() error = %v, want %q", top, want)
+	}
+	_, inner := Node[nested, map[string]any](func(context.Context, nested) (map[string]any, error) { return nil, nil }).Handler()
+	if want := `node input type is not supported: field inner: runner.dupKeys fields A and B both use key "x"`; inner == nil || inner.Error() != want {
+		t.Fatalf("Handler() error = %v, want %q", inner, want)
+	}
+}
+
+func TestNodeHandlerCachesEachStructLayout(t *testing.T) {
+	type cachedLeaf struct {
+		Name string
+		Skip string `hatua:"-"`
+		Size int    `hatua:"size"`
+	}
+	type cachedIn struct {
+		Leaf cachedLeaf `hatua:"leaf"`
+	}
+	type cachedDup struct {
+		A string `hatua:"x"`
+		B string `hatua:"x"`
+	}
+	if _, err := Node[cachedIn, map[string]any](func(context.Context, cachedIn) (map[string]any, error) { return nil, nil }).Handler(); err != nil {
+		t.Fatalf("Handler() error = %v", err)
+	}
+	for typ, want := range map[reflect.Type][]structField{
+		reflect.TypeFor[cachedIn]():   {{key: "leaf", index: 0}},
+		reflect.TypeFor[cachedLeaf](): {{key: "name", index: 0}, {key: "size", index: 2}},
+	} {
+		cached, ok := structLayouts.Load(typ)
+		if !ok {
+			t.Fatalf("no layout cached for %s", typ)
+		}
+		if layout := cached.(structLayout); !reflect.DeepEqual(layout.fields, want) || layout.err != nil {
+			t.Fatalf("layout for %s = %+v, want fields %+v and no error", typ, layout, want)
+		}
+	}
+
+	_, adaptErr := Node[cachedDup, map[string]any](func(context.Context, cachedDup) (map[string]any, error) { return nil, nil }).Handler()
+	cached, ok := structLayouts.Load(reflect.TypeFor[cachedDup]())
+	if !ok {
+		t.Fatal("no layout cached for a struct with duplicate keys")
+	}
+	layout := cached.(structLayout)
+	if layout.err == nil || !strings.Contains(adaptErr.Error(), layout.err.Error()) {
+		t.Fatalf("cached error = %v, want the error Handler() reported: %v", layout.err, adaptErr)
+	}
+}
+
+// widthIn holds a single field V of type T, so a test can decode one value
+// into a numeric field of any width.
+type widthIn[T any] struct {
+	V T `hatua:"v"`
+}
+
+func decodeWidth[T any](value any) (any, error) {
+	var got T
+	h, err := Node[widthIn[T], map[string]any](func(_ context.Context, in widthIn[T]) (map[string]any, error) {
+		got = in.V
+		return nil, nil
+	}).Handler()
+	if err != nil {
+		return nil, err
+	}
+	if _, err := h(context.Background(), map[string]any{"v": value}); err != nil {
+		return nil, err
+	}
+	return got, nil
+}
+
+func TestNodeDecodesNumbersAtEachWidthsLimits(t *testing.T) {
+	const twoTo64 = 2 * float64(1<<63)
+	tests := []struct {
+		name   string
+		decode func() (any, error)
+		want   any
+	}{
+		{"int8 max", func() (any, error) { return decodeWidth[int8](math.MaxInt8) }, int8(math.MaxInt8)},
+		{"int8 min", func() (any, error) { return decodeWidth[int8](math.MinInt8) }, int8(math.MinInt8)},
+		{"int16 max", func() (any, error) { return decodeWidth[int16](math.MaxInt16) }, int16(math.MaxInt16)},
+		{"int16 min", func() (any, error) { return decodeWidth[int16](math.MinInt16) }, int16(math.MinInt16)},
+		{"int32 max", func() (any, error) { return decodeWidth[int32](math.MaxInt32) }, int32(math.MaxInt32)},
+		{"int32 min", func() (any, error) { return decodeWidth[int32](math.MinInt32) }, int32(math.MinInt32)},
+		{"int64 max", func() (any, error) { return decodeWidth[int64](int64(math.MaxInt64)) }, int64(math.MaxInt64)},
+		{"int64 min", func() (any, error) { return decodeWidth[int64](int64(math.MinInt64)) }, int64(math.MinInt64)},
+		{"int64 from the largest uint64 it holds", func() (any, error) { return decodeWidth[int64](uint64(math.MaxInt64)) }, int64(math.MaxInt64)},
+		{"int64 from float -2^63", func() (any, error) { return decodeWidth[int64](-float64(1 << 63)) }, int64(math.MinInt64)},
+		{"uint from int zero", func() (any, error) { return decodeWidth[uint](0) }, uint(0)},
+		{"uint from float zero", func() (any, error) { return decodeWidth[uint](0.0) }, uint(0)},
+		{"uint8 max", func() (any, error) { return decodeWidth[uint8](math.MaxUint8) }, uint8(math.MaxUint8)},
+		{"uint16 max", func() (any, error) { return decodeWidth[uint16](math.MaxUint16) }, uint16(math.MaxUint16)},
+		{"uint32 max", func() (any, error) { return decodeWidth[uint32](math.MaxUint32) }, uint32(math.MaxUint32)},
+		{"uint64 max", func() (any, error) { return decodeWidth[uint64](uint64(math.MaxUint64)) }, uint64(math.MaxUint64)},
+		{"uint64 from float 2^63", func() (any, error) { return decodeWidth[uint64](float64(1 << 63)) }, uint64(1 << 63)},
+		{"float32 max", func() (any, error) { return decodeWidth[float32](float64(math.MaxFloat32)) }, float32(math.MaxFloat32)},
+		{"float32 min", func() (any, error) { return decodeWidth[float32](-float64(math.MaxFloat32)) }, float32(-math.MaxFloat32)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := tt.decode()
+			if err != nil {
+				t.Fatalf("decode error = %v, want %v", err, tt.want)
+			}
+			if got != tt.want {
+				t.Fatalf("decoded %#v, want %#v", got, tt.want)
+			}
+		})
+	}
+
+	rejected := []struct {
+		name   string
+		decode func() (any, error)
+	}{
+		{"int8 above max", func() (any, error) { return decodeWidth[int8](math.MaxInt8 + 1) }},
+		{"int8 below min", func() (any, error) { return decodeWidth[int8](math.MinInt8 - 1) }},
+		{"int16 above max", func() (any, error) { return decodeWidth[int16](math.MaxInt16 + 1) }},
+		{"int16 below min", func() (any, error) { return decodeWidth[int16](math.MinInt16 - 1) }},
+		{"int32 above max", func() (any, error) { return decodeWidth[int32](math.MaxInt32 + 1) }},
+		{"int32 below min", func() (any, error) { return decodeWidth[int32](math.MinInt32 - 1) }},
+		{"int64 from a uint64 above its max", func() (any, error) { return decodeWidth[int64](uint64(math.MaxInt64) + 1) }},
+		{"int64 from float 2^63", func() (any, error) { return decodeWidth[int64](float64(1 << 63)) }},
+		{"int64 from the float below -2^63", func() (any, error) {
+			return decodeWidth[int64](math.Nextafter(-float64(1<<63), math.Inf(-1)))
+		}},
+		{"uint from int -1", func() (any, error) { return decodeWidth[uint](-1) }},
+		{"uint from float -1", func() (any, error) { return decodeWidth[uint](-1.0) }},
+		{"uint8 above max", func() (any, error) { return decodeWidth[uint8](math.MaxUint8 + 1) }},
+		{"uint16 above max", func() (any, error) { return decodeWidth[uint16](math.MaxUint16 + 1) }},
+		{"uint32 above max", func() (any, error) { return decodeWidth[uint32](math.MaxUint32 + 1) }},
+		{"uint64 from float 2^64", func() (any, error) { return decodeWidth[uint64](twoTo64) }},
+		{"float32 just above max", func() (any, error) {
+			return decodeWidth[float32](math.Nextafter(math.MaxFloat32, math.Inf(1)))
+		}},
+		{"float32 just below min", func() (any, error) {
+			return decodeWidth[float32](math.Nextafter(-math.MaxFloat32, math.Inf(-1)))
+		}},
+	}
+	for _, tt := range rejected {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := tt.decode()
+			if !errors.Is(err, ErrFieldRange) {
+				t.Fatalf("decode = %#v, %v; want an error wrapping ErrFieldRange", got, err)
+			}
+			var fe *FieldError
+			if !errors.As(err, &fe) || fe.Field != "v" {
+				t.Fatalf("error = %v, want a *FieldError naming field v", err)
+			}
+		})
+	}
+}
+
 func TestNodeDecodesAndEncodesConcurrently(t *testing.T) {
 	type concurrentLeaf struct {
 		Name string
