@@ -6,7 +6,7 @@
 # run`, and there is no vitest.workspace.ts or vitest.config.ts at the source/
 # root to point a single component at. A component is the unit its build tool
 # treats as a whole, and here that unit is one npm package: each apps/* and
-# packages/* directory, plus sdk/js and tools/conformance, is its own vitest
+# packages/* directory, plus sdk/js, is its own vitest
 # invocation and its own component. Collapsing them into one component rooted at
 # source/ would ask lydite to run `vitest run` once over a tree vitest itself
 # never treats as one suite.
@@ -99,13 +99,12 @@ components:
     setup:
       - sh -c 'cd "$(git rev-parse --show-toplevel)/source" && pnpm turbo run build --filter=@hatua/services^...'
 
-  - name: tools-conformance
-    dir: source/tools/conformance
-    runner: vitest
-    depends_on: [pkg-schema]
-    setup:
-      - sh -c 'cd "$(git rev-parse --show-toplevel)/source" && pnpm turbo run build --filter=@hatua/conformance^...'
-
+# tools/conformance: a single test file that runs the shared fixture corpus against
+# @hatua/schema and carries no source of its own. Its coverage report lists no
+# coverable line, so lydite can measure no coverage or CRAP score for it, and a
+# baseline that lacks a component is not recorded. Turbo's test task still runs it
+# in ci-test.yml.
+#
 # tools/codegen and tools/expression: JavaScript source with no test script —
 # generators and a grammar build, not a suite. types/: a single ambient .d.ts
 # nothing builds or tests as a unit. brand/: a separate pnpm package (its own
@@ -113,6 +112,7 @@ components:
 # PNG — no test script, no coverage story, nothing a vitest/jest component could
 # run.
 excludes:
+  - "source/tools/conformance/**"
   - "source/tools/codegen/**"
   - "source/tools/expression/**"
   - "source/types/**"
