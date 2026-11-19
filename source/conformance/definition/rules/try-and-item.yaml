@@ -173,7 +173,11 @@ scenarios:
       status: draft
       steps:
         - { id: each, use: core.for_each }
-        - { id: guard, use: core.try, handler: [{ id: s2, use: component.email.send, with: { to: "a@b.c" } }] }
+        - {
+            id: guard,
+            use: core.try,
+            handler: [{ id: s2, use: component.email.send, with: { to: "a@b.c" } }],
+          }
     expect:
       - { code: FIELD_REQUIRED, blocks: publish, stepId: each, fieldKey: list }
       - { code: LOOP_HAS_NO_BODY, blocks: publish, stepId: each }
@@ -501,7 +505,11 @@ scenarios:
               use: core.for_each
               with: { list: "{{ steps.fetch.messages }}" }
               steps:
-                - { id: s2, use: component.email.send, with: { to: "{{ steps.each.item.subject }}" } }
+                - {
+                    id: s2,
+                    use: component.email.send,
+                    with: { to: "{{ steps.each.item.subject }}" },
+                  }
     expect: []
 
   - name: >-

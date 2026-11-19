@@ -7,18 +7,18 @@ that turns a `Rect` into the style that puts a box where it says.
 
 `TextToggle` swaps the column between the two ways of editing one document, and
 reads **YAML**. It is here rather than in the toolbar because the bar asks which
-*document* is on screen and this asks how it is *drawn*. It shares the lower end
+_document_ is on screen and this asks how it is _drawn_. It shares the lower end
 with `CanvasControls` rather than joining it: a corner shared is what makes it
 read as chrome, while a pill shared would put it inside a control that Text Mode
 does not draw at all — and this is the way back out of it (ADR-0026).
 
 `Code` is the odd one: it draws no part of the canvas. It is here because it is
 what the tier is — props in, events out, and it decides nothing about what a
-token *is*. Two surfaces feed it and they arrive at their tokens completely
+token _is_. Two surfaces feed it and they arrive at their tokens completely
 differently (`layouts/highlight.ts`), which is exactly why the rendering is one
 component: a string has to look like a string on **Text Mode**'s document and on
 a run's payload alike. It carries no line numbers, no gutter and no scrolling of
-its own, because one caller puts it *under* a textarea where chrome of its own
+its own, because one caller puts it _under_ a textarea where chrome of its own
 would be chrome the caret does not know about (ADR-0027).
 
 **Rule:** props in, events out. No reaching into `@hatua/services`. Enforced by
@@ -26,7 +26,7 @@ would be chrome the caret does not know about (ADR-0027).
 
 Named `units` rather than `blocks` because a **Block** is a domain term — a named,
 reusable sequence of Steps invoked as `use: block.<id>` — and one word for two
-things in one repo is the *Flow tab* / `FlowMap` collision this repo has paid for
+things in one repo is the _Flow tab_ / `FlowMap` collision this repo has paid for
 once already. Nothing in here is a Block, and a Block is not drawn by anything in
 here.
 
@@ -46,14 +46,14 @@ the codebase with no tests over coordinates.
 
 `CanvasControls` and `SegmentBar` are the units that position themselves, and it
 is chrome rather than geometry: floating at the lower right of the canvas is what the toolbar
-*is*, so it carries that placement and needs a positioned ancestor. Its insets
+_is_, so it carries that placement and needs a positioned ancestor. Its insets
 are logical while `boxOf`'s are physical, which is the same distinction said
 twice — the map's coordinates are physical by definition, a toolbar belongs at
 the end of the reading direction. It works no scale out either: it is handed one
 and reports which button was pressed, and `layouts/viewport.ts` does the
 arithmetic.
 
-`SegmentBar` takes the same exception and mirrors it, at the lower *start* so the
+`SegmentBar` takes the same exception and mirrors it, at the lower _start_ so the
 two cannot collide on the narrowest embed. It is handed a count rather than a
 **Segment**: what a selection resolves to on the Board being drawn is the
 canvas's question, and this draws what it is told. Its actions are separate
@@ -77,18 +77,18 @@ numbers stayed the same — drawing a Fork's first Branch last.
 
 ## What each unit is
 
-| Unit | What it is |
-| --- | --- |
-| `NodeCard` | One Step's card: the icon, the name, the verb, the chips row, the chevron, and the doorway on a call site. |
-| `Connectors` | Every line on one Board, in one SVG behind everything else. |
-| `InsertDot` | The `+` on a gap: where a Step is added, and where one is dropped. |
-| `RegionBand` | One child region: a drawn frame, with the word that names it over its top edge. |
-| `RegionNest` | One container Step's regions taken together, with the card astride its top edge. |
-| `JoinMarker` | Where a Fork's Branches come back together. |
-| `RootNode` | The node above the first Step — the Triggers, or a Block's contract. |
-| `IconCoin` | A Component's icon, as the Host serves it, in a fixed square. |
-| `CanvasControls` | The canvas's toolbar: `−`, the current percentage, `+`, and fit. |
-| `SegmentBar` | The actions over the selected Steps, and how many there are. |
+| Unit             | What it is                                                                                                 |
+| ---------------- | ---------------------------------------------------------------------------------------------------------- |
+| `NodeCard`       | One Step's card: the icon, the name, the verb, the chips row, the chevron, and the doorway on a call site. |
+| `Connectors`     | Every line on one Board, in one SVG behind everything else.                                                |
+| `InsertDot`      | The `+` on a gap: where a Step is added, and where one is dropped.                                         |
+| `RegionBand`     | One child region: a drawn frame, with the word that names it over its top edge.                            |
+| `RegionNest`     | One container Step's regions taken together, with the card astride its top edge.                           |
+| `JoinMarker`     | Where a Fork's Branches come back together.                                                                |
+| `RootNode`       | The node above the first Step — the Triggers, or a Block's contract.                                       |
+| `IconCoin`       | A Component's icon, as the Host serves it, in a fixed square.                                              |
+| `CanvasControls` | The canvas's toolbar: `−`, the current percentage, `+`, and fit.                                           |
+| `SegmentBar`     | The actions over the selected Steps, and how many there are.                                               |
 
 `RootNode` is not a `NodeCard` variant, for the same reason `FlowMap.root` is a
 `Rect` and not a `Placement`: **it names no Step.** An optional Step on the one

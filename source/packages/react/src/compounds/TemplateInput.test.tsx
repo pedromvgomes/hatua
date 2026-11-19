@@ -508,6 +508,7 @@ describe('the rest of the ways through', () => {
   })
 
   it('keeps what the picker chose once the document accepts it', () => {
+    // biome-ignore lint/correctness/noComponentHookFactories: the test component closes over this test's own state
     const Held = () => {
       const [value, setValue] = useState('')
       return <TemplateInput label="To" value={value} scope={SCOPE} onCommit={setValue} />

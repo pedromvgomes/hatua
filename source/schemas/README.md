@@ -8,13 +8,13 @@ must never be edited directly.
 
 Zod is far pleasanter to write, and it was the original plan. It does not survive the round trip:
 
-| Rule | Survives `z.toJSONSchema()` |
-| --- | --- |
-| `minLength`, `enum`, `required`, min/max | yes |
-| Custom error messages | **dropped silently** |
-| `.refine()` cross-field rules | **dropped silently — no error, even with `unrepresentable: "any"`** |
+| Rule                                     | Survives `z.toJSONSchema()`                                         |
+| ---------------------------------------- | ------------------------------------------------------------------- |
+| `minLength`, `enum`, `required`, min/max | yes                                                                 |
+| Custom error messages                    | **dropped silently**                                                |
+| `.refine()` cross-field rules            | **dropped silently — no error, even with `unrepresentable: "any"`** |
 
-A dropped refinement is not a cosmetic loss. It means the Go SDK *accepts* input the TypeScript
+A dropped refinement is not a cosmetic loss. It means the Go SDK _accepts_ input the TypeScript
 builder rejects: a workflow that fails validation in the editor and passes in the runner. Authoring
 once, here, removes that whole class of divergence.
 

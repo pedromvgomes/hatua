@@ -20,7 +20,7 @@ Three things the Worker depends on and no diff can show:
   the route never fires. The record is an `AAAA` to `100::` — a discard address that
   exists only to give the route something to attach to.
 - **The route** `hatua.dev/*`, declared in `wrangler.jsonc` and applied on deploy.
-- **`CLOUDFLARE_API_TOKEN`**, needing account `Workers Scripts: Edit` *and* zone
+- **`CLOUDFLARE_API_TOKEN`**, needing account `Workers Scripts: Edit` _and_ zone
   `Workers Routes: Edit`. With only the first, the upload succeeds and the Worker is
   never invoked.
 

@@ -404,4 +404,3 @@ $defs:
       rather than inferred from `value`, for the same reason every other field's type is: the
       expression is checked against the declared type, never the reverse.
     additionalProperties: true
-

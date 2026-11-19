@@ -28,5 +28,5 @@ trustPolicyExclude:
 # workerd is the runtime wrangler runs the apex Worker on.
 allowBuilds:
   esbuild: true
-  '@swc/core': true
+  "@swc/core": true
   workerd: true

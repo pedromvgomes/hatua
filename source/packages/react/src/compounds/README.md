@@ -3,7 +3,7 @@
 Domain-aware inputs built from primitives — the Template input and the surfaces
 it opens.
 
-**Rule:** may import domain *types*, but not `@hatua/services`. Props in, events
+**Rule:** may import domain _types_, but not `@hatua/services`. Props in, events
 out. Enforced by `noRestrictedImports` in the workspace `biome.json`.
 
 `ReferenceTree` is where it earns its keep. A popover over a field and a column
@@ -21,15 +21,15 @@ workflow variable's value, a Trigger's field and a Step's field without knowing
 which of the three it is in — and what lets a story mount one with a scope
 written by hand.
 
-| File | What it is |
-| --- | --- |
-| `TemplateInput` | The widget. A transparent field over a mirror that paints the holes, plus signature help and the ⚡ button. |
-| `CompletionList` | The caret-anchored list: 30px rows, the typed prefix accented, the type at the right, a docstring strip under it. |
-| `ExpressionPicker` | The 392px browsable panel — **Reference** and **Function** tabs, and the inserter behind the second. |
-| `ReferenceTree` | The scope as browsable rows, and the source `<select>` over them. Mounted twice: by the picker's **Reference** tab, and by the `Data` region beside the step editor. |
-| `candidates.ts` | The scope and the declared Functions as rows. Pure, and the reason "two surfaces, one set of candidates" is a fact rather than an intention. |
-| `insertion.ts` | Where the caret is, what an insertion there has to produce, and what a drag carries. |
-| `templateSpans.ts` | Where each `{{ … }}` sits, derived from the parse. |
+| File               | What it is                                                                                                                                                           |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TemplateInput`    | The widget. A transparent field over a mirror that paints the holes, plus signature help and the ⚡ button.                                                          |
+| `CompletionList`   | The caret-anchored list: 30px rows, the typed prefix accented, the type at the right, a docstring strip under it.                                                    |
+| `ExpressionPicker` | The 392px browsable panel — **Reference** and **Function** tabs, and the inserter behind the second.                                                                 |
+| `ReferenceTree`    | The scope as browsable rows, and the source `<select>` over them. Mounted twice: by the picker's **Reference** tab, and by the `Data` region beside the step editor. |
+| `candidates.ts`    | The scope and the declared Functions as rows. Pure, and the reason "two surfaces, one set of candidates" is a fact rather than an intention.                         |
+| `insertion.ts`     | Where the caret is, what an insertion there has to produce, and what a drag carries.                                                                                 |
+| `templateSpans.ts` | Where each `{{ … }}` sits, derived from the parse.                                                                                                                   |
 
 ## Two questions about `{{`, and only one of them is the parser's
 
@@ -45,7 +45,7 @@ sits in front of the parser in either language.
 **The caret is about position** — where a popup goes, and which characters an
 accepted row replaces. Nothing it returns decides what anything means, every
 value it produces is handed straight back to the parser a keystroke later, and
-it has to answer while the text does *not* parse, which is the ordinary state of
+it has to answer while the text does _not_ parse, which is the ordinary state of
 a Template halfway through being typed.
 
 The rule that has no exception is the one about **References**: a token is

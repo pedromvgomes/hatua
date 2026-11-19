@@ -21,7 +21,7 @@ call from a path, which is why namespaces need no reserved words.
 Component Manifest's output types. Two more exist only here:
 
 - `unknown` — the value's type cannot be known statically. `json.parse` returns
-  one. An `unknown` reaching a typed slot is a *warning* at design time and is
+  one. An `unknown` reaching a typed slot is a _warning_ at design time and is
   checked at run time; see ADR-0009.
 - `null` — the one absent value. It satisfies any declared type.
 
