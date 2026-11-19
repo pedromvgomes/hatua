@@ -61,3 +61,26 @@ describe('parseExpression', () => {
     })
   })
 })
+
+describe('number literals', () => {
+  it.each([
+    ['1e3', 1000],
+    ['1E3', 1000],
+    ['1e+3', 1000],
+    ['1E+3', 1000],
+    ['25e-1', 2.5],
+    ['25E-1', 2.5],
+    ['1.5e2', 150],
+  ])('reads %s as %d', (source, value) => {
+    expect(parseExpression(source)).toMatchObject({ kind: 'Literal', value })
+  })
+
+  it('refuses an exponent mark with no digits', () => {
+    expect(() => parseExpression('1e')).toThrow()
+    expect(() => parseExpression('1e+')).toThrow()
+  })
+
+  it('skips any run of spaces around an operator', () => {
+    expect(parseExpression('1   +\t 2')).toMatchObject({ kind: 'Binary', op: '+' })
+  })
+})
