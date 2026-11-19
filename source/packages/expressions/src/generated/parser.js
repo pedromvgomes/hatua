@@ -2470,7 +2470,7 @@ function peg$parse(input, options) {
       if (s1 === peg$FAILED) {
         break
       }
-      s0.push(s1)
+      s0.push(s1) // [lydite:exclude_from_mutation][no rule reads the whitespace array]
     }
 
     return s0
