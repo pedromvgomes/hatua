@@ -4,12 +4,12 @@ The development harness. Not published, and not an example app either — each
 page here exists to keep a specific claim honest, and the differences between
 them are the point.
 
-| Page | Embedding | Where the manifests come from |
-| --- | --- | --- |
-| `index.html` → `src/main.tsx` | `<Hatua>`, and nothing else | Compiled in, at build time |
-| `host.html` → `src/host.tsx` | The regions, arranged by the Host | Compiled in, at build time |
-| `api.html` → `src/api.tsx` | `<Hatua>`, and nothing else | Fetched at run time |
-| `theme.html` → `src/theme.tsx` | Three `<Hatua>`s and a `<HatuaProvider>` | Compiled in |
+| Page                           | Embedding                                | Where the manifests come from |
+| ------------------------------ | ---------------------------------------- | ----------------------------- |
+| `index.html` → `src/main.tsx`  | `<Hatua>`, and nothing else              | Compiled in, at build time    |
+| `host.html` → `src/host.tsx`   | The regions, arranged by the Host        | Compiled in, at build time    |
+| `api.html` → `src/api.tsx`     | `<Hatua>`, and nothing else              | Fetched at run time           |
+| `theme.html` → `src/theme.tsx` | Three `<Hatua>`s and a `<HatuaProvider>` | Compiled in                   |
 
 Every page also implements a `WorkflowStore`, because Hatua has no storage and
 no idea where a Workflow Definition lives. `src/workflow-store.ts` is that Host
@@ -33,7 +33,7 @@ marker: a Workflow Definition names the same verbs its catalogue declares, so
 `email.send` is in the workflow store's chunk as well. `Send email` is the
 manifest's `name`, which nothing but a Component Manifest has.
 
-Both greps are about which chunks a *page* pulls in. The entry chunks named
+Both greps are about which chunks a _page_ pulls in. The entry chunks named
 `main`, `host` and `api` are now thin: everything shared sits in `client-*.js`
 (React), `Hatua-*.js` (the container) and `catalogue-*.js` (the baked-in
 fixtures), and which of those a page loads is the whole answer.
@@ -74,10 +74,10 @@ instantly, are what `api.html` goes through on every load.
 page here that declares design tokens of its own. It sets `--accent`,
 `--surface-card`, `--radius-md`, `--text-primary` and friends on `:root` — its
 own unprefixed names — and paints its own chrome from them.
-Custom properties inherit downward, so those names reach *into* Hatua's subtree;
+Custom properties inherit downward, so those names reach _into_ Hatua's subtree;
 every property Hatua writes is `--hatua-*`, so nothing collides in either
 direction. The page also runs three themes at once from three `createTheme()`
-calls, and mounts Host markup *inside* a `<HatuaProvider>` — the case the
+calls, and mounts Host markup _inside_ a `<HatuaProvider>` — the case the
 prefixing exists for, since that markup is in Hatua's subtree and still reads
 its own tokens.
 

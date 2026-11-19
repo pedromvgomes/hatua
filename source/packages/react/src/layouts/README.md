@@ -36,7 +36,7 @@ subscribes to the manifest store through `useSyncExternalStore` and holds
 nothing but the text in its filter box. `StepList` subscribes to the editing
 store the same way — the parsed **Workflow Definition** in, a tree out, and
 every structural change back through the store as a command against the document
-(ADR-0001). `Workflow` is the first region other than validation to read *both*,
+(ADR-0001). `Workflow` is the first region other than validation to read _both_,
 because the document says which Triggers a workflow declares and only the
 catalogue says what a Trigger's fields are — and a third, `ConnectionStore`,
 because a `conn` field offers what the Host says it has established. It reads
@@ -59,7 +59,7 @@ move with the label: an id that changed on every doorway would reopen the Compon
 
 Renaming a Block's slug is the one edit here that changes what a caller is holding. `renameBlock`
 leaves every `use:` naming the old slug — the rule a variable key follows — and the Block is then
-one nothing resolves under its old id, which the canvas reads as a *deleted* Block. So the region
+one nothing resolves under its old id, which the canvas reads as a _deleted_ Block. So the region
 emits `onBoardRename`, and `views/Build` follows it into the new id with the selection held on that
 Board. Without it, committing the slug drops the user back to the root and closes the tab they were
 editing in.
@@ -91,7 +91,7 @@ See `theme/HatuaProvider.tsx`.
 ## Where a region's data comes from
 
 Not from props. `Components` takes no manifests, `Workflow` takes no document,
-`Inspector` takes no Step — only which one is *selected* — and
+`Inspector` takes no Step — only which one is _selected_ — and
 that is forced rather than chosen: `apps/playground/src/host.tsx` mounts each
 region bare and `regions.test.tsx` renders every one of them with nothing above
 it, so a required data prop would break both. Everything a region reads arrives
@@ -106,7 +106,7 @@ exactly why it can be lifted into a caller without reaching the document. Every
 one of them is optional and falls back to its own answer, so a region still
 mounts bare.
 
-What regions still send *out* is props. `Components` takes an optional `onSelect`
+What regions still send _out_ is props. `Components` takes an optional `onSelect`
 and `StepList` an optional `onInsert`; neither adds the Step. That is not a
 missing feature — it is the only place the two halves can meet. `StepList` knows
 where a Step would go and nothing about the catalogue; `Components` knows the
@@ -121,18 +121,18 @@ because neither needs a catalogue.
 
 ## What each region is
 
-| Region | What it is |
-| --- | --- |
-| `TopBar` | The toolbar. |
-| `StepList` | The tree as a dense, ordered list. A region a Host may mount; not in `Build`'s tab set. |
-| `FlowMap` | The canvas: one Board's tree as a map of cards and the regions around them, filling the middle column. Not a tab. |
-| `Inspector` | The step editor: the selected Step's name and its fields. |
-| `Components` | The Component Manifests a Host serves, as cards. Components only — a Trigger is not a Step, and adding one is the Workflow tab's job. |
-| `Workflow` | Everything scoped to a **Board** rather than to a Step: the name and slug, the Board's root, the variables. |
-| `Data` | The reference tree the step editor expands into, announced as **References**. Read-only: drag out of it, and a variable is *edited* in the Workflow tab. Not a tab. |
-| `RunList` | This workflow's **Workflow Executions**, a page at a time. It chooses a run and opens none. |
-| `RunStep` | The pane about the run: the execution itself, or one Step's record. Edits nothing. |
-| `TextMode` | The open document as YAML. The one region that renders `text` rather than `definition`. |
+| Region       | What it is                                                                                                                                                          |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TopBar`     | The toolbar.                                                                                                                                                        |
+| `StepList`   | The tree as a dense, ordered list. A region a Host may mount; not in `Build`'s tab set.                                                                             |
+| `FlowMap`    | The canvas: one Board's tree as a map of cards and the regions around them, filling the middle column. Not a tab.                                                   |
+| `Inspector`  | The step editor: the selected Step's name and its fields.                                                                                                           |
+| `Components` | The Component Manifests a Host serves, as cards. Components only — a Trigger is not a Step, and adding one is the Workflow tab's job.                               |
+| `Workflow`   | Everything scoped to a **Board** rather than to a Step: the name and slug, the Board's root, the variables.                                                         |
+| `Data`       | The reference tree the step editor expands into, announced as **References**. Read-only: drag out of it, and a variable is _edited_ in the Workflow tab. Not a tab. |
+| `RunList`    | This workflow's **Workflow Executions**, a page at a time. It chooses a run and opens none.                                                                         |
+| `RunStep`    | The pane about the run: the execution itself, or one Step's record. Edits nothing.                                                                                  |
+| `TextMode`   | The open document as YAML. The one region that renders `text` rather than `definition`.                                                                             |
 
 `Fields` is not a region and is never exported: it is the form for one Component
 Manifest's fields, over one set of values. A Trigger's fields and a Step's are
@@ -168,7 +168,7 @@ a runs store instead is the shape ADR-0024 rejected one level up: every region
 would coalesce, and the one that forgot would draw the **Draft**'s Steps under a
 run's marks.
 
-What the **Preview** gained is a *reason*, because two readers cannot work from a
+What the **Preview** gained is a _reason_, because two readers cannot work from a
 version number alone — the toolbar, whose preview cluster offers to restore a
 version the reader never chose, and `createValidationStore`, which would report
 today's problems against three-week-old history.
@@ -225,7 +225,7 @@ and computes no geometry of its own. What each child region looks like is
 settled in `docs/handoff.md` § Flow map geometry, and the answers this tier has
 to agree with are: **every** region of a Step is a **column** in one row, in
 document order, and they converge on a **Join** (ADR-0015) — a loop is one
-column, a `core.try` two, a Fork *n*. Each is a **Band** with the word that names
+column, a `core.try` two, a Fork _n_. Each is a **Band** with the word that names
 it over its own top edge, dashed when whether it runs is a run-time fact and
 solid when it always runs, which is what tells a Fork from a `core.try` now that
 their shapes are the same.
@@ -240,7 +240,7 @@ A container's Bands sit inside one **Nest**, which is that Step's whole extent.
 Two frames and not one, because a `core.try` owns two regions and only the body
 is protected. The card sits astride its Nest's top edge — nothing is drawn
 between a Step and its regions, because a line here means "then" and a Step does
-not run after its own body, so containment is drawn as *overlap* instead.
+not run after its own body, so containment is drawn as _overlap_ instead.
 
 `<StepList>` says the same thing in a list, with the chip over each region — the
 two surfaces draw differently and must not disagree about which regions a
@@ -252,7 +252,7 @@ invisible: `walkSteps` yields the Steps inside it, so the generic rules report
 against them by name, and a `COMPONENT_UNKNOWN` naming a Step that nothing draws
 is a problem the user cannot go and fix. Refusing to draw a region does not make
 it absent from the document — it makes it unreachable. What the verb decides is
-the *word* over a region.
+the _word_ over a region.
 
 **Three readers, one enumeration.** `regionsOf` in `@hatua/model` is where a
 Step's regions are enumerated, and all three of them get theirs from it:
@@ -263,7 +263,7 @@ the layout emitted. The word over a region is `Region.keyword` — `if` / `else 
 the list and the legend on the map are the same string from the same function
 rather than two spellings that agree by inspection.
 
-`regionsOf` answers what a Step nests; `bornRegionsOf` answers what a *new* one
+`regionsOf` answers what a Step nests; `bornRegionsOf` answers what a _new_ one
 should nest, which no reading of the keys can. A container written with neither
 key nests nothing at all, so it draws no Band, offers no `+`, and can never be
 filled in.
@@ -333,7 +333,7 @@ of it would be two answers to "what is selected".
 
 **It is a Segment by construction.** The canvas's gestures cannot build anything
 else: a plain click selects one Step and sets the anchor, and shift-click extends
-from the anchor *within the sibling list they share*. A shift-click into another
+from the anchor _within the sibling list they share_. A shift-click into another
 region does what a plain click does and becomes the new anchor, so no gesture
 leaves the user holding nothing and none silently does less than it looked like
 it did. Extraction consumes a Segment and refuses anything else (ADR-0018), so
@@ -353,7 +353,7 @@ crossing a Band edge, and it has no keyboard equivalent at all.
 list is not where a stretch of Steps is chosen, and a second way to build one
 would be a second answer again. Clicking a row selects that row alone.
 
-Contiguity is *derived*, never stored: a Segment is `{ board, steps }` and not a
+Contiguity is _derived_, never stored: a Segment is `{ board, steps }` and not a
 start index and a length, because a selection is held across edits and an index
 range means a Step added above it silently changes what is selected — the
 argument `RegionRef` already makes about `branchIndex`. `segmentSteps` resolves
@@ -391,7 +391,7 @@ why the region is still a region.
 ### Names and labels
 
 The tab labels and the component names are deliberately not forced into one
-list, but they must not *collide*: **Flow** is a label a user reads and it opens
+list, but they must not _collide_: **Flow** is a label a user reads and it opens
 `StepList`, while `FlowMap` is the region beside it, named `Flow map` as a
 landmark. Two landmarks answering to "Flow" is exactly how the canvas ended up
 in the tab strip. `Components` and `Workflow` are named for their labels
@@ -409,5 +409,5 @@ general API to, and this is not one.
 No region draws its own divider. `Build` puts the borders on the wrappers that
 place them, because a region that drew its own edge would only sit correctly in
 a container shaped like this one — `apps/playground/src/host.tsx` puts the
-Inspector on the *left*, where a `border-inline-start` of its own would be a
+Inspector on the _left_, where a `border-inline-start` of its own would be a
 line down the middle of nothing.

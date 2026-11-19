@@ -798,6 +798,7 @@ describe('a catalogue the document cannot be added to', () => {
    * screen has: the session is over, or a version is being read instead of the
    * Draft.
    */
+  // biome-ignore lint/correctness/noComponentHookFactories: the test component closes over this test's own state
   function Ends({ how }: { how: 'release' | 'preview' }) {
     const store = useEditingStore()
 

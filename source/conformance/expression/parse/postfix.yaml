@@ -39,7 +39,7 @@ scenarios:
 
   - name: indexing composes after a call
     expr: "json.parse(s2.body)['order_id']"
-    sexp: "([] (call (. json parse) (. s2 body)) \"order_id\")"
+    sexp: '([] (call (. json parse) (. s2 body)) "order_id")'
 
   - name: member access composes after a call
     expr: "json.parse(s2.output).count"

@@ -102,6 +102,7 @@ describe('useOverflowing', () => {
    * paths that do not depend on layout — the rest is verified in a browser,
    * which is where three faults in this hid from the suite.
    */
+  // biome-ignore lint/correctness/noComponentHookFactories: the test component closes over this test's own state
   const Watched = ({ text }: { text: string }) => {
     const ref = useRef<HTMLDivElement>(null)
     const wide = useOverflowing(ref)

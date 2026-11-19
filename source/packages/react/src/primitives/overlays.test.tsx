@@ -539,6 +539,7 @@ describe('ConfirmDialog', () => {
   // Otherwise focus lands on document.body and a keyboard user loses their
   // place in the designer the moment they answer.
   it('gives focus back to whatever had it before opening', async () => {
+    // biome-ignore lint/correctness/noComponentHookFactories: the test component closes over this test's own state
     function Harness() {
       const [open, setOpen] = useState(false)
       return (
@@ -584,6 +585,7 @@ describe('ConfirmDialog', () => {
 })
 
 describe('Tooltip', () => {
+  // biome-ignore lint/correctness/noComponentHookFactories: the test component closes over this test's own state
   const Anchored = ({ enabled = true }: { enabled?: boolean }) => {
     const anchor = useRef<HTMLButtonElement>(null)
     return (

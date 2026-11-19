@@ -3,7 +3,7 @@
 Fixtures both the TypeScript and Go implementations must agree on.
 
 This matters more than the codegen does. Generation guarantees the two languages
-share a *shape*; nothing guarantees they share *behaviour*. The rules that decide
+share a _shape_; nothing guarantees they share _behaviour_. The rules that decide
 whether a workflow is valid — a required field left empty, a `ref` field with no
 reference, a non-final condition branch with no `when`, a connection whose type
 does not match its field — are cross-field and manifest-dependent. None is

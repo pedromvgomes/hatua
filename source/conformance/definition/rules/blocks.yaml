@@ -318,8 +318,16 @@ scenarios:
             - id: fork
               use: core.fork
               branches:
-                - { label: A, when: "{{ params.a }}", steps: [{ id: r1, use: core.return, with: { url: "x" } }] }
-                - { label: B, when: "{{ params.b }}", steps: [{ id: r2, use: core.return, with: { url: "y" } }] }
+                - {
+                    label: A,
+                    when: "{{ params.a }}",
+                    steps: [{ id: r1, use: core.return, with: { url: "x" } }],
+                  }
+                - {
+                    label: B,
+                    when: "{{ params.b }}",
+                    steps: [{ id: r2, use: core.return, with: { url: "y" } }],
+                  }
       steps: []
     expect:
       - { code: BLOCK_PATH_WITHOUT_RETURN, blocks: publish, blockId: archive }
@@ -338,7 +346,11 @@ scenarios:
             - id: fork
               use: core.fork
               branches:
-                - { label: A, when: "{{ params.a }}", steps: [{ id: r1, use: core.return, with: { url: "x" } }] }
+                - {
+                    label: A,
+                    when: "{{ params.a }}",
+                    steps: [{ id: r1, use: core.return, with: { url: "x" } }],
+                  }
                 - { label: B, steps: [{ id: r2, use: core.return, with: { url: "y" } }] }
       steps: []
     expect: []

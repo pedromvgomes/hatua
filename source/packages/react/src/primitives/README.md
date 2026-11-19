@@ -19,7 +19,7 @@ seed and never from a literal. That is ADR-0002's rule, and
 
 **Placement.** `placement.ts` answers where a floating layer goes for the three
 things that ask — the completion list, the picker and the tooltip. It flips when
-there is less room below *and* more above rather than on a fixed threshold, and
+there is less room below _and_ more above rather than on a fixed threshold, and
 it clamps sideways, because the anchor is usually a caret or a small button near
 the edge of a 304px column. It deliberately does not cap a layer's height: it
 reports the room that exists, and each caller decides how much of that is its
@@ -40,7 +40,7 @@ font against the room inside its padding.
 `Tooltip` attaches to an element by ref rather than wrapping one: wrapping means
 either a box in the middle of somebody's layout or `cloneElement` onto a
 component whose props it cannot see, and every control here already holds a ref
-for its own reasons. It opens on hover *and* focus, `Escape` dismisses it, and
+for its own reasons. It opens on hover _and_ focus, `Escape` dismisses it, and
 the anchor carries `aria-describedby` whenever there is something to say — a
 screen reader is the one reader for whom hover means nothing.
 

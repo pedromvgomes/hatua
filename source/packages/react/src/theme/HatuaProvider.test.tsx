@@ -98,6 +98,7 @@ describe('HatuaProvider', () => {
   it('keeps the same store across renders that keep the same source', () => {
     const manifests: ManifestSource = { loadManifests: async () => [] }
     let seen: unknown[] = []
+    // biome-ignore lint/correctness/noComponentHookFactories: the test component closes over this test's own state
     function Capture() {
       seen.push(useManifestStore())
       return null
