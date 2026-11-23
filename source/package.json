@@ -21,7 +21,7 @@
     "@biomejs/biome": "^2.6.7",
     "@typescript/typescript6": "^6.0.2",
     "@vitest/coverage-v8": "^5.0.1",
-    "turbo": "^2.11.10",
+    "turbo": "^2.11.11",
     "typescript": "^7.0.2",
     "vite": "^8.3.8",
     "vite-plugin-dts": "^5.1.2",
